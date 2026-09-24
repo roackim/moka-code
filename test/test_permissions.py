@@ -4,6 +4,7 @@ The engine is gone: a role maps each tool to ``no`` / ``ask`` / ``yes`` and the
 gate turns that into ``deny`` / ``ask`` / ``allow``.  These tests cover the
 gate, the prompt text, and the ask/deny/allow paths through the harness.
 """
+import asyncio
 import json
 
 import pytest
@@ -106,11 +107,12 @@ class TestHarnessReadPermissionFlow:
 
         events, messages = run_harness_tool_call(harness, _read_call())
 
-        assert isinstance(events[0], harness_events.PermissionRequest)
-        assert isinstance(events[1], harness_events.ToolResult)
-        assert events[0].auto is True
-        assert events[1].outcome == "denied"
-        assert events[1].output == "Auto-denied by security policy"
+        assert isinstance(events[0], harness_events.ToolCall)
+        assert isinstance(events[1], harness_events.PermissionRequest)
+        assert isinstance(events[2], harness_events.ToolResult)
+        assert events[1].auto is True
+        assert events[2].outcome == "denied"
+        assert events[2].output == "Auto-denied by security policy"
         assert read_tool.called is False
         denial_content = messages[-1]["content"]
         assert "[TOOL DENIED]" in denial_content
@@ -123,9 +125,10 @@ class TestHarnessReadPermissionFlow:
 
         events, messages = run_harness_tool_call(harness, _read_call("call_2"))
 
-        assert events[0].auto is False
-        assert events[1].outcome == "denied"
-        assert events[1].output == "User denied"
+        assert isinstance(events[0], harness_events.ToolCall)
+        assert events[1].auto is False
+        assert events[2].outcome == "denied"
+        assert events[2].output == "User denied"
         assert read_tool.called is False
 
     def test_allow_executes_tool(self, tmp_path):
@@ -135,12 +138,41 @@ class TestHarnessReadPermissionFlow:
 
         events, messages = run_harness_tool_call(harness, _read_call("call_3"))
 
-        assert events[0].auto is True
+        assert isinstance(events[0], harness_events.ToolCall)
+        assert events[1].auto is True
         assert isinstance(events[-1], harness_events.ToolResult)
         assert events[-1].outcome == "completed"
         assert read_tool.called is True
         assert events[-1].output == "stubbed content"
         assert messages[-1]["content"] == "stubbed content"
+
+    def test_tool_calls_are_emitted_in_order_with_ask_blocking_the_next(self, tmp_path):
+        """A pending ``ask`` must be shown before any later tool call appears."""
+        role = Role(name="r", tools={"read": "ask"})
+        read_tool = StubReadTool("content")
+        harness = _build_harness_stub(tmp_path, read_tool, role)
+        # Pre-answer both prompts as denials so the run is deterministic.
+        harness.set_user_response("no")
+        harness.set_user_response("no")
+
+        calls = [_read_call("call_1"), _read_call("call_2")]
+
+        async def _collect():
+            messages = []
+            collected = []
+            async for event in harness._execute_tool_calls(calls, messages):
+                collected.append(event)
+            return collected
+
+        events = asyncio.run(_collect())
+
+        assert [type(e).__name__ for e in events] == [
+            "ToolCall", "PermissionRequest", "ToolResult",
+            "ToolCall", "PermissionRequest", "ToolResult",
+        ]
+        assert [e.id for e in events if isinstance(e, harness_events.ToolCall)] == [
+            "call_1", "call_2",
+        ]
 
 
 class TestFileToolLayer:

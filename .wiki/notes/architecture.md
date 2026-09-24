@@ -39,8 +39,10 @@ Pico is a terminal-based AI agent that connects to local (llama.cpp) or cloud (O
 The core reasoning loop:
 1. Build the message list (system prompt from the active role + history)
 2. Send to the active `Endpoint` (`endpoint.py`)
-3. Stream response events (`events.py`): `Token`/`Reasoning`/`ToolCall`/`Usage`
-4. If tool calls present → `PermissionRequest` → check permissions → execute tools → `ToolResult`
+3. Stream response events (`events.py`): `Token`/`Reasoning`/`Usage` (tool calls
+   are assembled during the stream but emitted in step 4, so all content is
+   flushed before the first tool)
+4. If tool calls present → `ToolCall` → `PermissionRequest` → check permissions → execute tools → `ToolResult` (one tool at a time: a pending `ask` blocks later tools)
 5. Append tool results to history → repeat from step 2 until no more tool calls → `Done`
 
 ## Data Flow: User Message → Response

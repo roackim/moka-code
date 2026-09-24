@@ -489,7 +489,10 @@ class Harness:
     async def _stream_llm_response(self, messages: List[Dict[str, Any]]) -> AsyncGenerator[events.Event, None]:
         """Stream LLM response and collect content/tool calls.
 
-        Yields: Reasoning, Token, ToolCall, Usage events.
+        Yields: Reasoning, Token, Usage events. Tool calls are assembled but
+        emitted later, in execution order, by ``_execute_tool_calls`` so a
+        pending permission prompt blocks every subsequent tool call.
+
         Sets: self._last_full_content, _last_full_reasoning, _last_tool_calls,
               _last_detected_thinking_tag.
         """
@@ -635,14 +638,6 @@ class Harness:
                     if getattr(tc.function, "arguments", None):
                         tool_calls_buffer[key]["function"]["arguments"] += tc.function.arguments
 
-                    tc_data = tool_calls_buffer[key]
-                    tool_call_id = tc_data["id"] or f"idx_{tc_data['index']}"
-                    yield events.ToolCall(
-                        id=tool_call_id,
-                        name=tc_data["function"]["name"],
-                        args=tc_data["function"]["arguments"]
-                    )
-
         # Flush any remaining content buffer at end of stream
         for segment in parser.flush():
             if segment.is_thinking:
@@ -698,7 +693,9 @@ class Harness:
         """
         Execute all tool calls following the state machine flow.
 
-        Yields PermissionRequest and ToolResult events.
+        Yields ToolCall, PermissionRequest and ToolResult events strictly in
+        order: a tool is announced immediately before its permission decision,
+        so a pending ``ask`` blocks every later tool from appearing.
         """
         self.state = AgentState.THINKING
         
@@ -708,6 +705,14 @@ class Harness:
             tool_call_id = tc["id"]
             
             self.debug_stream.log("TOOL_EXEC", {"name": tool_name, "args": tool_args})
+            
+            # Announce the tool here (not while streaming) so it lands in the
+            # transcript after all content and before its own permission prompt.
+            yield events.ToolCall(
+                id=tool_call_id,
+                name=tool_name,
+                args=tool_args,
+            )
             
             # STEP 1: Check permissions (without executing)
             try:

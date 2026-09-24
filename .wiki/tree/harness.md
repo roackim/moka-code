@@ -13,8 +13,10 @@ See [notes/architecture.md](../notes/architecture.md), [notes/tools-and-permissi
 ### `harness.py`
 `Harness` — main class. Owns the agent state machine and conversation history.
 - `chat(user_input)` — async generator; full agent turn (stream → handle tool calls)
-- `_stream_llm_response()` — delegates thinking-tag parsing to `ThinkingTagParser`
-- `_execute_tool_calls()` — delegates permission checking to `PermissionGate`
+- `_stream_llm_response()` — delegates thinking-tag parsing to `ThinkingTagParser`;
+  buffers tool-call deltas without emitting `ToolCall` (content flushes first)
+- `_execute_tool_calls()` — emits `ToolCall` then `PermissionRequest` per tool in
+  order (a pending `ask` blocks later tools); delegates to `PermissionGate`
 Key state: `AgentState` enum, message history list, active endpoint, active role, and thinking steering state (`_current_reasoning`, `_pending_thinking_prefill`, `_last_detected_thinking_tag`).
 
 ### `permissions.py`
