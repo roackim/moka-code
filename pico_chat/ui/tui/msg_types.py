@@ -34,6 +34,11 @@ class MsgType:
     # Thread-mode gutter symbol and color (None = use frame_color).
     gutter: str = "▸"
     gutter_color: Optional[str] = None
+    # Clamped messages render with no inter-message gap when adjacent to
+    # another clamped message, so a turn's thought + tool calls read as one
+    # block. The final answer is not clamped: gaps still separate it (and
+    # turns) from everything else.
+    clamped: bool = False
 
 class UserMsg(MsgType):
     name = "user"
@@ -84,14 +89,17 @@ class ThinkingMsg(PicoMsg):
     actions = [MsgAction.COPY]
     # Same prefix bar as user/pico so the thought line reads like any message.
     gutter = "▌"
+    clamped = True
 
 class ToolCallMsg(MsgType):
     name = "tool"
     title = "tool"
-    frame_color = "WARNING"
+    frame_color = "TOOL"
     content_color = None
     actions = [MsgAction.OUTPUT, MsgAction.COPY]
-    gutter = "⚙"
+    # Normal message prefix, like any other transcript entry.
+    gutter = "▌"
+    clamped = True
 
 
 class ToolDraftMsg(MsgType):
@@ -100,7 +108,8 @@ class ToolDraftMsg(MsgType):
     frame_color = "MUTED"
     content_color = "MUTED"
     actions = []
-    gutter = "⚙"
+    gutter = "▌"
+    clamped = True
 
 class AskPermissionMsg(MsgType):
     name = "permission"
@@ -108,4 +117,6 @@ class AskPermissionMsg(MsgType):
     frame_color = "PERMISSION"
     content_color = None
     actions = [MsgAction.ALLOW, MsgAction.DENY, MsgAction.OUTPUT, MsgAction.COPY]
-    gutter = "?"
+    # Normal prefix bar, colored PERMISSION to mark the ask.
+    gutter = "▌"
+    clamped = True

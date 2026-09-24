@@ -304,3 +304,28 @@ def test_feature_off_uses_direct_append(monkeypatch):
     assert pico[0].base_text == "direct"
     assert pico[0]._reveal_len == len(pico[0].base_text)
     assert pico[0].finalized is True
+
+
+def test_tool_call_flushes_pending_text_without_frames():
+    """A tool boundary must drain the revealer even if no frame ticked first."""
+    ui = chatTUI(StubAgent())
+    clock = [0.0]
+    ui._clock = lambda: clock[0]
+    seen = {}
+
+    async def chat(_):
+        yield events.Start(message_id="m1", role="assistant")
+        yield events.Token(text="hello world")
+        # No frame pump: the revealer still holds every cluster.
+        yield events.ToolCall(id="t1", name="read", args='{"path":"a"}')
+        pico = [m for m in ui.chat_history_panel.messages if type(m.type) is PicoMsg]
+        seen["base"] = pico[0].base_text
+        seen["reveal"] = pico[0]._reveal_len
+        seen["finalized"] = pico[0].finalized
+        yield events.Done()
+
+    ui.agent.chat = chat
+    asyncio.run(ui._process_generation("hello", ui.chat_history_panel.add_message("hello")))
+
+    assert seen["reveal"] == len(seen["base"])
+    assert seen["finalized"] is True

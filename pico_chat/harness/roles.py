@@ -25,6 +25,11 @@ TOOL_VALUES = ("no", "ask", "yes")
 #: Files whose stem starts with ``_`` or ``.`` are ignored.
 _HIDDEN_PREFIXES = ("_", ".")
 
+#: Tool names retired in the patch/run_command -> edit/bash rework. Old role
+#: files are migrated on startup: aliases are renamed, removals are dropped.
+_RETIRED_TOOL_ALIASES = {"patch": "edit", "run_command": "bash"}
+_RETIRED_TOOLS = frozenset({"subagent", "wait_for_subagents"})
+
 
 @dataclass
 class Role:
@@ -124,6 +129,9 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
     for key, value in data.items():
         if key in ("description", "prompt", "disabled"):
             continue
+        key = _RETIRED_TOOL_ALIASES.get(key, key)
+        if key in _RETIRED_TOOLS:
+            continue
         if key not in registered:
             raise ValueError(f"roles/{name}.toml: unknown tool '{key}'")
         if value not in TOOL_VALUES:
@@ -148,13 +156,51 @@ def _role_to_dict(role: Role) -> dict[str, Any]:
     }
 
 
+def _migrate_role_file(path: Path) -> bool:
+    """Rename/drop retired tool keys in a role file, preserving everything else.
+
+    Only top-level ``<tool> = "..."`` lines are touched, and only keys in
+    ``_RETIRED_TOOL_ALIASES`` / ``_RETIRED_TOOLS``. Comments, ordering,
+    ``description``/``prompt`` and every other key are left intact; unknown
+    keys still surface through validation. Returns True when the file changed.
+    """
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    except OSError:
+        return False
+
+    changed = False
+    result: list[str] = []
+    in_table = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_table = True
+        if not in_table and stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in _RETIRED_TOOL_ALIASES:
+                result.append(line.replace(key, _RETIRED_TOOL_ALIASES[key], 1))
+                changed = True
+                continue
+            if key in _RETIRED_TOOLS:
+                changed = True
+                continue
+        result.append(line)
+
+    if changed:
+        path.write_text("".join(result), encoding="utf-8")
+    return changed
+
+
 def ensure_roles_dir() -> Path:
-    """Create the roles directory and seed the built-in role files."""
+    """Create the roles directory, seed built-ins, and migrate retired keys."""
     _ROLES_DIR.mkdir(parents=True, exist_ok=True)
     for name, role in builtin_roles().items():
         path = _role_file(name)
         if not path.exists():
             path.write_text(_role_template(role), encoding="utf-8")
+    for path in _iter_role_files():
+        _migrate_role_file(path)
     return _ROLES_DIR
 
 

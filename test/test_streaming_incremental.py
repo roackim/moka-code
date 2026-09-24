@@ -126,12 +126,13 @@ def test_last_line_plain_while_streaming_then_styled_after_finalize():
     comp = MarkdownComponent("hello **bold**", streaming=True)
     comp.set_layout(0, 0, 40, 10)
     assert comp._parsed_lines[0][0].text == "hello **bold**"
-    assert not any(seg.bold for seg in comp._parsed_lines[0])
+    assert not any(seg.fg for seg in comp._parsed_lines[0])
 
     comp.set_streaming(False)
     joined = "".join(seg.text for seg in comp._parsed_lines[0])
     assert joined == "hello bold"
-    assert any(seg.bold and seg.text == "bold" for seg in comp._parsed_lines[0])
+    # Emphasis is a color (no terminal bold), so the styled span has an fg.
+    assert any(seg.fg and seg.text == "bold" for seg in comp._parsed_lines[0])
 
 
 def test_dirty_from_line_for_paragraph_append():

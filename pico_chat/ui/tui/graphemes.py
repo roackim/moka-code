@@ -32,7 +32,8 @@ def _in(cp: int, rng: tuple[int, int]) -> bool:
 def _is_extend(ch: str) -> bool:
     """True for code points that attach to the preceding base character."""
     cp = ord(ch)
-    if unicodedata.combining(ch):
+    # Mn (combining) and Me (enclosing marks, e.g. the keycap U+20E3) attach.
+    if unicodedata.combining(ch) or unicodedata.category(ch).startswith("M"):
         return True
     if _in(cp, _SKIN_TONES) or _in(cp, _VS15) or _in(cp, _VS_SUPP):
         return True

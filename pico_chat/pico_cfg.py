@@ -30,14 +30,16 @@ from typing import Any, Dict, Literal, Optional
 # Each key is an element name; values are dicts with optional:
 #   fg (hex string), bg (hex string), bold (bool), reverse (bool)
 DEFAULT_MARKDOWN_STYLES: Dict[str, Dict[str, Any]] = {
-    "header1":    {"fg": "#CCA700", "bold": True},
-    "header2":    {"fg": "#CCA700", "bold": True},
-    "header3":    {"fg": "#CCA700", "bold": True},
-    "header4":    {"fg": "#CCA700", "bold": True},
-    "header5":    {"fg": "#CCA700", "bold": True},
-    "header6":    {"fg": "#CCA700", "bold": True},
-    "bold":       {"bold": True},
-    "italic":     {"reverse": True},
+    "header1":    {"fg": "#CCA700"},
+    "header2":    {"fg": "#CCA700"},
+    "header3":    {"fg": "#CCA700"},
+    "header4":    {"fg": "#CCA700"},
+    "header5":    {"fg": "#CCA700"},
+    "header6":    {"fg": "#CCA700"},
+    # Emphasis uses a color, not terminal bold/reverse (which render as an ugly
+    # inversion in many terminals).
+    "bold":       {"fg": "#CCA700"},
+    "italic":     {"fg": "#9CDCFE"},
     "code":       {"fg": "#808080"},
     "code_block": {"fg": "#808080"},
     "quote":      {"fg": "#808080"},
@@ -110,7 +112,7 @@ DEFAULT_UI_TOML = """\
 # use_bg_color = false                # paint the theme background
 # app_global_padding = 0
 # msg_h_padding = 1
-# msg_v_margin = 1                   # blank lines between messages
+# msg_v_margin = 1                   # blank lines between turns (assistant output is continuous)
 # debug_console_height = 10
 # max_input_height = 8                # input grows with wrapped lines, then scrolls
 # box_style = "square"                # "square" | "double" | "rounded" | "ascii"
@@ -153,7 +155,12 @@ DEFAULT_STYLES_TOML = """\
 
 # [markdown_styles.header1]
 # fg = "#CCA700"
-# bold = true
+
+# [markdown_styles.bold]
+# fg = "#CCA700"
+
+# [markdown_styles.italic]
+# fg = "#9CDCFE"
 
 # [syntax_highlight.keyword]
 # fg = "#FF6464"

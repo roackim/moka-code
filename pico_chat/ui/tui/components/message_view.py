@@ -101,14 +101,10 @@ class MessageView(Box):
         is kept from the previous frame.
         """
         bg = self.bg
+        # Gutter glyph/color come from the message type (▌ everywhere, colored
+        # per type: USER, MUTED, TOOL, PERMISSION).
         fg = self.gutter_color or self.fg
-
-        # Lifecycle-aware gutter: tool/permission messages swap their prefix
-        # glyph with the running/done state (spinner → ✓/✗/⏹, ? for ask).
         gutter = self.gutter
-        if self.parent_msg is not None and hasattr(self.parent_msg, "dynamic_gutter"):
-            gutter, dynamic_color = self.parent_msg.dynamic_gutter()
-            fg = dynamic_color or fg
 
         collapsed = self.parent_msg is not None and getattr(self.parent_msg, "collapsed", False)
         incremental = (

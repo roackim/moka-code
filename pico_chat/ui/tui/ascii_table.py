@@ -5,6 +5,37 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Tuple, Any
 
+from pico_chat.ui.tui.graphemes import split_clusters
+from pico_chat.ui.tui.layout_utils import display_width
+
+
+def _truncate_to_width(text: str, width: int) -> str:
+    """Truncate ``text`` to at most ``width`` display cells (cluster-aware)."""
+    if width <= 0:
+        return ""
+    out: List[str] = []
+    used = 0
+    for cluster in split_clusters(text):
+        cw = display_width(cluster)
+        if used + cw > width:
+            break
+        out.append(cluster)
+        used += cw
+    return "".join(out)
+
+
+def _pad_to_width(text: str, width: int, side: str) -> str:
+    """Pad ``text`` to ``width`` display cells (wide chars/emoji aware)."""
+    pad = width - display_width(text)
+    if pad <= 0:
+        return text
+    if side == "right":
+        return " " * pad + text
+    if side == "center":
+        left = pad // 2
+        return " " * left + text + " " * (pad - left)
+    return text + " " * pad
+
 
 @dataclass
 class TableStyle:
@@ -81,7 +112,7 @@ class AsciiTable:
             col_values = [self.headers[col_idx]] + [
                 row[col_idx] for row in self.rows if col_idx < len(row)
             ]
-            max_len = max(len(v) for v in col_values) if col_values else 0
+            max_len = max(display_width(v) for v in col_values) if col_values else 0
             if self.max_width is not None and max_len > self.max_width:
                 max_len = self.max_width
             self._col_widths.append(max_len)
@@ -176,19 +207,15 @@ class AsciiTable:
         else:
             sep = shp
 
-        def align_text(text: str, width: int, side: str) -> str:
-            if side == "right":
-                return text.rjust(width)
-            elif side == "center":
-                return text.center(width)
-            return text.ljust(width)
-
         mids: List[str] = []
         for i, val in enumerate(values):
             col_name = self.headers[i].lower() if i < len(self.headers) else ""
             side = self.align.get(col_name, "left")
-            truncated = val[:widths[i] - 1] + "‥" if len(val) > widths[i] else val
-            mids.append(align_text(truncated, widths[i], side))
+            if display_width(val) > widths[i]:
+                truncated = _truncate_to_width(val, max(0, widths[i] - 1)) + "‥"
+            else:
+                truncated = val
+            mids.append(_pad_to_width(truncated, widths[i], side))
 
         # Pad or clip row to match column count
         while len(mids) < len(widths):

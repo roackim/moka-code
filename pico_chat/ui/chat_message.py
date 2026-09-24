@@ -140,8 +140,13 @@ class Message:
             gutter_color=thread_gutter_color,
             content_pad_left=left_pad,
             content_pad_right=right_pad,
-            # User/pico use a `▌` prefix bar that spans every row.
-            gutter_full_height=isinstance(msg_type, (msg_types.UserMsg, msg_types.PicoMsg)),
+            # User/pico/tool-call use a `▌` prefix bar that spans every row.
+            gutter_full_height=isinstance(
+                msg_type,
+                (msg_types.UserMsg, msg_types.PicoMsg,
+                 msg_types.ToolCallMsg, msg_types.ToolDraftMsg,
+                 msg_types.AskPermissionMsg),
+            ),
         )
     
     def finalize(self):
@@ -333,25 +338,6 @@ class Message:
             return "⏹", theme.WARNING
         return "⋯", theme.MUTED
 
-    def dynamic_gutter(self) -> tuple[str, Any]:
-        """Return a lifecycle-aware (gutter glyph, color) for tool messages.
-
-        - permission/ask message      → "?" (PERMISSION)
-        - running / not finalized     → braille spinner (MUTED)
-        - completed / error / etc.    → ✓ / ✗ / ⏹ (per terminal state)
-
-        Non-tool messages fall back to their static gutter + frame color.
-        """
-        from pico_chat.ui.tui.colors import theme
-
-        if isinstance(self.type, msg_types.AskPermissionMsg):
-            return "?", theme.PERMISSION
-        if self.is_tool_message():
-            return self.status_glyph()
-        # Respect the type's explicit gutter color (e.g. MUTED for pico); fall
-        # back to the frame color.
-        return getattr(self.type, "gutter", "▸"), (self.box.gutter_color or self.frame_color)
-
     def _collapsed_text(self) -> str:
         """Return the single-line summary shown when collapsed."""
         if isinstance(self.type, msg_types.ThinkingMsg):
@@ -536,9 +522,8 @@ class Message:
         
         from pico_chat.ui.tui.colors import theme
         
-        # Build status line with colors - use symbols for compact display
+        # Build status line with colors - shown expanded only.
         status_parts = []
-        status_symbol = ""
         if self.tool_status:
             # Split status by | and color each part
             parts = self.tool_status.split(' | ')
@@ -549,23 +534,18 @@ class Message:
                     colored_parts.append(f"{theme.SUCCESS}{part}{theme.reset()}")
                 elif part in ['denied', 'error']:
                     colored_parts.append(f"{theme.ERROR}{part}{theme.reset()}")
-                elif part in ['executing', 'drafting']:
-                    colored_parts.append(f"{theme.MUTED}{part}{theme.reset()}")
                 else:
                     colored_parts.append(f"{theme.MUTED}{part}{theme.reset()}")
             status_parts = [' | '.join(colored_parts)]
 
-            # Compact symbol reflects the lifecycle: spinner while running,
-            # ✓/✗/⏹ only once finalized. Never show a "done" mark early.
-            glyph, glyph_color = self.status_glyph()
-            status_symbol = f" {glyph_color}{glyph}{theme.reset()}"
-
-        # Build header line - use "?" prefix for permission requests, ">" for tool calls
+        # The lifecycle gutter already carries the type/status mark (? for a
+        # permission request, spinner/✓/✗ for a tool), so the header is just
+        # the tool name — no second "?" / ">" prefix.
         from pico_chat.ui.tui import msg_types
         if isinstance(self.type, msg_types.AskPermissionMsg):
-            header = f"{theme.PERMISSION}? {self.tool_name}{theme.reset()}"
+            header = f"{theme.PERMISSION}{self.tool_name}{theme.reset()}"
         else:
-            header = f"{theme.WARNING}> {self.tool_name}{theme.reset()}"
+            header = f"{theme.TOOL}{self.tool_name}{theme.reset()}"
         
         # Add compact arg summary to header for better single-line view
         args_summary = ""
@@ -596,13 +576,11 @@ class Message:
         is_compact = self.box.compact_when_unfocused and not self.box.focused
         
         header += args_summary
-        if is_compact:
-            # Compact: just show symbol
-            header += status_symbol
-        else:
-            # Expanded: show full status text
-            if status_parts:
-                header += f" {status_parts[0]}"
+        # The gutter already carries the lifecycle glyph (spinner/✓/✗/?), so a
+        # compact line has no status suffix; only the expanded line spells the
+        # status out.
+        if not is_compact and status_parts:
+            header += f" {status_parts[0]}"
         
         # Build text
         lines = [header]

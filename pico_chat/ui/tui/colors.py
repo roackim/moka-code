@@ -78,6 +78,7 @@ class _theme:
     WARNING: RGB
     SUCCESS: RGB
     PERMISSION: RGB  # Purple/magenta for permission prompts
+    TOOL: RGB        # Tool-call / action accent (asked as blue; any hue is fine)
     
     USER: RGB
     PICO: RGB
@@ -113,6 +114,7 @@ pastel = _theme(
     WARNING     = RGB("#CCA700"),   # Amber/gold
     SUCCESS     = RGB("#89D185"),   # Soft green
     PERMISSION  = RGB("#C586C0"),   # Purple/magenta for permission prompts
+    TOOL        = RGB("#4FC1FF"),   # Tool-call blue
     
     USER        = RGB("#4EC9B0"),   # Cyan/teal
     PICO        = RGB("#569CD6"),   # Blue
@@ -131,6 +133,7 @@ terminal = _theme(
     WARNING     = ANSIColor(fg=33),         # yellow  (maps to user's yellow)
     SUCCESS     = ANSIColor(fg=32),         # green   (maps to user's green)
     PERMISSION  = ANSIColor(fg=95),         # bright magenta (maps to user's magenta)
+    TOOL        = ANSIColor(fg=34),         # blue (maps to user's blue)
     USER        = ANSIColor(fg=32),         # green
     PICO        = ANSIColor(fg=36),         # cyan    (maps to user's cyan)
     FOCUSED     = ANSIColor(fg=33),         # bright yellow
@@ -147,6 +150,7 @@ nord = _theme(
     WARNING     = RGB("#EBCB8B"),
     SUCCESS     = RGB("#A3BE8C"),
     PERMISSION  = RGB("#B48EAD"),
+    TOOL        = RGB("#5E81AC"),
     USER        = RGB("#88C0D0"),
     PICO        = RGB("#81A1C1"),
     FOCUSED     = RGB("#EBCB8B"),
@@ -161,6 +165,7 @@ dracula = _theme(
     WARNING     = RGB("#F1FA8C"),
     SUCCESS     = RGB("#50FA7B"),
     PERMISSION  = RGB("#FF79C6"),
+    TOOL        = RGB("#8BE9FD"),
     USER        = RGB("#8BE9FD"),
     PICO        = RGB("#BD93F9"),
     FOCUSED     = RGB("#F1FA8C"),
@@ -175,6 +180,7 @@ gruvbox = _theme(
     WARNING     = RGB("#FABD2F"),
     SUCCESS     = RGB("#B8BB26"),
     PERMISSION  = RGB("#D3869B"),
+    TOOL        = RGB("#458588"),
     USER        = RGB("#8EC07C"),
     PICO        = RGB("#83A598"),
     FOCUSED     = RGB("#FABD2F"),
@@ -189,6 +195,7 @@ solarized = _theme(
     WARNING     = RGB("#B58900"),
     SUCCESS     = RGB("#859900"),
     PERMISSION  = RGB("#D33682"),
+    TOOL        = RGB("#6C71C4"),
     USER        = RGB("#2AA198"),
     PICO        = RGB("#268BD2"),
     FOCUSED     = RGB("#B58900"),
@@ -203,6 +210,7 @@ one_dark = _theme(
     WARNING     = RGB("#E5C07B"),
     SUCCESS     = RGB("#98C379"),
     PERMISSION  = RGB("#C678DD"),
+    TOOL        = RGB("#528BFF"),
     USER        = RGB("#56B6C2"),
     PICO        = RGB("#61AFEF"),
     FOCUSED     = RGB("#E5C07B"),
@@ -217,6 +225,7 @@ catppuccin = _theme(
     WARNING     = RGB("#F9E2AF"),
     SUCCESS     = RGB("#A6E3A1"),
     PERMISSION  = RGB("#F5C2E7"),
+    TOOL        = RGB("#74C7EC"),
     USER        = RGB("#94E2D5"),
     PICO        = RGB("#89B4FA"),
     FOCUSED     = RGB("#F9E2AF"),
@@ -231,6 +240,7 @@ tokyo_night = _theme(
     WARNING     = RGB("#E0AF68"),
     SUCCESS     = RGB("#9ECE6A"),
     PERMISSION  = RGB("#BB9AF7"),
+    TOOL        = RGB("#2AC3DE"),
     USER        = RGB("#7DCFFF"),
     PICO        = RGB("#7AA2F7"),
     FOCUSED     = RGB("#E0AF68"),
@@ -245,6 +255,7 @@ rose_pine = _theme(
     WARNING     = RGB("#F6C177"),
     SUCCESS     = RGB("#9CCFD8"),
     PERMISSION  = RGB("#C4A7E7"),
+    TOOL        = RGB("#908CAA"),
     USER        = RGB("#EBBCBA"),
     PICO        = RGB("#31748F"),
     FOCUSED     = RGB("#F6C177"),
@@ -259,6 +270,7 @@ everforest = _theme(
     WARNING     = RGB("#DBBC7F"),
     SUCCESS     = RGB("#A7C080"),
     PERMISSION  = RGB("#D699B6"),
+    TOOL        = RGB("#7FBBB3"),
     USER        = RGB("#83C092"),
     PICO        = RGB("#7FBBB3"),
     FOCUSED     = RGB("#DBBC7F"),
@@ -273,6 +285,7 @@ monokai = _theme(
     WARNING     = RGB("#E6DB74"),
     SUCCESS     = RGB("#A6E22E"),
     PERMISSION  = RGB("#AE81FF"),
+    TOOL        = RGB("#66D9EF"),
     USER        = RGB("#66D9EF"),
     PICO        = RGB("#FD971F"),
     FOCUSED     = RGB("#E6DB74"),
@@ -287,6 +300,7 @@ ayu_dark = _theme(
     WARNING     = RGB("#FFB454"),
     SUCCESS     = RGB("#AAD94C"),
     PERMISSION  = RGB("#D2A6FF"),
+    TOOL        = RGB("#39BAE6"),
     USER        = RGB("#95E6CB"),
     PICO        = RGB("#59C2FF"),
     FOCUSED     = RGB("#FFB454"),
@@ -301,6 +315,7 @@ kanagawa = _theme(
     WARNING     = RGB("#C0A36E"),
     SUCCESS     = RGB("#76946A"),
     PERMISSION  = RGB("#957FB8"),
+    TOOL        = RGB("#7FB4CA"),
     USER        = RGB("#7AA89F"),
     PICO        = RGB("#7E9CD8"),
     FOCUSED     = RGB("#C0A36E"),
@@ -376,7 +391,7 @@ def theme_names() -> list:
 #: Palette fields in display/file order.
 PALETTE_FIELDS = (
     "BACKGROUND", "DEFAULT", "MUTED", "ERROR", "WARNING",
-    "SUCCESS", "PERMISSION", "USER", "PICO", "FOCUSED",
+    "SUCCESS", "PERMISSION", "TOOL", "USER", "PICO", "FOCUSED",
 )
 
 

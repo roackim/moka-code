@@ -85,10 +85,10 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 
 ## Themes
 
-A theme is a palette (`themes.toml`, `[themes.<name>]`) mapping the ten
+A theme is a palette (`themes.toml`, `[themes.<name>]`) mapping the eleven
 `_theme` fields (`BACKGROUND`, `DEFAULT`, `MUTED`, `ERROR`, `WARNING`,
-`SUCCESS`, `PERMISSION`, `USER`, `PICO`, `FOCUSED`) to either a `"#RRGGBB"`
-hex string or an ANSI table (`{ ansi = 90 }`, `{ ansi = 39, bg = 49 }`).
+`SUCCESS`, `PERMISSION`, `TOOL`, `USER`, `PICO`, `FOCUSED`) to either a
+`"#RRGGBB"` hex string or an ANSI table (`{ ansi = 90 }`, `{ ansi = 39, bg = 49 }`).
 Missing entries inherit the built-in base of the same name (or `terminal`).
 Built-ins are always available and are listed by `/theme` (or
 `colors.theme_names()`): `terminal` (default), `pastel`, `nord`, `dracula`,

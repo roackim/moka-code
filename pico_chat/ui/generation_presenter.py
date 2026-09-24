@@ -92,9 +92,12 @@ async def process_generation(app, user_input, user_msg) -> None:
         no reasoning.
         """
         nonlocal current_msg, current_msg_type
+        # Drain the revealer first, unconditionally: pending streamed text must
+        # be released before the boundary even when the current message was
+        # already handed off (otherwise its last chunk surfaces only later).
+        flush_text()
         if current_msg is None:
             return
-        flush_text()
         current_msg.finalize()
         current_msg.update_actions()
         current_msg = None
@@ -166,6 +169,11 @@ async def process_generation(app, user_input, user_msg) -> None:
                 msg = app.active_tool_messages.get(tool_id)
                 preserve_active_text_stream = current_msg_type in (ThinkingMsg, PicoMsg)
 
+                # Drain any pending streamed text before showing the tool draft
+                # (ordering beats smoothing), even if the text message was
+                # already handed off.
+                flush_text()
+
                 # Flush any incomplete text message before showing tool draft
                 if current_msg_type in (ThinkingMsg, PicoMsg) and current_msg:
                     end_status_message()
@@ -187,6 +195,9 @@ async def process_generation(app, user_input, user_msg) -> None:
 
             elif isinstance(event, events.PermissionRequest):
                 tool_id = event.id
+
+                # Drain any pending streamed text before showing the request.
+                flush_text()
 
                 # Flush any incomplete text message before showing tool request
                 if current_msg_type in (ThinkingMsg, PicoMsg) and current_msg:

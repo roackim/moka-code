@@ -25,11 +25,16 @@
 [ ] AGENTS.md AGENT.md (ROBOT.md ROBOT.txt (?))
 
 
-[ ] add [r] raw copy (non interpreted)
 [ ] finer grain for copy, like code block, table etc
     [ ] implies finer grain for focus ? MOD key + up / down / click ?
         -> focus part of message ?
         
         
 [x] update tools definition
+[ ] add [r] raw copy (non interpreted) to llm messages
 [ ] tables columns are getting cut despite horizontal space available 
+[x] emojies breaks tables
+
+[ ] status: 'config loaded with error:' yet no way to see or check
+
+[ ] tool call needs to finish the previous message before hanging

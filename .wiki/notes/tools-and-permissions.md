@@ -99,6 +99,11 @@ Built-in roles (`agent`, `chat`) are seeded as files on first run by
 a template from the registry (all tools `no`); `delete_role(name)` unlinks the
 file, refusing to remove the last role.
 
+`ensure_roles_dir()` also migrates retired tool keys in existing role files,
+preserving comments and everything else: `patch → edit`, `run_command → bash`,
+and the removed `subagent` / `wait_for_subagents` keys are dropped. The same
+aliases are applied on load, so an unmigrated file still round-trips.
+
 Unknown tool names and values other than `no`/`ask`/`yes` are reported as
 `roles/<name>.toml: ...` by `validate_roles()`, surfaced by `/reload` and
 `/config role`.

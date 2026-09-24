@@ -253,8 +253,10 @@ class chatTUI(ChatActionHandlers):
     def disengage_stream(self):
         """Drop the active-stream reference once the stream has ended.
 
-        Assumes any pending text has already been flushed/finalized.
+        Flushes any remaining pending text first so a boundary that missed the
+        final flush cannot drop a chunk.
         """
+        self.flush_stream()
         self.stream_message = None
         self.stream_revealed = 0
         self._stream_finalize_pending = False

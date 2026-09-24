@@ -18,6 +18,11 @@ from pico_chat.ui.tui.msg_types import MsgType, MsgAction
 from pico_chat.ui.chat_message import Message
 
 
+def _clamped(msg: Message) -> bool:
+    """True when ``msg`` clamps against an adjacent clamped message (no gap)."""
+    return getattr(msg.type, "clamped", False)
+
+
 class ChatHistoryPanel(TextComponent):
     """Manages the chat history display panel with dynamic width support."""
 
@@ -107,8 +112,12 @@ class ChatHistoryPanel(TextComponent):
         if self.focused_message_index is not None:
             current = self.messages[self.focused_message_index]
             current.set_focused(True)
-            # Collapsible messages (thinking) expand when focused.
-            if hasattr(current, "set_collapsed") and getattr(current, "collapsible", False):
+            # Collapsible messages (thinking) expand when focused — but only
+            # when there is text to reveal: an empty thought stays a summary
+            # line instead of collapsing to a bare prefix.
+            if (hasattr(current, "set_collapsed")
+                    and getattr(current, "collapsible", False)
+                    and (current.base_text or "").strip()):
                 current.set_collapsed(False)
             # Disable auto-scroll when focusing a message, UNLESS it's the last message
             # (we want to follow the last message's content as it updates)
@@ -273,12 +282,16 @@ class ChatHistoryPanel(TextComponent):
         starts: list[int] = []
         ends: list[int] = []
         y = 0
+        prev: Message | None = None
         for i, msg in enumerate(self.messages):
-            if i > 0:
+            # Adjacent clamped messages (thoughts, tool calls) form one block
+            # with no gap; the gap still separates the final answer and turns.
+            if i > 0 and not (_clamped(prev) and _clamped(msg)):
                 y += gap
             starts.append(y)
             y += self._get_message_height(msg)
             ends.append(y)
+            prev = msg
         return starts, ends, y
 
     def _get_message_virtual_y_range(self, msg_index: int) -> tuple[int, int]:

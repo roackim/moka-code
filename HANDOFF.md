@@ -281,10 +281,12 @@ Open improvements not yet requested but worth considering:
   Built-in files are seeded on startup; `roles.validate_roles()` reports
   unknown tools / bad values. `/reload` runs it.
 - **Tool names are the registry keys** (`read`/`write`/`edit`/`bash`); the LLM
-  name always equals the key (no alias). Role files that still name `patch`,
-  `run_command`, `subagent` or `wait_for_subagents` fail validation — delete and
-  re-seed the built-ins (or hand-edit custom roles). `create_toolset(workspace)`
-  builds the map; `RegisteredTool.execute()` is async.
+  name always equals the key (no alias). Old role keys are handled: on startup
+  `ensure_roles_dir()` rewrites `patch → edit` and `run_command → bash` and drops
+  `subagent` / `wait_for_subagents` (comments preserved), and `_role_from_dict`
+  applies the same aliases on load, so stale files no longer error.
+  `create_toolset(workspace)` builds the map; `RegisteredTool.execute()` is
+  async.
 - **Themes resolve at construction, not render.** After `set_theme()` you must
   call `chatTUI.refresh_theme()` (chrome + long-lived overlays `Popup`/
   `DebugPopup` + cached completion menus + `ChatHistoryPanel.refresh_theme()` /

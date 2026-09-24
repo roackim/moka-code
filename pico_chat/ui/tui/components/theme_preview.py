@@ -24,6 +24,7 @@ _FIELDS: Tuple[Tuple[str, str], ...] = (
     ("WARNING", "warn"),
     ("SUCCESS", "ok"),
     ("PERMISSION", "perm"),
+    ("TOOL", "tool"),
     ("USER", "user"),
     ("PICO", "pico"),
     ("FOCUSED", "focus"),

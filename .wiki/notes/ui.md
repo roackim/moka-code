@@ -280,9 +280,13 @@ Every message displayed in the chat history has a `MsgType` that controls its ti
 | `SysMsg` | "system" | MUTED | COPY |
 | `SysMsgError` | "error" | ERROR | COPY |
 | `SysMsgWarning` | "warning" | WARNING | (inherits COPY) |
-| `ToolCallMsg` | "tool" | WARNING | OUTPUT, COPY |
+| `ToolCallMsg` | "tool" | TOOL | OUTPUT, COPY |
 | `ToolDraftMsg` | "tool" | MUTED | none |
 | `AskPermissionMsg` | "permission" | PERMISSION | ALLOW, DENY, OUTPUT, COPY |
+
+`clamped` types (`ThinkingMsg`, `ToolCallMsg`, `ToolDraftMsg`, `AskPermissionMsg`)
+render with no inter-message gap against an adjacent clamped message; the final
+`PicoMsg` answer keeps its gap.
 
 `ThinkingMsg` and `SysMsgError/Warning` extend `PicoMsg` / `SysMsg` — they inherit defaults and override only what differs.
 
@@ -301,14 +305,14 @@ routed to the activity surface rather than the transcript (see below).
 | `DENY` | `x` | deny |
 
 ### Message Selection and the Mode Line
-
-Messages are gutter-threaded and do not render actions inline. User and pico
-messages use a `▌` prefix bar spanning the full message height
-(`Box.full_height_gutter`) — user in the `USER` accent, pico in `MUTED`
-gray; user content is normal text color (the accent is only the bar).
-`ChatHistoryPanel` keeps a `focused_message_index` (the selected message); the
-selected message's prefix bar is replaced with a brighter `▌` marker (no extra
-column, nothing shifts, no leading margin).
+Messages are gutter-threaded and do not render actions inline. Every message
+uses a full-height `▌` prefix bar (`Box.full_height_gutter`) whose color encodes
+the type: user `USER`, pico/thinking `MUTED`, tool calls `TOOL` (a dedicated
+palette color, so `FOCUSED` stays reserved for focus), permission asks
+`PERMISSION`. User content is normal text color (the accent is only the bar).
+`ChatHistoryPanel` keeps a `focused_message_index`
+(the selected message); the selected message's prefix bar is replaced with a
+brighter `▌` marker (no extra column, nothing shifts, no leading margin).
 
 An **action line** sits above the input with a blank pad row above it
 (`ActionBar.set_top_pad`): an `ActionBar` mounted permanently in the workspace
@@ -382,8 +386,11 @@ is `ingest` + `reveal_to(len(base_text))` for non-streamed callers and drops
 leading whitespace on the first chunk, since models often open with a space.
 
 Messages are separated by `ui_msg_v_margin` blank lines (default `1`; set it in
-`ui.toml`). `ChatHistoryPanel` is the owner of the message list — it handles
-layout, selection, scrolling, and width-change reformatting.
+`ui.toml`). Adjacent `clamped` messages (`MsgType.clamped`: `ThinkingMsg`,
+`ToolCallMsg`, `ToolDraftMsg`, `AskPermissionMsg`) render as one block with no
+gap; the final `PicoMsg` answer, user turns, and notices keep the gap.
+`ChatHistoryPanel` is the owner of the message list — it handles layout,
+selection, scrolling, and width-change reformatting.
 
 ### Wait-phase feedback
 
@@ -404,8 +411,13 @@ frozen:
 
 `generation_presenter.end_status_message()` always finalizes (never drops) the
 wait line and is used at every hard boundary (Token, ToolCall,
-PermissionRequest, Error, cancel, and non-deferred Done). A later turn after
-tool calls opens a fresh wait line.
+PermissionRequest, Error, cancel, and non-deferred Done). At the ToolCall and
+PermissionRequest boundaries the presenter also calls `flush_text()`
+unconditionally — and `end_status_message()` drains before its `current_msg`
+check — so pending revealer text cannot survive a boundary "hand-off" and
+surface only once the tool finishes. `chatTUI.disengage_stream()` flushes once
+more before dropping the stream reference. A later turn after tool calls opens a
+fresh wait line.
 
 ---
 
@@ -594,8 +606,8 @@ Decouples how fast text *arrives* from how fast it *appears*.
 
 ### Styling
 
-Styles are driven by `pico_cfg.config.markdown_styles` (see [config.md](./config.md)). Each element (`header1`–`header6`, `bold`, `italic`, `code`, `code_block`, `quote`, `list`, `hr`, `table`, `link`, `paragraph`) maps to `fg`/`bg`/`bold`/`reverse`.
+Styles are driven by `pico_cfg.config.markdown_styles` (see [config.md](./config.md)). Each element (`header1`–`header6`, `bold`, `italic`, `code`, `code_block`, `quote`, `list`, `hr`, `table`, `link`, `paragraph`) maps to `fg`/`bg`/`bold`/`reverse`. Emphasis (`bold`, `italic`, headers) uses an `fg` color rather than terminal bold/reverse, which render as an ugly inversion in many terminals. Unordered list items use pastilles (`•`/`◦`/`▪` by nesting level).
 
 ### Tables
 
-Markdown tables (`| ... | ... |` with a `---` separator row) are detected by `BlockParser`, grouped into `TableLine` runs, and rendered via `AsciiTable` with the `squared` style. Table lines are rendered with `code_block=True` so the wrapper hard-breaks instead of word-wrapping, preserving column alignment.
+Markdown tables (`| ... | ... |` with a `---` separator row) are detected by `BlockParser`, grouped into `TableLine` runs, and rendered via `AsciiTable` with the `squared` style. Column alignment (`:--`/`--:`/`:-:`) is read from the separator row. Table lines are rendered with `code_block=True` so the wrapper hard-breaks instead of word-wrapping, preserving column alignment. Columns size to their content (`max_width=None`, no per-column cap) and measure/truncate/pad by display width (`layout_utils.display_width`, grapheme-aware). `Buffer`/`SubBuffer.write_str` iterate grapheme clusters (`buffer._text_tokens`) so emoji sequences (variation selectors, ZWJ, keycaps) occupy one cell with the correct width — the previous per-code-point walk split them and broke alignment. `Markdown._hard_break_line`/`_break_segments` are cluster-aware too, so wide emoji count as 2 when wrapping (otherwise a line was left unbroken and clipped at the right edge).

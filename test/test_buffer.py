@@ -372,3 +372,26 @@ class TestInputComponentSubBuffer:
         assert main.cells[2][0].char == '╶'
         assert main.cells[2][39].char == '╴'
         assert 'message' not in "".join(c.char for c in main.cells[0])
+
+
+class TestEmojiClusterWriting:
+    """write_str must keep emoji sequences in one cell and size them correctly."""
+
+    @pytest.mark.parametrize("factory", [lambda: Buffer(20, 2), lambda: SubBuffer(20, 2)])
+    def test_keycap_sequence_stays_in_one_cell(self, factory):
+        buf = factory()
+        buf.write_str(0, 0, "4\uFE0F\u20E3 x")
+
+        assert buf.cells[0][0].char == "4\uFE0F\u20E3"
+        assert buf.cells[0][1].is_wide_char_continuation
+        # The keycap occupies two columns, then " ", then "x".
+        assert "".join(c.char for c in buf.cells[0][:4]) == "4\uFE0F\u20E3 x"
+
+    @pytest.mark.parametrize("factory", [lambda: Buffer(20, 2), lambda: SubBuffer(20, 2)])
+    def test_wide_emoji_advances_two_columns(self, factory):
+        buf = factory()
+        buf.write_str(0, 0, "\U0001F3C6x")
+
+        assert buf.cells[0][0].char == "\U0001F3C6"
+        assert buf.cells[0][1].is_wide_char_continuation
+        assert buf.cells[0][2].char == "x"

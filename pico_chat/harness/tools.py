@@ -167,7 +167,7 @@ class FileTools:
 
         Example:
             >>> tools.edit("app.py", "old code", "new code")
-            '[OK] Applied patch to app.py (1 replacement)'
+            '[OK] Applied edit to app.py (1 replacement)'
         """
         if search is None:
             raise ToolError("Invalid edit arguments: missing 'search'")

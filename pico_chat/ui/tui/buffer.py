@@ -1,14 +1,51 @@
 from dataclasses import dataclass
 from typing import Optional
 import re
-from wcwidth import wcwidth
+from wcwidth import wcwidth, wcswidth
 
 from pico_chat.ui.tui.colors import RGB, theme
+from pico_chat.ui.tui.graphemes import split_clusters
 from pico_chat.ui.tui.terminal import ANSI
 from pico_chat import pico_cfg
 
 # Compiled once: write_str runs for every text fragment on every repaint.
 _ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+
+def _text_tokens(s: str):
+    """Yield ``(text, is_ansi)`` tokens: ANSI escapes, newlines, grapheme clusters.
+
+    Clustering keeps emoji sequences (variation selectors, ZWJ, keycaps) in one
+    cell so their display width is measured correctly.
+    """
+    i = 0
+    n = len(s)
+    while i < n:
+        match = _ANSI_ESCAPE.match(s, i)
+        if match:
+            yield match.group(), True
+            i = match.end()
+            continue
+        if s[i] == "\n":
+            yield "\n", False
+            i += 1
+            continue
+        j = i
+        while j < n and s[j] != "\n" and _ANSI_ESCAPE.match(s, j) is None:
+            j += 1
+        for cluster in split_clusters(s[i:j]):
+            yield cluster, False
+        i = j
+
+
+def _cluster_width(text: str) -> int:
+    """Display width of a grapheme cluster (wide emoji = 2, combining = 0)."""
+    width = wcswidth(text)
+    if width < 0:
+        width = wcwidth(text[-1]) if text else 0
+        if width < 0:
+            width = 1
+    return width
 
 
 @dataclass(slots=True)
@@ -72,68 +109,52 @@ class Buffer:
         This method is ANSI-aware: escape sequences are stored alongside the next
         printable character in a single cell, ensuring they don't occupy extra
         horizontal space in the grid.
-        Properly handles emoji and wide character widths using wcwidth.
+        Iterates grapheme clusters so emoji sequences (variation selectors, ZWJ,
+        keycaps) occupy the correct number of columns.
         """
-        ansi_escape = _ANSI_ESCAPE
-
         curr_x = x
-        pending_ansi = "" # Accumulates ANSI sequences to be attached to the next character
-        i = 0
-        count = 0 # Tracks visible character width (columns) for clipping
-        
-        while i < len(s):
-            # Respect max_width if provided (clipping)
+        pending_ansi = ""  # Accumulates ANSI sequences to attach to the next glyph
+        count = 0          # Visible width written, for clipping
+
+        for text, is_ansi in _text_tokens(s):
+            if is_ansi:
+                pending_ansi += text
+                continue
+            if text == "\n":
+                break
             if max_width is not None and count >= max_width:
                 break
-                
-            match = ansi_escape.match(s, i)
-            if match:
-                # Found an ANSI sequence, buffer it without incrementing curr_x
-                pending_ansi += match.group()
-                i = match.end()
-            else:
-                char = s[i]
-                if char == '\n':
-                    break
-                
-                # Calculate the display width of this character
-                char_width = wcwidth(char)
-                if char_width < 0:  # Control characters return -1
-                    char_width = 1
-                
-                # Check if this character would exceed max_width
-                if max_width is not None and count + char_width > max_width:
-                    break
-                
-                # If this is a wide character (emoji), mark the next cell as continuation
-                if char_width == 2:
-                    if 0 <= curr_x < self.width and 0 <= y < self.height:
-                        self.set(curr_x, y, pending_ansi + char, fg, bg, bold, reverse, underline)
-                    
-                    if 0 <= curr_x + 1 < self.width and 0 <= y < self.height:
-                        if self._is_in_clip(curr_x + 1, y):
-                            # Convert RGB to tuple if needed
-                            fg_tuple = (fg.r, fg.g, fg.b) if fg is not None and hasattr(fg, 'r') else fg
-                            bg_tuple = (bg.r, bg.g, bg.b) if bg is not None and hasattr(bg, 'r') else bg
-                            self.cells[y][curr_x + 1] = Cell(
-                                char="",
-                                fg=fg_tuple,
-                                bg=bg_tuple,
-                                bold=bold,
-                                reverse=reverse,
-                                underline=underline,
-                                is_wide_char_continuation=True
-                            )
-                    curr_x += 2  # Skip over both the character cell and continuation cell
+
+            width = _cluster_width(text)
+            if max_width is not None and count + width > max_width:
+                break
+
+            if width <= 0:
+                # Zero-width (combining mark / lone selector): glue it onto the
+                # preceding cell instead of consuming a column.
+                if curr_x - 1 >= 0 and 0 <= y < self.height:
+                    self.cells[y][curr_x - 1].char += pending_ansi + text
+                    pending_ansi = ""
                 else:
-                    if 0 <= curr_x < self.width and 0 <= y < self.height:
-                        self.set(curr_x, y, pending_ansi + char, fg, bg, bold, reverse, underline)
-                    curr_x += 1  # Single-width character
-                
-                pending_ansi = ""
-                i += 1
-                count += char_width
-        
+                    pending_ansi += text
+                continue
+
+            if 0 <= curr_x < self.width and 0 <= y < self.height:
+                self.set(curr_x, y, pending_ansi + text, fg, bg, bold, reverse, underline)
+            fg_tuple = (fg.r, fg.g, fg.b) if fg is not None and hasattr(fg, 'r') else fg
+            bg_tuple = (bg.r, bg.g, bg.b) if bg is not None and hasattr(bg, 'r') else bg
+            for offset in range(1, width):
+                cx = curr_x + offset
+                if 0 <= cx < self.width and 0 <= y < self.height and self._is_in_clip(cx, y):
+                    self.cells[y][cx] = Cell(
+                        char="", fg=fg_tuple, bg=bg_tuple, bold=bold,
+                        reverse=reverse, underline=underline,
+                        is_wide_char_continuation=True,
+                    )
+            pending_ansi = ""
+            curr_x += width
+            count += width
+
         # Handle any trailing ANSI sequences (e.g., color resets)
         if pending_ansi and (max_width is None or count < max_width):
             if curr_x > x and 0 <= y < self.height:
@@ -346,60 +367,49 @@ class SubBuffer:
     def write_str(self, x: int, y: int, s: str, fg=None, bg=None, bold=False, reverse=False, max_width: Optional[int] = None):
         """
         Write a string to the buffer starting at (x, y).
-        ANSI-aware and handles wide characters (emoji) properly.
+        ANSI-aware; iterates grapheme clusters so emoji sequences occupy the
+        correct number of columns.
         """
-        ansi_escape = _ANSI_ESCAPE
-
         curr_x = x
         pending_ansi = ""
-        i = 0
         count = 0
-        
-        while i < len(s):
+
+        for text, is_ansi in _text_tokens(s):
+            if is_ansi:
+                pending_ansi += text
+                continue
+            if text == "\n":
+                break
             if max_width is not None and count >= max_width:
                 break
-                
-            match = ansi_escape.match(s, i)
-            if match:
-                pending_ansi += match.group()
-                i = match.end()
-            else:
-                char = s[i]
-                if char == '\n':
-                    break
-                
-                char_width = wcwidth(char)
-                if char_width < 0:
-                    char_width = 1
-                
-                if max_width is not None and count + char_width > max_width:
-                    break
-                
-                if char_width == 2:
-                    if 0 <= curr_x < self.width and 0 <= y < self.height:
-                        self.set(curr_x, y, pending_ansi + char, fg, bg, bold, reverse)
-                    
-                    if 0 <= curr_x + 1 < self.width and 0 <= y < self.height:
-                        fg_tuple = (fg.r, fg.g, fg.b) if fg is not None and hasattr(fg, 'r') else fg
-                        bg_tuple = (bg.r, bg.g, bg.b) if bg is not None and hasattr(bg, 'r') else bg
-                        self.cells[y][curr_x + 1] = Cell(
-                            char="",
-                            fg=fg_tuple,
-                            bg=bg_tuple,
-                            bold=bold,
-                            reverse=reverse,
-                            is_wide_char_continuation=True
-                        )
-                    curr_x += 2
+
+            width = _cluster_width(text)
+            if max_width is not None and count + width > max_width:
+                break
+
+            if width <= 0:
+                if curr_x - 1 >= 0 and 0 <= y < self.height:
+                    self.cells[y][curr_x - 1].char += pending_ansi + text
+                    pending_ansi = ""
                 else:
-                    if 0 <= curr_x < self.width and 0 <= y < self.height:
-                        self.set(curr_x, y, pending_ansi + char, fg, bg, bold, reverse)
-                    curr_x += 1
-                
-                pending_ansi = ""
-                i += 1
-                count += char_width
-        
+                    pending_ansi += text
+                continue
+
+            if 0 <= curr_x < self.width and 0 <= y < self.height:
+                self.set(curr_x, y, pending_ansi + text, fg, bg, bold, reverse)
+            fg_tuple = (fg.r, fg.g, fg.b) if fg is not None and hasattr(fg, 'r') else fg
+            bg_tuple = (bg.r, bg.g, bg.b) if bg is not None and hasattr(bg, 'r') else bg
+            for offset in range(1, width):
+                cx = curr_x + offset
+                if 0 <= cx < self.width and 0 <= y < self.height:
+                    self.cells[y][cx] = Cell(
+                        char="", fg=fg_tuple, bg=bg_tuple, bold=bold,
+                        reverse=reverse, is_wide_char_continuation=True,
+                    )
+            pending_ansi = ""
+            curr_x += width
+            count += width
+
         # Handle trailing ANSI
         if pending_ansi and (max_width is None or count < max_width):
             if curr_x > x and 0 <= y < self.height:

@@ -144,17 +144,16 @@ def test_bash_tool_schema_name_is_bash():
     assert tool.get_schema()["function"]["name"] == "bash"
 
 
-def test_dynamic_gutter_contextual():
-    """Gutter is ? for ask, spinner while running, ✓ when completed."""
-    from pico_chat.ui.tui.msg_types import AskPermissionMsg, ToolCallMsg
+def test_gutter_prefix_is_a_colored_bar_per_type():
+    """Every message uses the ``▌`` bar; the color encodes the type."""
+    from pico_chat.ui.tui.msg_types import AskPermissionMsg
+    from pico_chat.ui.tui.colors import theme
 
     ask = Message("", msg_type=AskPermissionMsg(), max_width=40)
     ask.tool_name = "bash"
-    assert ask.dynamic_gutter()[0] == "?"
+    assert ask.box.gutter == "▌"
+    assert ask.box.gutter_color == theme.PERMISSION
 
-    running = _tool(status="approved | executing", finalized=False)
-    glyph, _ = running.dynamic_gutter()
-    assert glyph in ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
-
-    done = _tool(status="approved | completed", finalized=True)
-    assert done.dynamic_gutter()[0] == "✓"
+    tool = _tool(status="approved | executing", finalized=False)
+    assert tool.box.gutter == "▌"
+    assert tool.box.gutter_color == theme.TOOL

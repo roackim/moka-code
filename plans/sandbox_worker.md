@@ -23,7 +23,7 @@ the host filesystem directly. The only isolation options are the per-tool
 inside a user-written sandbox (`plans/containerization.md`). Both are all-or-
 nothing:
 
-- Bare pico: the model's `write`/`patch`/`run_command` hit the host; the only
+- Bare pico: the model's `write`/`edit`/`bash` hit the host; the only
   guard is `ask`, and there is **no path confinement** (deliberately — path
   logic is not a security boundary).
 - Whole-pico-in-a-container: strong, but the user must install/run pico inside
@@ -74,7 +74,7 @@ So this is a **transport and lifecycle change**, not a rewrite.
 ┌───────────────────────────────────────────┐   ┌──────────────────────────────────┐
 │ ui/     TUI, transcript, activity, pickers │   │                                  │
 │ harness/ loop, history, events, permissions│   │   python /opt/worker.py          │
-│ endpoint LLM calls (secrets, network)      │   │   read | write | patch | run     │
+│ endpoint LLM calls (secrets, network)      │   │   read | write | edit | bash     │
 │ config  servers/roles/ui/... (rw)          │   │   no config · no net · no model  │
 │ sandbox launcher + transport               │   │   cwd=/workspace                 │
 └───────────────┬───────────────────────────┘   └───────────────▲──────────────────┘
@@ -110,8 +110,8 @@ Plain functions taking explicit arguments — no `ToolContext`, no TUI, no confi
 def read(path, *, offset=None, limit=None, include_line_numbers=False,
          cwd: Path) -> str: ...
 def write(path, content, *, cwd: Path) -> str: ...
-def patch(patch_text, *, cwd: Path) -> str: ...
-async def run_command(command, *, cwd: Path, timeout: float | None = None,
+def edit(patch_text, *, cwd: Path) -> str: ...
+async def bash(command, *, cwd: Path, timeout: float | None = None,
                       on_output: Callable[[str, str], None] | None = None) -> str: ...
 ```
 
@@ -130,7 +130,7 @@ async def run_command(command, *, cwd: Path, timeout: float | None = None,
   reach the registry standalone, and four stable verbs are not worth
   reflecting).
 - Serialize execution (one request at a time) for v1.
-- `asyncio.run(...)` around the loop so `run_command` can stream.
+- `asyncio.run(...)` around the loop so `bash` can stream.
 
 ---
 
@@ -171,7 +171,7 @@ The registry, schemas, role `enabled_tool_names()`, and prompts are unchanged.
 - stdout is protocol only; stderr is pumped to pico's debug log.
 
 ```jsonc
-{"id":7,"tool":"run_command","args":{"command":"pytest -q"}}
+{"id":7,"tool":"bash","args":{"command":"pytest -q"}}
 {"id":7,"stream":"stdout","data":"collected 42 items\n"}   // interim (optional)
 {"id":7,"ok":true,"result":"...final output..."}
 {"id":7,"ok":false,"error":"timeout after 120s"}
@@ -187,7 +187,7 @@ The registry, schemas, role `enabled_tool_names()`, and prompts are unchanged.
 
 ### 6.3 Streaming tool output (observability)
 
-- `run_command` streams stdout/stderr as interim frames.
+- `bash` streams stdout/stderr as interim frames.
 - Add a `ToolOutput` event to `harness/events.py`; the UI routes it to the
   activity surface, so a long test run is visible live.
 - In-process mode uses the exact same `on_output` callback, so bare and sandbox
@@ -265,11 +265,11 @@ The launcher only has to produce a pipe; the protocol layer is identical.
 
 | Concern | Decision |
 |---|---|
-| File boundary | The workspace bind mount; all `read`/`write`/`patch` run in-container |
+| File boundary | The workspace bind mount; all `read`/`write`/`edit` run in-container |
 | Path confinement | None in pico (the container is the wall) |
 | Network | `--network=none`; LLM calls happen on the host |
 | Secrets | Stay on the host; never passed into the container |
-| Rootfs | `--read-only`, `--tmpfs /tmp` (patch needs scratch) |
+| Rootfs | `--read-only`, `--tmpfs /tmp` (edit needs scratch) |
 | Capabilities | `--cap-drop=all --security-opt no-new-privileges` |
 | Sandbox detection | None; the user names the backend |
 | Approval | Per-tool `no`/`ask`/`yes`, decided host-side before dispatch |
@@ -282,7 +282,7 @@ The launcher only has to produce a pipe; the protocol layer is identical.
 - `--userns=keep-id` is the alternative when the image runs as a non-root user.
 - Rootful runtimes (`sudo docker`) land **root-owned** files; the launcher must
   then pass `--user $(id -u):$(id -g)`. Prefer rootless.
-- The worker runs `umask 022`; `write`/`patch` **preserve an existing file's
+- The worker runs `umask 022`; `write`/`edit` **preserve an existing file's
   mode** and never chown.
 - On SELinux hosts, the workspace mount needs `:Z` (`getenforce`).
 
@@ -317,8 +317,8 @@ transport complexity (no nested loops in the worker).
 
 Each ends green on §14 gates.
 
-- **W1 — Worker extraction (no behavior change).** Move `read`/`write`/`patch`/
-  `run_command` bodies into `pico_chat/worker.py`; fold `patch_parser.py`;
+- **W1 — Worker extraction (no behavior change).** Move `read`/`write`/`edit`/
+  `bash` bodies into `pico_chat/worker.py`; fold `patch_parser.py`;
   `harness/tools.py` imports from `worker` and keeps schemas. `tools.py` tests
   stay green.
 - **W2 — Transport seam.** Introduce `ToolTransport`; `InProcessTransport`;
@@ -354,8 +354,8 @@ Each ends green on §14 gates.
 
 ## 15. Tests
 
-- **Worker functions:** each verb against a tmp workspace; patch parse/apply
-  round-trips; `run_command` timeout + process-group kill; mode preserved on
+- **Worker functions:** each verb against a tmp workspace; edit parse/apply
+  round-trips; `bash` timeout + process-group kill; mode preserved on
   overwrite; new files owned per userns assumption (unit-level).
 - **Protocol:** request/response correlation; ordering; stderr separated from
   stdout; malformed line handling; shutdown; **no TTY CRLF** (feed `\r\n` input).
@@ -393,7 +393,7 @@ Each ends green on §14 gates.
    what surface (flag vs command).
 4. `bubblewrap` details: which host paths to bind (`python`, `worker.py`,
    workspace, `/tmp`), no image.
-5. Whether `write`/`patch` preserve mtime (probably not) and exact umask rules.
+5. Whether `write`/`edit` preserve mtime (probably not) and exact umask rules.
 6. Should `read` be allowed outside the workspace? (Container-wise yes; product-
    wise probably workspace-only via the sysprompt, not enforced.)
 

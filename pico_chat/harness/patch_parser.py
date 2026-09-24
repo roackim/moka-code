@@ -198,7 +198,7 @@ def apply_patch(file_content: str, patch: PatchBlock) -> Tuple[str, str]:
 
         start_idx, end_idx = spans[0]
         new_content = file_content[:start_idx] + patch.replace_text + file_content[end_idx:]
-        return new_content, f"[OK] Applied patch to {patch.filename} (1 replacement, mode={mode})"
+        return new_content, f"[OK] Applied edit to {patch.filename} (1 replacement, mode={mode})"
 
     search_lines = patch.search_text.split('\n')
     if search_lines:

@@ -14,6 +14,7 @@ from wcwidth import wcswidth
 
 from pico_chat import pico_cfg
 from pico_chat.ui.tui.colors import RGB, theme
+from pico_chat.ui.tui.graphemes import split_clusters
 from pico_chat.ui.tui.buffer import Buffer
 from pico_chat.ui.tui.components.base import Component
 
@@ -706,7 +707,10 @@ class Markdown:
         if isinstance(block, UnorderedListItemLine):
             style = _get_style("list")
             indent_str = "  " * block.indent
-            segments = [StyledSegment(indent_str + "- ")]
+            # Nesting level (a list line's indent is its leading space count;
+            # each level is two spaces). Deeper levels cycle the pastille.
+            bullet = ("•", "◦", "▪")[min(block.indent // 2, 2)]
+            segments = [StyledSegment(f"{indent_str}{bullet} ")]
             inner = [StyledSegment(block.text)] if plain_inline else self._inline_parser.parse(block.text)
             for seg in inner:
                 if seg.fg is None:
@@ -756,8 +760,11 @@ class Markdown:
 
         headers: List[str] = []
         rows: List[List[str]] = []
+        separator: Optional[TableLine] = None
         for tbl in table_blocks:
             if tbl.is_separator:
+                if separator is None:
+                    separator = tbl
                 continue
             if not headers:
                 headers = tbl.cells
@@ -767,8 +774,26 @@ class Markdown:
         if not headers:
             return [[]]
 
+        # Derive per-column alignment from the separator row (`:--`, `--:`, `:-:`).
+        align: dict[str, str] = {}
+        if separator is not None:
+            for i, cell in enumerate(separator.cells):
+                if i >= len(headers):
+                    break
+                marker = cell.strip()
+                if marker.startswith(":") and marker.endswith(":"):
+                    align[headers[i]] = "center"
+                elif marker.endswith(":"):
+                    align[headers[i]] = "right"
+                elif marker.startswith(":"):
+                    align[headers[i]] = "left"
+
         style = TableStyle(style_name="squared", inner_vbar=True, inner_hbar=False, h_padding=1)
-        table = AsciiTable(headers=headers, rows=rows, style=style)
+        # No per-column cap: size columns to their content so available
+        # horizontal space is used instead of truncating cells.
+        table = AsciiTable(
+            headers=headers, rows=rows, style=style, max_width=None, align=align,
+        )
         table_str = table.to_string()
 
         # Convert table string lines into StyledSegment lines.
@@ -1036,9 +1061,9 @@ class MarkdownComponent(Component):
         current_width = 0
 
         for seg in segments:
-            # Break segment text character by character if needed
-            for ch in seg.text:
-                ch_width = wcswidth(ch)
+            # Break by grapheme cluster so emoji sequences keep their width.
+            for cluster in split_clusters(seg.text):
+                ch_width = wcswidth(cluster)
                 if ch_width < 0:
                     ch_width = 1
 
@@ -1048,7 +1073,7 @@ class MarkdownComponent(Component):
                     current = []
                     current_width = 0
 
-                current.append(StyledSegment(ch, seg.fg, seg.bg, seg.bold, seg.reverse, seg.code_block))
+                current.append(StyledSegment(cluster, seg.fg, seg.bg, seg.bold, seg.reverse, seg.code_block))
                 current_width += ch_width
 
         if current:
@@ -1098,23 +1123,21 @@ class MarkdownComponent(Component):
         current_width = 0
 
         for seg in segments:
-            # Break segment text character by character if needed
-            char_widths = []
-            for ch in seg.text:
-                w = wcswidth(ch)
-                if w < 0:
-                    w = 1
-                char_widths.append(w)
+            # Break by grapheme cluster so emoji sequences keep their width.
+            clusters = split_clusters(seg.text)
+            widths = []
+            for cluster in clusters:
+                w = wcswidth(cluster)
+                widths.append(w if w >= 0 else 1)
 
-            remaining_text = seg.text
-            while remaining_text:
-                if not current or current_width + char_widths[0] <= max_width:
+            idx = 0
+            while idx < len(clusters):
+                w = widths[idx]
+                if not current or current_width + w <= max_width:
                     # Fits
-                    ch = remaining_text[0]
-                    current.append(StyledSegment(ch, seg.fg, seg.bg, seg.bold, seg.reverse))
-                    current_width += char_widths[0]
-                    remaining_text = remaining_text[1:]
-                    char_widths = char_widths[1:]
+                    current.append(StyledSegment(clusters[idx], seg.fg, seg.bg, seg.bold, seg.reverse))
+                    current_width += w
+                    idx += 1
                 else:
                     # Flush current
                     result.append(list(current))

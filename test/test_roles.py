@@ -125,6 +125,49 @@ def test_ensure_roles_dir_seeds_builtins(tmp_path, monkeypatch):
     assert set(builtin_roles()) == {"agent", "chat"}
 
 
+def test_retired_tool_keys_are_migrated_on_startup(tmp_path, monkeypatch):
+    monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
+    (tmp_path / "roles").mkdir()
+    (tmp_path / "roles" / "agent.toml").write_text(
+        "# keep me\n"
+        'description = "agent"\n'
+        'prompt = ""\n'
+        'read = "yes"\n'
+        'patch = "ask"\n'
+        'run_command = "yes"\n'
+        'subagent = "yes"\n',
+        encoding="utf-8",
+    )
+
+    ensure_roles_dir()
+
+    text = (tmp_path / "roles" / "agent.toml").read_text(encoding="utf-8")
+    assert "# keep me" in text
+    assert "patch =" not in text
+    assert "run_command =" not in text
+    assert "subagent" not in text
+    assert 'edit = "ask"' in text
+    assert 'bash = "yes"' in text
+
+    role = load_role("agent")
+    assert role.permission_for("edit") == "ask"
+    assert role.permission_for("bash") == "yes"
+    assert validate_roles() == []
+
+
+def test_old_tool_aliases_load_without_migration(tmp_path, monkeypatch):
+    monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
+    (tmp_path / "roles").mkdir()
+    (tmp_path / "roles" / "legacy.toml").write_text(
+        'patch = "yes"\nrun_command = "no"\n', encoding="utf-8")
+
+    role = load_role("legacy")
+
+    assert role.permission_for("edit") == "yes"
+    assert role.permission_for("bash") == "no"
+    assert validate_roles() == []
+
+
 def test_role_file_overrides_builtin(tmp_path, monkeypatch):
     monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
     (tmp_path / "roles").mkdir()
