@@ -34,6 +34,7 @@ from .core import (
 )
 from .models import known_model_ids, model_command
 from .roles import cmd_role
+from .sandbox import cmd_sandbox, sandbox_name_completions
 from .themes import theme_command
 
 # Help needs the whole registry, so its handler is assembled here.
@@ -70,6 +71,10 @@ COMMANDS: Dict[str, Command] = {
                             handler=cmd_role,
                             params=[Param("NAME", completions=role_name_completions,
                                           descriptions=role_descriptions)]),
+    "sandbox":      Command("sandbox", "Select the project's sandbox (or list them)",
+                            handler=cmd_sandbox,
+                            params=[Param("ID", required=False,
+                                          completions=sandbox_name_completions)]),
     "theme":        Command("theme", "Select the color theme (opens a picker)",
                             handler=theme_command,
                             params=[Param("THEME", required=False)]),

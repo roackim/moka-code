@@ -54,13 +54,17 @@ Slash command system. Leaf commands are plain `async def` handlers wrapped in
 | `conversation.py` | `/import`, `/export` |
 | `models.py` | `/model` leaf (picker or direct selection) |
 | `roles.py` | `/role` — list roles or switch the active one |
+| `sandbox.py` | `/sandbox <id>` — select the current project's sandbox (or list) |
 | `themes.py` | `/theme` — picker or direct color-theme selection |
 
 Registered commands: `help`, `clear`, `reload`, `config`, `edit`, `export`,
-`import`, `compact`, `exit`, `stop`, `activity`, `model`, `role`, `theme`.
+`import`, `compact`, `exit`, `stop`, `activity`, `model`, `role`, `sandbox`,
+`theme`.
 
 - `/config <section>` opens a section file in `$EDITOR` and reloads (sections:
   `ui`, `context`, `debug`, `styles`, `servers`, `theme`).
+  `/config sandbox` opens the current project's `projects/<name>.toml` and
+  applies its `active` entry;
   `/config role <name>` creates/opens `roles/<name>.toml`;
   `/config role delete <name> confirm` removes it (`_config_role` in `core.py`);
   `/config theme <id>` materializes a `[themes.<id>]` section then opens

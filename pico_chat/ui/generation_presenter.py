@@ -257,6 +257,13 @@ async def process_generation(app, user_input, user_msg) -> None:
                 current_msg = msg
                 current_msg_type = type(msg.type)
 
+            elif isinstance(event, events.ToolOutput):
+                # Interim output from a running tool (bash streaming): route it
+                # to the activity surface so long commands are visible live.
+                text = event.data.rstrip("\n")
+                if text:
+                    app.activity(f"[{event.name}:{event.stream}] {text}")
+
             elif isinstance(event, events.ToolResult):
                 tool_id = event.id
                 msg = app.active_tool_messages.get(tool_id)

@@ -11,6 +11,7 @@ commands that own a subcommand tree.
 from __future__ import annotations
 
 import logging
+import os
 from typing import List
 
 from pico_chat.ui.tui.msg_types import SysMsg, SysMsgError, SysMsgWarning
@@ -93,11 +94,15 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
     if not args:
         lines = [f"{section.ljust(10)} {pico_cfg.CONFIG_FILES[section]}"
                  for section in pico_cfg.CONFIG_FILES]
+        lines.append(f"{'sandbox'.ljust(10)} projects/<name>.toml  (per-project sandboxes)")
         lines.append(f"{'role'.ljust(10)} roles/<name>.toml  (create/edit a role)")
         ui.show_popup("config", "Sections:\n" + "\n".join(lines))
         return
 
     section = args[0].lower()
+    if section == "sandbox":
+        await _config_sandbox(ui)
+        return
     if section == "role":
         await _config_role(ui, args[1:])
         return
@@ -126,6 +131,40 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
             msg_type=SysMsgError(), title="config")
     else:
         ui.chat_history_panel.add_message("Config reloaded.", msg_type=SysMsg(), title="config")
+    if hasattr(ui, "refresh_status_bar"):
+        ui.refresh_status_bar()
+
+
+async def _config_sandbox(ui: ChatUIProtocol):
+    """Open the current project's sandbox file and apply its active entry."""
+    from pico_chat import projects
+    from pico_chat.ui.external_editor import open_editor, resolve_editor
+
+    agent = getattr(ui, "agent", None)
+    workspace = getattr(agent, "workspace", None) or os.getcwd()
+
+    if not resolve_editor():
+        ui.chat_history_panel.add_message(
+            "No editor found. Set $VISUAL or $EDITOR.",
+            msg_type=SysMsgError(), title="config")
+        return
+
+    path = projects.ensure_project_file(workspace)
+    open_editor(ui, path)
+
+    errors: list[str] = []
+    project = projects.load_project(workspace, errors)
+    if not errors and agent is not None and hasattr(agent, "set_sandbox"):
+        agent.set_sandbox(projects.active_spec(project))
+
+    if errors:
+        ui.chat_history_panel.add_message(
+            "Sandbox config reloaded with errors:\n" + "\n".join(errors),
+            msg_type=SysMsgError(), title="config")
+    else:
+        ui.chat_history_panel.add_message(
+            f"Sandbox config reloaded (active: {project.active or 'none'}).",
+            msg_type=SysMsg(), title="config")
     if hasattr(ui, "refresh_status_bar"):
         ui.refresh_status_bar()
 

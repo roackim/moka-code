@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import json
 import logging
@@ -9,6 +10,7 @@ from typing import AsyncGenerator, Any, Dict, List, Optional, Tuple
 from pico_chat.harness.llm_status import AgentState
 from pico_chat.harness.debug import get_debug_stream
 from pico_chat.harness.context_builder import build_harness_context
+from pico_chat.harness.elision import elide
 from pico_chat.harness import events
 from pico_chat.harness.endpoint import Endpoint, get_active_endpoint
 from pico_chat.harness.permissions import PermissionGate
@@ -16,7 +18,12 @@ from pico_chat.harness.thinking_parser import ThinkingTagParser, MetricsState, T
 from pico_chat.harness.usage import TokenUsage, usage_from_response
 
 # Import the minimal toolset
-from pico_chat.harness.tools import create_toolset
+from pico_chat.harness.tools import (
+    InProcessTransport,
+    MinimalToolset,
+    ToolTransport,
+    create_toolset,
+)
 
 import os
 
@@ -26,7 +33,8 @@ logger = logging.getLogger(__name__)
 COMPACTION_MARKER_PREFIX = "[COMPACTION_SUMMARY]"
 
 class Harness:
-    def __init__(self, workspace_path: str | None = None):
+    def __init__(self, workspace_path: str | None = None,
+                 transport: Optional[ToolTransport] = None):
         self.debug_stream = get_debug_stream()
         self.state = AgentState.IDLE
         self.history = []
@@ -41,8 +49,14 @@ class Harness:
         # Permission gate turns the role's per-tool setting into a decision.
         self._permission_gate = PermissionGate(role=self.role)
 
-        self.tools_map = create_toolset(workspace_path=self.workspace)
-        
+        # The transport decides where tool bodies actually run. Bare mode
+        # (default) uses an in-process transport over the workspace.
+        self.transport: ToolTransport = transport or InProcessTransport(
+            MinimalToolset(self.workspace)
+        )
+        self._rebuild_tools()
+        self.debug_stream.log("TOOL_SCHEMAS", self.tool_schemas)
+
         # Build initial project context
         self.startup_warnings: list[str] = []
         self.project_context = build_harness_context(self.workspace)
@@ -50,14 +64,6 @@ class Harness:
         # Cache for the @ file picker listing (invalidated on workspace change).
         self._file_list_cache: list[str] = []
         self._file_list_cache_key: tuple = ()
-        
-        # Calculate schemas once and log
-        self.tools_map = {
-            name: tool for name, tool in self.tools_map.items()
-            if name in self.role.enabled_tool_names()
-        }
-        self.tool_schemas = [tool.get_schema() for tool in self.tools_map.values()] if self.tools_map else None
-        self.debug_stream.log("TOOL_SCHEMAS", self.tool_schemas)
 
         # Select LLM endpoint at construction time. Resolving here (rather than
         # from a module-level snapshot) avoids stale server settings.
@@ -82,14 +88,52 @@ class Harness:
         previous_name = getattr(self, "role", role).name
         self.role = role
         self._permission_gate.set_role(role)
-        self.tools_map = create_toolset(workspace_path=self.workspace)
-        self.tools_map = {
-            name: tool for name, tool in self.tools_map.items()
-            if name in role.enabled_tool_names()
-        }
-        self.tool_schemas = [tool.get_schema() for tool in self.tools_map.values()] if self.tools_map else None
+        self._rebuild_tools()
         self.debug_stream.log("ROLE", {"name": role.name, "tools": sorted(role.enabled_tool_names())})
         self._record_role_change(previous_name, role.name)
+
+    def set_sandbox(self, spec) -> None:
+        """Swap the execution transport (None/``none`` → in-process).
+
+        Tears down the old worker (best effort, synchronously) and rebuilds the
+        tool map against the new transport.  Role/permissions are unaffected.
+        """
+        old = getattr(self, "transport", None)
+        close = getattr(old, "close", None)
+        if callable(close):
+            close()
+        new = _build_transport(spec, self.workspace)
+        self.transport = new if new is not None else InProcessTransport(
+            MinimalToolset(self.workspace)
+        )
+        self._rebuild_tools()
+        runtime = getattr(spec, "runtime", "none")
+        self.debug_stream.log("SANDBOX", runtime)
+        if getattr(self, "_sandbox_runtime", "none") != runtime:
+            self._sandbox_runtime = runtime
+            self._record_sandbox_change(runtime)
+
+    def _record_sandbox_change(self, runtime: str) -> None:
+        """Record a sandbox change as a system notice (not a user turn)."""
+        content = f"[Sandbox: {runtime}]"
+        if self.history and self.history[-1].get("content") == content:
+            return
+        self._add_message_to_history("system", content)
+
+    def _rebuild_tools(self) -> None:
+        """Build the tool map for the active role and cache its schemas."""
+        enabled = self.role.enabled_tool_names()
+        self.tools_map = {
+            name: tool
+            for name, tool in create_toolset(
+                workspace_path=self.workspace, transport=self.transport
+            ).items()
+            if name in enabled
+        }
+        self.tool_schemas = (
+            [tool.get_schema() for tool in self.tools_map.values()]
+            if self.tools_map else None
+        )
 
     def _record_role_change(self, previous_name: str, role_name: str) -> None:
         """Record a role change without stacking consecutive role notices."""
@@ -799,18 +843,49 @@ class Harness:
                 if func is None:
                     raise Exception(f"Tool '{tool_name}' not found")
 
-                # RegisteredTool.execute is async and prefers the async handler
-                # so shell commands stay cancellable (stop button).
-                result = func.execute(**args)
-                if inspect.isawaitable(result):
-                    result = await result
-                
+                # Run the tool as a task while forwarding interim output
+                # (bash streaming) as ToolOutput events, so a long command is
+                # visible live. In-process and sandbox use the same callback.
+                stream_queue: asyncio.Queue = asyncio.Queue()
+
+                def _on_output(stream: str, data: str) -> None:
+                    stream_queue.put_nowait((stream, data))
+
+                async def _run_tool():
+                    result = func.execute(on_output=_on_output, **args)
+                    if inspect.isawaitable(result):
+                        result = await result
+                    return result
+
+                task = asyncio.ensure_future(_run_tool())
+                while not task.done():
+                    try:
+                        stream, data = await asyncio.wait_for(
+                            stream_queue.get(), timeout=0.05
+                        )
+                    except asyncio.TimeoutError:
+                        continue
+                    yield events.ToolOutput(
+                        id=tool_call_id, name=tool_name, stream=stream, data=data,
+                    )
+
+                while not stream_queue.empty():
+                    stream, data = stream_queue.get_nowait()
+                    yield events.ToolOutput(
+                        id=tool_call_id, name=tool_name, stream=stream, data=data,
+                    )
+
+                result = task.result()
+
                 if not isinstance(result, str):
                     result = str(result)
                 
                 # STEP 4: Success
                 self.debug_stream.log("TOOL_RESULT", {"call_id": tool_call_id, "result": result})
-                
+
+                # Bound what the model sees; the UI event keeps the full output.
+                history_result = elide(result)
+
                 yield events.ToolResult(
                     id=tool_call_id,
                     name=tool_name,
@@ -819,13 +894,13 @@ class Harness:
                 )
                 self._add_message_to_history(
                     role="tool",
-                    content=result,
+                    content=history_result,
                     tool_call_id=tool_call_id
                 )
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call_id,
-                    "content": result
+                    "content": history_result
                 })
                 
             except Exception as e:
@@ -1020,8 +1095,28 @@ class Harness:
 
 _harness = None
 
+
+def _build_transport(spec, workspace: str) -> Optional[ToolTransport]:
+    """Build a ``SandboxTransport`` for ``spec`` (None/disabled → None).
+
+    The sandbox import is lazy so bare mode never touches podman/docker code.
+    """
+    if spec is None or not spec.enabled:
+        return None
+    from pico_chat.sandbox import SandboxTransport
+
+    return SandboxTransport.from_spec(spec, workspace)
+
+
 def get_harness(config_path: str | None = None) -> Harness:
     global _harness
     if _harness is None:
-        _harness = Harness(config_path)
+        workspace = config_path or os.getcwd()
+        from pico_chat import projects
+
+        project = projects.load_project(workspace)
+        spec = projects.active_spec(project)
+        transport = _build_transport(spec, workspace)
+        _harness = Harness(workspace, transport=transport)
+        _harness._sandbox_runtime = getattr(spec, "runtime", "none")
     return _harness

@@ -42,7 +42,7 @@ The core reasoning loop:
 3. Stream response events (`events.py`): `Token`/`Reasoning`/`Usage` (tool calls
    are assembled during the stream but emitted in step 4, so all content is
    flushed before the first tool)
-4. If tool calls present → `ToolCall` → `PermissionRequest` → check permissions → execute tools → `ToolResult` (one tool at a time: a pending `ask` blocks later tools)
+4. If tool calls present → `ToolCall` → `PermissionRequest` → check permissions → execute tools (interim `ToolOutput` may stream from `bash`) → `ToolResult` (one tool at a time: a pending `ask` blocks later tools)
 5. Append tool results to history → repeat from step 2 until no more tool calls → `Done`
 
 ## Data Flow: User Message → Response

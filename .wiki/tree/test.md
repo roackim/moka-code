@@ -40,7 +40,14 @@ All tests use pytest. Run with the project virtualenv (see HANDOFF §1):
 | `test_local_proxy_diagnostics.py` | `harness/endpoint.py` | Connection diagnosis |
 | `test_ollama_server.py` | `endpoint.py`, `endpoint_ollama.py` | Ollama discovery + native chat |
 | `test_model_selection.py` | `ui/commands/models.py` | Model picker/selection |
-| `test_patch_parser.py` | `patch_parser.py` | `parse_patch` + `apply_patch` cascade |
+| `test_worker.py` | `worker.py` | Four tool bodies: read/write/edit/bash, timeout, truncation |
+| `test_worker_protocol.py` | `worker.py` | JSONL framing, dispatch, errors, CRLF, shutdown |
+| `test_transport.py` | `tools.py` | `InProcessTransport` seam, toolset factory |
+| `test_sandbox.py` | `sandbox.py` | argv (network/run_args), JSONL client, timeout/respawn, transport |
+| `test_projects.py` | `projects.py` | project file template/parse/validation, active persistence |
+| `test_sandbox_command.py` | `commands/sandbox.py` | `/sandbox` list/select/none/unknown, completions |
+| `test_elision.py` | `harness/elision.py` | head/tail truncation boundary cases |
+| `test_patch_parser.py` | `worker.py` | `parse_patch` + `apply_patch` cascade |
 | `test_usage.py` | `usage.py` | Token usage normalization |
 | `test_streaming_incremental.py` | UI rendering | Incremental streaming render artifacts |
 | `test_no_shadowed_modules.py` | package layout | No shadowed/duplicate module names |

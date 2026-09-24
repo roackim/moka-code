@@ -16,7 +16,15 @@ See [notes/architecture.md](../notes/architecture.md), [notes/tools-and-permissi
 - `_stream_llm_response()` — delegates thinking-tag parsing to `ThinkingTagParser`;
   buffers tool-call deltas without emitting `ToolCall` (content flushes first)
 - `_execute_tool_calls()` — emits `ToolCall` then `PermissionRequest` per tool in
-  order (a pending `ask` blocks later tools); delegates to `PermissionGate`
+  order (a pending `ask` blocks later tools); delegates to `PermissionGate`.
+  Runs the tool as a task and forwards its `on_output` chunks as `ToolOutput`
+  events as they arrive (bash streaming), then `ToolResult`
+- `_build_transport(spec, workspace)` — builds a `SandboxTransport` for a
+  `ContainerSpec` (lazy `pico_chat.sandbox` import); empty/`none` → in-process
+- `set_sandbox(spec)` — swap the transport live (used by `/sandbox`): closes the
+  old worker, rebuilds the tool map, records a `[Sandbox: …]` notice
+- `get_harness()` — loads the current project's active sandbox (by directory
+  name) and builds its transport
 Key state: `AgentState` enum, message history list, active endpoint, active role, and thinking steering state (`_current_reasoning`, `_pending_thinking_prefill`, `_last_detected_thinking_tag`).
 
 ### `permissions.py`
@@ -26,7 +34,7 @@ The single "may I run this?" decision point, and nothing more.
   permission prompts (`build_prompt()`) and owns the async user-response queue.
 - There is no permission engine: no `SecurityChecker`, no command lists, no
   chain policy, no predefined profiles, no path confinement. Isolation is the
-  user's responsibility (see `plans/containerization.md`).
+  user's choice via a project sandbox (`/sandbox`; see `plans/sandbox_worker.md`).
 See [notes/security.md](../notes/security.md) and
 [notes/tools-and-permissions.md](../notes/tools-and-permissions.md).
 
@@ -38,8 +46,9 @@ See [notes/security.md](../notes/security.md) and
 
 ### `events.py`
 The one harness→UI event protocol. A single union yielded by `Harness.chat()`:
-`Start`, `Token`, `Reasoning`, `ToolCall`, `PermissionRequest`, `ToolResult`
-(`outcome` = completed/denied/error), `Usage`, `Error`, `Done`.
+`Start`, `Token`, `Reasoning`, `ToolCall`, `PermissionRequest`, `ToolOutput`
+(interim tool stream chunks), `ToolResult` (`outcome` =
+completed/denied/error), `Usage`, `Error`, `Done`.
 The harness yields events; the UI renders them. There is no separate chunk/status type.
 The former unused `SubagentsWaiting`/`SubagentResult`/`SubagentsDone` events were removed.
 
@@ -80,10 +89,16 @@ usage counters into provider-neutral prompt/completion/total token data.
 `AgentState` enum: `UNCONNECTED`, `IDLE`, `THINKING`, `ANSWERING`.
 
 ### `tools.py`
-Low-level tool implementations plus the tool registry.
+Tool **schemas** and host-side bindings. The tool *bodies* live in
+[`worker.py`](./README.md) (stdlib-only, shared with the sandbox worker).
 - `MinimalToolset` — binds `FileTools` + `ShellTool` (`read`/`write`/`edit`/`bash`).
-- `FileTools` (read/write/edit), `ShellTool` (`bash`, cancellable async path).
-- `ToolError` — raised by tool functions on failure.
+- `FileTools` (read/write/edit), `ShellTool` (`bash`, cancellable async path) —
+  thin adapters over the `worker` functions.
+- `ToolError` — re-exported from `worker`.
+- **Transport seam** — `ToolTransport` (Protocol: `execute(name, args)`,
+  `cancel_active(name)`) and `InProcessTransport`, which runs the registered
+  handler against a `MinimalToolset`. `Harness` accepts an optional transport
+  and defaults to in-process (bare mode).
 
 `FileTools.read()` supports optional 0-based offset + line limit, character
 limits with an explicit truncation marker, and source line-number prefixes.
@@ -93,13 +108,21 @@ which carries its name, LLM-facing schema and handler. There is no separate
 `tool_wrappers.py`.
 - `ToolDefinition` / `RegisteredTool` — registry record and bound instance.
 	`get_schema()` returns the OpenAI function schema; `RegisteredTool.execute()`
-	is async and prefers the tool's async handler when present.
+	is async and delegates to the bound transport.
 - `registered_tool_names()` — the list of registry keys, used to generate role
 	files.
-- `create_toolset(workspace_path)` — factory that binds the registered tools to
-	one `MinimalToolset`. Registers: `read`, `write`, `edit`, `bash`.
+- `create_toolset(workspace_path, transport=None)` — factory; builds an
+	`InProcessTransport` when no transport is given. Registers: `read`, `write`,
+	`edit`, `bash`.
 
 See [notes/tools-and-permissions.md](../notes/tools-and-permissions.md).
+
+### `elision.py`
+`elide(text, limit=DEFAULT_LIMIT)` — host-side bound for oversized tool output
+(`DEFAULT_LIMIT` = 10k chars). Keeps the head and tail and inserts a
+`… N chars elided; narrow the command (head/tail/grep/sed)` marker. Applied
+before a completed tool result enters history/LLM messages; the `ToolResult`
+event still carries the full output for the UI. `limit <= 0` disables it.
 
 ### `roles.py`
 `Role` — the single source of truth for a conversation's operating mode: a
@@ -131,12 +154,6 @@ There is no `system_prompt.py`. The entire system message is the active role's
 `prompt` field (empty → no system message). `Harness._system_messages()` builds
 it; `Harness.get_system_prompt()` returns it. It is edited as a role file
 (`roles/<name>.toml`), never in code.
-
-### `patch_parser.py`
-`PatchBlock` — parsed representation of a search/replace block.
-`parse_patch(text)` — extracts filename, search/replace text from aider-style markers.
-`apply_patch(content, patch)` — applies a patch with 3-mode cascade: exact → whitespace-normalized → indentation-normalized.
-`PatchParseError` — raised on invalid patch format.
 
 ### `debug.py`
 `DebugStream` — structured debug logging to JSON. Used for dev; not active in production builds.

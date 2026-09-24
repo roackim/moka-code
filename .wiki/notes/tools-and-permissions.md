@@ -4,16 +4,15 @@ The tool system exposes file and shell operations to the LLM agent. Every tool
 call goes through the approval gate before execution.
 
 pico implements **no sandbox** — there is no permission engine, no command
-allowlist, no path confinement, and no container code. A tool is either disabled,
-asks, or auto-approves. Isolation (a container, VM, `bubblewrap`, …) is the
-user's responsibility; see `.wiki/notes/principles.md` and
-`plans/containerization.md`.
+allowlist, no path confinement, and no policy engine. A tool is either disabled,
+asks, or auto-approves. Isolation is the user's choice via a per-project sandbox
+(`/sandbox`); see `.wiki/notes/principles.md` and `plans/sandbox_worker.md`.
 
 ---
 
 ## Tools
 
-Four tools, all declared in `tools.py`:
+Four tools, declared in `tools.py` (schemas) with bodies in `worker.py`:
 
 | Tool | Operation |
 |------|-----------|
@@ -28,11 +27,20 @@ lines) values for targeted reads, `max_chars` for bounded output, and
 The default call remains a complete, unnumbered file read for compatibility.
 
 `bash` runs through `ShellTool`, whose `run_async` path is cancellable: `/stop`
-(or the stop action) terminates the process group.
+(or the stop action) terminates the process group. It also streams: `on_output
+(stream, chunk)` forwards interim stdout/stderr, the harness emits a
+`ToolOutput` event per chunk, and the UI routes them to the activity surface.
+The same callback path serves in-process and sandboxed `bash`.
 
-Tools are pure functions — no internal state. The `Harness` owns all state and
-passes it in. The tool layer never checks permissions itself; the gate decides
-before a tool runs.
+The tool *bodies* are stateless functions in `worker.py` (stdlib-only). The
+`Harness` owns all state and passes a `cwd` in. The only stateful adapter is
+`ShellTool`, which remembers the live process so it can be cancelled; the tool
+layer never checks permissions itself — the gate decides before a tool runs.
+
+`worker.py` also runs as a standalone script inside a container (future sandbox
+worker): `serve()` speaks a JSONL request/response protocol on stdin/stdout
+(stdout is protocol-only). The host-side `ToolTransport` seam keeps the registry
+and schemas identical whether execution is in-process or remote.
 
 ## Tool Registry (`tools.py`)
 
@@ -42,14 +50,18 @@ OpenAI function schema, and handler:
 - `ToolDefinition` / `RegisteredTool` — registry record and the bound instance
   returned to the harness.
 - `get_schema()` — returns the function schema for the LLM.
-- `RegisteredTool.execute()` — an async dispatcher that prefers the tool's async
-  handler when one is registered, so shell commands stay cancellable.
+- `RegisteredTool.execute()` — an async dispatcher that delegates to the bound
+  `ToolTransport`.
 
 `registered_tool_names()` is the canonical registry view: the list of tool names
 a role file lists.
 
-`create_toolset(workspace_path)` — factory that binds the registered tools to one
-`MinimalToolset`. Registers `read`, `write`, `edit`, `bash`.
+`ToolTransport` is the execution seam: `execute(name, args)` and
+`cancel_active(name)`. `InProcessTransport` (bare mode) runs the registered
+handler against one `MinimalToolset` — preferring the async handler so shell
+commands stay cancellable. `create_toolset(workspace_path, transport=None)` —
+factory that builds an `InProcessTransport` when none is given. Registers
+`read`, `write`, `edit`, `bash`.
 
 ## Approval Flow
 
@@ -64,7 +76,7 @@ PermissionGate.check(tool, args)          ← the single decision point
         ↓
   deny → blocked, error returned to the LLM
   ask  → UI shows permission prompt, awaits user response
-  allow→ RegisteredTool.execute(args)
+  allow→ RegisteredTool.execute(args) → transport
         ↓
 result appended to conversation history
 ```
@@ -117,9 +129,10 @@ Unknown tool names and values other than `no`/`ask`/`yes` are reported as
 | `/config role <id>` | ensure the file exists, open in `$EDITOR`, reload |
 | `/config role delete <id> [confirm]` | confirm, then unlink |
 
-## Edit Tool (`patch_parser.py`)
+## Edit Tool (`worker.py`)
 
-File edits use an aider-style search/replace block format:
+The `edit` tool takes `path` + `search` + `replace`; it assembles an
+aider-style search/replace block internally:
 ```
 <<<<<<< SEARCH
 old content
@@ -128,5 +141,8 @@ new content
 >>>>>>> REPLACE
 ```
 
-`parse_patch()` extracts blocks, `apply_patch()` applies them to the file. Strict
-match — fails if the `SEARCH` block does not match exactly.
+`parse_patch()` extracts the block and `apply_patch()` applies it with a
+3-mode cascade: exact → whitespace-normalized → indentation-normalized. It fails
+if the `SEARCH` block is not found or is ambiguous. Both functions (and
+`PatchBlock` / `PatchParseError`) now live in `worker.py`, folded from the
+deleted `harness/patch_parser.py`.

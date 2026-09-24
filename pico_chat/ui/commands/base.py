@@ -113,7 +113,7 @@ class Command:
 
 def config_section_completions() -> List[str]:
     """Return the editable config targets (for ``/config <section>``)."""
-    return [*pico_cfg.CONFIG_FILES, "role"]
+    return [*pico_cfg.CONFIG_FILES, "sandbox", "role"]
 
 
 def role_name_completions() -> List[str]:

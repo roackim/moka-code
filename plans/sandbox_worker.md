@@ -104,21 +104,28 @@ container runs the file **as a script**, so the package `__init__` never runs.
 
 ### 4.1 Functions (mechanism)
 
-Plain functions taking explicit arguments — no `ToolContext`, no TUI, no config:
+Plain functions taking explicit arguments — no `ToolContext`, no TUI, no config.
+Signatures mirror the current `FileTools`/`ShellTool` bodies in
+`harness/tools.py` (the shell verb is `bash`, the edit verb takes
+`path`/`search`/`replace` — there is no model-supplied patch text):
 
 ```python
-def read(path, *, offset=None, limit=None, include_line_numbers=False,
-         cwd: Path) -> str: ...
+def read(path, *, offset=0, limit=None, max_chars=None,
+         include_line_numbers=False, cwd: Path) -> str: ...
 def write(path, content, *, cwd: Path) -> str: ...
-def edit(patch_text, *, cwd: Path) -> str: ...
-async def bash(command, *, cwd: Path, timeout: float | None = None,
-                      on_output: Callable[[str, str], None] | None = None) -> str: ...
+def edit(path, search, replace, *, cwd: Path) -> str: ...
+async def bash(command, *, cwd: Path, timeout: int = 30,
+               on_output: Callable[[str, str], None] | None = None) -> str: ...
 ```
 
 - These are today's bodies from `harness/tools.py`, moved verbatim where possible
-  (including the process-group kill and timeout semantics of `ShellTool`).
-- `patch_parser.py` is **folded into** `worker.py` and deleted; `tools.py` imports
-  the parser from `worker` (`parse_patch`, `apply_patch`, `PatchParseError`).
+  (including the process-group kill and timeout semantics of `ShellTool` /
+  `run_async`).
+- `edit(path, search, replace)` assembles the replace block internally and
+  applies it through the existing parse/apply cascade.
+- `patch_parser.py` is **folded into** `worker.py` and deleted; `worker.edit`
+  owns `parse_patch`/`apply_patch` (`PatchParseError`) locally, so `tools.py`
+  no longer imports the parser.
 - `on_output(stream, data)` is the streaming hook (§6.3): the worker emits a
   frame per chunk; in-process callers pass a UI callback.
 
@@ -126,9 +133,10 @@ async def bash(command, *, cwd: Path, timeout: float | None = None,
 
 - Read newline-delimited JSON requests on **stdin**; write newline-delimited JSON
   responses on **stdout**; **all logs/banners to stderr**.
-- Dispatch is a static dict of the four names → functions (the worker cannot
-  reach the registry standalone, and four stable verbs are not worth
-  reflecting).
+- Dispatch is a static dict mapping the four verbs → functions
+  (`{"read", "write", "edit", "bash"}`); the worker cannot reach the registry
+  standalone, and four stable verbs are not worth reflecting. These names match
+  the `@tool` registry and the role files' `enabled_tool_names()`.
 - Serialize execution (one request at a time) for v1.
 - `asyncio.run(...)` around the loop so `bash` can stream.
 
@@ -150,11 +158,15 @@ class ToolTransport(Protocol):
 ```
 
 - `InProcessTransport` — bare mode: resolves `name` → `worker.<name>` and calls
-  it with `cwd` from the active `MinimalToolset`. Identical to today's behavior.
+  it with `cwd` from the active `MinimalToolset`. Identical to today's behavior
+  (the `@tool` handlers currently bound to a `MinimalToolset` delegate here).
 - `SandboxTransport` — sandbox mode: sends `{"id", "tool", "args"}` and awaits
   the matching response (streaming frames go to `on_output`).
-- `Harness`/`create_toolset` take a transport; permissions (`ask`) still gate
-  *before* `execute` is called, host-side.
+- `Harness`/`create_toolset` take a transport; the `RegisteredTool.execute(**args)`
+  call in `harness.py` becomes the transport call (same name → args → result
+  shape), so the LLM-facing schemas and role `enabled_tool_names()` are
+  unchanged.
+- Permissions (`ask`) still gate *before* `execute` is called, host-side.
 
 The registry, schemas, role `enabled_tool_names()`, and prompts are unchanged.
 
@@ -297,19 +309,14 @@ Host-side, so the worker stays dumb. This is the bounded-context backstop for
 
 ---
 
-## 12. Removing subagents
+## 12. Subagents — already removed
 
-The sandbox makes per-tool isolation the story; subagents are dropped as a
-feature (per the plan owner's decision). Delete:
-
-- `subagent` / `wait_for_subagents` tools and the child-`Harness` plumbing.
-- `scaffolder_role()` and subagent bits of `roles.py`.
-- The `subagents` config section (`subagents.toml` + spec/template, retired via
-  `_RETIRED_*`), or repurpose its keys.
-- Tests, `.wiki/` docs, and the deferred built-in mini-editor.
-
-This shrinks the worker verb set to exactly four and removes an entire class of
-transport complexity (no nested loops in the worker).
+Already done in the `patch`→`edit` / `run_command`→`bash` rework: the
+`subagent` / `wait_for_subagents` tools, the child-`Harness` plumbing,
+`scaffolder_role()`, `subagents.toml`, and their tests/docs are gone.
+`roles.py` keeps `_RETIRED_TOOLS = {"subagent", "wait_for_subagents"}` to scrub
+old role files. Recorded here so the worker verb set stays exactly four
+(`read`/`write`/`edit`/`bash`) and no nested loops enter the worker.
 
 ---
 
@@ -333,10 +340,9 @@ Each ends green on §14 gates.
 - **W6 — Streaming & observability.** `on_output`, `ToolOutput` event, activity
   surface rendering.
 - **W7 — Elision.** Head/tail truncation in the harness result path.
-- **W8 — Subagent removal.** Deletions from §12; suite + docs green.
-- **W9 — Config + Containerfile generation.** `sandbox.toml` (optional),
+- **W8 — Config + Containerfile generation.** `sandbox.toml` (optional),
   `/config sandbox`, starter Containerfile output.
-- **W10 — Docs.** `.wiki/` update; mark `plans/containerization.md` superseded.
+- **W9 — Docs.** `.wiki/` update; mark `plans/containerization.md` superseded.
 
 ---
 
@@ -401,10 +407,10 @@ Each ends green on §14 gates.
 
 ## 18. Deletions (delete before you design)
 
-- `pico_chat/harness/patch_parser.py` (folded into `worker.py`).
+- `pico_chat/harness/patch_parser.py` (folded into `worker.py`; `worker.edit`
+  owns the parse/apply cascade).
 - Tool bodies in `harness/tools.py` (moved to `worker.py`).
-- Subagent machinery: tools, child harness, `scaffolder_role`, `subagents.toml`,
-  tests, docs.
+- Subagent machinery — already deleted (§12).
 - The deferred built-in mini-editor (drop from the backlog).
 
 ---
@@ -416,6 +422,5 @@ Each ends green on §14 gates.
 2. **W3–W4** — protocol + launcher; prove it talks to a fake runtime.
 3. **W5** — wire the sandbox transport into the harness.
 4. **W6–W7** — streaming/observability and elision.
-5. **W8** — remove subagents.
-6. **W9–W10** — config, Containerfile generation, docs; mark
+5. **W8–W9** — config, Containerfile generation, docs; mark
    `containerization.md` superseded.

@@ -1,5 +1,9 @@
 """
-Minimal tool implementations for LLM harness.
+Tool schemas and host-side bindings for LLM harness.
+
+The tool *bodies* live in :mod:`pico_chat.worker` (stdlib-only, shared with the
+sandbox worker).  This module keeps the LLM-facing registry — names,
+descriptions, JSON schemas — and binds each one to a :class:`MinimalToolset`.
 
 Provides 4 core tools:
 - read: Read file content
@@ -8,25 +12,24 @@ Provides 4 core tools:
 - bash: Execute shell command in the workspace
 """
 import inspect
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Protocol
 
-from pico_chat.harness.patch_parser import parse_patch, apply_patch, PatchParseError
-
-
-class ToolError(Exception):
-    """Base exception for tool errors"""
-    pass
+from pico_chat.worker import (
+    ToolError,
+    bash as _worker_bash,
+    bash_sync as _worker_bash_sync,
+    edit as _worker_edit,
+    kill_process_group,
+    read as _worker_read,
+    write as _worker_write,
+)
 
 
 class FileTools:
-    """File operation tools (read, write, edit)"""
+    """File operation tools (read, write, edit) bound to a workspace root."""
 
-    MAX_PATCH_REPLACEMENT_CHARS = 100_000
-    MAX_PATCH_LINE_DELTA = 500
-    
     def __init__(self, workspace_path: str | Path):
         """
         Args:
@@ -34,26 +37,6 @@ class FileTools:
         """
         self.workspace = Path(workspace_path).resolve()
 
-    def _validate_path(self, path: str) -> Path:
-        """
-        Validate and resolve path.
-
-        Args:
-            path: File path (relative to workspace or absolute)
-
-        Returns:
-            Absolute resolved path
-
-        Raises:
-            ToolError: If path is invalid
-        """
-        try:
-            if Path(path).is_absolute():
-                return Path(path).resolve()
-            return (self.workspace / path).resolve()
-        except Exception as e:
-            raise ToolError(f"Invalid path '{path}': {e}")
-    
     def read(
         self,
         path: str,
@@ -62,164 +45,28 @@ class FileTools:
         max_chars: int | None = None,
         include_line_numbers: bool = False,
     ) -> str:
-        """
-        Read file content.
-        
-        Args:
-            path: File path relative to workspace or absolute
-            offset: Zero-based first line to return
-            limit: Optional number of lines to return
-            max_chars: Optional maximum size of the returned content
-            include_line_numbers: Prefix each returned line with its source line
-                number
-            
-        Returns:
-            File content as string
-            
-        Raises:
-            ToolError: If permission denied or file cannot be read
-            
-        Example:
-            >>> tools.read("config.py")
-            'import os\\n...'
-        """
-        for name, value in (("offset", offset), ("limit", limit), ("max_chars", max_chars)):
-            minimum = 0 if name == "offset" else 1
-            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < minimum):
-                expectation = "a non-negative integer" if name == "offset" else "a positive integer"
-                raise ToolError(f"Invalid {name}: expected {expectation}")
+        """Read file content."""
+        return _worker_read(
+            path,
+            cwd=self.workspace,
+            offset=offset,
+            limit=limit,
+            max_chars=max_chars,
+            include_line_numbers=include_line_numbers,
+        )
 
-        target = self._validate_path(path)
-
-        if not target.exists():
-            raise ToolError(f"File not found: {path}")
-        
-        if not target.is_file():
-            raise ToolError(f"Not a file: {path}")
-        
-        try:
-            content = target.read_text(encoding='utf-8')
-        except UnicodeDecodeError:
-            raise ToolError(f"File is not UTF-8 text: {path}")
-        except Exception as e:
-            raise ToolError(f"Error reading file: {e}")
-
-        # Keep line endings while slicing so a selected block can be copied
-        # directly into the edit tool.
-        lines = content.splitlines(keepends=True)
-        first = offset
-        last = offset + limit if limit is not None else len(lines)
-        selected = lines[first:last]
-
-        if include_line_numbers:
-            selected = [f"{number:>6}\t{line}" for number, line in zip(range(first + 1, last + 1), selected)]
-
-        result = "".join(selected)
-        if max_chars is not None and len(result) > max_chars:
-            result = result[:max_chars] + f"\n[truncated: showing {max_chars} of {len(result)} characters]"
-        return result
-    
     def write(self, path: str, content: str) -> str:
-        """
-        Write file content (creates or overwrites).
-        
-        Args:
-            path: File path relative to workspace or absolute
-            content: Content to write
-            
-        Returns:
-            Success message
-            
-        Raises:
-            ToolError: If permission denied or file cannot be written
-            
-        Example:
-            >>> tools.write("script.py", "print('hello')")
-            '[OK] Wrote 14 bytes to script.py'
-        """
-        target = self._validate_path(path)
+        """Write file content (creates or overwrites)."""
+        return _worker_write(path, content, cwd=self.workspace)
 
-        # Create parent directories if needed
-        target.parent.mkdir(parents=True, exist_ok=True)
-        
-        try:
-            target.write_text(content, encoding='utf-8')
-            byte_count = len(content.encode('utf-8'))
-            return f"[OK] Wrote {byte_count} bytes to {path}"
-        except Exception as e:
-            raise ToolError(f"Error writing file: {e}")
-    
     def edit(self, path: str, search: str, replace: str) -> str:
-        """
-        Replace one exact text block in a file.
-
-        Args:
-            path: File path relative to workspace or absolute
-            search: Exact existing text block to replace (include enough
-                context to be unique)
-            replace: Replacement text block
-
-        Returns:
-            Success or error message
-
-        Raises:
-            ToolError: If the block cannot be applied
-
-        Example:
-            >>> tools.edit("app.py", "old code", "new code")
-            '[OK] Applied edit to app.py (1 replacement)'
-        """
-        if search is None:
-            raise ToolError("Invalid edit arguments: missing 'search'")
-        if replace is None:
-            raise ToolError("Invalid edit arguments: missing 'replace'")
-
-        try:
-            patch = parse_patch(
-                f"{path}\n"
-                "<<<<<<< SEARCH\n"
-                f"{search}\n"
-                "=======\n"
-                f"{replace}\n"
-                ">>>>>>> REPLACE"
-            )
-        except PatchParseError as e:
-            raise ToolError(f"Invalid edit: {e}")
-
-        # Guardrails: replacement size and line delta constraints
-        replacement_chars = len(patch.replace_text)
-        if replacement_chars > self.MAX_PATCH_REPLACEMENT_CHARS:
-            raise ToolError(
-                f"Edit rejected: replacement too large ({replacement_chars} chars > {self.MAX_PATCH_REPLACEMENT_CHARS})"
-            )
-
-        search_line_count = patch.search_text.count('\n') + 1 if patch.search_text else 0
-        replace_line_count = patch.replace_text.count('\n') + 1 if patch.replace_text else 0
-        line_delta = abs(replace_line_count - search_line_count)
-        if line_delta > self.MAX_PATCH_LINE_DELTA:
-            raise ToolError(
-                f"Edit rejected: line delta too large ({line_delta} lines > {self.MAX_PATCH_LINE_DELTA})"
-            )
-        
-        # Read current file
-        try:
-            current_content = self.read(patch.filename)
-        except ToolError as e:
-            raise ToolError(f"Cannot read file for editing: {e}")
-
-        # Apply patch
-        new_content, message = apply_patch(current_content, patch)
-        
-        # If successful, write back
-        if message.startswith('[OK]'):
-            self.write(patch.filename, new_content)
-        
-        return message
+        """Replace one exact text block in a file."""
+        return _worker_edit(path, search, replace, cwd=self.workspace)
 
 
 class ShellTool:
     """Execute shell commands in the workspace."""
-    
+
     def __init__(self, workspace_path: str | Path):
         """
         Args:
@@ -231,97 +78,26 @@ class ShellTool:
         self._active_proc: Optional["asyncio.subprocess.Process"] = None
 
     def run(self, command: str, timeout: int = 30) -> str:
-        """
-        Execute shell command in workspace.
-        
-        Args:
-            command: Shell command to execute
-            timeout: Maximum execution time in seconds
-            
-        Returns:
-            Command output (stdout/stderr combined) with metadata
-            
-        Raises:
-            ToolError: If permission denied or command execution fails
-            
-        Example:
-            >>> tool.run("ls -la")
-            '[stdout]\\nfile.txt\\n[exit:0 | 0.1ms]'
-        """
-        # Execute command
-        try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                cwd=self.workspace,
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
-            
-            # Format output
-            output_parts = []
-            
-            if result.stdout:
-                output_parts.append(f"[stdout]\n{result.stdout.rstrip()}")
-            
-            if result.stderr:
-                output_parts.append(f"[stderr]\n{result.stderr.rstrip()}")
-            
-            # Add exit code and timing
-            output_parts.append(f"[exit:{result.returncode}]")
-            
-            return '\n'.join(output_parts) if output_parts else "[exit:0]"
-            
-        except subprocess.TimeoutExpired:
-            raise ToolError(f"Command timed out after {timeout}s")
-        except Exception as e:
-            raise ToolError(f"Command execution failed: {e}")
+        """Execute shell command in workspace (blocking)."""
+        return _worker_bash_sync(command, cwd=self.workspace, timeout=timeout)
 
-    async def run_async(self, command: str, timeout: int = 30) -> str:
+    async def run_async(self, command: str, timeout: int = 30, on_output=None) -> str:
         """Cancellable async version of :meth:`run`.
 
-        Runs the command as a subprocess whose handle is stored on
-        ``self._active_proc`` so a "stop" request can terminate it
-        mid-flight. Returns the same formatted output as :meth:`run`.
+        Delegates to :func:`pico_chat.worker.bash` and records the spawned
+        process on ``self._active_proc`` so a "stop" request can terminate it.
+        ``on_output(stream, chunk)`` forwards interim output.
         """
-        import asyncio
-
-        try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
-                shell=True,
-                cwd=self.workspace,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,  # own process group so stop kills children
-            )
+        def _on_spawn(proc):
             self._active_proc = proc
 
-            try:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-            except asyncio.TimeoutError:
-                self._kill_process_group(proc)
-                await proc.communicate()
-                raise ToolError(f"Command timed out after {timeout}s")
-            finally:
-                if self._active_proc is proc:
-                    self._active_proc = None
-
-            stdout = (stdout or b"").decode("utf-8", errors="replace").rstrip()
-            stderr = (stderr or b"").decode("utf-8", errors="replace").rstrip()
-
-            output_parts = []
-            if stdout:
-                output_parts.append(f"[stdout]\n{stdout}")
-            if stderr:
-                output_parts.append(f"[stderr]\n{stderr}")
-            output_parts.append(f"[exit:{proc.returncode}]")
-            return '\n'.join(output_parts) if output_parts else "[exit:0]"
-        except ToolError:
-            raise
-        except Exception as e:
-            raise ToolError(f"Command execution failed: {e}")
+        return await _worker_bash(
+            command,
+            cwd=self.workspace,
+            timeout=timeout,
+            on_spawn=_on_spawn,
+            on_output=on_output,
+        )
 
     def cancel_active(self) -> bool:
         """Terminate the currently-running command, if any.
@@ -331,33 +107,20 @@ class ShellTool:
         """
         if self._active_proc is not None and self._active_proc.returncode is None:
             try:
-                self._kill_process_group(self._active_proc)
+                kill_process_group(self._active_proc)
                 return True
             except Exception:
                 return False
         return False
 
-    @staticmethod
-    def _kill_process_group(proc) -> None:
-        """Kill a subprocess and its entire process group (best effort)."""
-        import os
-        import signal
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-        except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-
 
 class MinimalToolset:
     """
     Complete minimal toolset for LLM agents.
-    
+
     Provides read, write, edit, and bash tools.
     """
-    
+
     def __init__(self, workspace_path: str | Path):
         """
         Args:
@@ -367,7 +130,7 @@ class MinimalToolset:
 
         self.file_tools = FileTools(workspace)
         self.shell_tool = ShellTool(workspace)
-    
+
     def read(
         self,
         path: str,
@@ -384,22 +147,22 @@ class MinimalToolset:
             max_chars=max_chars,
             include_line_numbers=include_line_numbers,
         )
-    
+
     def write(self, path: str, content: str) -> str:
         """Write file content"""
         return self.file_tools.write(path, content)
-    
+
     def edit(self, path: str, search: str, replace: str) -> str:
         """Replace an exact text block in a file."""
         return self.file_tools.edit(path, search, replace)
-    
+
     def run(self, command: str, timeout: int = 30) -> str:
         """Execute shell command"""
         return self.shell_tool.run(command, timeout)
 
-    async def run_async(self, command: str, timeout: int = 30) -> str:
+    async def run_async(self, command: str, timeout: int = 30, on_output=None) -> str:
         """Execute shell command asynchronously (cancellable)."""
-        return await self.shell_tool.run_async(command, timeout)
+        return await self.shell_tool.run_async(command, timeout, on_output=on_output)
 
     def cancel_active_run(self) -> bool:
         """Terminate the currently-running shell command, if any."""
@@ -447,12 +210,47 @@ def tool(*, name: str, description: str, parameters: dict,
     return decorator
 
 
-class RegisteredTool:
-    """A registry tool bound to a :class:`MinimalToolset`."""
+class ToolTransport(Protocol):
+    """How a registered tool is executed.
 
-    def __init__(self, definition: ToolDefinition, toolset: MinimalToolset):
-        self._definition = definition
+    Bare mode runs the body in-process; the sandbox mode (added later) sends
+    the request over JSONL to the worker.  The harness only knows this
+    interface, so the registry and schemas are identical in both modes.
+    """
+
+    async def execute(self, name: str, args: dict, on_output=None) -> str: ...
+
+    def cancel_active(self, name: str) -> bool: ...
+
+
+class InProcessTransport:
+    """Bare-mode transport: runs the registered handler against a toolset."""
+
+    def __init__(self, toolset: MinimalToolset):
         self.toolset = toolset
+
+    async def execute(self, name: str, args: dict, on_output=None) -> str:
+        definition = _REGISTRY[name]
+        handler = definition.async_handler or definition.handler
+        if on_output is not None and name == "bash":
+            args = {**args, "on_output": on_output}
+        result = handler(self.toolset, **args)
+        if inspect.isawaitable(result):
+            result = await result
+        return result
+
+    def cancel_active(self, name: str) -> bool:
+        if name == "bash":
+            return self.toolset.cancel_active_run()
+        return False
+
+
+class RegisteredTool:
+    """A registry tool bound to a :class:`ToolTransport`."""
+
+    def __init__(self, definition: ToolDefinition, transport: ToolTransport):
+        self._definition = definition
+        self.transport = transport
         self.name = definition.name
         self.description = definition.description
         self.parameters = definition.parameters
@@ -470,17 +268,15 @@ class RegisteredTool:
 
     def cancel_active_run(self) -> bool:
         """Terminate the tool's active subprocess, if it owns one."""
-        cancel = getattr(self.toolset, "cancel_active_run", None)
-        return cancel() if callable(cancel) else False
+        return self.transport.cancel_active(self.name)
 
-    async def execute(self, **kwargs):
-        """Run the tool. Prefers the async handler so shell commands stay
-        cancellable; awaits the result if the chosen handler is a coroutine."""
-        handler = self._definition.async_handler or self._definition.handler
-        result = handler(self.toolset, **kwargs)
-        if inspect.isawaitable(result):
-            result = await result
-        return result
+    async def execute(self, on_output=None, **kwargs):
+        """Run the tool through the transport bound at build time.
+
+        ``on_output`` is the interim-output callback (used by ``bash``); it is
+        kept out of the tool arguments.
+        """
+        return await self.transport.execute(self.name, kwargs, on_output=on_output)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<RegisteredTool {self.name}>"
@@ -491,19 +287,26 @@ def registered_tool_names() -> list[str]:
     return list(_REGISTRY.keys())
 
 
-def create_toolset(workspace_path: str | Path) -> dict[str, RegisteredTool]:
+def create_toolset(
+    workspace_path: str | Path,
+    transport: Optional[ToolTransport] = None,
+) -> dict[str, RegisteredTool]:
     """
     Create the registered toolset.
 
     Args:
-        workspace_path: Root directory for all operations
+        workspace_path: Root directory for all operations (used when building
+            the default in-process transport)
+        transport: Optional transport; defaults to an
+            :class:`InProcessTransport` over ``workspace_path``
 
     Returns:
         Dict of tool name to registered tool
     """
-    toolset = MinimalToolset(workspace_path)
+    if transport is None:
+        transport = InProcessTransport(MinimalToolset(workspace_path))
     return {
-        name: RegisteredTool(definition, toolset)
+        name: RegisteredTool(definition, transport)
         for name, definition in _REGISTRY.items()
     }
 
@@ -614,9 +417,9 @@ def _edit_tool(toolset: MinimalToolset, path: str, search: str, replace: str) ->
         return str(e)
 
 
-async def _bash_tool_async(toolset: MinimalToolset, command: str) -> str:
+async def _bash_tool_async(toolset: MinimalToolset, command: str, on_output=None) -> str:
     try:
-        return await toolset.run_async(command)
+        return await toolset.run_async(command, on_output=on_output)
     except ToolError as e:
         return str(e)
 

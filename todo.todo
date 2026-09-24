@@ -1,4 +1,22 @@
-[ ] add deepseek provider
+
+
+
+
+[ ] find a way for users to add their own tools ? (Complex task, require thorough design phase)
+[ ] allow defining roles per project 
+[ ] show cost of current session
+[ ] AGENTS.md AGENT.md (ROBOT.md ROBOT.txt (?))
+[ ] SKILLS ?
+
+
+[?] finer grain for copy, like code block, table etc
+    [?] implies finer grain for focus ? MOD key + up / down / click ?
+        -> focus part of message ?
+
+
+
+
+
 [x] fix input box problem where no max height, and it takes whole heigh if paste long content, and no scroll
 [x] fix focus message error
 [x] redo /model to a modal list selector/
@@ -15,26 +33,9 @@
 [x] support multiple styles / themes definitions with command for selection like /model
     [x] have a themes.json similar to servers ? 
 [x] remove /pwd /cd /openrouter(?) /roles /tools /servers /debug(?) /activity /status(?)
-
 [x] remove system prompt, only roles set their own system prompt
 [x] /config role <SHOW THE FUCKING selector suggestion etc>
-
-[ ] bug in / command selector with up and down and scrolls (weirdness) works but non ergonomic     
-
-[ ] SKILLS ?
-[ ] AGENTS.md AGENT.md (ROBOT.md ROBOT.txt (?))
-
-
-[ ] finer grain for copy, like code block, table etc
-    [ ] implies finer grain for focus ? MOD key + up / down / click ?
-        -> focus part of message ?
-        
         
 [x] update tools definition
-[ ] add [r] raw copy (non interpreted) to llm messages
-[ ] tables columns are getting cut despite horizontal space available 
 [x] emojies breaks tables
-
-[ ] status: 'config loaded with error:' yet no way to see or check
-
-[ ] tool call needs to finish the previous message before hanging
+[x] tool call needs to finish the previous message before hanging

@@ -65,6 +65,20 @@ class ToolResult:
 
 
 @dataclass
+class ToolOutput:
+    """Interim output from a running tool (e.g. bash stdout/stderr).
+
+    ``stream`` is ``"stdout"`` or ``"stderr"``; ``data`` is a chunk as it
+    arrived.  The UI routes these to the activity surface so long commands are
+    visible live.
+    """
+    id: str
+    name: str
+    stream: str
+    data: str
+
+
+@dataclass
 class Usage:
     """Live generation usage metrics."""
     tokens: int
@@ -91,5 +105,6 @@ class Done:
 
 
 Event = Union[
-    Start, Token, Reasoning, ToolCall, PermissionRequest, ToolResult, Usage, Error, Done
+    Start, Token, Reasoning, ToolCall, PermissionRequest, ToolOutput,
+    ToolResult, Usage, Error, Done
 ]
