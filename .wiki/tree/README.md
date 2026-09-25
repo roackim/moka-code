@@ -24,7 +24,7 @@ applies the configured theme, and runs `chatTUI`.
 Exports `pico_cfg`, `Harness`, `get_harness`, and `__version__`.
 
 ### `worker.py`
-Stdlib-only tool bodies shared with the future sandbox worker: `read`, `write`,
+Stdlib-only tool bodies shared with the sandbox worker: `read`, `write`,
 `edit`, `bash` (+ `bash_sync`), and the folded replace-block parser
 (`parse_patch` / `apply_patch` / `PatchBlock` / `PatchParseError`) formerly in
 `harness/patch_parser.py`. Imported by `harness/tools.py` as the in-process

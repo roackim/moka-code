@@ -7,9 +7,11 @@ Tests live in `test/`. Run with pytest from the project root.
 ## Running Tests
 
 ```bash
-pytest test/
-# or a specific file:
-pytest test/test_permissions.py
+.pixi/envs/default/bin/python -m pytest test/ -q          # full suite
+.pixi/envs/default/bin/python -m compileall -q pico_chat
+.pixi/envs/default/bin/python -m vulture pico_chat --min-confidence 80
+.pixi/envs/default/bin/python -m pytest test/test_core_ui_boundary.py -q      # R9 guard
+.pixi/envs/default/bin/python -m pytest test/test_command_import_graph.py -q  # command graph
 ```
 
 ## Shared Fixtures
@@ -26,13 +28,23 @@ pytest test/test_permissions.py
 | File | What It Tests |
 |------|--------------|
 | `test_permissions.py` | Gate decisions, prompt text, ask/deny/allow harness flow |
-| `test_roles.py` | Role model, files, seeding, validation |
+| `test_roles.py` | Role model, files, seeding, validation, `require_sandbox` |
 | `test_buffer.py` | Buffer/SubBuffer rendering (cell operations, ANSI clipping, text writing) |
 | `test_compaction.py` | Conversation history compaction (summarization via LLM) |
 | `test_context_builder.py` | Git repo detection, file tree building guardrails |
-| `test_patch_parser.py` | `parse_patch` format validation, `apply_patch` 3-mode cascade (exact, whitespace, indentation) |
+| `test_worker.py` | `worker.py` tool bodies (read/write/edit/bash, timeout, truncation) |
+| `test_worker_protocol.py` | JSONL framing: dispatch, errors, streaming frames, CRLF, shutdown |
+| `test_transport.py` | `InProcessTransport` seam, streaming, harness `ToolOutput`, role lock |
+| `test_sandbox.py` | `sandbox.py`: argv (podman/docker/bwrap), JSONL client, timeout/respawn, stderr, preflight/build, `SandboxTransport` |
+| `test_projects.py` | `projects.py`: template/parse/validate, `active` persistence |
+| `test_sandbox_command.py` | `/sandbox` command tree: dispatch, selectors, build, init, quit |
+| `test_elision.py` | Head/tail truncation boundary cases |
+| `test_patch_parser.py` | `parse_patch` / `apply_patch` 3-mode cascade (now imported from `worker.py`) |
 | `test_ui_permission_submit.py` | Input blocked while awaiting permission prompt |
 | `test_ollama_server.py` | Ollama backend adapter: `/api/tags` model discovery, context-window parsing, native chat response adaptation |
+
+The sandbox tests need **no real container**: they run the actual `worker.py` as
+a local subprocess (the "trivial runtime" that speaks the protocol).
 
 ## Notes on `test_compaction.py`
 

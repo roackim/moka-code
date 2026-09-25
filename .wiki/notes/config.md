@@ -3,7 +3,8 @@
 Configuration is files. Everything hand-edited lives under
 `~/.config/pico-chat/` (override the directory with `PICO_CONFIG_DIR`), split
 into small single-concern files so each stays easy to edit. There is **no
-project-local config** and no trust model.
+project-local config**: per-project settings are stored *here* (keyed by the
+workspace name), never in the repository, and there is no trust model.
 
 ## Files
 
@@ -16,6 +17,7 @@ project-local config** and no trust model.
 | `servers.toml` | one `[servers.<name>]` table per server | tables |
 | `themes.toml` | one `[themes.<name>]` palette per theme | tables |
 | `roles/<name>.toml` | one role per file; file name is the role name | role body |
+| `projects/<name>.toml` | per-project sandboxes; `<name>` = workspace directory name | tables |
 | `state.toml` | last server/model, active theme, discovery catalog | machine-written |
 
 `state.toml` is disposable: deleting it only loses cached selections.
@@ -34,9 +36,21 @@ line for any spec key missing from the file (at its template-relative position)
 and removes lines whose key is in that section's `_RETIRED_*` set. Only keys
 named by the template or a registered retirement are touched; user values,
 comments, and ordering are preserved, and the file is written only when the text
-changes. Structured files (`styles`, `servers`, `theme`) hold user-authored
-tables and are never synced. See "Adding or deprecating a config key" in
-`AGENTS.md`.
+changes. Structured files (`styles`, `servers`, `theme`, and per-project
+`projects/<name>.toml`) hold user-authored tables and are never synced. See
+"Adding or deprecating a config key" in `AGENTS.md`.
+
+### Project files (sandboxes)
+
+`~/.config/pico-chat/projects/<name>.toml` holds a project's sandbox
+definitions, keyed by the workspace **directory name** (`projects.project_name`)
+and loaded/managed by `projects.py`. The file is self-describing
+(`path = "<resolved workspace>"`), lists named `[sandboxes.<id>]` tables
+(`type` = podman/docker/bubblewrap plus `description`, `image`, `dockerfile`,
+`network`, `timeout`, `run_args`) and an `active = "<id>"` selection. Missing
+files are seeded from a thorough commented template; `set_active()` updates the
+`active` line in place, preserving comments. pico never writes into the
+repository. See [sandbox.md](./sandbox.md).
 
 ## Loader (`pico_cfg.py`)
 
@@ -70,7 +84,10 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 
 - `/config <section>` opens the section file in `$VISUAL`/`$EDITOR` and reloads
   on exit; no argument lists the sections. `section` is one of `ui`, `context`,
-  `debug`, `styles`, `servers`, `theme`.
+  `debug`, `styles`, `servers`, `theme`, plus `sandbox` (the current project's
+  file) and `role`.
+- `/sandbox config` is the equivalent shortcut; `/sandbox` manages the sandbox
+  lifecycle (see [sandbox.md](./sandbox.md)).
 - `/edit <path>` opens any file.
 - `/config role <name>` opens (creating if needed) `roles/<name>.toml`;
   `/config role delete <name> confirm` removes it.

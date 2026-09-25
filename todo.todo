@@ -1,6 +1,16 @@
 
 
+[ ] better UI for tools calls
+    [ ] when drafting
+    [ ] read write params, like 'read file.py 240 lines' something like that
+    [ ] edit file.py +10 -17 (git like with colors ?) (could be refined)
 
+[ ] /terminal opens a terminal like $EDITOR and quiting it restores pico ? is this feasable ?
+    
+[ ] when a tool call is drafting, the previous message hangs unfinished (missing chunk ?)
+[ ] better UI / UX for tool calls in containers
+[ ] tab completion: inserted spaces errors, too many spaces etc..
+    [ ] should not insert any space, complete + escape (quit suggestion modal)
 
 [ ] find a way for users to add their own tools ? (Complex task, require thorough design phase)
 [ ] allow defining roles per project 
@@ -8,13 +18,15 @@
 [ ] AGENTS.md AGENT.md (ROBOT.md ROBOT.txt (?))
 [ ] SKILLS ?
 
-
 [?] finer grain for copy, like code block, table etc
     [?] implies finer grain for focus ? MOD key + up / down / click ?
         -> focus part of message ?
 
-
-
+sandbox:
+[ ] We need a way to display the current sandbox in the UI !
+[ ] /stop doesn't work
+[ ] message ordering is bad
+    [ ] no queue for msg sent while LLM answers -> bad order
 
 
 [x] fix input box problem where no max height, and it takes whole heigh if paste long content, and no scroll
@@ -39,3 +51,4 @@
 [x] update tools definition
 [x] emojies breaks tables
 [x] tool call needs to finish the previous message before hanging
+

@@ -3,10 +3,12 @@
 The tool system exposes file and shell operations to the LLM agent. Every tool
 call goes through the approval gate before execution.
 
-pico implements **no sandbox** — there is no permission engine, no command
-allowlist, no path confinement, and no policy engine. A tool is either disabled,
-asks, or auto-approves. Isolation is the user's choice via a per-project sandbox
-(`/sandbox`); see `.wiki/notes/principles.md` and `plans/sandbox_worker.md`.
+pico implements **no sandbox policy** — there is no permission engine, no
+command allowlist, no path confinement, no policy engine. A tool is either
+disabled, asks, or auto-approves. Isolation is the user's choice via a
+per-project sandbox (`/sandbox`, containers/bubblewrap); see
+[sandbox.md](./sandbox.md), [security.md](./security.md), and
+`plans/sandbox_worker.md`.
 
 ---
 
@@ -37,10 +39,11 @@ The tool *bodies* are stateless functions in `worker.py` (stdlib-only). The
 `ShellTool`, which remembers the live process so it can be cancelled; the tool
 layer never checks permissions itself — the gate decides before a tool runs.
 
-`worker.py` also runs as a standalone script inside a container (future sandbox
-worker): `serve()` speaks a JSONL request/response protocol on stdin/stdout
-(stdout is protocol-only). The host-side `ToolTransport` seam keeps the registry
-and schemas identical whether execution is in-process or remote.
+`worker.py` also runs as a standalone script inside a container/bubblewrap:
+`serve()` speaks a JSONL request/response protocol on stdin/stdout (stdout is
+protocol-only). The host-side `ToolTransport` seam keeps the registry and
+schemas identical whether execution is in-process or sandboxed. See
+[sandbox.md](./sandbox.md).
 
 ## Tool Registry (`tools.py`)
 
@@ -56,8 +59,9 @@ OpenAI function schema, and handler:
 `registered_tool_names()` is the canonical registry view: the list of tool names
 a role file lists.
 
-`ToolTransport` is the execution seam: `execute(name, args)` and
-`cancel_active(name)`. `InProcessTransport` (bare mode) runs the registered
+`ToolTransport` is the execution seam: `execute(name, args, on_output=None)`
+(bash streams chunks through `on_output`) and `cancel_active(name)`;
+`is_sandbox` marks a real sandbox transport (drives the role lock). `InProcessTransport` (bare mode) runs the registered
 handler against one `MinimalToolset` — preferring the async handler so shell
 commands stay cancellable. `create_toolset(workspace_path, transport=None)` —
 factory that builds an `InProcessTransport` when none is given. Registers

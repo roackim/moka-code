@@ -30,68 +30,35 @@ is `no` / `ask` / `yes`, and the user picks it explicitly — nothing is inferre
 | Situation | Boundary | Tool settings |
 |---|---|---|
 | bare pico, in-process tools | none | `ask` on `write` / `edit` / `bash` |
-| `/sandbox <id>` active | the container / `bubblewrap` | `yes` (the mount is the wall) |
+| `/sandbox start <id>` active | the container / `bubblewrap` | `yes` (the mount is the wall) |
 | pico run inside the user's own container | the container | `yes` |
 
-See `plans/containerization.md` for the decision record and
-`plans/sandbox_worker.md` for the sandboxed-worker design.
+See `plans/sandbox_worker.md` for the design (supersedes
+`plans/containerization.md`) and [sandbox.md](./sandbox.md) for the subsystem.
 
-## Sandboxes (`projects.py`, `sandbox.py`)
+## Sandboxes
 
-Sandboxes are **per project**, stored outside the repo at
-`~/.config/pico-chat/projects/<name>.toml` (name = the workspace directory
-name), so the choice travels with the user, not the checkout. Manage with
-`/sandbox` (verb-first):
+Sandboxes are per project, declared in the user config and selected with
+`/sandbox start <id>`. The security-relevant invariants:
 
-| Subcommand | Behavior |
-|---|---|
-| `/sandbox config` | Edit the project file (alias of `/config sandbox`) |
-| `/sandbox start [id]` | Activate; no id lists the project's sandboxes (id/type/description); missing image offers to build |
-| `/sandbox build <id>` | Build the image (explicit; streams to activity; does not activate) |
-| `/sandbox init <podman\|docker> [base]` | Write a starter `Containerfile`/`Dockerfile` and print its path |
-| `/sandbox quit` | Deactivate (back to in-process) |
+- **The image must provide `python3`** (`worker.py` is stdlib-only). `/sandbox
+  init` uses friendly bases (`python`/`debian`/`ubuntu`); non-`python` bases get
+  an uncommented `apt-get … install python3`.
+- Containers run with no network (unless `network = true`), a read-only rootfs,
+  `--cap-drop=all`, no-new-privileges, and only the workspace + `worker.py`
+  mounted.
+- **bubblewrap** binds only system dirs; it uses the system `python3` and
+  creates `/opt` (`--dir`) because bwrap's root is empty. `run_args` bind
+  sources must already exist on the host.
+- Worker stderr is surfaced in the failure message (and to the debug stream),
+  so a bad image or missing interpreter is diagnosable rather than opaque.
+- Approval (`ask`) still gates host-side before dispatch; secrets and LLM calls
+  never enter the sandbox.
+- `require_sandbox = true` on a role locks the conversation until a sandbox is
+  active (derived, not stored).
 
-An entry is `type` (`podman` / `docker` / `bubblewrap`) plus optional
-`description`, `image`, `dockerfile`, `network`, `timeout`, and `run_args`.
-The project file ships a thorough commented reference for each type.
-
-**The image must provide `python3`.** pico runs its stdlib-only `worker.py`
-inside the container with `python3` (not `python`, which only `python:*` images
-guarantee). `/sandbox init <podman|docker> [base]` offers friendly base names — `python`
-(`python:3.12-slim`), `debian` (`debian:stable-slim`) and `ubuntu`. `python`
-ships `python3`; `debian`/`ubuntu` get an uncommented
-`RUN apt-get … install python3` so the starter still works. worker.py needs no
-pip packages, only the interpreter.
-
-`build_argv()` builds the runtime command line (network off by default,
-read-only rootfs, `--cap-drop=all`, no-new-privileges, workspace-only mount, the
-host's `worker.py` mounted read-only). `SandboxProcess` owns the process and the
-JSONL protocol (lazy start, timeout, respawn, stop); `SandboxTransport` is the
-`ToolTransport` adapter the harness uses. Approval (`ask`) still gates host-side
-before dispatch, and secrets/LLM calls never enter the container.
-
-**Preflight / build.** Selecting a sandbox checks the runtime binary and image.
-pico never builds implicitly: if `dockerfile` is set it prints the exact
-`... build ...` command and offers `/sandbox build <id>`; if not, it reports the
-missing image and does not activate. `/sandbox init [base]` writes a commented
-`Containerfile.pico` starter. Startup appends a warning (not a prompt) when the
-project's active sandbox is not ready.
-
-**bubblewrap interpreter.** `bwrap` binds only standard system dirs. Since
-worker.py is stdlib-only, the launcher prefers the system
-`/usr/bin/python3` (already inside the bind) over `sys.executable`, which for a
-venv/pipx/pixi run lives outside it; if it must use an out-of-tree interpreter
-it binds that prefix too. bwrap starts from an **empty root**, so the launcher
-creates `/opt` (`--dir`) before binding the worker there. `run_args` bind
-sources must already exist on the host (bwrap errors otherwise). Worker stderr
-is surfaced in the failure message (and to the debug stream), so a bad image or
-missing interpreter is diagnosable.
-
-**Role lock.** A role may set `require_sandbox = true`. While such a role is
-active and no sandbox is, the conversation is locked: `on_user_submit` refuses
-normal messages and `Harness.chat()` yields an error, but slash commands still
-work so `/sandbox <id>` (or `/role`) can unblock. The lock is derived, not
-stored, so activating a sandbox lifts it automatically.
+Full details (modules, protocol, command surface, build) are in
+[sandbox.md](./sandbox.md).
 
 ## Permission gate (`permissions.py`)
 
