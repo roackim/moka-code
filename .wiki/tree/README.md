@@ -45,11 +45,12 @@ logs go to stderr), serialized one at a time. Requests are
 ### `projects.py`
 Per-project settings, stored in the user config (never in the repo) at
 `~/.config/pico-chat/projects/<name>.toml` (name = workspace directory name).
-- `ensure_project_file()` seeds a commented template; `load_project()` parses
-  named `[sandboxes.<id>]` entries + `active`; `set_active()` persists the
-  selection without destroying comments; `active_spec()` → `ContainerSpec`.
-- Entries: `type` (podman/docker/bubblewrap), `image`, `dockerfile`, `network`,
-  `timeout`, `run_args`.
+- `ensure_project_file()` seeds a thorough commented template (per-type examples
+  incl. `run_args`); `load_project()` parses named `[sandboxes.<id>]` entries +
+  `active`; `set_active()` persists the selection without destroying comments;
+  `active_spec()` → `ContainerSpec`.
+- Entries: `type` (podman/docker/bubblewrap), `description`, `image`,
+  `dockerfile`, `network`, `timeout`, `run_args`.
 
 ### `sandbox.py`
 Host-side sandbox launcher and JSONL client (no `ui/` imports, no policy).
@@ -64,7 +65,16 @@ Host-side sandbox launcher and JSONL client (no `ui/` imports, no policy).
   `kill()` for the stop button.
 - `SandboxTransport` — duck-typed `ToolTransport` over a `SandboxProcess`;
   tool-level failures return as result strings (parity with in-process),
-  transport failures propagate.
+  transport failures propagate. `is_sandbox = True` drives the role lock.
+- Preflight/build: `runtime_available()`, `image_present()`,
+  `build_command()`, `run_build()` (streams output), `containerfile_name()`
+  (`Containerfile` for podman / `Dockerfile` for docker) and
+  `containerfile_starter()` (a ready-to-edit file; deps as hints; installs
+  `python3` for non-`python:*` bases). pico never builds implicitly —
+  `/sandbox start` offers, `/sandbox build` is explicit.
+- Containers run the worker as `python3 /opt/worker.py` (portable across
+  `python:*` and distro bases that install `python3`; bubblewrap uses
+  `sys.executable`).
 
 See [notes/security.md](../notes/security.md).
 

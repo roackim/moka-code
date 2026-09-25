@@ -606,6 +606,15 @@ class chatTUI(ChatActionHandlers):
             )
             return
 
+        if getattr(self.agent, "sandbox_required", lambda: False)():
+            role_name = getattr(getattr(self.agent, "role", None), "name", "role")
+            self.chat_history_panel.add_message(
+                f"Role '{role_name}' requires an active sandbox. "
+                "Run /sandbox <id> (or /role) to continue. Slash commands are still available.",
+                msg_type=SysMsgWarning(),
+            )
+            return
+
         self._ensure_worker()
 
         if clean_text.lower() in ["exit", "quit", "q"]:

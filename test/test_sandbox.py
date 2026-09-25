@@ -14,9 +14,16 @@ from pico_chat.sandbox import (
     ContainerSpec,
     SandboxError,
     SandboxProcess,
+    SandboxProcessError,
     SandboxTimeoutError,
     SandboxTransport,
     build_argv,
+    build_command,
+    containerfile_name,
+    containerfile_starter,
+    image_present,
+    run_build,
+    runtime_available,
     worker_path,
 )
 
@@ -59,7 +66,7 @@ def test_build_argv_podman_core_flags(tmp_path):
     assert "no-new-privileges" in argv
     assert f"{tmp_path}:/workspace:Z" in argv
     assert "/w/worker.py:/opt/worker.py:ro" in argv
-    assert argv[-3:] == ["img", "python", "/opt/worker.py"]
+    assert argv[-3:] == ["img", "python3", "/opt/worker.py"]
 
 
 def test_build_argv_docker_default_image(tmp_path):
@@ -70,13 +77,40 @@ def test_build_argv_docker_default_image(tmp_path):
 
 
 def test_build_argv_bubblewrap(tmp_path):
-    argv = build_argv(ContainerSpec("bubblewrap"), tmp_path, worker="/w/worker.py")
+    argv = build_argv(
+        ContainerSpec("bubblewrap"), tmp_path, worker="/w/worker.py",
+        interpreter="/usr/bin/python3",
+    )
 
     assert argv[0] == "bwrap"
     assert "--unshare-net" in argv
     assert "--die-with-parent" in argv
     assert "--chdir" in argv and "/workspace" in argv
-    assert argv[-2:] == [sys.executable, "/opt/worker.py"]
+    # bwrap has an empty root, so /opt must be created before the worker bind.
+    assert argv[argv.index("--dir") + 1] == "/opt"
+    assert argv[-2:] == ["/usr/bin/python3", "/opt/worker.py"]
+
+
+def test_build_argv_bubblewrap_defaults_to_a_bound_interpreter(tmp_path):
+    from pathlib import Path
+
+    argv = build_argv(ContainerSpec("bubblewrap"), tmp_path, worker="/w/worker.py")
+
+    expected = "/usr/bin/python3" if Path("/usr/bin/python3").exists() else sys.executable
+    # The interpreter must be inside the bound system dirs (or itself bound);
+    # a venv/pixi sys.executable would not be, hence the preference.
+    assert argv[-2] == expected
+
+
+def test_build_argv_bubblewrap_binds_venv_interpreter(tmp_path):
+    argv = build_argv(
+        ContainerSpec("bubblewrap"), tmp_path, worker="/w/worker.py",
+        interpreter="/home/u/.venv/bin/python",
+    )
+
+    assert argv.count("--ro-bind") >= 1
+    assert "/home/u/.venv/bin/python" in argv
+    assert argv[-2] == "/home/u/.venv/bin/python"
 
 
 def test_build_argv_honors_network_and_run_args(tmp_path):
@@ -154,6 +188,22 @@ def test_process_respawns_after_crash(tmp_path):
             out = await proc.request("bash", {"command": "echo two"})
             assert "two" in out
             assert proc.start_count == 2
+        finally:
+            await proc.stop()
+
+    _run(scenario())
+
+
+def test_process_error_surfaces_stderr(tmp_path):
+    proc = SandboxProcess(
+        [sys.executable, "-c", "import sys; sys.stderr.write('boom\\n'); sys.exit(3)"],
+        cwd=str(tmp_path),
+    )
+
+    async def scenario():
+        try:
+            with pytest.raises(SandboxProcessError, match="boom"):
+                await proc.request("read", {"path": "x"})
         finally:
             await proc.stop()
 
@@ -258,6 +308,109 @@ def test_transport_cancel_kills_the_worker(tmp_path):
             await transport.stop()
 
     _run(scenario())
+
+
+# --- preflight / build ------------------------------------------------------
+
+def test_build_command_podman(tmp_path):
+    (tmp_path / "Containerfile.pico").write_text("FROM x\n")
+    spec = ContainerSpec("podman", "img", dockerfile="Containerfile.pico")
+
+    command = build_command(spec, tmp_path)
+
+    assert command == [
+        "podman", "build", "-t", "img",
+        "-f", str(tmp_path / "Containerfile.pico"), str(tmp_path),
+    ]
+
+
+def test_build_command_none_without_dockerfile_or_image(tmp_path):
+    assert build_command(ContainerSpec("podman", "img"), tmp_path) is None
+    assert build_command(ContainerSpec("podman", dockerfile="Containerfile"), tmp_path) is None
+    assert build_command(ContainerSpec("none"), tmp_path) is None
+
+
+def test_containerfile_starter_has_base_and_workdir():
+    text = containerfile_starter("debian")
+
+    assert "FROM debian" in text
+    assert "WORKDIR /workspace" in text
+
+
+def test_starter_bases_are_friendly_names():
+    from pico_chat.sandbox import CONTAINERFILE_BASES
+
+    assert CONTAINERFILE_BASES == ("python", "debian", "ubuntu")
+
+
+def test_resolve_base_maps_friendly_names_to_slim_images():
+    from pico_chat.sandbox import resolve_base
+
+    assert resolve_base("python") == "python:3.12-slim"
+    assert resolve_base("debian") == "debian:stable-slim"
+    assert resolve_base("ubuntu") == "ubuntu"
+    assert resolve_base("custom:tag") == "custom:tag"  # raw passthrough
+
+
+def test_starter_installs_python3_for_debian_base():
+    text = containerfile_starter("debian")
+
+    assert "FROM debian:stable-slim" in text
+    assert "install -y --no-install-recommends python3" in text
+
+
+def test_starter_does_not_install_python3_for_python_base():
+    text = containerfile_starter("python")
+
+    assert "FROM python:3.12-slim" in text
+    assert "install -y --no-install-recommends python3" not in text
+
+
+def test_containerfile_name_is_conventional():
+    assert containerfile_name("podman") == "Containerfile"
+    assert containerfile_name("docker") == "Dockerfile"
+
+
+def test_runtime_available_none_true():
+    assert runtime_available(ContainerSpec("none")) is True
+
+
+def test_runtime_available_uses_which(monkeypatch):
+    import pico_chat.sandbox as sandbox
+
+    monkeypatch.setattr(
+        sandbox.shutil, "which", lambda b: "/usr/bin/podman" if b == "podman" else None
+    )
+
+    assert runtime_available(ContainerSpec("podman")) is True
+    assert runtime_available(ContainerSpec("docker")) is False
+    assert runtime_available(ContainerSpec("bubblewrap")) is False
+
+
+def test_image_present(monkeypatch):
+    import pico_chat.sandbox as sandbox
+
+    class _Result:
+        returncode = 0
+
+    monkeypatch.setattr(sandbox.subprocess, "run", lambda *a, **k: _Result())
+
+    assert image_present(ContainerSpec("podman", "img")) is True
+    assert image_present(ContainerSpec("none")) is True
+    assert image_present(ContainerSpec("podman")) is True
+
+
+def test_run_build_streams_and_returns_code(tmp_path):
+    lines = []
+
+    code = _run(run_build(
+        [sys.executable, "-c", "print('building')"],
+        cwd=tmp_path,
+        on_output=lines.append,
+    ))
+
+    assert code == 0
+    assert any("building" in line for line in lines)
 
 
 # --- selection / wiring -----------------------------------------------------

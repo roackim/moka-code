@@ -432,14 +432,40 @@ The package lives in `pico_chat/ui/commands/`:
   **only** `base`; `registry.py` assembles them. This shape is enforced by
   `test/test_command_import_graph.py`.
 - Leaf commands are plain `async def` handlers wrapped in
-  `Command(name, description, handler=..., params=[...])`. Only commands that
-  need contextual completion subclass `Command` (currently `ConfigCommand`);
-  subcommand-tree classes remain supported.
+  `Command(name, description, handler=..., params=[...])`.
+- **Subcommands are a first-class `Command` tree.** Pass
+  `subcommands={"start": Command(..., params=[Param(...)])}` and a fallback
+  `handler` for the bare command. `Command.execute()` resolves the tree and
+  dispatches to the leaf with the remaining args, so handlers never parse
+  `args[0]`. `ArgumentCompletion` already resolves the same tree, so each
+  subcommand's `params` complete positionally — subcommands at `/cmd `, then
+  the resolved subcommand's params at `/cmd sub `. `/sandbox` is the reference.
+- Subclass + override `get_completions` / `get_descriptions` only for purely
+  dynamic, cross-argument completion (currently `ConfigCommand` for `/config
+  role <name>` and `/config theme <id>`).
 
 ### Registered Commands
 
 `help`, `clear`, `reload`, `config`, `edit`, `export`, `import`, `compact`,
-`exit`, `stop`, `activity`, `model`, `role`, `theme`
+`exit`, `stop`, `activity`, `model`, `role`, `sandbox`, `theme`
+
+### Sandbox (`/sandbox`)
+
+Verb-first command tree (`COMMANDS["sandbox"].subcommands`):
+
+- `/sandbox` → subcommand help; `/sandbox config` → edit the project file.
+- `/sandbox start [id]` → activate; no id lists sandboxes (id/type/description);
+  missing image offers *Build now* / *Cancel*.
+- `/sandbox build <id>` → build the image (streams to activity; no activate).
+- `/sandbox init podman|docker [base]` → write a starter `Containerfile` /
+  `Dockerfile`; `params` complete runtime (`podman|docker`) then base
+  (`python|debian|ubuntu`).
+- `/sandbox quit` → deactivate.
+
+The `start`/`build` `ID` param uses `sandbox_id_completions` +
+`sandbox_id_descriptions`; `init` uses `sandbox_runtime_completions` then
+`sandbox_base_completions`. All positional completion comes from the tree, not
+from a hand-rolled `get_completions`.
 
 ### Server & model selection
 
@@ -478,13 +504,28 @@ The package lives in `pico_chat/ui/commands/`:
    "mycommand": Command("mycommand", "One-line description", handler=cmd_mycommand,
                         params=[Param("NAME", required=True)]),
    ```
-   `Param` definitions drive parameter hints and fuzzy argument autocomplete;
-   `path=True` adds filesystem scanning.
+    `Param` definitions drive parameter hints and fuzzy argument autocomplete;
+    `path=True` adds filesystem scanning.
 3. It is now callable as `/mycommand`, listed by `/help`, and offered by the input autocomplete.
 
-For contextual completion (decide candidates from earlier args), subclass
-`Command` and override `get_completions` / `get_descriptions`; see
-`ConfigCommand` in `commands/core.py`.
+For a command with subcommands, build a tree instead of parsing `args[0]`:
+
+```python
+"mycommand": Command(
+    "mycommand", "One-line description",
+    handler=mycommand_help,                       # bare /mycommand
+    subcommands={
+        "start": Command("mycommand start", "…", handler=cmd_start,
+                         params=[Param("ID", completions=ids, descriptions=desc)]),
+        "build": Command("mycommand build", "…", handler=cmd_build,
+                         params=[Param("ID", completions=ids)]),
+    }),
+```
+
+`execute()` dispatches into the tree and `ArgumentCompletion` completes each
+subcommand's `params` positionally. Subclass `Command` and override
+`get_completions` / `get_descriptions` only when completion genuinely depends on
+earlier arguments (currently `ConfigCommand`).
 
 ### Hiding a Command from `/help`
 

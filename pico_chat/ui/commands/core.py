@@ -11,7 +11,6 @@ commands that own a subcommand tree.
 from __future__ import annotations
 
 import logging
-import os
 from typing import List
 
 from pico_chat.ui.tui.msg_types import SysMsg, SysMsgError, SysMsgWarning
@@ -21,6 +20,7 @@ from .base import (
     Command,
     Param,
     config_section_completions,
+    open_project_sandbox,
     role_descriptions,
     role_name_completions,
     theme_descriptions,
@@ -137,36 +137,7 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
 
 async def _config_sandbox(ui: ChatUIProtocol):
     """Open the current project's sandbox file and apply its active entry."""
-    from pico_chat import projects
-    from pico_chat.ui.external_editor import open_editor, resolve_editor
-
-    agent = getattr(ui, "agent", None)
-    workspace = getattr(agent, "workspace", None) or os.getcwd()
-
-    if not resolve_editor():
-        ui.chat_history_panel.add_message(
-            "No editor found. Set $VISUAL or $EDITOR.",
-            msg_type=SysMsgError(), title="config")
-        return
-
-    path = projects.ensure_project_file(workspace)
-    open_editor(ui, path)
-
-    errors: list[str] = []
-    project = projects.load_project(workspace, errors)
-    if not errors and agent is not None and hasattr(agent, "set_sandbox"):
-        agent.set_sandbox(projects.active_spec(project))
-
-    if errors:
-        ui.chat_history_panel.add_message(
-            "Sandbox config reloaded with errors:\n" + "\n".join(errors),
-            msg_type=SysMsgError(), title="config")
-    else:
-        ui.chat_history_panel.add_message(
-            f"Sandbox config reloaded (active: {project.active or 'none'}).",
-            msg_type=SysMsg(), title="config")
-    if hasattr(ui, "refresh_status_bar"):
-        ui.refresh_status_bar()
+    open_project_sandbox(ui)
 
 
 class ConfigCommand(Command):

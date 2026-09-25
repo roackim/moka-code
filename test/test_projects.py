@@ -21,7 +21,10 @@ def test_ensure_project_file_seeds_template(config_dir, tmp_path):
     assert path == config_dir / "projects" / "myproj.toml"
     text = path.read_text()
     assert f'path = "{workspace.resolve()}"' in text
-    assert "[sandboxes.podman-default]" in text  # commented possibility kept
+    assert "# [sandboxes.podman]" in text     # commented possibilities kept
+    assert "# [sandboxes.docker]" in text
+    assert "# [sandboxes.bubblewrap]" in text
+    assert '"--userns=keep-id"' in text       # useful run_args prewritten
     assert projects.ensure_project_file(workspace) == path  # idempotent
 
 
@@ -42,6 +45,7 @@ def test_load_project_parses_sandboxes(config_dir, tmp_path):
         'active = "dev"\n'
         "[sandboxes.dev]\n"
         'type = "podman"\n'
+        'description = "toolchain"\n'
         'image = "img"\n'
         "network = true\n"
         "timeout = 30.0\n"
@@ -57,6 +61,7 @@ def test_load_project_parses_sandboxes(config_dir, tmp_path):
 
     assert project.active == "dev"
     assert set(project.sandboxes) == {"dev", "tight"}
+    assert project.sandboxes["dev"].description == "toolchain"
     assert spec.runtime == "podman"
     assert spec.image == "img"
     assert spec.network is True
@@ -94,7 +99,7 @@ def test_set_active_preserves_comments(config_dir, tmp_path):
 
     text = (config_dir / "projects" / "proj.toml").read_text()
     assert 'active = "dev"' in text
-    assert "# [sandboxes.tight]" in text  # comments survive
+    assert "# [sandboxes.bubblewrap]" in text  # comments survive
 
     projects.set_active(workspace, None)
     text = (config_dir / "projects" / "proj.toml").read_text()

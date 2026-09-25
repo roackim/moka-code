@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +28,20 @@ DEFAULT_IMAGE = "python:3.12-slim"
 
 CONTAINER_RUNTIMES = ("podman", "docker")
 HOST_RUNTIMES = ("bubblewrap",)
+#: Friendly base names offered by ``/sandbox init``.
+CONTAINERFILE_BASES = ("python", "debian", "ubuntu")
+
+#: Friendly base name -> image tag. ``debian`` is the slim variant (bare
+#: ``debian`` is the full image and has no ``debian:slim``); ``ubuntu`` has no
+#: slim variant at all. Unknown names pass through as raw image tags.
+_BASE_IMAGES = {
+    "python": DEFAULT_IMAGE,
+    "debian": "debian:stable-slim",
+    "ubuntu": "ubuntu",
+}
+
+#: Conventional build-file name per container runtime.
+CONTAINERFILE_NAMES = {"podman": "Containerfile", "docker": "Dockerfile"}
 
 
 class SandboxError(Exception):
@@ -91,6 +107,22 @@ def _container_argv(spec: ContainerSpec, workspace: str, worker: str,
     return argv
 
 
+_STANDARD_PREFIXES = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc")
+
+
+def _bubblewrap_interpreter() -> str:
+    """A Python that exists inside the bwrap namespace.
+
+    worker.py is stdlib-only, so the system ``python3`` (under the bound
+    ``/usr``) is preferred over ``sys.executable``, which for a venv/pixi run
+    lives outside the bound directories.
+    """
+    for candidate in ("/usr/bin/python3", "/usr/local/bin/python3", "/bin/python3"):
+        if Path(candidate).exists():
+            return candidate
+    return sys.executable
+
+
 def _bubblewrap_argv(spec: ContainerSpec, workspace: str, worker: str,
                      interpreter: str) -> list[str]:
     argv = [
@@ -104,7 +136,19 @@ def _bubblewrap_argv(spec: ContainerSpec, workspace: str, worker: str,
     for path in ("/usr", "/lib", "/lib64", "/bin", "/etc"):
         if Path(path).exists():
             argv += ["--ro-bind", path, path]
+
+    # If the interpreter lives outside the bound system dirs (a venv/pixi
+    # python), bind its prefixes too so it can actually start.
+    if not interpreter.startswith(_STANDARD_PREFIXES):
+        for prefix in dict.fromkeys((sys.prefix, sys.base_prefix)):
+            if prefix and not prefix.startswith(_STANDARD_PREFIXES) and Path(prefix).exists():
+                argv += ["--ro-bind", prefix, prefix]
+        if Path(interpreter).exists():
+            argv += ["--ro-bind", interpreter, interpreter]
+
     argv += [
+        # bwrap starts with an empty root; create the mountpoint for the worker.
+        "--dir", "/opt",
         "--ro-bind", worker, "/opt/worker.py",
         "--bind", workspace, "/workspace",
         "--tmpfs", "/tmp",
@@ -134,14 +178,118 @@ def build_argv(
         return [interpreter or sys.executable, worker]
 
     if spec.runtime in CONTAINER_RUNTIMES:
+        # ``python3`` is present on python:* images and on any base with the
+        # distro python3 package; ``python`` is not guaranteed outside python:*.
         return _container_argv(
-            spec, workspace, worker, interpreter or "python",
+            spec, workspace, worker, interpreter or "python3",
         )
 
     if spec.runtime == "bubblewrap":
-        return _bubblewrap_argv(spec, workspace, worker, interpreter or sys.executable)
+        return _bubblewrap_argv(
+            spec, workspace, worker, interpreter or _bubblewrap_interpreter(),
+        )
 
     raise ValueError(f"Unknown container runtime: {spec.runtime!r}")
+
+
+def runtime_available(spec: ContainerSpec) -> bool:
+    """True if the runtime binary needed by ``spec`` is on PATH."""
+    if spec.runtime == "none":
+        return True
+    binary = "bwrap" if spec.runtime == "bubblewrap" else spec.runtime
+    return shutil.which(binary) is not None
+
+
+def image_present(spec: ContainerSpec) -> bool:
+    """True if ``spec``'s image already exists locally (or none is needed)."""
+    if spec.runtime not in CONTAINER_RUNTIMES or not spec.image:
+        return True
+    try:
+        proc = subprocess.run(
+            [spec.runtime, "image", "inspect", spec.image],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0
+
+
+def build_command(spec: ContainerSpec, workspace: str | Path) -> Optional[list[str]]:
+    """The explicit image-build command, or None when there is nothing to build.
+
+    pico never builds implicitly; this just puts the command in one place so it
+    can be shown to the user and run by ``/sandbox build``.
+    """
+    if spec.runtime not in CONTAINER_RUNTIMES or not spec.image or not spec.dockerfile:
+        return None
+    workspace = Path(workspace).resolve()
+    dockerfile = Path(spec.dockerfile)
+    if not dockerfile.is_absolute():
+        dockerfile = workspace / dockerfile
+    return [spec.runtime, "build", "-t", spec.image, "-f", str(dockerfile), str(workspace)]
+
+
+async def run_build(
+    command: Sequence[str],
+    *,
+    cwd: str | Path | None = None,
+    on_output: Optional[Callable[[str], None]] = None,
+) -> int:
+    """Run an image build, streaming merged output; return its exit code."""
+    proc = await asyncio.create_subprocess_exec(
+        *command,
+        cwd=str(cwd) if cwd is not None else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    assert proc.stdout is not None
+    while True:
+        line = await proc.stdout.readline()
+        if not line:
+            break
+        if on_output is not None:
+            on_output(line.decode("utf-8", errors="replace").rstrip("\n"))
+    return await proc.wait()
+
+
+def containerfile_name(runtime: str) -> str:
+    """Conventional build-file name for ``runtime`` (Containerfile/Dockerfile)."""
+    return CONTAINERFILE_NAMES.get(runtime, "Containerfile")
+
+
+def resolve_base(base: str = "python") -> str:
+    """Map a friendly base name to its image tag (unknown names pass through)."""
+    return _BASE_IMAGES.get(base, base)
+
+
+def containerfile_starter(base: str = "python") -> str:
+    """A ready-to-edit build file (real directives, deps left as hints).
+
+    The image must provide ``python3`` (pico runs its stdlib-only ``worker.py``
+    with it). ``python`` already does; for ``debian``/``ubuntu`` the starter
+    installs it. Edit the file freely.
+    """
+    image = resolve_base(base)
+    lines = ["# Built by pico (/sandbox init).", f"FROM {image}", ""]
+    if image.lower().startswith("python"):
+        lines += ["# This base already ships python3 (used to run pico's worker).", ""]
+    else:
+        lines += [
+            "# pico runs its worker with `python3`, which this base lacks:",
+            "RUN apt-get update && apt-get install -y --no-install-recommends python3 \\",
+            "    && rm -rf /var/lib/apt/lists/*",
+            "",
+        ]
+    lines += [
+        "# Install the project's toolchain here, for example:",
+        "# RUN apt-get update && apt-get install -y --no-install-recommends git make",
+        "# RUN pip install --no-cache-dir -r requirements.txt",
+        "",
+        "WORKDIR /workspace",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 class SandboxProcess:
@@ -260,6 +408,16 @@ class SandboxProcess:
             await self.stop()
             raise SandboxProcessError(str(e))
 
+    async def _drain_stderr_briefly(self, timeout: float = 0.3) -> None:
+        """Give the stderr reader a moment to finish after the process exits."""
+        task = self._stderr_task
+        if task is None:
+            return
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass
+
     async def _read_response(
         self,
         request_id: int,
@@ -270,7 +428,13 @@ class SandboxProcess:
         while True:
             line = await proc.stdout.readline()
             if not line:
-                raise SandboxProcessError("worker exited before responding")
+                # Surface the runtime's own error instead of a bare EOF.
+                await self._drain_stderr_briefly()
+                detail = " | ".join(self.last_stderr[-3:]) or "no stderr"
+                code = proc.returncode
+                raise SandboxProcessError(
+                    f"worker exited before responding (exit={code}): {detail}"
+                )
             text = line.decode("utf-8", errors="replace").rstrip("\r\n")
             if not text:
                 continue
@@ -344,6 +508,8 @@ class SandboxTransport:
     propagate so the harness reports an error.
     """
 
+    is_sandbox = True
+
     def __init__(self, process: SandboxProcess):
         self.process = process
 
@@ -393,12 +559,21 @@ __all__ = [
     "DEFAULT_IMAGE",
     "CONTAINER_RUNTIMES",
     "HOST_RUNTIMES",
+    "CONTAINERFILE_BASES",
+    "CONTAINERFILE_NAMES",
     "SandboxError",
     "SandboxTimeoutError",
     "SandboxProcessError",
     "ContainerSpec",
     "worker_path",
     "build_argv",
+    "runtime_available",
+    "image_present",
+    "build_command",
+    "run_build",
+    "containerfile_name",
+    "containerfile_starter",
+    "resolve_base",
     "SandboxProcess",
     "SandboxTransport",
 ]

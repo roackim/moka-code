@@ -26,22 +26,70 @@ PROJECTS_DIRNAME = "projects"
 SANDBOX_TYPES = ("podman", "docker", "bubblewrap")
 
 DEFAULT_PROJECT_TOML = """\
-# Project sandboxes for this directory. Select with /sandbox <id>; edit with
-# /config sandbox. This file lives in your user config, never in the project.
+# Project sandboxes for this directory. Sandboxes are per project and live in
+# your user config, never in the repo. Start one with /sandbox start <id>,
+# stop with /sandbox quit; edit this file with /sandbox config.
 #
-# Each [sandboxes.<id>] entry describes where tools run:
+# One [sandboxes.<id>] table per sandbox. `type` is required.
 #
-# [sandboxes.podman-default]
-# type = "podman"                 # podman | docker | bubblewrap
-# image = "python:3.12-slim"      # image to run (podman/docker)
-# dockerfile = "Containerfile"    # optional: how to build `image`
-# network = false                 # allow container networking (default off)
-# timeout = 120.0                 # per tool call, seconds
-# run_args = []                   # extra runtime flags, e.g. ["--userns=keep-id"]
+# Common keys (all types)
+#   description = ""            # shown by /sandbox start
+#   network     = false         # allow sandbox networking (default: off)
+#   timeout     = 120.0         # per tool call, seconds
+#   run_args    = []            # extra runtime flags, appended verbatim
 #
-# [sandboxes.tight]
+# Container types (podman, docker) add:
+#   image       = ""            # image tag to run (and to build)
+#   dockerfile  = ""            # optional: build `image` from this file
+#                               #   (podman -> "Containerfile", docker -> "Dockerfile")
+#
+# --- podman (rootless) -------------------------------------------------
+# [sandboxes.podman]
+# type = "podman"
+# description = "podman, project toolchain"
+# image = "pico-myproject"
+# dockerfile = "Containerfile"
+# network = false
+# timeout = 120.0
+# run_args = [
+#   "--userns=keep-id",             # container uid == host uid (rootless podman)
+#   "--pids-limit", "4096",         # cap process count
+#   "--memory", "4g",               # cap memory
+#   "--cpus", "4",                  # cap cpus
+#   "-v", "/data:/data:ro",         # extra read-only mount
+#   "-v", "/cache:/cache",          # extra writable mount
+#   "--env", "FOO=bar",             # extra environment variable
+#   "--group-add", "keep-groups",   # keep host supplementary groups
+# ]
+#
+# --- docker ------------------------------------------------------------
+# [sandboxes.docker]
+# type = "docker"
+# description = "docker, project toolchain"
+# image = "pico-myproject"
+# dockerfile = "Dockerfile"
+# network = false
+# timeout = 120.0
+# run_args = [
+#   "--user", "1000:1000",          # rootful docker: run as the host uid
+#   "--pids-limit", "4096",
+#   "--memory", "4g",
+#   "-v", "/data:/data:ro",
+#   "-e", "FOO=bar",                # docker also accepts -e
+# ]
+#
+# --- bubblewrap (host process, no image, no build) ---------------------
+# [sandboxes.bubblewrap]
 # type = "bubblewrap"
+# description = "host binaries, network off"
+# network = false
 # timeout = 60.0
+# run_args = [
+#   "--proc", "/proc",            # fresh /proc (no host path needed)
+#   "--dev", "/dev",              # minimal /dev (no host path needed)
+#   # bind extra host paths here; the source MUST already exist, e.g.
+#   # "--ro-bind", "/opt/tools", "/opt/tools",
+# ]
 """
 
 
@@ -51,6 +99,7 @@ class SandboxEntry:
 
     id: str
     type: str
+    description: Optional[str] = None
     image: Optional[str] = None
     dockerfile: Optional[str] = None
     network: bool = False
@@ -128,9 +177,11 @@ def _parse_entry(sandbox_id: str, data: object, errors: list[str], source: str) 
 
     image = data.get("image")
     dockerfile = data.get("dockerfile")
+    description = data.get("description")
     return SandboxEntry(
         id=sandbox_id,
         type=stype,
+        description=description if isinstance(description, str) else None,
         image=image if isinstance(image, str) else None,
         dockerfile=dockerfile if isinstance(dockerfile, str) else None,
         network=bool(data.get("network", False)),

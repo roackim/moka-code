@@ -31,6 +31,35 @@ def test_argument_completion_passes_descriptions():
     assert comp.menu.item_descriptions.get("one") == "first"
 
 
+def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_path):
+    import pico_chat.pico_cfg as pico_cfg
+    from pico_chat.ui.commands.registry import COMMANDS
+
+    monkeypatch.setattr(pico_cfg, "get_config_dir", lambda: tmp_path)
+    workspace = tmp_path / "proj"
+    workspace.mkdir()
+    monkeypatch.chdir(workspace)
+    project = tmp_path / "projects" / "proj.toml"
+    project.parent.mkdir(parents=True)
+    project.write_text(
+        '[sandboxes.dev]\ntype = "podman"\ndescription = "toolchain"\n'
+        '[sandboxes.tight]\ntype = "bubblewrap"\n',
+        encoding="utf-8",
+    )
+
+    comp = ArgumentCompletion(SelectionMenu(), COMMANDS)
+
+    comp.update("/sandbox ", len("/sandbox "))
+    assert set(comp.menu.items) == {"config", "build", "start", "init", "quit"}
+
+    comp.update("/sandbox init ", len("/sandbox init "))
+    assert set(comp.menu.items) == {"podman", "docker"}
+
+    comp.update("/sandbox start ", len("/sandbox start "))
+    assert set(comp.menu.items) == {"dev", "tight"}
+    assert comp.menu.item_descriptions.get("dev") == "toolchain"
+
+
 def test_config_role_completion_uses_role_descriptions(monkeypatch):
     import pico_chat.ui.commands.core as core
 

@@ -226,6 +226,8 @@ class ToolTransport(Protocol):
 class InProcessTransport:
     """Bare-mode transport: runs the registered handler against a toolset."""
 
+    is_sandbox = False
+
     def __init__(self, toolset: MinimalToolset):
         self.toolset = toolset
 

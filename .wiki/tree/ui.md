@@ -54,7 +54,7 @@ Slash command system. Leaf commands are plain `async def` handlers wrapped in
 | `conversation.py` | `/import`, `/export` |
 | `models.py` | `/model` leaf (picker or direct selection) |
 | `roles.py` | `/role` — list roles or switch the active one |
-| `sandbox.py` | `/sandbox <id>` — select the current project's sandbox (or list) |
+| `sandbox.py` | `/sandbox` — verb-first: `config`, `build <id>`, `start [id]`, `init <podman\|docker> [base]`, `quit` |
 | `themes.py` | `/theme` — picker or direct color-theme selection |
 
 Registered commands: `help`, `clear`, `reload`, `config`, `edit`, `export`,

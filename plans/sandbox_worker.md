@@ -73,7 +73,7 @@ So this is a **transport and lifecycle change**, not a rewrite.
                   HOST (trusted)                          CONTAINER (untrusted side)
 ┌───────────────────────────────────────────┐   ┌──────────────────────────────────┐
 │ ui/     TUI, transcript, activity, pickers │   │                                  │
-│ harness/ loop, history, events, permissions│   │   python /opt/worker.py          │
+│ harness/ loop, history, events, permissions│   │   python3 /opt/worker.py          │
 │ endpoint LLM calls (secrets, network)      │   │   read | write | edit | bash     │
 │ config  servers/roles/ui/... (rw)          │   │   no config · no net · no model  │
 │ sandbox launcher + transport               │   │   cwd=/workspace                 │
@@ -95,7 +95,7 @@ So this is a **transport and lifecycle change**, not a rewrite.
 
 A single, stdlib-only module that is both:
 
-- the container entrypoint (`python /opt/worker.py`), and
+- the container entrypoint (`python3 /opt/worker.py`), and
 - the host's source of tool bodies (`from pico_chat.worker import read, …`).
 
 Stdlib-only is what makes the container need no install (see §7). Host import
@@ -213,6 +213,10 @@ The registry, schemas, role `enabled_tool_names()`, and prompts are unchanged.
 container needs only a Python interpreter plus whatever *the project* needs
 (compilers, test runners, …).
 
+- The image must provide `python3` (worker.py is stdlib-only, so the interpreter
+  is all it needs). `python:*` bases ship it; `/sandbox init` on
+  `debian:stable-slim` / `ubuntu` emits an uncommented `apt-get install python3`
+  for that reason.
 - The host mounts its own installed `worker.py` read-only and runs it as a
   script:
   ```sh
@@ -220,7 +224,7 @@ container needs only a Python interpreter plus whatever *the project* needs
   podman run -i --rm -w /workspace \
     -v "$PWD:/workspace:Z" \
     -v "$PYSRC/worker.py:/opt/worker.py:ro" \
-    $PICO_IMAGE python /opt/worker.py
+    $PICO_IMAGE python3 /opt/worker.py
   ```
 - Version-locking is free: the container runs the host's exact worker (no skew,
   no rebuild on pico updates, no build-time network).
@@ -229,7 +233,7 @@ container needs only a Python interpreter plus whatever *the project* needs
 - `pipx` is a host CLI installer and is not used inside images; use `pip`/`uv`.
 
 **Starter Containerfile.** pico can generate a commented, virgin Containerfile
-for a chosen base (e.g. `python:3.12-slim` or `debian`) with the right
+for a chosen base (friendly names `python` / `debian` / `ubuntu`) with the right
 workdir/mount/network notes, which the user edits and builds. Generating is the
 user's convenience; pico never builds or ships an image (preserves
 `containerization.md`'s "the user builds").
@@ -253,9 +257,9 @@ user's convenience; pico never builds or ships an image (preserves
 | `--container` | argv (sketch) |
 |---|---|
 | `none` (default) | in-process (`InProcessTransport`) |
-| `podman[:image]` | `podman run -i --rm -w /workspace -v … python /opt/worker.py` |
+| `podman[:image]` | `podman run -i --rm -w /workspace -v … python3 /opt/worker.py` |
 | `docker[:image]` | same, `docker` |
-| `bubblewrap` | `bwrap … -- python /opt/worker.py` (host process, no image) |
+| `bubblewrap` | `bwrap … -- python3 /opt/worker.py` (host process, no image) |
 
 The launcher only has to produce a pipe; the protocol layer is identical.
 

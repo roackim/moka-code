@@ -35,10 +35,12 @@ class ChatUIProtocol(Protocol):
 
 
 class Command:
-    """A slash command: metadata plus either a handler or a subcommand tree.
+    """A slash command: metadata plus a handler and/or a subcommand tree.
 
-    Leaf commands use ``handler`` (a plain ``async def``); only commands that
-    own a real subcommand tree subclass this and override :meth:`execute`.
+    A leaf command has a ``handler``. A command tree has ``subcommands`` and an
+    optional fallback ``handler`` (shown when no subcommand matches, e.g. the
+    bare ``/cmd`` help). :meth:`execute` walks the tree and dispatches to the
+    resolved leaf, so callers never parse subcommand names themselves.
     """
 
     def __init__(self, name: str, description: str,
@@ -52,6 +54,13 @@ class Command:
         self.params = params or []
 
     async def execute(self, ui: ChatUIProtocol, args: List[str]):
+        if self.has_subcommands():
+            cmd, offset = self.resolve_command(args)
+            if cmd is not self:
+                if cmd.handler is None:
+                    raise NotImplementedError(f"command '{cmd.name}' has no handler")
+                await cmd.handler(ui, args[offset:])
+                return
         if self.handler is None:
             raise NotImplementedError(f"command '{self.name}' has no handler")
         await self.handler(ui, args)
@@ -150,3 +159,41 @@ def theme_descriptions() -> Dict[str, str]:
         name: ("custom (themes.toml)" if name in custom else "built-in")
         for name in theme_name_completions()
     }
+
+
+def open_project_sandbox(ui: ChatUIProtocol) -> None:
+    """Open the current project's sandbox file and apply its active entry.
+
+    Shared by ``/config sandbox`` and ``/sandbox config``.
+    """
+    from pico_chat import projects
+    from pico_chat.ui.external_editor import open_editor, resolve_editor
+    from pico_chat.ui.tui.msg_types import SysMsg, SysMsgError
+
+    agent = getattr(ui, "agent", None)
+    workspace = getattr(agent, "workspace", None) or os.getcwd()
+
+    if not resolve_editor():
+        ui.chat_history_panel.add_message(
+            "No editor found. Set $VISUAL or $EDITOR.",
+            msg_type=SysMsgError(), title="config")
+        return
+
+    path = projects.ensure_project_file(workspace)
+    open_editor(ui, path)
+
+    errors: list[str] = []
+    project = projects.load_project(workspace, errors)
+    if not errors and agent is not None and hasattr(agent, "set_sandbox"):
+        agent.set_sandbox(projects.active_spec(project))
+
+    if errors:
+        ui.chat_history_panel.add_message(
+            "Sandbox config reloaded with errors:\n" + "\n".join(errors),
+            msg_type=SysMsgError(), title="config")
+    else:
+        ui.chat_history_panel.add_message(
+            f"Sandbox config reloaded (active: {project.active or 'none'}).",
+            msg_type=SysMsg(), title="config")
+    if hasattr(ui, "refresh_status_bar"):
+        ui.refresh_status_bar()

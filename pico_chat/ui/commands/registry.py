@@ -34,7 +34,18 @@ from .core import (
 )
 from .models import known_model_ids, model_command
 from .roles import cmd_role
-from .sandbox import cmd_sandbox, sandbox_name_completions
+from .sandbox import (
+    sandbox_base_completions,
+    sandbox_build,
+    sandbox_config,
+    sandbox_help,
+    sandbox_id_completions,
+    sandbox_id_descriptions,
+    sandbox_init,
+    sandbox_quit,
+    sandbox_runtime_completions,
+    sandbox_start,
+)
 from .themes import theme_command
 
 # Help needs the whole registry, so its handler is assembled here.
@@ -71,10 +82,36 @@ COMMANDS: Dict[str, Command] = {
                             handler=cmd_role,
                             params=[Param("NAME", completions=role_name_completions,
                                           descriptions=role_descriptions)]),
-    "sandbox":      Command("sandbox", "Select the project's sandbox (or list them)",
-                            handler=cmd_sandbox,
-                            params=[Param("ID", required=False,
-                                          completions=sandbox_name_completions)]),
+    "sandbox":      Command(
+                        "sandbox", "Project sandbox: config, build, start, init, quit",
+                        handler=sandbox_help,
+                        subcommands={
+                            "config": Command(
+                                "sandbox config", "Edit this project's sandbox file",
+                                handler=sandbox_config),
+                            "build": Command(
+                                "sandbox build", "Build a sandbox image from its dockerfile",
+                                handler=sandbox_build,
+                                params=[Param("ID", required=True,
+                                              completions=sandbox_id_completions,
+                                              descriptions=sandbox_id_descriptions)]),
+                            "start": Command(
+                                "sandbox start", "Activate a sandbox (list when no id given)",
+                                handler=sandbox_start,
+                                params=[Param("ID", required=False,
+                                              completions=sandbox_id_completions,
+                                              descriptions=sandbox_id_descriptions)]),
+                            "init": Command(
+                                "sandbox init", "Write a starter Containerfile / Dockerfile",
+                                handler=sandbox_init,
+                                params=[Param("RUNTIME", required=True,
+                                              completions=sandbox_runtime_completions),
+                                        Param("BASE", required=False,
+                                              completions=sandbox_base_completions)]),
+                            "quit": Command(
+                                "sandbox quit", "Deactivate and run tools in-process",
+                                handler=sandbox_quit),
+                        }),
     "theme":        Command("theme", "Select the color theme (opens a picker)",
                             handler=theme_command,
                             params=[Param("THEME", required=False)]),

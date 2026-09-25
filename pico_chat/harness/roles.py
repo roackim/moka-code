@@ -39,6 +39,9 @@ class Role:
     description: str = ""
     prompt: str = ""
     tools: dict[str, str] = field(default_factory=dict)
+    #: When True the role only runs while a sandbox is active; otherwise the
+    #: conversation is locked (no LLM turns) until one is selected.
+    require_sandbox: bool = False
 
     def enabled_tool_names(self) -> set[str]:
         """Tool names the model is allowed to see (anything but ``no``)."""
@@ -127,7 +130,7 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
     registered = set(registered_tool_names())
     tools: dict[str, str] = {}
     for key, value in data.items():
-        if key in ("description", "prompt", "disabled"):
+        if key in ("description", "prompt", "disabled", "require_sandbox"):
             continue
         key = _RETIRED_TOOL_ALIASES.get(key, key)
         if key in _RETIRED_TOOLS:
@@ -145,15 +148,19 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
         description=str(data.get("description", "")),
         prompt=str(data.get("prompt", "")),
         tools=tools,
+        require_sandbox=bool(data.get("require_sandbox", False)),
     )
 
 
 def _role_to_dict(role: Role) -> dict[str, Any]:
-    return {
+    data: dict[str, Any] = {
         "description": role.description,
         "prompt": role.prompt,
-        **role.tools,
     }
+    if role.require_sandbox:
+        data["require_sandbox"] = True
+    data.update(role.tools)
+    return data
 
 
 def _migrate_role_file(path: Path) -> bool:
@@ -214,11 +221,14 @@ def _role_template(role: Role) -> str:
         f"#   Select with: /role {role.name}\n"
         f"#   Edit with:   /config role {role.name}\n"
         f"#\n"
-        f"# Tools: no = disabled (hidden from the model) · ask = confirm · yes = auto\n\n"
+        f"# Tools: no = disabled (hidden from the model) · ask = confirm · yes = auto\n"
+        f"# require_sandbox = true locks the conversation unless a sandbox is active.\n\n"
         f"description = {json.dumps(role.description)}\n"
-        f"prompt = {json.dumps(role.prompt)}\n\n"
-        f"# All available tools:\n"
+        f"prompt = {json.dumps(role.prompt)}\n"
     )
+    if role.require_sandbox:
+        header += "require_sandbox = true\n"
+    header += "\n# All available tools:\n"
     body = "".join(f'{name} = "{value}"\n' for name, value in role.tools.items())
     return header + body
 

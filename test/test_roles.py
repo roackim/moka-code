@@ -176,3 +176,23 @@ def test_role_file_overrides_builtin(tmp_path, monkeypatch):
 
     assert load_role("agent").description == "Custom agent"
     assert load_role("agent").permission_for("read") == "ask"
+
+
+def test_require_sandbox_round_trips(tmp_path, monkeypatch):
+    monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
+    (tmp_path / "roles").mkdir()
+    role = Role(name="locked", tools={"read": "yes"}, require_sandbox=True)
+
+    (tmp_path / "roles" / "locked.toml").write_text(
+        roles_module._role_template(role), encoding="utf-8")
+
+    loaded = load_role("locked")
+
+    assert loaded.require_sandbox is True
+    assert "require_sandbox" not in loaded.tools  # reserved, not a tool
+    assert validate_roles() == []
+
+
+def test_require_sandbox_defaults_false():
+    assert agent_role().require_sandbox is False
+    assert Role(name="x").require_sandbox is False

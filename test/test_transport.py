@@ -129,3 +129,32 @@ def test_harness_emits_tool_output_events(tmp_path):
     assert outputs[0].id == "call_1"
     assert outputs[0].stream == "stdout"
     assert any("streamed" in e.data for e in outputs)
+
+
+def test_sandbox_required_locks_chat(tmp_path):
+    harness = Harness.__new__(Harness)
+    harness.debug_stream = NoopDebugStream()
+    harness.state = AgentState.IDLE
+    harness.history = []
+    harness.workspace = str(tmp_path)
+    harness.transport = InProcessTransport(MinimalToolset(tmp_path))
+    harness.role = Role(name="locked", tools={"read": "yes"}, require_sandbox=True)
+
+    assert harness.sandboxed() is False
+    assert harness.sandbox_required() is True
+
+    async def _collect():
+        return [event async for event in harness.chat("hi")]
+
+    out = _run(_collect())
+    assert isinstance(out[0], events_module.Error)
+    assert "requires an active sandbox" in out[0].message
+    assert isinstance(out[-1], events_module.Done)
+
+
+def test_sandbox_required_false_when_sandboxed():
+    harness = Harness.__new__(Harness)
+    harness.role = Role(name="locked", require_sandbox=True)
+    harness.transport = type("_FakeSandbox", (), {"is_sandbox": True})()
+
+    assert harness.sandbox_required() is False

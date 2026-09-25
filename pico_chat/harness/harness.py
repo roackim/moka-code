@@ -54,6 +54,7 @@ class Harness:
         self.transport: ToolTransport = transport or InProcessTransport(
             MinimalToolset(self.workspace)
         )
+        self._wire_sandbox_stderr()
         self._rebuild_tools()
         self.debug_stream.log("TOOL_SCHEMAS", self.tool_schemas)
 
@@ -106,6 +107,7 @@ class Harness:
         self.transport = new if new is not None else InProcessTransport(
             MinimalToolset(self.workspace)
         )
+        self._wire_sandbox_stderr()
         self._rebuild_tools()
         runtime = getattr(spec, "runtime", "none")
         self.debug_stream.log("SANDBOX", runtime)
@@ -119,6 +121,24 @@ class Harness:
         if self.history and self.history[-1].get("content") == content:
             return
         self._add_message_to_history("system", content)
+
+    def sandboxed(self) -> bool:
+        """True when tools execute in a sandbox (container/bubblewrap)."""
+        return bool(getattr(self.transport, "is_sandbox", False))
+
+    def _wire_sandbox_stderr(self) -> None:
+        """Route the sandbox worker's stderr to the debug stream."""
+        process = getattr(self.transport, "process", None)
+        if process is not None:
+            process.on_stderr = lambda line: self.debug_stream.log("SANDBOX_STDERR", line)
+
+    def sandbox_required(self) -> bool:
+        """True when the active role needs a sandbox but none is active.
+
+        While this holds the conversation is locked: the UI refuses normal
+        submissions and ``chat()`` yields an error instead of running.
+        """
+        return bool(getattr(self.role, "require_sandbox", False)) and not self.sandboxed()
 
     def _rebuild_tools(self) -> None:
         """Build the tool map for the active role and cache its schemas."""
@@ -986,6 +1006,16 @@ class Harness:
 
         Yields: events from ``pico_chat.harness.events``.
         """
+        if self.sandbox_required():
+            yield events.Error(
+                message=(
+                    f"Role '{self.role.name}' requires an active sandbox. "
+                    "Select one with /sandbox <id>, or switch role."
+                )
+            )
+            yield events.Done()
+            return
+
         messages = await self._build_messages(user_input)
         
         # Emit user message start with its ID
@@ -1119,4 +1149,24 @@ def get_harness(config_path: str | None = None) -> Harness:
         transport = _build_transport(spec, workspace)
         _harness = Harness(workspace, transport=transport)
         _harness._sandbox_runtime = getattr(spec, "runtime", "none")
+        _sandbox_warning(_harness, spec, workspace)
     return _harness
+
+
+def _sandbox_warning(harness: Harness, spec, workspace: str) -> None:
+    """Append a startup warning when the active sandbox is not ready."""
+    if spec is None or not spec.enabled:
+        return
+    from pico_chat.sandbox import build_command, image_present, runtime_available
+
+    if not runtime_available(spec):
+        harness.startup_warnings.append(
+            f"Sandbox runtime '{spec.runtime}' not found on PATH; tools will "
+            "fail until it is installed (or run /sandbox none)."
+        )
+    elif not image_present(spec):
+        command = build_command(spec, workspace)
+        hint = f" Build it with: {' '.join(command)}" if command else ""
+        harness.startup_warnings.append(
+            f"Sandbox image '{spec.image or spec.runtime}' not found.{hint}"
+        )

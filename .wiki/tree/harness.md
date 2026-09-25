@@ -126,8 +126,12 @@ event still carries the full output for the UI. `limit <= 0` disables it.
 
 ### `roles.py`
 `Role` — the single source of truth for a conversation's operating mode: a
-`description`, a `prompt`, and a `tools: dict[str, str]` mapping each registered
-tool to exactly one of `no` / `ask` / `yes`. There is no permission engine.
+`description`, a `prompt`, a `tools: dict[str, str]` mapping each registered
+tool to exactly one of `no` / `ask` / `yes`, and `require_sandbox` (bool,
+default false). There is no permission engine.
+- `require_sandbox = true` locks the conversation while no sandbox is active:
+  `Harness.sandbox_required()` gates `chat()` (yields an `Error`) and the UI
+  refuses normal submissions. Activating a sandbox lifts it automatically.
 - Built-in roles `agent` (all tools `yes`) and `chat` (all tools `no`) are
 	seeded as files by `ensure_roles_dir()`; a code fallback exists for both.
 - `create_role(name)` writes a template listing every registered tool with
