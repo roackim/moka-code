@@ -287,6 +287,17 @@ def test_focused_edit_shows_a_diff_keeping_indentation():
     assert body == ["  def a():", "-     return 1", "+     x = 2", "+     return x"]
 
 
+def test_expanded_diff_lines_are_colored_whole():
+    args = {"path": "a.py", "search": "keep\nold", "replace": "keep\nnew"}
+    msg = _tool(name="edit", args=args, status="completed", finalized=True,
+                output="ok", focused=True)
+    body = msg.get_formatted().splitlines()[1:]
+    assert body[1] == f"{theme.ERROR}- old{theme.reset()}"
+    assert body[2] == f"{theme.SUCCESS}+ new{theme.reset()}"
+    # Context lines keep only a muted marker.
+    assert body[0] == f"{theme.MUTED}  {theme.reset()}keep"
+
+
 def test_focused_write_shows_a_capped_head():
     content = "".join(f"line {i}\n" for i in range(30))
     msg = _tool(name="write", args={"path": "a.py", "content": content},

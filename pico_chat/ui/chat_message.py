@@ -864,7 +864,12 @@ class Message:
                         for k, chunk in enumerate(chunks)
                     ]
                 else:
-                    lines.append(f"{color}{prefix}{theme.reset()}{_clip(text, room)}")
+                    clipped = _clip(text, room)
+                    if prefix.strip() in ("+", "-"):
+                        # Added/removed lines are colored whole, not just the sign.
+                        lines.append(f"{color}{prefix}{clipped}{theme.reset()}")
+                    else:
+                        lines.append(f"{color}{prefix}{theme.reset()}{clipped}")
 
         if state == "running" and self.live_output:
             tail = [line for line in self.live_output if line.strip()][-_LIVE_TAIL:]

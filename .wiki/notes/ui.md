@@ -326,7 +326,7 @@ edit a.py +2 lines −1 line approve? a/x   (AskPermissionMsg)
   `completed` / `error` / `denied` / `cancelled`. `set_tool_status("running")`
   starts the elapsed clock.
 - **Focused body** (`_tool_body`): edit → `SequenceMatcher` diff (`  `/`- `/`+ `,
-  indentation kept, capped); write → first 20 lines as `+ ` then
+  indentation kept, capped; `+`/`-` lines colored whole SUCCESS/ERROR); write → first 20 lines as `+ ` then
   `… +N more lines`; bash → `$ ` full command; other tools → `key: value`. `o`
   toggles the output, capped head 20 / tail 10, bash `[stdout]`/`[exit:N]`
   markers dropped. Focus changes rebuild the line, so an auto-focused permission
