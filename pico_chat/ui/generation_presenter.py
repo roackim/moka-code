@@ -123,8 +123,9 @@ async def process_generation(app, user_input, user_msg) -> None:
     begin_text_message(current_msg)
 
     # Process streaming events from Harness
+    stream = agent.chat(user_input)
     try:
-        async for event in agent.chat(user_input):
+        async for event in stream:
             if isinstance(event, events.Start):
                 current_harness_ids = [event.message_id]
                 logger.debug(f"Start: {event.role} with ID {event.message_id}")
@@ -381,6 +382,11 @@ async def process_generation(app, user_input, user_msg) -> None:
             await asyncio.sleep(0)
 
     except asyncio.CancelledError:
+        # Close the harness stream now (not at garbage collection) so it can
+        # stop its running tool and repair history before the next turn.
+        aclose = getattr(stream, "aclose", None)
+        if aclose is not None:
+            await aclose()
         # Finalize current message and add a plain SysMsg notification.
         # Avoid appending ANSI codes to a MarkdownComponent message (PicoMsg)
         # since the component would render the escape sequences as literal text.
@@ -398,6 +404,8 @@ async def process_generation(app, user_input, user_msg) -> None:
         # smoothing on, the frame callback owns finalization so the reveal can
         # finish animating; otherwise finalize now.
         finalize_active_tools(aborted_status)
+        # A stopped permission prompt must not keep blocking user input.
+        app.pending_permission_prompt = None
         if not natural_done or not smoothing:
             end_status_message()
             if smoothing:

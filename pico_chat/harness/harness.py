@@ -66,6 +66,8 @@ class Harness:
 
         # Build initial project context
         self.startup_warnings: list[str] = []
+        # (tool name, task) while a tool runs; see _abort_tool_calls.
+        self._running_tool = None
         self.project_context = build_harness_context(self.workspace)
         self.debug_stream.log("CONTEXT", "Project context built")
         # Cache for the @ file picker listing (invalidated on workspace change).
@@ -308,6 +310,37 @@ class Harness:
     def get_current_reasoning(self) -> str:
         """Return the reasoning accumulated so far in the active generation."""
         return self._current_reasoning
+
+    def _abort_tool_calls(self, tool_calls_list: List[Dict[str, Any]]) -> None:
+        """Clean up after a turn stopped during tool execution.
+
+        - the running tool is killed (a bash command, or the sandbox worker so
+          its orphaned request cannot interleave with the next one);
+        - every call of the turn without a result gets a "cancelled" tool
+          message, since an assistant ``tool_calls`` entry with no answer makes
+          the next request invalid;
+        - answers queued for a stopped permission prompt are dropped.
+        """
+        running = getattr(self, "_running_tool", None)
+        if running is not None:
+            name, task = running
+            try:
+                self.transport.cancel_active(name)
+            except Exception:  # pragma: no cover - best effort
+                logger.warning("Could not stop tool %s", name, exc_info=True)
+            task.cancel()
+            self._running_tool = None
+
+        answered = {m.get("tool_call_id") for m in self.history if m.get("role") == "tool"}
+        for tc in tool_calls_list:
+            if tc["id"] not in answered:
+                self._add_message_to_history(
+                    role="tool",
+                    content="[CANCELLED] The user stopped the turn before this tool call finished.",
+                    tool_call_id=tc["id"],
+                )
+        self._permission_gate.clear_pending()
+        self.state = AgentState.IDLE
 
     def stop_tool(self) -> bool:
         """Terminate the currently-running shell command (bash tool), if any.
@@ -904,6 +937,8 @@ class Harness:
                     return result
 
                 task = asyncio.ensure_future(_run_tool())
+                # Known to ``_abort_tool_calls`` so a stop can kill it.
+                self._running_tool = (tool_name, task)
                 while not task.done():
                     try:
                         stream, data = await asyncio.wait_for(
@@ -921,6 +956,7 @@ class Harness:
                         id=tool_call_id, name=tool_name, stream=stream, data=data,
                     )
 
+                self._running_tool = None
                 result = task.result()
 
                 if not isinstance(result, str):
@@ -1138,8 +1174,14 @@ class Harness:
                     
                 # Execute tools and yield feedback
                 logger.debug(f"Executing {len(tool_calls_list)} tool call(s)")
-                async for feedback in self._execute_tool_calls(tool_calls_list, messages):
-                    yield feedback
+                try:
+                    async for feedback in self._execute_tool_calls(tool_calls_list, messages):
+                        yield feedback
+                except (asyncio.CancelledError, GeneratorExit):
+                    # Stopped mid-turn (/stop): kill the running tool and
+                    # answer every call so history stays a valid request.
+                    self._abort_tool_calls(tool_calls_list)
+                    raise
                 
                 logger.debug("Tool execution complete - continuing loop")
 

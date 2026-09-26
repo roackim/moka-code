@@ -174,6 +174,23 @@ There is one conversation per process. The app (`chatTUI`) owns the agent,
 history panel, message queue, generation task, tool state, and pause/steer
 state directly; there is no `ConversationRuntime`, `TabView`, or `TabBar`.
 
+**One generation at a time.** A single `agent_worker` serves `message_queue`:
+`run()` records it in `worker_task`, so `_ensure_worker()` never starts a
+second one (two workers on one queue used to run generations concurrently). A
+message sent while the model answers is queued (`is_queued`, "user (queued)")
+and **stays last**: `ChatHistoryPanel.new_message(append=True)` inserts new
+lines above trailing queued messages, so the running generation's tool lines
+and text never land below a queued question. **`/stop`** cancels only the
+running generation (`stop_generation` sets `_stop_requested`; the worker keeps
+serving the queue). The presenter then `aclose()`s the harness stream so
+`Harness._abort_tool_calls` runs at once: it kills the running tool
+(`transport.cancel_active` — a bash process group, or the sandbox worker so an
+orphaned request cannot interleave with the next), answers every unanswered
+call of the turn with a `[CANCELLED]` tool message (keeping history a valid
+request), and clears stale permission answers (`PermissionGate.clear_pending`,
+so a late "allow" cannot approve the next prompt). The presenter also resets
+`pending_permission_prompt` so input is not left blocked.
+
 ## Shutdown
 
 Ctrl+C is read as a raw `\x03` byte by the compositor's input loop
@@ -222,6 +239,12 @@ The most complex component. Responsibilities are split across sub-modules:
 | `text_buffer.py` | Text storage, undo/redo |
 | `input_handlers.py` | Keyboard, mouse, paste events |
 | `completion.py` | `Completer` base + the four trigger-based providers: `CommandCompletion`, `SubcommandCompletion`, `ArgumentCompletion`, `ContextCompletion` |
+
+Accepting a completion (Tab, or Enter before submit) inserts **no space** and
+closes the menu like ESC (`_accept_completion` → `cancel()`, which suppresses
+the menu for that word); the next menu opens once the user types the space.
+The exception is a folder picked from the `@` menu, which keeps the menu open
+to drill into it.
 | `scroll_manager.py` | Scroll offset for large input |
 | `cursor_renderer.py` | Cursor visibility and animation |
 | `coordinate_mapper.py` | Screen position → text offset |

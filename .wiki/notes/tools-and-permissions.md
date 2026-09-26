@@ -29,7 +29,9 @@ lines) values for targeted reads, `max_chars` for bounded output, and
 The default call remains a complete, unnumbered file read for compatibility.
 
 `bash` runs through `ShellTool`, whose `run_async` path is cancellable: `/stop`
-(or the stop action) terminates the process group. It also streams: `on_output
+terminates the process group (via `Harness._abort_tool_calls` →
+`transport.cancel_active`; in a sandbox the worker is killed and respawns on
+the next request). It also streams: `on_output
 (stream, chunk)` forwards interim stdout/stderr, the harness emits a
 `ToolOutput` event per chunk, and the UI routes them to the activity surface.
 The same callback path serves in-process and sandboxed `bash`.

@@ -712,7 +712,16 @@ class ChatHistoryPanel(TextComponent):
         )
         
         if append:
-            self.messages.append(new_message)
+            # Messages the user queued during a generation stay last: the
+            # running generation's lines go above them until they are picked
+            # up, so a queued question never lands mid-answer.
+            index = len(self.messages)
+            while index > 0 and getattr(self.messages[index - 1], "is_queued", False):
+                index -= 1
+            self.messages.insert(index, new_message)
+            if self.focused_message_index is not None and self.focused_message_index >= index \
+                    and index < len(self.messages) - 1:
+                self.focused_message_index += 1
             new_message.get_component().parent = self
             self._message_height_cache.clear()
         

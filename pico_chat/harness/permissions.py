@@ -59,6 +59,15 @@ class PermissionGate:
         """Wait for the user to provide text via the UI."""
         return await self._user_response_queue.get()
 
+    def clear_pending(self) -> None:
+        """Drop answers nobody is waiting for (e.g. after a stopped turn).
+
+        Otherwise an "approve" given to a prompt that was stopped would be
+        consumed by the *next* permission prompt.
+        """
+        while not self._user_response_queue.empty():
+            self._user_response_queue.get_nowait()
+
     @staticmethod
     def build_prompt(tool_name: str, args: dict) -> str:
         """Build a human-readable permission prompt for a tool call."""

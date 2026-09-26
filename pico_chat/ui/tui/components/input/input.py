@@ -492,13 +492,13 @@ class InputComponent(Component):
             parent_box=self.parent
         )
 
-    def _accept_completion(self, completion, add_space=False) -> bool:
-        """Commit the provider's highlighted candidate into the buffer.
+    def _accept_completion(self, completion) -> bool:
+        """Commit the highlighted candidate, then close the menu like ESC.
 
-        Args:
-            completion: The completion provider to accept
-            add_space: Whether to append a trailing space (Tab) instead of
-                just placing the cursor after the selection (Enter)
+        No space is inserted: the cursor sits right after the completed word
+        and the menu stays closed for it (the next word, after a space the
+        user types, opens menus as usual). A directory picked from the ``@``
+        menu is the exception: the menu stays open to keep drilling into it.
         """
         result = completion.accept_selection(self.buffer.text, self.buffer.cursor_pos)
         if not result:
@@ -506,19 +506,13 @@ class InputComponent(Component):
 
         new_text, new_cursor_pos = result
         selected = completion.menu.get_selected() or ""
-        # A directory picked from the @ menu ends with "/": keep drilling, no
-        # trailing space.
         is_dir = selected.endswith('/')
 
-        if add_space and not is_dir:
-            self.buffer.text = new_text + " "
-            self.buffer.cursor_pos = len(self.buffer.text)
-        else:
-            self.buffer.text = new_text
-            self.buffer.cursor_pos = new_cursor_pos
-        completion.hide()
-        if add_space:
-            self._on_text_changed()
+        self.buffer.text = new_text
+        self.buffer.cursor_pos = new_cursor_pos
+        if not is_dir:
+            completion.cancel(self.buffer.text, self.buffer.cursor_pos)
+        self._on_text_changed()
         return True
 
     def has_active_completion(self) -> bool:
@@ -579,17 +573,17 @@ class InputComponent(Component):
                 active_completion.navigate_down()
                 return True
         
-        # Handle Tab - accept selection with trailing space
+        # Handle Tab - accept the selection (no space, menu closed)
         if key == '\t':
-            if active_completion and self._accept_completion(active_completion, add_space=True):
+            if active_completion and self._accept_completion(active_completion):
                 return True
             return False  # Let other handlers try
         
-        # Handle Enter - accept selection + submit (no trailing space)
+        # Handle Enter - accept selection + submit
         if key in ('\r', '\n'):
             # Try completion first if menu is visible
             if active_completion:
-                self._accept_completion(active_completion, add_space=False)
+                self._accept_completion(active_completion)
             
 
         

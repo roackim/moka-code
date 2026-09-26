@@ -455,10 +455,9 @@ class ArgumentCompletion(Completer):
             if not clean.endswith(' '):
                 existing_args = existing_args[:-1]  # drop the partial arg
 
-        # Build final text
+        # Build final text (no trailing space: the user types one to go on)
         all_args = existing_args + [selected]
-        # Add trailing space if selection looks complete (for further args)
-        completed = f"{prefix} {' '.join(all_args)} "
+        completed = f"{prefix} {' '.join(all_args)}"
         return completed, len(completed)
 
     def cancel(self, text: str, cursor_pos: int):

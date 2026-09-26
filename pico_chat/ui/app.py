@@ -177,6 +177,8 @@ class chatTUI(ChatActionHandlers):
         self.message_queue = asyncio.Queue()
         self.current_generation_task = None
         self.worker_task = None
+        # Set by stop_generation so the worker survives a /stop cancel.
+        self._stop_requested = False
         self.active_tool_messages = {}
         self.pending_permission_prompt = None
         self._active_user_input = None
@@ -382,10 +384,18 @@ class chatTUI(ChatActionHandlers):
 
                 self._active_user_input = user_input
                 self._active_user_msg = user_msg
+                self._stop_requested = False
                 self.current_generation_task = asyncio.create_task(
                     self._process_generation(user_input, user_msg)
                 )
-                await self.current_generation_task
+                try:
+                    await self.current_generation_task
+                except asyncio.CancelledError:
+                    # /stop cancels the generation, which surfaces here too;
+                    # keep serving the queue. Anything else (shutdown) cancels
+                    # the worker itself.
+                    if not self._stop_requested:
+                        raise
             except asyncio.CancelledError:
                 self.stop_generation()
                 return
@@ -426,6 +436,7 @@ class chatTUI(ChatActionHandlers):
     def stop_generation(self):
         """Stop the current generation task if active."""
         if self.current_generation_task and not self.current_generation_task.done():
+            self._stop_requested = True
             self.current_generation_task.cancel()
             return True
         return False
@@ -875,7 +886,9 @@ class chatTUI(ChatActionHandlers):
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(self.compositor.run())
                 tg.create_task(self.command_worker())
-                tg.create_task(self.agent_worker())
+                # Recorded so ``_ensure_worker`` never starts a second worker:
+                # two workers on one queue ran generations concurrently.
+                self.worker_task = tg.create_task(self.agent_worker())
                 tg.create_task(shutdown_watcher())
                 tg.create_task(background_startup_check())
         except Exception:
