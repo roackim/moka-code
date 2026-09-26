@@ -73,38 +73,38 @@ def test_thinking_message_is_collapsible():
     assert msg.get_component().get_preferred_height(40) == 1
 
 
-def test_thinking_spinner_animates_while_streaming():
+def test_thinking_line_ticks_and_previews_then_summarizes(monkeypatch):
+    """Live: ``thinking Ns`` plus the reasoning tail; done: ``thought for Xs``."""
+    import pico_chat.ui.chat_message as cm
     from pico_chat.ui.tui.buffer import Buffer
     from pico_chat.ui.tui.msg_types import ThinkingMsg
 
-    msg = Message("deep reasoning", msg_type=ThinkingMsg(), max_width=40)
+    clock = [100.0]
+    monkeypatch.setattr(cm.time, "perf_counter", lambda: clock[0])
+    msg = Message("", msg_type=ThinkingMsg(), max_width=60)
     msg.set_collapsed(True)
+    msg.begin_phase("thinking")
+    msg.append("first idea\nnow checking the parser")
     box = msg.get_component()
-    box.set_layout(0, 0, 40, 1)
+    box.set_layout(0, 0, 60, 1)
 
     def row():
-        buf = Buffer(40, 1)
+        buf = Buffer(60, 1)
         box.render(buf)
         return "".join(c.char for c in buf.cells[0])
 
-    first = row()
-    assert "⠋" in first  # spinner frame 0
+    clock[0] += 3.2
+    live = row()
+    assert "thinking 3s" in live
+    assert "now checking the parser" in live
+    assert not any(glyph in live for glyph in "⠋⠙✓")
 
-    msg.advance_spinner()
-    second = row()
-    assert "⠙" in second  # spinner frame 1
-    assert second != first
-
-    # Once finalized, the spinner is replaced by a muted summary line with the
-    # normal message prefix and no done glyph.
+    clock[0] += 1.0
     msg.finalize()
-    finalized = row()
-    assert "⠋" not in finalized
-    assert "⠙" not in finalized
-    assert "✓" not in finalized
-    assert "▌" in finalized
-    assert "thoughts" in finalized
-
+    done = row()
+    assert "thought for 4.2s" in done
+    assert "parser" not in done
+    assert "▌" in done
 
 def test_empty_message_keeps_minimum_row():
     """An empty message must not collapse to zero rows.
@@ -118,15 +118,21 @@ def test_empty_message_keeps_minimum_row():
     assert msg.get_component().get_preferred_height(40) == 1
 
 
-def test_thinking_done_glyph_and_label():
+def test_waiting_label_before_any_reasoning(monkeypatch):
+    """No reasoning yet: ``waiting``; a slow pre-request phase: ``preparing``."""
+    import pico_chat.ui.chat_message as cm
     from pico_chat.ui.tui.msg_types import ThinkingMsg
 
-    msg = Message("deep reasoning", msg_type=ThinkingMsg(), max_width=40)
-    msg.finalize()
-    glyph, color = msg.done_glyph()
-    assert glyph == "✓"
-    assert msg.done_label("thinking") == "thoughts"
-
+    clock = [0.0]
+    monkeypatch.setattr(cm.time, "perf_counter", lambda: clock[0])
+    msg = Message("", msg_type=ThinkingMsg(), max_width=40)
+    msg.begin_phase("processing")
+    assert msg._thinking_label() == "waiting 0s"
+    clock[0] = 0.7
+    assert msg._thinking_label() == "preparing 0s"
+    msg.begin_phase("thinking")
+    clock[0] = 2.1
+    assert msg._thinking_label() == "waiting 2s"
 
 def _render_rows(msg, width, height):
     from pico_chat.ui.tui.buffer import Buffer

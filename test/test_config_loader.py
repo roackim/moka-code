@@ -192,3 +192,46 @@ def test_reload_picks_up_edits(tmp_path):
     _write(tmp_path / "ui.toml", {"theme": "terminal"})
     assert config.reload() == []
     assert config.ui_theme == "terminal"
+
+
+def test_openrouter_routing_keys_load(tmp_path):
+    _write(tmp_path / "servers.toml", {"servers": {"or": {
+        "type": "openrouter", "base_url": "https://openrouter.ai/api/v1",
+        "providers": ["deepseek"],
+        "models": {"deepseek/deepseek-v4.1-flash": {"providers": ["deepseek", "fireworks"]},
+                   "anthropic/claude-sonnet-4": {}},
+    }}})
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+
+    assert config.load_errors == []
+    assert list(config.servers["or"]["models"]) == [
+        "deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-4"]
+
+
+def test_retired_openrouter_keys_name_their_replacement_and_skip(tmp_path):
+    _write(tmp_path / "servers.toml", {"servers": {"or": {
+        "type": "openrouter", "base_url": "https://openrouter.ai/api/v1",
+        "provider": "deepseek", "enabled_models": ["deepseek/deepseek-v4.1-flash"],
+    }}})
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+
+    joined = "\n".join(config.load_errors)
+    assert "[servers.or].provider was replaced by 'providers = [...]'" in joined
+    assert "[servers.or].enabled_models was replaced by" in joined
+    assert "unknown key" not in joined
+    assert "or" not in config.servers
+
+
+def test_openrouter_routing_values_are_validated(tmp_path):
+    _write(tmp_path / "servers.toml", {"servers": {
+        "or": {"type": "openrouter", "base_url": "x", "providers": "deepseek",
+               "models": {"m": {"providers": [1], "sort": "price"}}},
+        "local": {"type": "llamacpp", "base_url": "x", "providers": ["a"]},
+    }})
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+
+    joined = "\n".join(config.load_errors)
+    assert "[servers.or].providers must be a list of provider slugs" in joined
+    assert '[servers.or].models."m".providers must be a list of provider slugs' in joined
+    assert "[servers.or].models.\"m\" unknown key 'sort'" in joined
+    assert '[servers.local].providers is only supported for type = "openrouter"' in joined

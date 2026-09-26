@@ -288,46 +288,67 @@ Every message displayed in the chat history has a `MsgType` that controls its ti
 | `SysMsgError` | "error" | ERROR | COPY |
 | `SysMsgWarning` | "warning" | WARNING | (inherits COPY) |
 | `ToolCallMsg` | "tool" | TOOL | OUTPUT, COPY |
-| `ToolDraftMsg` | "tool" | MUTED | none |
 | `AskPermissionMsg` | "permission" | PERMISSION | ALLOW, DENY, OUTPUT, COPY |
 
-`clamped` types (`ThinkingMsg`, `ToolCallMsg`, `ToolDraftMsg`, `AskPermissionMsg`)
+`clamped` types (`ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`)
 render with no inter-message gap against an adjacent clamped message; the final
 `PicoMsg` answer keeps its gap.
 
 ### Tool-call lines
 
-`ToolCallMsg` / `ToolDraftMsg` / `AskPermissionMsg` render compact (single-line
-when unfocused) with a leading lifecycle glyph in the content, then the tool
-name colored by type (`TOOL` / `MUTED` for a draft / `PERMISSION`, with a `?`
-glyph for a permission ask), then a per-tool summary:
+`ToolCallMsg` / `AskPermissionMsg` render compact (one line when unfocused):
+`name  target  metric  trailing`, with **no status glyph**. Names are padded to
+5 columns so targets line up; long paths are shortened from the left
+(`…/commands/models.py`) so the metric stays visible.
 
 ```
-⠋ read   src/main.py          (ToolDraftMsg: arguments still streaming)
-✓ read   src/main.py 240 lines
-✓ write  src/main.py +312
-✓ edit   src/main.py +10 -17
-✓ bash   pytest -q
-? bash   rm -rf /              (AskPermissionMsg)
+read   src/main.py:10-59  50 lines
+write  big.py  +300 lines
+edit   src/main.py  +2 −1 lines
+edit   README.md  +1 line
+bash   pytest -q  running 12s        (elapsed time ticks; last output lines below)
+bash   pytest -q  exit 1
+edit   a.py  Search block not found  (error: name + reason red)
+edit   a.py  +2 −1 lines  denied
+edit   a.py  +2 −1 lines  approve? a/x   (AskPermissionMsg)
 ```
 
-`chat_message._tool_summary()` owns the summary: `read` reports actual lines
-once the call completes, `write` a `+N` line count, `edit` an `+A -D` line
-diff, `bash` the first command line. Partial (still-streaming) JSON args are
-salvaged by `_parse_tool_args()` so the path can appear before the call is
-complete. A **draft never full-parses** (`full=False`): a `"}` inside a streamed
-`write` body would otherwise trigger a full-buffer scan on every delta. Parsing
-+ summary + cmd are also cached by args identity so the spinner's per-tick
-rebuild is O(1) instead of re-parsing a large body. The harness backs the
-`ToolCallDraft` cadence off as arguments grow (`stride = max(32, len//8)`), so
-drafting a large file is O(log n) events with O(1) work each rather than O(n²).
-A focused draft shows a live `draft:` tail of the raw streamed args, so the call
-is observable while it streams. Expanded (focused) lines add `cmd:`/`out:`. The
-dialog is driven by `generation_presenter`: a `ToolCallDraft` event opens the
-`ToolDraftMsg`; the complete `ToolCall` event promotes it in place to
-`ToolCallMsg`. If generation ends abnormally (`Error`, cancel),
-`finalize_active_tools()` closes any message still in flight so no spinner is
-left running.
+- **Metric rule:** a sign means the file changed, a plain count means it did not.
+  The unit is written once, singular when the total is one, and only nonzero
+  sides show. `+` is SUCCESS, `−` ERROR. (`_line_metric`, `_tool_target_metric`.)
+- **Trailing word only when it is news** (`Message._tool_trailing`):
+  `approve? a/x`, `running Ns` (after 1s), `denied`, `cancelled`, the first line
+  of an error, or a non-zero bash `exit N` parsed from the worker's `[exit:N]`.
+- **State** (`Message.tool_state()`): `drafting` → (`asking`) → `running` →
+  `completed` / `error` / `denied` / `cancelled`. `set_tool_status("running")`
+  starts the elapsed clock.
+- **Focused body** (`_tool_body`): edit → `SequenceMatcher` diff (`  `/`- `/`+ `,
+  indentation kept, capped); write → first 20 lines as `+ ` then
+  `… +N more lines`; bash → `$ ` full command; other tools → `key: value`. `o`
+  toggles the output, capped head 20 / tail 10, bash `[stdout]`/`[exit:N]`
+  markers dropped. Focus changes rebuild the line, so an auto-focused permission
+  prompt shows the diff it asks about.
+- **Running bash** shows its last 5 output lines under the line (even compact),
+  fed by `ToolOutput` → `Message.append_live_output`; they fold away once the
+  call finishes (the activity surface still logs everything).
+- Tool lines are **built for the width** (clipped with `…`, never re-wrapped):
+  `_render_revealed` skips `_format_line_wrap` for tool messages, which used to
+  strip code indentation. `reformat` rebuilds them for a new width.
+
+**Drafting is the tool line itself.** A `ToolCallDraft` event opens a
+`ToolCallMsg` in `drafting` state that grows in the final format (a `write`
+counts the escaped newlines streamed so far: `+12 lines` → `+300 lines`); the
+complete `ToolCall` updates the same message. Partial JSON args are salvaged by
+`_parse_tool_args()`; a draft never full-parses (`full=False`), and
+parse/metric/body are cached by args identity. The harness throttles
+`ToolCallDraft` to one per 100 ms per call. Approving a permission
+(`handle_allow_action`) retypes the ask into a running `ToolCallMsg`
+(`ChatHistoryPanel.retype_tool_message`) and repoints `active_tool_messages`.
+If generation ends abnormally, `finalize_active_tools()` closes any line still
+drafting/running as `cancelled`/`error`.
+
+Live labels are refreshed by the panel's `TickEvent` path every 250 ms
+(`_LIVE_TICK_INTERVAL`); `Message.tick()` redraws only when its label changes.
 
 `ThinkingMsg` and `SysMsgError/Warning` extend `PicoMsg` / `SysMsg` — they inherit defaults and override only what differs.
 
@@ -428,7 +449,7 @@ leading whitespace on the first chunk, since models often open with a space.
 
 Messages are separated by `ui_msg_v_margin` blank lines (default `1`; set it in
 `ui.toml`). Adjacent `clamped` messages (`MsgType.clamped`: `ThinkingMsg`,
-`ToolCallMsg`, `ToolDraftMsg`, `AskPermissionMsg`) render as one block with no
+`ToolCallMsg`, `AskPermissionMsg`) render as one block with no
 gap; the final `PicoMsg` answer, user turns, and notices keep the gap.
 `ChatHistoryPanel` is the owner of the message list — it handles layout,
 selection, scrolling, and width-change reformatting.
@@ -436,35 +457,33 @@ selection, scrolling, and width-change reformatting.
 ### Wait-phase feedback
 
 Each generation opens a collapsed `ThinkingMsg` wait line so it never looks
-frozen:
+frozen. There is no spinner: the label ticks (`Message._thinking_label`).
 
-- `process_generation` creates it *before* consuming the harness stream,
-  labelled `processing` (context ingestion); `Message.begin_phase` starts the
-  clock;
-- at `Start(assistant)` (request in flight) it is relabelled `thinking`, still
-  collapsed, spinner animating via the panel's `TickEvent` path gated to
-  `ui.spinner_fps` (independent of the render fps);
-- at the first content/tool boundary it is finalized and **kept**: its collapsed
-  summary reads a muted `thought for Xs` (`Message.done_label`, from
-  `phase_seconds`) with the normal `▌` message prefix and no done glyph, whether
-  or not the model exposed reasoning. It can be focused to expand the reasoning
-  text.
+- `process_generation` creates it *before* consuming the harness stream (phase
+  `processing`); it reads `waiting 0s`, or `preparing Ns` once that phase has
+  lasted 0.5 s;
+- at `Start(assistant)` the phase becomes `thinking`; with no reasoning yet it
+  reads `waiting Ns`, and once reasoning arrives `thinking Ns` followed by a
+  muted preview of the tail of the latest reasoning line;
+- at the first content/tool boundary (`end_status_message()`): if the model
+  reasoned, it is finalized to `thought for Xs` (focus expands the reasoning);
+  if it did not, the line was only a wait indicator and is **removed**
+  (`ChatHistoryPanel.remove_message`). A reasoning-free tool loop therefore
+  shows only tool lines.
 
-`generation_presenter.end_status_message()` always finalizes (never drops) the
-wait line and is used at every hard boundary (Token, ToolCall,
-PermissionRequest, Error, cancel, and non-deferred Done). At the ToolCall and
-PermissionRequest boundaries the presenter also calls `flush_text()`
-unconditionally — and `end_status_message()` drains before its `current_msg`
-check — so pending revealer text cannot survive a boundary "hand-off" and
-surface only once the tool finishes. `chatTUI.disengage_stream()` flushes once
-more before dropping the stream reference. A later turn after tool calls opens a
-fresh wait line.
+`end_status_message()` is used at every hard boundary (Token, ToolCallDraft,
+ToolCall, PermissionRequest, Error, cancel, and Done — which also removes an
+empty wait line instead of deferring it). It drains the revealer before its
+`current_msg` check, so pending streamed text cannot surface only once the tool
+finishes. `chatTUI.disengage_stream()` flushes once more before dropping the
+stream reference. A later turn after tool calls opens a fresh wait line.
 
 A tool-call delta is **not** a content boundary. Providers may interleave
 content and tool-call deltas within one response, so the presenter tracks
 `response_text_msg` (reset at each `Start(assistant)`) and appends all of a
-response's content to that one `PicoMsg`; the `ToolCallDraft` handler leaves an
-in-progress text message open and only finalizes the wait line. This prevents
+response's content to that one `PicoMsg`. The `ToolCallDraft` handler finalizes
+the text above (fully revealed and styled at once); content resuming after the
+draft goes back into `response_text_msg`. This prevents
 the assistant's sentence from being sliced into a second message below the tool
 line (regression test: `test_content_resuming_after_tool_draft_stays_one_message`).
 

@@ -1,6 +1,6 @@
 """Regression tests for OpenRouter context-window lookup.
 
-A bare model id (no ``provider/`` namespace) in ``enabled_models`` used to
+A bare model id (no ``provider/`` namespace) in ``[models."<id>"]`` used to
 fail the exact-id lookup against OpenRouter's catalog, so the context window
 fell back to 32k even for 1M-token models.
 """
@@ -72,7 +72,7 @@ def test_discover_openrouter_canonicalizes_bare_enabled_id(monkeypatch):
     _patch_client(monkeypatch, CATALOG)
     endpoint = Endpoint(
         name="or", type="openrouter", base_url="https://openrouter.ai/api/v1",
-        api_key="k", enabled_models=["deepseek-v4-flash-0731"],
+        api_key="k", models={"deepseek-v4-flash-0731": {}},
     )
 
     models = asyncio.run(endpoint.discover_models())

@@ -17,6 +17,9 @@ from pico_chat.ui.tui.msg_types import MsgType, MsgAction
 
 from pico_chat.ui.chat_message import Message
 
+# Seconds between refreshes of live labels (elapsed time) on in-progress lines.
+_LIVE_TICK_INTERVAL = 0.25
+
 
 def _clamped(msg: Message) -> bool:
     """True when ``msg`` clamps against an adjacent clamped message (no gap)."""
@@ -59,10 +62,9 @@ class ChatHistoryPanel(TextComponent):
         self._flash_msg: Optional[Message] = None
         self._flash_action_key: Optional[str] = None  # e.g. "c" for COPY
         self._flash_until: float = 0.0  # monotonic time when flash expires
-        # Spinner cadence is decoupled from the render fps (see ui.spinner_fps);
-        # tick events arrive every frame, but the glyph only advances at this
-        # slower rate so it doesn't blur.
-        self._spinner_next_at: float = 0.0
+        # Live labels (elapsed seconds) are refreshed a few times per second,
+        # not on every render frame.
+        self._live_tick_next_at: float = 0.0
         
         # Initial component - self is now the component
         self.compositor: Optional[object] = None
@@ -461,17 +463,17 @@ class ChatHistoryPanel(TextComponent):
 
     def handle_input(self, event: Any) -> bool:
         """Handle mouse wheel for scrolling and keyboard navigation."""
-        # Animate the spinner on any in-progress message: collapsible (thinking)
-        # or live tool messages (running command / pending permission). Tick
-        # events fire every render frame, so gate the glyph on ui.spinner_fps.
+        # Refresh the live labels of in-progress messages (thinking/waiting
+        # seconds, a running tool's elapsed time). Tick events fire every
+        # render frame; messages only redraw when their label changes.
         if isinstance(event, TickEvent):
-            interval = 1.0 / max(1, pico_cfg.config.ui_spinner_fps)
-            if event.timestamp >= self._spinner_next_at:
-                self._spinner_next_at = event.timestamp + interval
+            if event.timestamp >= self._live_tick_next_at:
+                self._live_tick_next_at = event.timestamp + _LIVE_TICK_INTERVAL
                 for msg in self.messages:
                     if not getattr(msg, "finalized", True):
-                        if getattr(msg, "collapsible", False) or getattr(msg, "is_tool_message", lambda: False)():
-                            msg.advance_spinner()
+                        tick = getattr(msg, "tick", None)
+                        if callable(tick):
+                            tick()
             return False
 
         # Handle keyboard input only if this panel has keyboard focus
@@ -787,6 +789,30 @@ class ChatHistoryPanel(TextComponent):
             
         except ValueError:
             # Message not found, ignore
+            pass
+
+    def retype_tool_message(self, msg: Message, msg_type: MsgType) -> Message:
+        """Swap a tool line's type in place (e.g. permission ask → tool call).
+
+        The type fixes the gutter color and actions at construction, so the
+        line is rebuilt as a new message carrying the tool state over.
+        """
+        if isinstance(msg.type, type(msg_type)):
+            return msg
+        new = self.new_message("", msg_type=msg_type,
+                               harness_message_ids=msg.harness_message_ids)
+        for attr in ("tool_name", "tool_args", "tool_output", "tool_status",
+                     "show_output", "live_output", "_run_started_at"):
+            setattr(new, attr, getattr(msg, attr))
+        self.replace_message(msg, new)
+        new.rebuild_tool_display()
+        return new
+
+    def remove_message(self, msg: Message) -> None:
+        """Remove ``msg`` if it is still in the transcript."""
+        try:
+            self.remove_message_by_index(self.messages.index(msg))
+        except ValueError:
             pass
 
     def add_message(self, message: str, msg_type: MsgType = None, title: str = None, frame_color: RGB = None, content_color: RGB = None, left_margin: int = 0, right_margin: int = 0, harness_message_ids: list = None) -> Message:

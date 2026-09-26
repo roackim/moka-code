@@ -27,7 +27,7 @@ See [notes/ui.md](../notes/ui.md) for the component model and layer stack.
 | `layout_utils.py` | `wrap_text`, `display_width`, `strip_ansi`, `break_long_word` |
 | `graphemes.py` | `split_clusters`, `count_nonws`, `advance_nonws` — grapheme-cluster helpers for stream reveal granularity |
 | `fuzzy.py` | `fuzzy_match` (subsequence + indices, used by the file picker), `fuzzy_score`/`fuzzy_search` (word-based, used by menus) |
-| `msg_types.py` | `MsgType` base + `UserMsg`, `PicoMsg`, `SysMsg{,Error,Warning}`, `ThinkingMsg`, `ToolCallMsg`, `ToolDraftMsg`, `AskPermissionMsg`; `MsgAction` enum |
+| `msg_types.py` | `MsgType` base + `UserMsg`, `PicoMsg`, `SysMsg{,Error,Warning}`, `ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`; `MsgAction` enum |
 | `ascii_table.py` | `TableStyle`, `AsciiTable` — used by the markdown table renderer |
 | `syntax_highlight.py` | `highlight_line()`, `_resolve_lang()`, `_get_highlight_color()`, `_resolve_hex_color()` |
 | `__init__.py` | Package docstring only |

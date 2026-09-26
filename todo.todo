@@ -1,5 +1,4 @@
 
-
 [ ] better UI for tools calls
     [ ] when drafting
     [ ] read write params, like 'read file.py 240 lines' something like that
@@ -18,16 +17,15 @@
 [ ] AGENTS.md AGENT.md (ROBOT.md ROBOT.txt (?))
 [ ] SKILLS ?
 
-[?] finer grain for copy, like code block, table etc
-    [?] implies finer grain for focus ? MOD key + up / down / click ?
-        -> focus part of message ?
-
 sandbox:
 [ ] We need a way to display the current sandbox in the UI !
 [ ] /stop doesn't work
 [ ] message ordering is bad
     [ ] no queue for msg sent while LLM answers -> bad order
 
+[?] finer grain for copy, like code block, table etc
+    [?] implies finer grain for focus ? MOD key + up / down / click ?
+        -> focus part of message ?
 
 [x] fix input box problem where no max height, and it takes whole heigh if paste long content, and no scroll
 [x] fix focus message error

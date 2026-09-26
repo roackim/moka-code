@@ -200,9 +200,8 @@ class Endpoint:
         timeout: float = 30.0,
         retry_attempts: int = 3,
         retry_delay: float = 2.0,
-        provider: Optional[str] = None,
-        enabled_models: Optional[list[str]] = None,
-        model_providers: Optional[dict[str, dict[str, Any]]] = None,
+        providers: Optional[list[str]] = None,
+        models: Optional[dict[str, dict[str, Any]]] = None,
     ):
         self.name = name
         self.type: ServerType = type
@@ -213,9 +212,10 @@ class Endpoint:
         self.timeout = timeout
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
-        self.provider = provider
-        self.enabled_models = list(enabled_models or [])
-        self.model_providers = dict(model_providers or {})
+        # OpenRouter routing: the server-default provider whitelist (in
+        # order) and one entry per enabled model, which may override it.
+        self.providers = list(providers) if providers is not None else None
+        self.models = {model_id: dict(entry) for model_id, entry in (models or {}).items()}
 
         # .local hosts are rewritten to a routable IP. Resolution can block for
         # seconds on an offline mDNS host, so it is kicked off in the background
@@ -256,9 +256,8 @@ class Endpoint:
             timeout=data.get("timeout", 30.0),
             retry_attempts=data.get("retry_attempts", 3),
             retry_delay=data.get("retry_delay", 2.0),
-            provider=data.get("provider"),
-            enabled_models=data.get("enabled_models"),
-            model_providers=data.get("model_providers"),
+            providers=data.get("providers"),
+            models=data.get("models"),
         )
 
     @property
@@ -492,33 +491,43 @@ class Endpoint:
     def _enabled_ids(self) -> list[str]:
         """Return the explicitly-enabled model ids.
 
-        All OpenRouter models are disabled unless explicitly enabled. The
-        allowlist is ``enabled_models``, falling back to the single ``model``.
+        All OpenRouter models are disabled unless they have a
+        ``[models."<id>"]`` table, falling back to the single ``model``.
         """
-        if self.enabled_models:
-            return list(self.enabled_models)
+        if self.models:
+            return list(self.models)
         if self.model:
             return [self.model]
         return []
 
+    def _model_entry(self, model_name: str) -> Optional[dict]:
+        """The ``[models."<id>"]`` table for a model.
+
+        A bare id (no ``vendor/`` prefix) matches its canonical id, since
+        discovery canonicalizes bare ids.
+        """
+        if model_name in self.models:
+            return self.models[model_name]
+        for model_id, entry in self.models.items():
+            if model_name.endswith("/" + model_id):
+                return entry
+        return None
+
     def _provider_spec(self, model_name: str) -> Optional[dict]:
         """Build the OpenRouter ``provider`` payload for a model.
 
-        Per-model routing (``model_providers``) takes precedence over the legacy
-        single ``provider``. Returns ``None`` for OpenRouter's default routing.
+        ``providers`` is a strict whitelist tried in order: ``order`` alone lets
+        OpenRouter fall back to any other host, so fallbacks are disabled. A
+        model's own ``providers`` replaces the server default; an empty list
+        (or none at all) means OpenRouter's own routing (``None``).
         """
-        entry = self.model_providers.get(model_name)
-        if entry:
-            mode = entry.get("mode")
-            providers = entry.get("providers") or []
-            if mode == "whitelist" and providers:
-                return {"order": list(providers)}
-            if mode == "blacklist" and providers:
-                return {"exclude": list(providers)}
-        if self.provider:
-            return {"order": [self.provider]}
-        return None
-
+        entry = self._model_entry(model_name)
+        providers = self.providers
+        if entry is not None and "providers" in entry:
+            providers = entry["providers"]
+        if not providers:
+            return None
+        return {"order": list(providers), "allow_fallbacks": False}
 
 
 def default_endpoint() -> Endpoint:

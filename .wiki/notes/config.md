@@ -73,7 +73,12 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 
 - **Intent** (hand-edited): the section files above; pico never writes them.
   Every `[servers.<name>]` needs a `type` (missing/unknown → load error, server
-  skipped). Load errors are shown at startup and on `/reload`/`/config`, and
+  skipped). OpenRouter servers enable models with one
+  `[servers.<name>.models."<id>"]` table each; `providers = [...]` (server
+  default, or per model, replacing the default) is a strict whitelist tried in
+  order — `order` alone would let OpenRouter fall back to any host. The retired
+  keys `provider`, `enabled_models` and `model_providers` are reported with
+  their replacement and the server is skipped (`_RETIRED_SERVER_KEYS`). Load errors are shown at startup and on `/reload`/`/config`, and
   every reload rebuilds the live endpoint if its server table or selection
   changed.
 - **State** (machine-written, disposable): `state.toml` holds `last_server`,
@@ -141,8 +146,9 @@ stored one file per role under `roles/<name>.toml`. `PermissionGate`
 `ui_theme`, `ui_box_style`, `ui_show_metrics`,
 `ui_status_bar_fields`, `ui_max_input_height` (input box caps + scrolls past
 this many wrapped lines), `ui_stream_smoothing` / `ui_smooth_target_fps`
-(streamed-text reveal smoothing), `ui_spinner_fps` (braille spinner cadence,
-independent of render fps), `target_fps`, and the rest of the `ui_*` attrs.
+(streamed-text reveal smoothing), `target_fps`, and the rest of the `ui_*`
+attrs. `spinner_fps` is retired (`_RETIRED_UI`): tool and thinking lines show
+ticking elapsed time instead of a spinner.
 
 The `sandbox` status-bar field is composed from `ui_sandbox_glyph` +
 `ui_sandbox_prefix` + the runtime name; it is green (`ui_sandbox_active_color`)

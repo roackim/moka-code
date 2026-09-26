@@ -133,7 +133,6 @@ DEFAULT_UI_TOML = """\
 # sandbox_inactive_color = "WARNING"
 # stream_smoothing = true             # reveal streamed text smoothly
 # smooth_target_fps = 60              # reveal cadence (independent of render fps)
-# spinner_fps = 10                    # braille spinner cadence (independent of render fps)
 # target_fps = 60
 """
 
@@ -199,13 +198,18 @@ DEFAULT_SERVERS_TOML = """\
 # type = "openrouter"
 # base_url = "https://openrouter.ai/api/v1"
 # api_key_env = "OPENROUTER_API_KEY"  # read the key from the environment
-# enabled_models = ["anthropic/claude-3.5-sonnet"]
-# provider = "Anthropic"              # optional default routing
+# providers = ["deepseek"]            # default routing for every model below:
+#                                     # only these, tried in this order
 #
-# Per-model provider routing (whitelist = only these; blacklist = all but):
-# [servers.openrouter.model_providers."anthropic/claude-3.5-sonnet"]
-# mode = "whitelist"
-# providers = ["Anthropic"]
+# One table per enabled model (the keys are what /model lists). Provider
+# values are slugs from the model's "Providers" tab on openrouter.ai.
+# [servers.openrouter.models."deepseek/deepseek-v4.1-flash"]
+# providers = ["deepseek", "fireworks"]   # replaces the server default
+#
+# [servers.openrouter.models."anthropic/claude-sonnet-4"]
+#                                     # no providers: uses the server default
+# [servers.openrouter.models."qwen/qwen3-coder"]
+# providers = []                      # OpenRouter's own routing
 
 # OpenAI-compatible -----------------------------------------------------
 # [servers.openai]
@@ -282,7 +286,6 @@ _UI_SPEC: Dict[str, tuple[str, str]] = {
     "sandbox_inactive_color": ("ui_sandbox_inactive_color", "str"),
     "stream_smoothing": ("ui_stream_smoothing", "bool"),
     "smooth_target_fps": ("ui_smooth_target_fps", "int"),
-    "spinner_fps": ("ui_spinner_fps", "int"),
     "target_fps": ("target_fps", "int"),
 }
 
@@ -301,7 +304,7 @@ _DEBUG_SPEC: Dict[str, tuple[str, str]] = {
 # Keys removed from a flat section but kept here so existing user files can be
 # cleaned up on startup. Add a key here when you delete it from its ``*_SPEC``
 # and ``DEFAULT_*_TOML`` (see "Adding or deprecating a config key" in AGENTS.md).
-_RETIRED_UI: set[str] = set()
+_RETIRED_UI: set[str] = {"spinner_fps"}  # spinner replaced by elapsed-time labels
 _RETIRED_CONTEXT: set[str] = set()
 _RETIRED_DEBUG: set[str] = set()
 
@@ -389,11 +392,17 @@ _STYLE_SECTIONS = {"markdown_styles", "syntax_highlight"}
 
 _SERVER_KEYS = {
     "type", "base_url", "api_key", "api_key_env", "model", "max_context",
-    "timeout", "retry_attempts", "retry_delay", "provider", "enabled_models",
-    "model_providers",
+    "timeout", "retry_attempts", "retry_delay", "providers", "models",
+}
+# Retired OpenRouter keys -> what replaces them. A server still using one is
+# reported and skipped (servers.toml is never rewritten by pico).
+_RETIRED_SERVER_KEYS = {
+    "provider": "'providers = [...]' (only these, in order)",
+    "enabled_models": "one [servers.<name>.models.\"<id>\"] table per model",
+    "model_providers": "'providers = [...]' inside [servers.<name>.models.\"<id>\"]",
 }
 _SERVER_TYPES = {"llamacpp", "ollama", "openrouter", "openai"}
-_SERVER_STR_KEYS = {"type", "base_url", "api_key", "api_key_env", "model", "provider"}
+_SERVER_STR_KEYS = {"type", "base_url", "api_key", "api_key_env", "model"}
 _SERVER_INT_KEYS = {"max_context", "retry_attempts"}
 _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
 
@@ -526,7 +535,6 @@ class Config:
         self.ui_sandbox_inactive_color: str = "WARNING"
         self.ui_stream_smoothing: bool = True
         self.ui_smooth_target_fps: int = 60
-        self.ui_spinner_fps: int = 10
         self.target_fps: int = 60
 
         # Debug / reasoning.
@@ -742,8 +750,12 @@ def _load_servers(config: Config, data: dict, filename: str,
         if not isinstance(server, dict):
             errors.append(f"{where} must be a table")
             continue
+        retired = [key for key in server if key in _RETIRED_SERVER_KEYS]
         for key in server:
-            if key not in _SERVER_KEYS:
+            if key in _RETIRED_SERVER_KEYS:
+                errors.append(
+                    f"{where}.{key} was replaced by {_RETIRED_SERVER_KEYS[key]}; server skipped")
+            elif key not in _SERVER_KEYS:
                 errors.append(f"{where} unknown key '{key}'")
         server_type = server.get("type")
         if server_type is None:
@@ -763,18 +775,43 @@ def _load_servers(config: Config, data: dict, filename: str,
             if key in server and (isinstance(server[key], bool)
                                   or not isinstance(server[key], (int, float))):
                 errors.append(f"{where}.{key} must be a number")
-        if "enabled_models" in server:
-            enabled = server["enabled_models"]
-            if not isinstance(enabled, list) or not all(isinstance(m, str) for m in enabled):
-                errors.append(f"{where}.enabled_models must be a list of strings")
-        if "model_providers" in server and not isinstance(server["model_providers"], dict):
-            errors.append(f"{where}.model_providers must be a table")
+        _validate_openrouter_routing(server, server_type, where, errors)
         # The type selects the transport and whether a model selection is
         # honored; guessing one silently routed e.g. an Ollama server as
         # single-model llama.cpp, ignoring the selected model.
-        if server_type not in _SERVER_TYPES:
+        if server_type not in _SERVER_TYPES or retired:
             continue
         config.servers[name] = dict(server)
+
+
+def _is_str_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _validate_openrouter_routing(server: dict, server_type: Any, where: str,
+                                 errors: list[str]) -> None:
+    """Check ``providers`` and ``[models."<id>"]`` (OpenRouter only)."""
+    for key in ("providers", "models"):
+        if key in server and server_type != "openrouter":
+            errors.append(f"{where}.{key} is only supported for type = \"openrouter\"")
+    if "providers" in server and not _is_str_list(server["providers"]):
+        errors.append(f"{where}.providers must be a list of provider slugs")
+    models = server.get("models")
+    if models is None:
+        return
+    if not isinstance(models, dict):
+        errors.append(f"{where}.models must be a table of [models.\"<id>\"] tables")
+        return
+    for model_id, entry in models.items():
+        at = f"{where}.models.\"{model_id}\""
+        if not isinstance(entry, dict):
+            errors.append(f"{at} must be a table")
+            continue
+        for key in entry:
+            if key != "providers":
+                errors.append(f"{at} unknown key '{key}'")
+        if "providers" in entry and not _is_str_list(entry["providers"]):
+            errors.append(f"{at}.providers must be a list of provider slugs")
 
 
 def _load_themes_file(path: Path, config: Config, errors: list[str]) -> None:

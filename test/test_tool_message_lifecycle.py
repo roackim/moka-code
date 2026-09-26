@@ -1,18 +1,25 @@
-"""Tests for tool-message lifecycle status glyphs.
+"""Tests for tool lines: format, lifecycle states, and live labels.
 
-Verifies the "no ✓ until finished" rule and that a loading spinner is shown
-while a tool command is running.
+Tool lines carry no status glyph: the name color and a trailing word (only when
+it is news) describe the state, and a sign in the metric means a file changed.
 """
 
+import json
+
+import pytest
+
+import pico_chat.ui.chat_message as chat_message
 from pico_chat.ui.chat_message import (
     Message,
     _edit_counts,
     _parse_tool_args,
     _tool_summary,
 )
-from pico_chat.ui.tui.msg_types import ToolCallMsg
+from pico_chat.ui.tui.msg_types import AskPermissionMsg, ToolCallMsg
 from pico_chat.ui.tui.colors import theme
 from pico_chat.ui.tui.layout_utils import strip_ansi
+
+GLYPHS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓✗⏹?"
 
 
 class _StubBashTool:
@@ -24,85 +31,94 @@ class _StubBashTool:
         return self.toolset.cancel_active_run()
 
 
-def _tool(msg_type=None, status=None, finalized=False):
-    msg = Message("", msg_type=msg_type or ToolCallMsg(), max_width=40)
-    msg.tool_name = "bash"
-    msg.tool_args = '{"command": "ls"}'
+@pytest.fixture
+def clock(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(chat_message.time, "perf_counter", lambda: now[0])
+    return now
+
+
+def _tool(msg_type=None, status=None, finalized=False, name="bash",
+          args=None, output=None, width=60, focused=False):
+    msg = Message("", msg_type=msg_type or ToolCallMsg(), max_width=width)
+    msg.tool_name = name
+    msg.tool_args = json.dumps(args if args is not None else {"command": "ls"})
+    msg.tool_output = output
     if status is not None:
-        msg.tool_status = status
+        msg.set_tool_status(status)
+    if focused:
+        msg.set_focused(True)
     if finalized:
         msg.finalize()
+    msg.rebuild_tool_display()
     return msg
 
 
-def test_spinner_while_not_finalized():
-    msg = _tool(status="approved | executing", finalized=False)
-    glyph, color = msg.status_glyph()
-    assert glyph in ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
-    assert color == theme.MUTED
+def _lines(msg):
+    return strip_ansi(msg.get_formatted()).splitlines()
 
 
-def test_no_done_mark_while_running():
-    """A running command never reports a ✓ glyph."""
-    msg = _tool(status="approved | executing", finalized=False)
-    glyph, _ = msg.status_glyph()
-    assert glyph not in ("✓", "✗")
+def test_tool_line_has_no_status_glyph():
+    for status, finalized in (("running", False), ("completed", True),
+                              ("error", True), ("denied", True)):
+        header = _lines(_tool(status=status, finalized=finalized, output="x"))[0]
+        assert not any(g in header for g in GLYPHS), header
 
 
-def test_check_mark_only_after_finalized_completed():
-    msg = _tool(status="approved | completed", finalized=True)
-    glyph, color = msg.status_glyph()
-    assert glyph == "✓"
-    assert color == theme.SUCCESS
+def test_running_tool_shows_elapsed_time_only_when_not_instant(clock):
+    msg = _tool(status="running")
+    assert _lines(msg)[0].rstrip() == "bash   ls"
+    clock[0] += 2.4
+    msg.tick()
+    assert _lines(msg)[0].endswith("running 2s")
 
 
-def test_error_mark_after_finalized():
-    msg = _tool(status="error", finalized=True)
-    glyph, color = msg.status_glyph()
-    assert glyph == "✗"
-    assert color == theme.ERROR
+def test_completed_line_has_no_trailing_word():
+    msg = _tool(status="completed", finalized=True, output="a\n[exit:0]")
+    assert _lines(msg)[0].rstrip() == "bash   ls"
 
 
-def test_denied_mark_after_finalized():
-    msg = _tool(status="denied", finalized=True)
-    glyph, color = msg.status_glyph()
-    assert glyph == "✗"
-    assert color == theme.ERROR
+def test_bash_failure_shows_exit_code():
+    msg = _tool(status="completed", finalized=True, output="[stderr]\nboom\n[exit:2]")
+    assert _lines(msg)[0].endswith("exit 2")
 
 
-def test_autoapproved_not_terminal():
-    """auto-approved is a pending permission state, not a done state."""
-    msg = _tool(status="auto-approved", finalized=False)
-    glyph, _ = msg.status_glyph()
-    assert glyph not in ("✓", "✗")
+def test_error_reason_is_on_the_collapsed_line_and_name_turns_red():
+    msg = _tool(status="error", finalized=True, name="edit",
+                args={"path": "a.py", "search": "x", "replace": "y"},
+                output="Search block not found in a.py\ndetails")
+    assert _lines(msg)[0].endswith("Search block not found in a.py")
+    assert msg.get_formatted().startswith(f"{theme.ERROR}edit")
 
 
-def test_advance_spinner_rebuilds_tool_display():
-    """Spinner animates because advance_spinner rebuilds the tool display."""
-    msg = _tool(status="approved | executing", finalized=False)
-    before = msg.get_formatted()
-    msg.advance_spinner()
-    after = msg.get_formatted()
-    assert before != after
+def test_denied_line():
+    msg = _tool(status="denied", finalized=True, output="User denied")
+    assert _lines(msg)[0].endswith("denied")
 
 
-def test_spinner_cadence_is_decoupled_from_render_fps(monkeypatch):
-    """Tick events fire every frame; the glyph only advances at ui.spinner_fps."""
-    from pico_chat import pico_cfg
+def test_permission_ask_names_its_keys():
+    msg = _tool(msg_type=AskPermissionMsg())
+    assert _lines(msg)[0].endswith("approve? a/x")
+
+
+def test_panel_tick_refreshes_live_labels_at_a_steady_cadence(clock):
     from pico_chat.ui.chat_history_panel import ChatHistoryPanel
     from pico_chat.ui.tui.events import TickEvent
-    from pico_chat.ui.tui.msg_types import ThinkingMsg
 
-    monkeypatch.setattr(pico_cfg.config, "ui_spinner_fps", 10)
     panel = ChatHistoryPanel()
-    msg = panel.add_message("", msg_type=ThinkingMsg())
+    msg = panel.add_message("", msg_type=ToolCallMsg())
+    msg.tool_name, msg.tool_args = "bash", '{"command": "sleep 5"}'
+    msg.set_tool_status("running")
+    msg.rebuild_tool_display()
 
-    panel.handle_input(TickEvent(0.0))
-    first = msg.spinner_frame
-    panel.handle_input(TickEvent(0.05))  # still inside the 100ms gate
-    assert msg.spinner_frame == first
-    panel.handle_input(TickEvent(0.11))  # gate elapsed: advances
-    assert msg.spinner_frame != first
+    clock[0] += 3.0
+    panel.handle_input(TickEvent(10.0))
+    assert _lines(msg)[0].endswith("running 3s")
+    clock[0] += 1.0
+    panel.handle_input(TickEvent(10.1))  # inside the refresh interval
+    assert _lines(msg)[0].endswith("running 3s")
+    panel.handle_input(TickEvent(10.3))
+    assert _lines(msg)[0].endswith("running 4s")
 
 
 def test_tool_message_exposes_only_non_destructive_actions():
@@ -171,19 +187,32 @@ def test_read_summary_uses_actual_line_count_once_done():
     assert _tool_summary("read", {"path": "src/main.py"}, None) == "src/main.py"
     assert _tool_summary(
         "read", {"path": "src/main.py"}, "one\ntwo\nthree\n"
-    ) == "src/main.py 3 lines"
+    ) == "src/main.py  3 lines"
+    assert _tool_summary("read", {"path": "a.py"}, "one") == "a.py  1 line"
+
+
+def test_read_summary_shows_the_range():
+    args = {"path": "a.py", "offset": 9, "limit": 50}
+    assert _tool_summary("read", args, None) == "a.py:10-59"
 
 
 def test_write_summary_counts_content_lines():
     assert _tool_summary(
         "write", {"path": "a.py", "content": "x\ny\n"}, None
-    ) == "a.py +2"
+    ) == "a.py  +2 lines"
 
 
 def test_edit_summary_reports_added_and_removed():
     args = {"path": "a.py", "search": "a\nb", "replace": "a\nc\nd"}
-    assert _tool_summary("edit", args, None) == "a.py +2 -1"
+    assert _tool_summary("edit", args, None) == "a.py  +2 −1 lines"
     assert _edit_counts("a\nb", "a\nc\nd") == (2, 1)
+
+
+def test_edit_summary_shows_only_nonzero_sides_and_singular():
+    add_one = {"path": "a.py", "search": "a", "replace": "a\nb"}
+    assert _tool_summary("edit", add_one, None) == "a.py  +1 line"
+    remove_two = {"path": "a.py", "search": "a\nb\nc", "replace": "a"}
+    assert _tool_summary("edit", remove_two, None) == "a.py  −2 lines"
 
 
 def test_bash_summary_uses_first_command_line():
@@ -223,43 +252,117 @@ def test_draft_never_full_parses_even_when_args_look_closed():
     assert _parse_tool_args(raw)["content"] == "x" * 100_000
 
 
-def test_collapsed_tool_line_leads_with_glyph_and_has_no_dot():
-    from pico_chat.ui.tui.components.box import SPINNER_FRAMES
+def test_tool_names_are_padded_so_targets_line_up():
+    read = _tool(name="read", args={"path": "src/main.py"}, status="completed",
+                 finalized=True, output="a\nb")
+    edit = _tool(name="edit", args={"path": "src/x.py", "search": "a", "replace": "b"},
+                 status="completed", finalized=True, output="ok")
+    assert _lines(read)[0] == "read   src/main.py  2 lines"
+    assert _lines(edit)[0].index("src/x.py") == _lines(read)[0].index("src/main.py")
 
-    msg = Message("", msg_type=ToolCallMsg(), max_width=60)
-    msg.tool_name = "read"
-    msg.tool_args = '{"path": "src/main.py"}'
+
+def test_long_path_is_shortened_from_the_left_keeping_the_metric():
+    path = "pico_chat/ui/commands/" + "deep/" * 10 + "models.py"
+    msg = _tool(name="write", args={"path": path, "content": "a\nb\n"},
+                status="completed", finalized=True, output="ok", width=50)
+    header = _lines(msg)[0]
+    assert "…" in header and header.endswith("models.py  +2 lines")
+    assert len(header) <= 50
+
+
+def test_focused_edit_shows_a_diff_keeping_indentation():
+    args = {"path": "a.py", "search": "def a():\n    return 1\n",
+            "replace": "def a():\n    x = 2\n    return x\n"}
+    msg = _tool(name="edit", args=args, status="completed", finalized=True,
+                output="ok", focused=True)
+    body = _lines(msg)[1:]
+    assert body == ["  def a():", "-     return 1", "+     x = 2", "+     return x"]
+
+
+def test_focused_write_shows_a_capped_head():
+    content = "".join(f"line {i}\n" for i in range(30))
+    msg = _tool(name="write", args={"path": "a.py", "content": content},
+                status="completed", finalized=True, output="ok", focused=True)
+    body = _lines(msg)[1:]
+    assert body[0] == "+ line 0"
+    assert body[-1] == "… +10 more lines"
+    assert len(body) == 21
+
+
+def test_focused_bash_shows_the_full_command():
+    msg = _tool(args={"command": "cd x\nmake test"}, status="completed",
+                finalized=True, output="[exit:0]", focused=True)
+    assert _lines(msg)[1:] == ["$ cd x", "  make test"]
+
+
+def test_compact_line_has_no_body():
+    msg = _tool(args={"command": "cd x\nmake"}, status="completed",
+                finalized=True, output="[exit:0]")
+    assert len(_lines(msg)) == 1
+
+
+def test_toggled_output_is_capped_head_and_tail():
+    output = "[stdout]\n" + "".join(f"out {i}\n" for i in range(100)) + "[exit:0]"
+    msg = _tool(status="completed", finalized=True, output=output, focused=True)
+    msg.show_output = True
     msg.rebuild_tool_display()
-
-    plain = strip_ansi(msg.get_formatted())
-    assert plain[0] in SPINNER_FRAMES
-    assert "read" in plain and "src/main.py" in plain
-    assert "·" not in plain
-
-
-def test_focused_draft_shows_raw_stream():
-    from pico_chat.ui.tui.msg_types import ToolDraftMsg
-
-    msg = Message("", msg_type=ToolDraftMsg(), max_width=80)
-    msg.tool_name = "write"
-    msg.tool_args = '{"path": "README.de.md", "content": "hello world'
-    msg.tool_status = "drafting"
-    msg.set_focused(True)
-    msg.rebuild_tool_display()
-
-    plain = strip_ansi(msg.get_formatted())
-    assert "draft:" in plain
-    assert "hello world" in plain
+    out = _lines(msg)[2:]
+    assert out[0] == "out 0"
+    assert "… 70 more lines …" in out
+    assert out[-1] == "out 99"
+    assert "[exit:0]" not in out
 
 
-def test_write_draft_counts_streamed_lines():
-    """A streaming write shows its line count so far, not just the path."""
-    from pico_chat.ui.tui.msg_types import ToolDraftMsg
+def test_running_command_shows_its_last_output_lines():
+    msg = _tool(status="running")
+    msg.append_live_output("one\ntwo\nthr")
+    msg.append_live_output("ee\nfour\nfive\nsix\n")
+    assert _lines(msg)[1:] == ["two", "three", "four", "five", "six"]
+    msg.set_tool_status("completed")
+    msg.tool_output = "[exit:0]"
+    msg.finalize()
+    assert len(_lines(msg)) == 1
 
-    msg = Message("", msg_type=ToolDraftMsg(), max_width=80)
+
+def test_write_draft_grows_live_in_the_final_format():
+    """A streaming write is the tool line itself, counting lines so far."""
+    msg = Message("", msg_type=ToolCallMsg(), max_width=80)
     msg.tool_name = "write"
     msg.tool_args = '{"path": "a.py", "content": "one\\ntwo\\nthr'
-    msg.tool_status = "drafting"
+    msg.set_tool_status("drafting")
     msg.rebuild_tool_display()
 
-    assert "a.py +2" in strip_ansi(msg.get_formatted())
+    assert _lines(msg) == ["write  a.py  +2 lines"]
+
+
+def test_approving_turns_the_ask_into_a_running_tool_line():
+    from conftest import StubAgent
+    from pico_chat.ui.app import chatTUI
+
+    agent = StubAgent()
+    responses = []
+    agent.set_user_response = responses.append
+    ui = chatTUI(agent)
+    ask = ui.chat_history_panel.add_message("", msg_type=AskPermissionMsg())
+    ask.tool_name, ask.tool_args = "bash", '{"command": "make"}'
+    ask.rebuild_tool_display()
+    ui.active_tool_messages["t1"] = ask
+
+    ui.handle_allow_action(ask)
+
+    running = ui.active_tool_messages["t1"]
+    assert responses == ["approve"]
+    assert isinstance(running.type, ToolCallMsg)
+    assert running in ui.chat_history_panel.messages and ask not in ui.chat_history_panel.messages
+    assert running.tool_state() == "running"
+    assert "approve?" not in strip_ansi(running.get_formatted())
+
+
+def test_focusing_a_permission_prompt_reveals_what_it_changes():
+    args = {"path": "a.py", "search": "a", "replace": "b"}
+    ask = _tool(msg_type=AskPermissionMsg(), name="edit", args=args)
+    assert len(_lines(ask)) == 1
+    ask.set_focused(True)
+    assert _lines(ask)[1:] == ["- a", "+ b"]
+    ask.set_focused(False)
+    assert len(_lines(ask)) == 1

@@ -40,7 +40,7 @@ class ChatActionHandlers:
                     lines.append("(no arguments)")
                 
                 lines.extend(["", "STATUS:", "-" * 60])
-                lines.append(message.tool_status or "pending")
+                lines.append(message.tool_state())
                 
                 # Include output if available
                 if message.tool_output:
@@ -106,12 +106,21 @@ class ChatActionHandlers:
             logger.info("Sending approve to harness")
             self.agent.set_user_response("approve")
             self.pending_permission_prompt = None
-            
+
+            # The ask becomes the running tool line (no "approve?" left while
+            # it executes); keep the id mapping so its result lands on it.
+            from pico_chat.ui.tui.msg_types import ToolCallMsg
+
+            running = self.chat_history_panel.retype_tool_message(message, ToolCallMsg())
+            running.set_tool_status("running")
+            running.rebuild_tool_display()
+            for tool_id, active in list(self.active_tool_messages.items()):
+                if active is message:
+                    self.active_tool_messages[tool_id] = running
+
             # Focus input field
             self._last_focus_id = "input"
             self._update_focus_states()
-            
-            # Don't update the message - it will be replaced by ToolStart
             logger.info("Permission granted, waiting for tool execution")
         else:
             logger.warning("Allow action called on non-permission message")

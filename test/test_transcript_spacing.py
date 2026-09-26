@@ -53,8 +53,7 @@ def test_empty_thought_stays_a_summary_when_focused():
     panel.set_focused_message(0)
 
     assert thought.collapsed is True
-    assert thought._collapsed_text() == "thinking"
-
+    assert thought._thinking_label() == "thought"
 
 def test_nonempty_thought_expands_when_focused():
     panel = _panel()

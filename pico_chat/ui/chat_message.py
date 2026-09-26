@@ -10,10 +10,9 @@ from pico_chat.ui.tui.colors import theme, RGB
 from pico_chat.ui.tui.components import TextComponent
 from pico_chat.ui.tui.components.markdown import MarkdownComponent
 from pico_chat.ui.tui.components.message_view import MessageView
-from pico_chat.ui.tui.layout_utils import wrap_text
+from pico_chat.ui.tui.layout_utils import display_width, strip_ansi, wrap_text
 from pico_chat.ui.tui.msg_types import MsgType, MsgAction
 from pico_chat.ui.tui import msg_types
-from pico_chat.ui.tui.components.box import SPINNER_FRAMES
 
 
 # Salvages complete ``"key": "value"`` string fields from a partial JSON args
@@ -54,6 +53,22 @@ def _parse_tool_args(raw: Optional[str], *, full: bool = True) -> dict:
     return salvaged
 
 
+# Tool names are padded to this width so targets line up (read/write/edit/bash).
+_TOOL_NAME_WIDTH = 5
+# Focused view: lines of a write head / edit diff before "… N more lines".
+_BODY_LINES = 20
+# Toggled output (``o``): head and tail kept around the elided middle.
+_OUTPUT_HEAD, _OUTPUT_TAIL = 20, 10
+# Live output lines shown under a running command.
+_LIVE_TAIL = 5
+# A running tool shows its elapsed time only once it is not instant.
+_RUNNING_AFTER = 1.0
+# The pre-request phase is labelled "preparing" only when it is slow.
+_PREPARING_AFTER = 0.5
+
+_EXIT_RE = re.compile(r"^\[exit:(-?\d+)\]$")
+
+
 def _count_lines(text: str) -> int:
     return len(text.splitlines())
 
@@ -77,41 +92,172 @@ def _short_value(value: Any, limit: int = 60) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
-def _tool_summary(name: str, args: dict, output: Optional[str]) -> str:
-    """Compact, human summary of a tool call for its collapsed line.
+def _lines_word(count: int) -> str:
+    return "line" if count == 1 else "lines"
 
-    ``output`` is the completed tool output when available, so ``read`` can
-    report the number of lines actually returned.
+
+def _line_metric(*, count: Optional[int] = None, added: int = 0, removed: int = 0) -> str:
+    """Colored line count; a sign means the file changed, a plain count not.
+
+    ``count`` renders ``240 lines`` (read); ``added``/``removed`` render
+    ``+2 −1 lines`` with only the nonzero sides. The unit is written once,
+    singular when the total is one.
+    """
+    if count is not None:
+        return f"{theme.MUTED}{count} {_lines_word(count)}{theme.reset()}"
+    parts = []
+    if added:
+        parts.append(f"{theme.SUCCESS}+{added}{theme.reset()}")
+    if removed:
+        parts.append(f"{theme.ERROR}−{removed}{theme.reset()}")
+    if not parts:
+        return ""
+    word = _lines_word(added + removed)
+    return " ".join(parts) + f" {theme.MUTED}{word}{theme.reset()}"
+
+
+def _bash_exit_code(output: Optional[str]) -> Optional[int]:
+    """Exit code from the worker's trailing ``[exit:N]`` line, if any."""
+    if not output:
+        return None
+    lines = output.rstrip().splitlines()
+    match = _EXIT_RE.match(lines[-1].strip()) if lines else None
+    return int(match.group(1)) if match else None
+
+
+def _tool_target_metric(name: str, args: dict, *, raw: Optional[str],
+                        output: Optional[str], drafting: bool) -> tuple[str, str]:
+    """``(target, metric)`` for a tool line header.
+
+    ``output`` is the completed output (``read`` reports the lines returned).
+    While drafting, a ``write`` body is still streaming and never salvaged, so
+    its escaped newlines are counted so the line grows live.
     """
     if name == "read":
-        path = args.get("path")
-        if not path:
-            return ""
-        if output is not None:
-            return f"{path} {_count_lines(output)} lines"
-        return str(path)
+        target = str(args.get("path") or "")
+        offset, limit = args.get("offset"), args.get("limit")
+        if target and isinstance(limit, int):
+            first = (offset if isinstance(offset, int) else 0) + 1
+            target += f":{first}-{first + limit - 1}"
+        elif target and isinstance(offset, int) and offset:
+            target += f":{offset + 1}-"
+        metric = _line_metric(count=_count_lines(output)) if output is not None else ""
+        return target, metric
     if name == "write":
-        path = args.get("path")
+        target = str(args.get("path") or "")
         content = args.get("content")
-        if path and isinstance(content, str):
-            return f"{path} +{_count_lines(content)}"
-        return str(path or "")
+        if isinstance(content, str):
+            added = _count_lines(content)
+        elif drafting and target and raw:
+            added = raw.count(r"\n")
+        else:
+            added = 0
+        return target, _line_metric(added=added)
     if name == "edit":
-        path = args.get("path")
-        search = args.get("search")
-        replace = args.get("replace")
-        if path and isinstance(search, str) and isinstance(replace, str):
+        target = str(args.get("path") or "")
+        search, replace = args.get("search"), args.get("replace")
+        if isinstance(search, str) and isinstance(replace, str):
             added, removed = _edit_counts(search, replace)
-            return f"{path} +{added} -{removed}"
-        return str(path or "")
+            return target, _line_metric(added=added, removed=removed)
+        return target, ""
     if name == "bash":
         command = args.get("command")
-        if isinstance(command, str) and command:
-            return command.splitlines()[0]
-        return ""
+        if isinstance(command, str) and command.strip():
+            return command.strip().splitlines()[0], ""
+        return "", ""
     if len(args) == 1:
-        return _short_value(next(iter(args.values())))
-    return ""
+        return _short_value(next(iter(args.values()))), ""
+    return "", ""
+
+
+def _tool_summary(name: str, args: dict, output: Optional[str]) -> str:
+    """Plain ``target  metric`` summary of a completed tool call."""
+    target, metric = _tool_target_metric(name, args, raw=None, output=output, drafting=False)
+    return "  ".join(part for part in (target, strip_ansi(metric)) if part)
+
+
+def _clip(text: str, width: int, *, keep_end: bool = False) -> str:
+    """Fit plain ``text`` in ``width`` columns with an ellipsis.
+
+    ``keep_end`` keeps the tail (paths: the file name matters most).
+    """
+    text = text.replace("\t", "    ")
+    if width <= 0:
+        return ""
+    if display_width(text) <= width:
+        return text
+    if width == 1:
+        return "…"
+    if keep_end:
+        tail = text
+        while tail and display_width(tail) > width - 1:
+            tail = tail[1:]
+        return "…" + tail
+    head = text
+    while head and display_width(head) > width - 1:
+        head = head[:-1]
+    return head + "…"
+
+
+def _tool_body(name: str, args: dict) -> list[tuple]:
+    """Readable focused-view body: edit diff, write head, full bash command.
+
+    Lines are ``(color, prefix, text)`` triples so the caller clips the plain
+    text to the width before coloring.
+    """
+    body: list = []
+    if name == "edit":
+        search, replace = args.get("search"), args.get("replace")
+        if isinstance(search, str) and isinstance(replace, str):
+            old, new = search.splitlines(), replace.splitlines()
+            matcher = difflib.SequenceMatcher(None, old, new)
+            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+                if tag == "equal":
+                    body += [(theme.MUTED, "  ", line) for line in old[i1:i2]]
+                    continue
+                if tag in ("replace", "delete"):
+                    body += [(theme.ERROR, "- ", line) for line in old[i1:i2]]
+                if tag in ("replace", "insert"):
+                    body += [(theme.SUCCESS, "+ ", line) for line in new[j1:j2]]
+            limit = _BODY_LINES * 2
+            if len(body) > limit:
+                more = len(body) - limit
+                body = body[:limit] + [(theme.MUTED, "", f"… {more} more {_lines_word(more)}")]
+        return body
+    if name == "write":
+        content = args.get("content")
+        if isinstance(content, str):
+            lines = content.splitlines()
+            body = [(theme.SUCCESS, "+ ", line) for line in lines[:_BODY_LINES]]
+            more = len(lines) - _BODY_LINES
+            if more > 0:
+                body.append((theme.MUTED, "", f"… +{more} more {_lines_word(more)}"))
+        return body
+    if name == "bash":
+        command = args.get("command")
+        if isinstance(command, str):
+            for i, line in enumerate(command.strip().splitlines()):
+                body.append((theme.MUTED, "$ " if i == 0 else "  ", line))
+        return body
+    if name == "read":
+        return body
+    for key, value in args.items():
+        body.append((theme.MUTED, f"{key}: ", _short_value(value, limit=200)))
+    return body
+
+
+def _output_lines(name: str, output: str) -> list[str]:
+    """Toggled output, capped head…tail (bash stream markers dropped)."""
+    lines = output.splitlines()
+    if name == "bash":
+        lines = [line for line in lines
+                 if line.strip() != "[stdout]" and not _EXIT_RE.match(line.strip())]
+    if len(lines) > _OUTPUT_HEAD + _OUTPUT_TAIL + 1:
+        hidden = len(lines) - _OUTPUT_HEAD - _OUTPUT_TAIL
+        lines = (lines[:_OUTPUT_HEAD]
+                 + [f"… {hidden} more {_lines_word(hidden)} …"]
+                 + lines[-_OUTPUT_TAIL:])
+    return lines
 
 
 class Message:
@@ -195,9 +341,9 @@ class Message:
         
         # Collapsed state: when True, render a single summary line instead of
         # the full content (used for thinking messages that fold by default).
-        self.collapsed = False        # Whether this message type folds by default and expands on focus.
-        self.collapsible = isinstance(msg_type, msg_types.ThinkingMsg)        # Animated spinner frame index (advances on TickEvent while streaming).
-        self.spinner_frame = 0
+        self.collapsed = False
+        # Whether this message type folds by default and expands on focus.
+        self.collapsible = isinstance(msg_type, msg_types.ThinkingMsg)
         # Live wait-phase label for a collapsible status message (e.g.
         # "processing", "thinking"); rendered collapsed while in flight.
         self.status_phase: Optional[str] = None
@@ -208,8 +354,14 @@ class Message:
         self.tool_name: Optional[str] = None
         self.tool_args: Optional[str] = None
         self.tool_output: Optional[str] = None
-        self.tool_status: Optional[str] = None  # "approved", "denied", "completed", etc.
-        self.show_output: bool = False  # Toggle for output visibility (press 'o' to show out: line)
+        # "drafting" | "running" | "completed" | "error" | "denied" | "cancelled"
+        self.tool_status: Optional[str] = None
+        self.show_output: bool = False  # Toggle for output visibility ('o')
+        # Last few lines of live output while a command runs.
+        self.live_output: list[str] = []
+        self._run_started_at: Optional[float] = None
+        # Last rendered live label (elapsed seconds); ``tick`` redraws on change.
+        self._live_label: Optional[str] = None
 
         # Steering / queue state
         self.is_queued: bool = False   # UserMsg waiting while generation is active
@@ -236,7 +388,7 @@ class Message:
         self.box = MessageView(
             self.component,
             parent_msg=self,
-            compact_when_unfocused=(isinstance(msg_type, (msg_types.ToolCallMsg, msg_types.ToolDraftMsg, msg_types.AskPermissionMsg))),  # Tool calls and permission requests use compact headers
+            compact_when_unfocused=(isinstance(msg_type, (msg_types.ToolCallMsg, msg_types.AskPermissionMsg))),  # Tool calls and permission requests use compact headers
             gutter=thread_gutter,
             gutter_color=thread_gutter_color,
             content_pad_left=left_pad,
@@ -245,8 +397,7 @@ class Message:
             gutter_full_height=isinstance(
                 msg_type,
                 (msg_types.UserMsg, msg_types.PicoMsg,
-                 msg_types.ToolCallMsg, msg_types.ToolDraftMsg,
-                 msg_types.AskPermissionMsg),
+                 msg_types.ToolCallMsg, msg_types.AskPermissionMsg),
             ),
         )
     
@@ -261,8 +412,8 @@ class Message:
         # line with its inline styling (streaming renders it plain).
         if self.render_markdown and hasattr(self.component, "set_streaming"):
             self.component.set_streaming(False)
-        # Tool messages bake their status symbol into the display text; rebuild
-        # so the finalized ✓/✗/⏹ replaces any stale running-spinner glyph.
+        # Tool messages bake their state into the display text; rebuild so the
+        # finalized line drops its live elapsed time and output tail.
         if self.is_tool_message():
             self.rebuild_tool_display()
         self.box.mark_changed()  # Finalization affects actions display
@@ -335,6 +486,10 @@ class Message:
         self.box.fg = frame_color
         self.box.bg = theme.get_bg()
         self.box.gutter_color = gutter_color
+        if self.is_tool_message():
+            # The cached header/body carry colors of the previous theme.
+            self._tool_display_cache_key = None
+            self.rebuild_tool_display()
         self.box.mark_changed()
 
 
@@ -348,9 +503,15 @@ class Message:
         # example tool/permission messages expand from one line to a box with
         # borders).  Make the history panel discard its height-cache entry so
         # the newly focused single-line message receives a real layout.
-        if self.box.focused != focused:
+        changed = self.box.focused != focused
+        if changed:
             self.layout_revision += 1
         self.box.set_focused(focused)
+        # A tool line's body (diff, command, output) is built only when
+        # focused, so focus changes must rebuild it; otherwise an auto-focused
+        # permission prompt would show just its header.
+        if changed and self.is_tool_message():
+            self.rebuild_tool_display()
 
     def set_collapsed(self, collapsed: bool):
         """Fold/unfold this message to a single summary line.
@@ -379,117 +540,93 @@ class Message:
             self.phase_seconds = time.perf_counter() - self._phase_started_at
         self.box.mark_changed()
 
-    def advance_spinner(self):
-        """Advance the animated spinner frame (called on TickEvent)."""
-        self.spinner_frame = (self.spinner_frame + 1) % len(SPINNER_FRAMES)
-        # Live tool messages bake the current spinner glyph into their display
-        # text, so rebuild so the braille frame actually animates.
+    def tick(self) -> None:
+        """Refresh live elapsed-time text (called a few times per second).
+
+        Only redraws when the visible label changes, so an idle tick is free.
+        """
         if self.is_tool_message():
-            self.rebuild_tool_display()
+            label = self._tool_trailing()
+        elif self.collapsible:
+            label = self._thinking_label()
         else:
-            self.box.mark_changed()
+            return
+        if label != self._live_label:
+            self._live_label = label
+            if self.is_tool_message():
+                self.rebuild_tool_display()
+            else:
+                self.box.mark_changed()
 
     def is_tool_message(self) -> bool:
-        """True for tool-call, tool-draft, and permission-request messages."""
-        return isinstance(self.type, (
-            msg_types.ToolCallMsg, msg_types.ToolDraftMsg, msg_types.AskPermissionMsg,
-        ))
+        """True for tool-call and permission-request messages."""
+        return isinstance(self.type, (msg_types.ToolCallMsg, msg_types.AskPermissionMsg))
 
-    def spinner_glyph(self) -> str:
-        """Current braille spinner frame (for live/in-progress messages)."""
-        return SPINNER_FRAMES[self.spinner_frame % len(SPINNER_FRAMES)]
+    def set_tool_status(self, status: str) -> None:
+        """Move the tool lifecycle forward; ``running`` starts the clock."""
+        if status == "running" and self.tool_status != "running":
+            self._run_started_at = time.perf_counter()
+        self.tool_status = status
 
-    def tool_terminal_state(self) -> Optional[str]:
-        """Resolve the *terminal* tool state, independent of status strings.
+    def append_live_output(self, data: str) -> None:
+        """Keep the last few lines of a running command's output.
 
-        Returns one of ``"completed"``, ``"error"``, ``"denied"``,
-        ``"cancelled"``, or ``None`` while still running (or when there is no
-        terminal state to report).
+        The final element is the still-open line, completed by the next chunk.
         """
+        pending = self.live_output.pop() if self.live_output else ""
+        lines = (pending + data).split("\n")
+        self.live_output = (self.live_output + lines)[-(_LIVE_TAIL + 1):]
+        self.rebuild_tool_display()
+
+    def tool_state(self) -> str:
+        """``drafting``/``asking``/``running`` or a terminal state."""
+        if isinstance(self.type, msg_types.AskPermissionMsg) and not self.finalized:
+            return "asking"
         status = self.tool_status or ""
-        for terminal, needles in (
-            ("completed", ("completed",)),
-            ("error", ("error",)),
-            ("denied", ("denied",)),
-            ("cancelled", ("cancelled",)),
-        ):
-            if any(n in status for n in needles):
-                return terminal
-        return None
+        if status in ("drafting", "completed", "error", "denied", "cancelled"):
+            return status
+        return "running"
 
-    def status_glyph(self) -> tuple[str, Any]:
-        """Return a single (glyph, color) describing the message lifecycle.
-
-        Lifecycle rule:
-        - not finalized            → braille spinner (loading)
-        - finalized + terminal state → ✓ / ✗ / ⏹ per terminal state
-        - finalized, no terminal   → muted ⋯ fallback
-        """
-        from pico_chat.ui.tui.colors import theme
-
-        if not self.finalized:
-            return self.spinner_glyph(), theme.MUTED
-
-        terminal = self.tool_terminal_state()
-        if terminal == "completed":
-            return "✓", theme.SUCCESS
-        if terminal in ("error", "denied"):
-            return "✗", theme.ERROR
-        if terminal == "cancelled":
-            return "⏹", theme.WARNING
-        return "⋯", theme.MUTED
-
-    def _collapsed_text(self) -> str:
-        """Return the single-line summary shown when collapsed."""
-        if isinstance(self.type, msg_types.ThinkingMsg):
-            return self.status_phase or "thinking"
-        return self.type.title or self.type.name
-
-    def done_glyph(self) -> tuple[str, Any]:
-        """Return a (glyph, color) shown on a collapsed message once done.
-
-        Thinking messages show a muted "✓" once finalized; tool/permission
-        messages reuse their terminal status glyph.
-        """
-        from pico_chat.ui.tui.colors import theme
-
-        if isinstance(self.type, msg_types.ThinkingMsg):
-            return "✓", theme.MUTED
-        if self.is_tool_message():
-            return self.status_glyph()
-        return "✓", theme.MUTED
-
-    def done_label(self, collapsed_text: str) -> str:
-        """Label shown beside the done marker for a finalized collapsed message."""
-        if isinstance(self.type, msg_types.ThinkingMsg):
+    def _thinking_label(self) -> str:
+        """Collapsed thinking label: live ``thinking 3s``, then ``thought for 4.2s``."""
+        if self.finalized:
             if self.phase_seconds is None:
-                return "thoughts"
+                return "thought"
             seconds = self.phase_seconds
             shown = f"{seconds:.1f}" if seconds < 10 else f"{seconds:.0f}"
             return f"thought for {shown}s"
-        return collapsed_text
+        elapsed = 0.0
+        if self._phase_started_at is not None:
+            elapsed = time.perf_counter() - self._phase_started_at
+        if self.base_text.strip():
+            label = "thinking"
+        elif self.status_phase == "processing" and elapsed >= _PREPARING_AFTER:
+            label = "preparing"
+        else:
+            label = "waiting"
+        return f"{label} {int(elapsed)}s"
 
     def render_collapsed_line(self, subbuffer, max_width: int, fg, bg) -> None:
         """Render the single-line summary for a collapsed message.
 
-        Shows an animated spinner while the message is not finalized, then a
-        static marker once finalized. Owned by the message (not the Box) so the
-        Box stays free of lifecycle decoration.
+        A live thinking line shows its ticking label plus the tail of the
+        latest reasoning line; a finalized one reads ``thought for Xs``.
         """
-        text = self._collapsed_text()
-        if not self.finalized:
-            frame = SPINNER_FRAMES[self.spinner_frame % len(SPINNER_FRAMES)]
-            line = f"{frame} {text}"
-        elif isinstance(self.type, msg_types.ThinkingMsg):
-            # Muted summary only: no done glyph, the message prefix carries the
-            # identity (kept in the caller's muted fg).
-            line = self.done_label(text)
+        if not isinstance(self.type, msg_types.ThinkingMsg):
+            line = self.type.title or self.type.name
         else:
-            done_glyph, done_color = self.done_glyph()
-            line = f"{done_color}{done_glyph}{theme.reset()} {self.done_label(text)}"
-
+            line = self._thinking_label()
+            revealed = self.base_text[:self._reveal_len]
+            if not self.finalized and revealed.strip():
+                last = next(
+                    (l for l in reversed(revealed.splitlines()) if l.strip()), ""
+                )
+                room = max_width - 2 - display_width(line) - 2
+                preview = _clip(" ".join(last.split()), room, keep_end=True)
+                if preview:
+                    line += f"  {preview}"
         subbuffer.write_str(2, 0, line, fg=fg, bg=bg, max_width=max(0, max_width))
-    
+
     def _format_line_wrap(self, text: Optional[str] = None) -> str:
         """Format the message text with smart word wrapping and padding.
 
@@ -558,6 +695,10 @@ class Message:
             The newly formatted text (plain-text fallback for markdown)
         """
         self.max_width = max_width
+        if self.is_tool_message() and self.tool_name:
+            # Tool lines are built for the width (clipped, not wrapped).
+            self.rebuild_tool_display()
+            return self.formatted_text
         return self._render_revealed(append=append)
 
     def _render_revealed(self, append: bool = False) -> str:
@@ -568,6 +709,13 @@ class Message:
         if self._is_markdown():
             # MarkdownComponent handles wrapping internally via set_layout / width
             self.component.update(text, append=append)
+            self.box.mark_changed()
+            return text
+        elif self.is_tool_message():
+            # Built line by line for the width; wrapping would strip the
+            # indentation of code in diffs and commands.
+            self.formatted_text = text
+            self.component.update(text)
             self.box.mark_changed()
             return text
         else:
@@ -619,118 +767,103 @@ class Message:
     def rebuild_tool_display(self):
         """Rebuild the tool message from its metadata.
 
-        The first line is always ``<glyph> <name>  <summary>``: the lifecycle
-        glyph (spinner while drafting/running, then ✓/✗/⏹) leads the content,
-        the name is colored by message type, and a compact per-tool summary
-        carries the path/command and change counts. Expanded (focused) messages
-        additionally show the raw command and, when toggled, the output.
+        The header is ``name  target  metric  trailing``: no status glyph; the
+        name color and a trailing word carry the state (``approve? a/x``,
+        ``running 12s``, an error reason). While the model is still writing
+        the call the same line grows live. Focused messages add a readable
+        body (edit diff, write head, full command) and, when toggled, the
+        output; a running command shows its last output lines.
         """
         if not self.tool_name:
             return
+        state = self.tool_state()
+        drafting = state == "drafting"
+        completed_output = self.tool_output if state == "completed" else None
+        width = max(10, self.max_width or 80)
 
-        if isinstance(self.type, msg_types.AskPermissionMsg):
-            name_color = theme.PERMISSION
-            glyph, glyph_color = "?", theme.PERMISSION
-        else:
-            name_color = (
-                theme.MUTED if isinstance(self.type, msg_types.ToolDraftMsg)
-                else theme.TOOL
-            )
-            glyph, glyph_color = self.status_glyph()
-
-        # Only report an actual read length for a completed call; error/denial
-        # output is not file content.
-        completed_output = (
-            self.tool_output if self.tool_terminal_state() == "completed" else None
-        )
-
-        # Parse/summarize at most once per distinct args/output: the spinner
-        # rebuilds this message every tick, and re-parsing a huge completed
-        # ``write`` body (or a partial stream) on every tick is O(n²).
-        cache_key = (
-            id(self.tool_args),
-            self.tool_name,
-            id(completed_output),
-            isinstance(self.type, msg_types.ToolDraftMsg),
-        )
+        # Parse/summarize at most once per distinct args/output: ticks rebuild
+        # a running message, and re-parsing a huge ``write`` body is O(n).
+        cache_key = (id(self.tool_args), self.tool_name, id(completed_output), drafting)
         if getattr(self, "_tool_display_cache_key", None) != cache_key:
-            # A draft's args are partial: never attempt a full parse, or a
-            # ``"}"`` inside the streamed content would trigger a full-buffer
-            # scan on every delta.
-            args = _parse_tool_args(
-                self.tool_args,
-                full=not isinstance(self.type, msg_types.ToolDraftMsg),
-            )
-            summary = _tool_summary(self.tool_name, args, completed_output)
-            if (isinstance(self.type, msg_types.ToolDraftMsg)
-                    and self.tool_name == "write" and args.get("path")):
-                # The content is still streaming (never salvaged): count its
-                # escaped newlines so a long write visibly progresses.
-                streamed_lines = self.tool_args.count(r"\n")
-                summary = f"{args['path']} +{streamed_lines}"
-            cmd_text = self._tool_cmd_text(args)
+            # A draft's args are partial: never full-parse them, or a ``"}"``
+            # inside the streamed content would scan the whole buffer.
+            args = _parse_tool_args(self.tool_args, full=not drafting)
             self._tool_display_cache_key = cache_key
-            self._tool_display_args = args
-            self._tool_display_summary = summary
-            self._tool_display_cmd = cmd_text
-        else:
-            summary = self._tool_display_summary
-            cmd_text = self._tool_display_cmd
+            self._tool_display_parts = _tool_target_metric(
+                self.tool_name, args, raw=self.tool_args,
+                output=completed_output, drafting=drafting)
+            self._tool_display_body = _tool_body(self.tool_name, args) if not drafting else []
+        target, metric = self._tool_display_parts
 
-        is_compact = self.box.compact_when_unfocused and not self.box.focused
+        failed = state in ("error", "denied")
+        name_color = theme.ERROR if failed else theme.TOOL
+        name = self.tool_name.ljust(_TOOL_NAME_WIDTH)
+        trailing = self._tool_trailing()
+        trailing_color = {
+            "asking": theme.PERMISSION, "running": theme.MUTED,
+            "cancelled": theme.WARNING,
+        }.get(state, theme.ERROR)
+        trailing = _clip(trailing, width // 2)
 
-        header = f"{glyph_color}{glyph}{theme.reset()} {name_color}{self.tool_name}{theme.reset()}"
-        if summary:
-            header += f" {theme.MUTED}{summary}{theme.reset()}"
-        if not is_compact and self.tool_status:
-            header += f" {self._colored_status()}"
+        fixed = display_width(name) + 2
+        if metric:
+            fixed += display_width(strip_ansi(metric)) + 2
+        if trailing:
+            fixed += display_width(trailing) + 2
+        target = _clip(target, max(8, width - fixed), keep_end=self.tool_name != "bash")
 
+        header = f"{name_color}{name}{theme.reset()}"
+        if target:
+            header += f"  {target}"
+        if metric:
+            header += f"  {metric}"
+        if trailing:
+            header += f"  {trailing_color}{trailing}{theme.reset()}"
         lines = [header]
 
-        if self.tool_args and not is_compact and cmd_text:
-            lines.append(f"{theme.MUTED}cmd:{theme.reset()} {cmd_text}")
+        is_compact = self.box.compact_when_unfocused and not self.box.focused
+        if not is_compact:
+            for color, prefix, text in self._tool_display_body:
+                clipped = _clip(text, width - display_width(prefix))
+                lines.append(f"{color}{prefix}{theme.reset()}{clipped}")
 
-        # While a draft is still streaming, show its raw tail when focused so
-        # the call is observable (and clearly progressing) rather than a bare
-        # spinner.
-        if not is_compact and isinstance(self.type, msg_types.ToolDraftMsg) and self.tool_args:
-            tail = self.tool_args[-400:]
-            ellipsis = "…" if len(self.tool_args) > 400 else ""
-            lines.append(f"{theme.MUTED}draft:{theme.reset()} {ellipsis}{tail}")
+        if state == "running" and self.live_output:
+            tail = [line for line in self.live_output if line.strip()][-_LIVE_TAIL:]
+            lines += [f"{theme.MUTED}{_clip(line, width)}{theme.reset()}" for line in tail]
 
         if self.show_output and self.tool_output and not is_compact:
-            for i, line in enumerate(self.tool_output.split('\n')):
-                if i == 0:
-                    lines.append(f"{theme.MUTED}out:{theme.reset()} {line}")
-                else:
-                    lines.append(f"     {line}")  # Indent continuation lines
+            for line in _output_lines(self.tool_name, self.tool_output):
+                lines.append(f"{theme.MUTED}{_clip(line, width)}{theme.reset()}")
 
         self.base_text = '\n'.join(lines)
         self._reveal_len = len(self.base_text)
-        self.reformat(self.max_width)
+        self._render_revealed()
 
-    def _tool_cmd_text(self, args: dict) -> str:
-        """The single ``cmd:`` line shown when a tool message is expanded."""
-        if not self.tool_args:
-            return ""
-        if args:
-            if len(args) == 1:
-                return _short_value(next(iter(args.values())))
-            return _short_value(args, limit=200)
-        return self.tool_args[:_PARTIAL_PARSE_LIMIT]
-
-    def _colored_status(self) -> str:
-        """Render ``tool_status`` parts with success/error/muted colors."""
-        colored = []
-        for part in self.tool_status.split(' | '):
-            part = part.strip()
-            if part in ('approved', 'completed'):
-                colored.append(f"{theme.SUCCESS}{part}{theme.reset()}")
-            elif part in ('denied', 'error'):
-                colored.append(f"{theme.ERROR}{part}{theme.reset()}")
-            else:
-                colored.append(f"{theme.MUTED}{part}{theme.reset()}")
-        return ' | '.join(colored)
+    def _tool_trailing(self) -> str:
+        """Plain trailing word: only when it is news (asking, running, failed)."""
+        state = self.tool_state()
+        if state == "asking":
+            return "approve? a/x"
+        if state == "running":
+            if self._run_started_at is None:
+                return ""
+            elapsed = time.perf_counter() - self._run_started_at
+            return f"running {int(elapsed)}s" if elapsed >= _RUNNING_AFTER else ""
+        if state == "denied":
+            return "denied"
+        if state == "cancelled":
+            return "cancelled"
+        if state == "error":
+            reason = next(
+                (line.strip() for line in (self.tool_output or "").splitlines() if line.strip()),
+                "error",
+            )
+            return reason
+        if state == "completed" and self.tool_name == "bash":
+            code = _bash_exit_code(self.tool_output)
+            if code:
+                return f"exit {code}"
+        return ""
 
     def update_metrics(self, tokens: int, tokens_per_second: float, ttft_ms: Optional[float] = None, duration_ms: Optional[float] = None):
         """Update generation metrics for this message."""

@@ -102,15 +102,6 @@ class ToolCallMsg(MsgType):
     clamped = True
 
 
-class ToolDraftMsg(MsgType):
-    name = "tool_draft"
-    title = "tool"
-    frame_color = "MUTED"
-    content_color = "MUTED"
-    actions = []
-    gutter = "▌"
-    clamped = True
-
 class AskPermissionMsg(MsgType):
     name = "permission"
     title = "permission"

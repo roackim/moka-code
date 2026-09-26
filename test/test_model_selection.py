@@ -178,3 +178,35 @@ def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatc
     _reapply(agent)
     assert len(agent.switched) == 1
     assert agent.endpoint.base_url == "http://new/v1"
+
+
+def test_openrouter_providers_are_a_strict_ordered_whitelist():
+    """``order`` alone falls back to any host; fallbacks must be disabled."""
+    from pico_chat.harness.endpoint import Endpoint
+
+    endpoint = Endpoint(
+        name="or", type="openrouter", providers=["deepseek"],
+        models={
+            "deepseek/deepseek-v4.1-flash": {"providers": ["deepseek", "fireworks"]},
+            "anthropic/claude-sonnet-4": {},
+            "qwen/qwen3-coder": {"providers": []},
+        },
+    )
+    assert endpoint._provider_spec("deepseek/deepseek-v4.1-flash") == {
+        "order": ["deepseek", "fireworks"], "allow_fallbacks": False}
+    # No per-model list: the server default applies.
+    assert endpoint._provider_spec("anthropic/claude-sonnet-4") == {
+        "order": ["deepseek"], "allow_fallbacks": False}
+    # An explicit empty list means OpenRouter's own routing.
+    assert endpoint._provider_spec("qwen/qwen3-coder") is None
+    assert Endpoint(name="or", type="openrouter")._provider_spec("any/model") is None
+
+
+def test_openrouter_bare_model_table_matches_canonical_id():
+    from pico_chat.harness.endpoint import Endpoint
+
+    endpoint = Endpoint(name="or", type="openrouter",
+                        models={"deepseek-v4.1-flash": {"providers": ["deepseek"]}})
+    assert endpoint._provider_spec("deepseek/deepseek-v4.1-flash") == {
+        "order": ["deepseek"], "allow_fallbacks": False}
+    assert endpoint._enabled_ids() == ["deepseek-v4.1-flash"]

@@ -257,8 +257,8 @@ def test_processing_phase_shown_while_context_is_ingested():
     assert observed["after_start"] == "thinking"
 
 
-def test_thought_message_kept_when_model_exposes_no_reasoning():
-    """Even with no Reasoning events, the wait line stays as a thought summary."""
+def test_waiting_line_removed_when_model_exposes_no_reasoning():
+    """With no Reasoning events the wait line was only an indicator: removed."""
     ui = chatTUI(StubAgent())
     script = [
         events.Start(message_id="m1", role="assistant"),
@@ -267,14 +267,29 @@ def test_thought_message_kept_when_model_exposes_no_reasoning():
     ]
     _run_script(ui, script)
 
-    think = [m for m in _messages(ui) if isinstance(m.type, ThinkingMsg)]
-    assert len(think) == 1
-    assert think[0].finalized is True
-    assert think[0].status_phase == "thinking"
-    assert think[0].phase_seconds is not None
-    assert "thought for" in think[0].done_label("thinking")
+    assert not [m for m in _messages(ui) if isinstance(m.type, ThinkingMsg)]
     assert len(_pico(ui)) == 1
 
+
+def test_waiting_line_removed_before_a_tool_call():
+    """A tool loop without reasoning shows only the tool lines."""
+    ui = chatTUI(StubAgent())
+    args = '{"path": "a.py"}'
+    script = [
+        events.Start(message_id="m1", role="assistant"),
+        events.ToolCallDraft(id="t1", name="read", args=args),
+        events.ToolCall(id="t1", name="read", args=args),
+        events.PermissionRequest(id="t1", name="read", args=args, prompt="?", auto=True),
+        events.ToolResult(id="t1", name="read", outcome="completed", output="x\ny"),
+        events.Start(message_id="m2", role="assistant"),
+        events.Token(text="done"),
+        events.Done(),
+    ]
+    _run_script(ui, script)
+
+    kinds = [type(m.type).__name__ for m in _messages(ui)]
+    assert "ThinkingMsg" not in kinds
+    assert kinds.count("ToolCallMsg") == 1
 
 def test_thinking_message_finalizes_to_duration_summary():
     ui = chatTUI(StubAgent())
@@ -290,8 +305,7 @@ def test_thinking_message_finalizes_to_duration_summary():
     assert len(think) == 1
     assert think[0].status_phase == "thinking"
     assert think[0].phase_seconds is not None
-    assert "thought for" in think[0].done_label("thinking")
-
+    assert think[0]._thinking_label().startswith("thought for ")
 
 def test_error_retains_arrived_text_and_drains():
     ui = chatTUI(StubAgent())

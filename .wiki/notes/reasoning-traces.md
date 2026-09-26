@@ -126,7 +126,7 @@ The flag defaults to `false`; reasoning is still saved either way.
 | Scenario | Flag Off | Flag On |
 |---|---|---|
 | **Stored in history / export / import** | ✅ Always preserved | ✅ Always preserved |
-| **Visible in the transcript** | ✅ Always (`▌ thought for Xs`) | ✅ Always |
+| **Visible in the transcript** | ✅ When reasoned (`▌ thought for Xs`) | ✅ When reasoned |
 | **Model sees prior CoT** | ❌ Not re-sent | ✅ Re-sent inline |
 | **Multi-turn, non-reasoning model** | No issue | No issue (no reasoning to preserve) |
 | **Tool-calling multi-step** | Reasoning kept in history for all steps | ✅ Reasoning between calls re-sent |

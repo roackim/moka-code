@@ -25,7 +25,6 @@ from pico_chat.ui.tui.msg_types import (
     SysMsgError,
     ThinkingMsg,
     ToolCallMsg,
-    ToolDraftMsg,
 )
 
 logger = logging.getLogger("tui")
@@ -43,9 +42,9 @@ async def process_generation(app, user_input, user_msg) -> None:
         app.reset_stream_revealer()
     smoothing = getattr(app, "stream_revealer", None) is not None
 
-    # The wait-phase message: "processing" while context is ingested, then
-    # "thinking" once the request is in flight. It is kept and settles into a
-    # collapsed "thought for Xs" summary above the answer.
+    # The wait-phase message: "processing" while context is ingested, then in
+    # flight. It settles into a collapsed "thought for Xs" summary above the
+    # answer when the model reasoned, and is removed when it did not.
     current_msg = None
     current_msg_type = None
     # The assistant text message for the current model response. Content may
@@ -59,20 +58,7 @@ async def process_generation(app, user_input, user_msg) -> None:
     status_is_processing = False
 
     def ensure_tool_message_type(msg: Message, target_type: MsgType) -> Message:
-        if isinstance(msg.type, type(target_type)):
-            return msg
-        new_msg = chat.new_message(
-            "",
-            msg_type=target_type,
-            harness_message_ids=msg.harness_message_ids or current_harness_ids,
-        )
-        new_msg.tool_name = msg.tool_name
-        new_msg.tool_args = msg.tool_args
-        new_msg.tool_output = msg.tool_output
-        new_msg.tool_status = msg.tool_status
-        new_msg.show_output = msg.show_output
-        chat.replace_message(msg, new_msg)
-        return new_msg
+        return chat.retype_tool_message(msg, target_type)
 
     def begin_text_message(msg: Message) -> None:
         if smoothing:
@@ -92,9 +78,8 @@ async def process_generation(app, user_input, user_msg) -> None:
     def end_status_message() -> None:
         """Finalize the current text/status message at a hard boundary.
 
-        The wait-phase message is always kept: it settles into a collapsed
-        "thought for Xs" summary above the answer, even when the model exposed
-        no reasoning.
+        A wait-phase message that received no reasoning was only a "waiting"
+        indicator: it is removed rather than left as an empty "thought" line.
         """
         nonlocal current_msg, current_msg_type
         # Drain the revealer first, unconditionally: pending streamed text must
@@ -103,8 +88,11 @@ async def process_generation(app, user_input, user_msg) -> None:
         flush_text()
         if current_msg is None:
             return
-        current_msg.finalize()
-        current_msg.update_actions()
+        if isinstance(current_msg.type, ThinkingMsg) and not current_msg.base_text.strip():
+            chat.remove_message(current_msg)
+        else:
+            current_msg.finalize()
+            current_msg.update_actions()
         current_msg = None
         current_msg_type = None
 
@@ -112,16 +100,15 @@ async def process_generation(app, user_input, user_msg) -> None:
         """Close any tool message left in flight when generation ends.
 
         A dropped stream or a cancel can end a generation between a tool draft
-        and its result; without this the draft's spinner would spin forever.
+        and its result; without this the line would stay live forever.
         """
         for tool_id in list(app.active_tool_messages):
             msg = app.active_tool_messages.get(tool_id)
             if msg is None:
                 continue
             msg = ensure_tool_message_type(msg, ToolCallMsg())
-            if not msg.tool_status or msg.tool_status == "drafting":
-                msg.tool_status = status
-            msg.rebuild_tool_display()
+            if msg.tool_state() in ("drafting", "running"):
+                msg.set_tool_status(status)
             msg.finalize()
             app.active_tool_messages.pop(tool_id, None)
 
@@ -199,8 +186,8 @@ async def process_generation(app, user_input, user_msg) -> None:
 
             elif isinstance(event, events.ToolCallDraft):
                 # A tool call's arguments are still streaming: open (or refresh)
-                # a draft line so the UI shows a live spinner + name instead of
-                # hanging on the thinking message. The text above is finalized
+                # the tool line itself, which grows live (e.g. ``+12 lines``)
+                # instead of hanging on the thinking message. The text above is finalized
                 # now (fully revealed and styled) rather than when the whole
                 # call has streamed; content resuming after the draft still
                 # goes back into ``response_text_msg``.
@@ -210,15 +197,13 @@ async def process_generation(app, user_input, user_msg) -> None:
                 msg = app.active_tool_messages.get(tool_id)
                 if not msg:
                     msg = chat.add_message(
-                        "", msg_type=ToolDraftMsg(), harness_message_ids=current_harness_ids
+                        "", msg_type=ToolCallMsg(), harness_message_ids=current_harness_ids
                     )
                     app.active_tool_messages[tool_id] = msg
 
-                msg = ensure_tool_message_type(msg, ToolDraftMsg())
-                app.active_tool_messages[tool_id] = msg
                 msg.tool_name = event.name or msg.tool_name
                 msg.tool_args = event.args
-                msg.tool_status = "drafting"
+                msg.set_tool_status("drafting")
                 msg.rebuild_tool_display()
                 # Deliberately do not take over current_msg: any content that
                 # follows must go back to the message above this line.
@@ -245,7 +230,8 @@ async def process_generation(app, user_input, user_msg) -> None:
                 app.active_tool_messages[tool_id] = msg
                 msg.tool_name = event.name or msg.tool_name
                 msg.tool_args = event.args
-                msg.tool_status = "drafting"
+                # Complete, awaiting its permission decision (no clock yet).
+                msg.tool_status = None
                 msg.rebuild_tool_display()
 
                 if not preserve_active_text_stream:
@@ -278,7 +264,7 @@ async def process_generation(app, user_input, user_msg) -> None:
                     app.active_tool_messages[tool_id] = msg
                     msg.tool_name = event.name
                     msg.tool_args = event.args
-                    msg.tool_status = "auto-approved"
+                    msg.set_tool_status("running")
                     msg.rebuild_tool_display()
                     app.pending_permission_prompt = None
                 else:
@@ -317,8 +303,12 @@ async def process_generation(app, user_input, user_msg) -> None:
                 current_msg_type = type(msg.type)
 
             elif isinstance(event, events.ToolOutput):
-                # Interim output from a running tool (bash streaming): route it
-                # to the activity surface so long commands are visible live.
+                # Interim output from a running tool (bash streaming): the last
+                # lines show under the running line; the activity surface keeps
+                # the full log.
+                msg = app.active_tool_messages.get(event.id)
+                if msg is not None:
+                    msg.append_live_output(event.data)
                 text = event.data.rstrip("\n")
                 if text:
                     app.activity(f"[{event.name}:{event.stream}] {text}")
@@ -330,18 +320,12 @@ async def process_generation(app, user_input, user_msg) -> None:
                     msg = ensure_tool_message_type(msg, ToolCallMsg())
                     app.active_tool_messages[tool_id] = msg
                     msg.tool_name = event.name
-                    if event.outcome == "completed":
-                        msg.tool_status = "completed"
-                        msg.tool_output = event.output
-                    elif event.outcome == "denied":
-                        msg.tool_status = "denied"
-                        msg.tool_output = event.output
-                        msg.show_output = True  # Always show denial reason
-                    else:
-                        msg.tool_status = "error"
-                        msg.tool_output = event.output
-                        msg.show_output = True  # Always show errors
-                    msg.rebuild_tool_display()
+                    # The outcome (denied / error reason / exit code) is on the
+                    # collapsed line; the full output stays behind ``o``.
+                    msg.tool_output = event.output
+                    msg.set_tool_status(
+                        event.outcome if event.outcome in ("completed", "denied") else "error"
+                    )
                     msg.finalize()
                     del app.active_tool_messages[tool_id]
                 app.pending_permission_prompt = None
@@ -375,7 +359,12 @@ async def process_generation(app, user_input, user_msg) -> None:
                 # Let the revealer drain over its remaining window; the frame
                 # callback finalizes once it is empty. The wait-phase message
                 # stays and reads "thought for Xs".
-                if smoothing and current_msg_type in (ThinkingMsg, PicoMsg):
+                if (current_msg_type is ThinkingMsg
+                        and current_msg is not None
+                        and not current_msg.base_text.strip()):
+                    # Nothing was reasoned: drop the waiting line now.
+                    end_status_message()
+                elif smoothing and current_msg_type in (ThinkingMsg, PicoMsg):
                     app.defer_stream_finalize()
                 natural_done = True
 

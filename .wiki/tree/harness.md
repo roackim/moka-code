@@ -61,7 +61,7 @@ transport (httpx client, caches, selected model, connection state). No ABC or
 subclasses; server-family differences are internal branches:
 - `llamacpp` — single model from `/models[0]`, context via `/props`, ignores per-request model
 - `ollama` — native `/api/tags`, `/api/show`, native `/api/chat` (usage counters)
-- `openrouter` — enabled-models allowlist, per-model provider routing
+- `openrouter` — one `[models."<id>"]` table per enabled model; `providers` (server default, per-model override) is a strict ordered whitelist sent as `{"order": [...], "allow_fallbacks": false}` (`_provider_spec`); `providers = []` or none → OpenRouter's own routing
 - `openai` — configured model + known context-window table
 `Endpoint.from_dict(name, data)` reads a `[servers.<name>]` table and resolves
 `api_key_env` (`type` is required; the loader skips a server without one).

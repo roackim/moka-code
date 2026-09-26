@@ -84,7 +84,7 @@ files by `projects.py`. See [notes/config.md](./config.md).
 - **Stateless tools, swappable transport** — tool bodies are pure functions in `worker.py`; the harness executes them through a `ToolTransport`, either `InProcessTransport` (bare) or `SandboxTransport` (container/bubblewrap). Same registry/schemas in both
 - **Sandbox is transport, not policy** — pico parses no commands and confines no paths; a container/bwrap mount is the wall, and the user names the backend
 - **Endpoints** — server config + transport live in one `Endpoint` type (`harness/endpoint.py`, with `endpoint_*` modules for transport/discovery); UI commands are thin adapters
-- **Model selection is `(server, model)`** — `/model` refreshes discovery live, resolves a model across servers, then switches the harness. Per-server choices persist in `state.toml`; the catalog is a completion cache. OpenRouter models are disabled unless listed in `enabled_models`.
+- **Model selection is `(server, model)`** — `/model` refreshes discovery live, resolves a model across servers, then switches the harness. Per-server choices persist in `state.toml`; the catalog is a completion cache. OpenRouter models are disabled unless they have a `[servers.<name>.models."<id>"]` table.
 - **Thinking-tag parsing** — the state machine (`harness/thinking_parser.py`) handles `<think>`/`</think>` and `<thinking>`/`</thinking>` across chunk boundaries
 
 ## Module Relationships
