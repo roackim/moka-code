@@ -195,6 +195,10 @@ Ctrl+Z on a plain child, and an answer streaming throughout).
 project sandbox is active — a shell inside it (`sandbox.shell_argv`: the same
 mounts/network/limits as the worker, bash if present, `-it` for
 podman/docker). `/terminal host` forces the host. The screen is cleared first (`clear_screen=True`; editors draw on their own screen and are left as is). `exit` returns.
+The shell gets `PICO_TERMINAL=<outer pid>`; `main()` refuses to start when it
+is set ("pico is already running (pid N) … Type 'exit' to return to it.",
+exit code 1), so picos never nest and fight over one terminal
+(`PICO_TERMINAL= pico` overrides deliberately). Editors are not marked.
 
 
 ## Single Conversation

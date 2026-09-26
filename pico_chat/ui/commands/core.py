@@ -358,7 +358,9 @@ async def cmd_terminal(ui: ChatUIProtocol, args: List[str]):
     else:
         argv, where = [os.environ.get("SHELL") or "/bin/sh"], "host"
     try:
-        await run_in_foreground(ui, argv, cwd=workspace, clear_screen=True)
+        # Marks the shell so a pico started in it refuses to nest (main.py).
+        env = {**os.environ, "PICO_TERMINAL": str(os.getpid())}
+        await run_in_foreground(ui, argv, cwd=workspace, clear_screen=True, env=env)
     except OSError as exc:
         ui.chat_history_panel.add_message(
             f"Could not open a {where} shell: {exc}", msg_type=SysMsgError(), title="terminal")

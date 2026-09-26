@@ -6,6 +6,7 @@ a real TTY.
 """
 
 import asyncio
+import os
 import signal
 
 import pytest
@@ -129,9 +130,10 @@ def test_terminal_opens_where_tools_run_unless_host(monkeypatch, tmp_path, args,
 
     opened = []
 
-    async def _run(ui, argv, cwd=None, clear_screen=False):
+    async def _run(ui, argv, cwd=None, clear_screen=False, env=None):
         opened.append((argv, cwd))
         assert clear_screen  # a shell draws in place: start on a blank screen
+        assert env["PICO_TERMINAL"] == str(os.getpid())  # marks the shell: no nesting
         return 0
 
     monkeypatch.setattr("pico_chat.ui.external_editor.run_in_foreground", _run)
@@ -160,3 +162,23 @@ def test_terminal_rejects_unknown_arguments(monkeypatch):
     ui = type("UI", (), {"agent": None, "chat_history_panel": panel})()
     asyncio.run(cmd_terminal(ui, ["nope"]))
     assert messages and messages[0].startswith("Usage: /terminal")
+
+
+def test_pico_refuses_to_start_inside_its_own_terminal(monkeypatch, capsys):
+    import pico_chat.main as main_mod
+
+    monkeypatch.setenv("PICO_TERMINAL", "4242")
+    monkeypatch.setattr(main_mod, "get_harness",
+                        lambda: pytest.fail("must refuse before any setup"))
+
+    assert main_mod.main() == 1
+    err = capsys.readouterr().err
+    assert "pico is already running (pid 4242)" in err
+    assert "Type 'exit' to return to it." in err
+
+
+def test_the_shell_marker_reaches_the_child():
+    code = asyncio.run(run_in_foreground(
+        _ui([]), ["sh", "-c", 'test "$PICO_TERMINAL" = 7'],
+        env={**os.environ, "PICO_TERMINAL": "7"}))
+    assert code == 0

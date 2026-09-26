@@ -122,7 +122,8 @@ async def _wait(proc: subprocess.Popen, own_group: bool) -> int:
 
 
 async def run_in_foreground(ui: Any, argv: List[str], cwd: Optional[str] = None,
-                            *, clear_screen: bool = False) -> int:
+                            *, clear_screen: bool = False,
+                            env: Optional[dict] = None) -> int:
     """Run ``argv`` interactively with the terminal; return its exit code.
 
     ``clear_screen`` blanks pico's last frame first, for programs that draw
@@ -139,7 +140,7 @@ async def run_in_foreground(ui: Any, argv: List[str], cwd: Optional[str] = None,
             terminal.clear_screen()
     previous_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
-        proc = subprocess.Popen(argv, cwd=cwd, preexec_fn=_child_setup(tty_fd))
+        proc = subprocess.Popen(argv, cwd=cwd, env=env, preexec_fn=_child_setup(tty_fd))
         return await _wait(proc, own_group=tty_fd is not None)
     finally:
         if tty_fd is not None:

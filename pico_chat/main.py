@@ -3,6 +3,7 @@
 A TUI chat app for self-hosted LLM agents.
 """
 
+import os
 import sys
 import asyncio
 
@@ -15,6 +16,14 @@ def main():
     Main entry point for Pico-Chat.
     Wrapps the chatTUI in an async event loop and handles keyboard interrupts gracefully.
     """
+    # A shell opened by pico's /terminal is marked; pico must not nest in it
+    # (two TUIs would fight over one terminal). Refuse before touching it.
+    outer = os.environ.get("PICO_TERMINAL")
+    if outer:
+        print(f"pico is already running (pid {outer}): this shell was opened by its "
+              "/terminal.\nType 'exit' to return to it.", file=sys.stderr)
+        return 1
+
     # Initialize harness first
     print("Initializing Pico-Chat Harness...")
     from pico_chat.harness import roles
