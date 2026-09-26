@@ -290,32 +290,35 @@ Every message displayed in the chat history has a `MsgType` that controls its ti
 | `ToolCallMsg` | "tool" | TOOL | OUTPUT, COPY |
 | `AskPermissionMsg` | "permission" | PERMISSION | ALLOW, DENY, OUTPUT, COPY |
 
-`clamped` types (`ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`)
-render with no inter-message gap against an adjacent clamped message; the final
-`PicoMsg` answer keeps its gap.
+`clamped` types (`ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`) are
+*activity*: they stack with no gap; see the spacing rule below.
 
 ### Tool-call lines
 
 `ToolCallMsg` / `AskPermissionMsg` render compact (one line when unfocused):
-`name  target  metric  trailing`, with **no status glyph**. Names are padded to
-5 columns so targets line up; long paths are shortened from the left
-(`…/commands/models.py`) so the metric stays visible.
+`name target metric trailing`, single-spaced, with **no status glyph**. Only the
+name (TOOL, or ERROR when failed/denied) and the colored counts/state stand
+out; the target and the `▌` bar are MUTED (PERMISSION for an ask), so activity
+reads apart from prose. Long paths are shortened from
+the left (`…/commands/models.py`) so the metric stays visible. An expanded bash
+line shows just `bash` in the header and the full command wrapped below.
 
 ```
-read   src/main.py:10-59  50 lines
-write  big.py  +300 lines
-edit   src/main.py  +2 −1 lines
-edit   README.md  +1 line
-bash   pytest -q  running 12s        (elapsed time ticks; last output lines below)
-bash   pytest -q  exit 1
-edit   a.py  Search block not found  (error: name + reason red)
-edit   a.py  +2 −1 lines  denied
-edit   a.py  +2 −1 lines  approve? a/x   (AskPermissionMsg)
+read src/main.py:10-59 50 lines
+write big.py +300 lines
+edit src/main.py +2 lines −1 line
+edit README.md +1 line
+bash pytest -q running 12s        (elapsed time ticks; last output lines below)
+bash pytest -q exit 1
+edit a.py Search block not found  (error: name + reason red)
+edit a.py +2 lines −1 line denied
+edit a.py +2 lines −1 line approve? a/x   (AskPermissionMsg)
 ```
 
 - **Metric rule:** a sign means the file changed, a plain count means it did not.
-  The unit is written once, singular when the total is one, and only nonzero
-  sides show. `+` is SUCCESS, `−` ERROR. (`_line_metric`, `_tool_target_metric`.)
+  Each side carries its own unit (`+2 lines −1 line`, singular per side) and is
+  colored whole — `+N lines` SUCCESS, `−N lines` ERROR; only nonzero sides show.
+  (`_line_metric`, `_tool_target_metric`.)
 - **Trailing word only when it is news** (`Message._tool_trailing`):
   `approve? a/x`, `running Ns` (after 1s), `denied`, `cancelled`, the first line
   of an error, or a non-zero bash `exit N` parsed from the worker's `[exit:N]`.
@@ -367,10 +370,9 @@ routed to the activity surface rather than the transcript (see below).
 | `DENY` | `x` | deny |
 
 ### Message Selection and the Mode Line
-Messages are gutter-threaded and do not render actions inline. Every message
-uses a full-height `▌` prefix bar (`Box.full_height_gutter`) whose color encodes
-the type: user `USER`, pico/thinking `MUTED`, tool calls `TOOL` (a dedicated
-palette color, so `FOCUSED` stays reserved for focus), permission asks
+Messages are gutter-threaded and do not render actions inline. Messages use a
+full-height `▌` prefix bar (`Box.full_height_gutter`) whose color encodes the
+type: user `USER`, pico/thinking/tool calls `MUTED`, permission asks
 `PERMISSION`. User content is normal text color (the accent is only the bar).
 `ChatHistoryPanel` keeps a `focused_message_index`
 (the selected message); the selected message's prefix bar is replaced with a
@@ -448,9 +450,11 @@ is `ingest` + `reveal_to(len(base_text))` for non-streamed callers and drops
 leading whitespace on the first chunk, since models often open with a space.
 
 Messages are separated by `ui_msg_v_margin` blank lines (default `1`; set it in
-`ui.toml`). Adjacent `clamped` messages (`MsgType.clamped`: `ThinkingMsg`,
-`ToolCallMsg`, `AskPermissionMsg`) render as one block with no
-gap; the final `PicoMsg` answer, user turns, and notices keep the gap.
+`ui.toml`). Spacing rule (`chat_history_panel._gap_before`): adjacent activity
+(`MsgType.clamped`: `ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`) stacks
+with no gap; prose, user turns and notices keep the gap. A thought belongs to
+the message it precedes: it sits directly on top of it, and when that message
+needs a gap the gap goes above the thought.
 `ChatHistoryPanel` is the owner of the message list — it handles layout,
 selection, scrolling, and width-change reformatting.
 
@@ -465,11 +469,14 @@ frozen. There is no spinner: the label ticks (`Message._thinking_label`).
 - at `Start(assistant)` the phase becomes `thinking`; with no reasoning yet it
   reads `waiting Ns`, and once reasoning arrives `thinking Ns` followed by a
   muted preview of the tail of the latest reasoning line;
-- at the first content/tool boundary (`end_status_message()`): if the model
-  reasoned, it is finalized to `thought for Xs` (focus expands the reasoning);
-  if it did not, the line was only a wait indicator and is **removed**
-  (`ChatHistoryPanel.remove_message`). A reasoning-free tool loop therefore
-  shows only tool lines.
+- at the first content/tool boundary (`end_status_message()`): if the
+  reasoning earns a line (`thought_worth_showing`: ≥ `ui.thought_min_tokens`,
+  default 100, estimated at ~4 chars/token; `0` shows every non-empty thought)
+  it is finalized to `thought for Xs` (focus expands the reasoning); otherwise
+  the line was only a wait indicator and is **removed**
+  (`ChatHistoryPanel.remove_message`). Short reasoning stays in history and
+  exports; `/import` applies the same threshold. A tool loop with little
+  reasoning therefore shows only tool lines.
 
 `end_status_message()` is used at every hard boundary (Token, ToolCallDraft,
 ToolCall, PermissionRequest, Error, cancel, and Done — which also removes an

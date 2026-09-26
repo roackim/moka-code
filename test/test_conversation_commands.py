@@ -159,8 +159,10 @@ def test_conversation_import_keeps_assistant_reply_in_one_message(tmp_path):
     assert assistant[0].text == content
 
 
-def test_conversation_import_restores_stored_reasoning(tmp_path):
+def test_conversation_import_restores_stored_reasoning(tmp_path, monkeypatch):
     """The explicit ``reasoning`` field survives export/import as a ThinkingMsg."""
+    from pico_chat import pico_cfg
+    monkeypatch.setattr(pico_cfg.config, "ui_thought_min_tokens", 0)
     from pico_chat.ui.tui.msg_types import PicoMsg, ThinkingMsg
 
     ui = FakeUI()

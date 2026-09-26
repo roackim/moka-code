@@ -7,6 +7,7 @@ import os
 from typing import Any, Dict, List
 
 from .base import ChatUIProtocol
+from pico_chat.ui.chat_message import thought_worth_showing
 from pico_chat.ui.tui.msg_types import (
     PicoMsg,
     SysMsg,
@@ -151,10 +152,12 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
             if reasoning:
                 # Current format: reasoning is stored verbatim in its own
                 # field, so restore it exactly and keep the answer separate.
-                think = ui.chat_history_panel.add_message(
-                    reasoning, msg_type=ThinkingMsg(), harness_message_ids=ids)
-                think.set_collapsed(True)
-                think.finalize()
+                # Short reasoning gets no line, as during generation.
+                if thought_worth_showing(reasoning):
+                    think = ui.chat_history_panel.add_message(
+                        reasoning, msg_type=ThinkingMsg(), harness_message_ids=ids)
+                    think.set_collapsed(True)
+                    think.finalize()
                 if content:
                     ui.chat_history_panel.add_message(
                         content, msg_type=PicoMsg(), harness_message_ids=ids)

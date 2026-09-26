@@ -16,7 +16,7 @@ import asyncio
 import logging
 
 from pico_chat.harness import events
-from pico_chat.ui.chat_message import Message
+from pico_chat.ui.chat_message import Message, thought_worth_showing
 from pico_chat.ui.tui.msg_types import (
     AskPermissionMsg,
     MsgType,
@@ -78,8 +78,9 @@ async def process_generation(app, user_input, user_msg) -> None:
     def end_status_message() -> None:
         """Finalize the current text/status message at a hard boundary.
 
-        A wait-phase message that received no reasoning was only a "waiting"
-        indicator: it is removed rather than left as an empty "thought" line.
+        A wait-phase message whose reasoning is too short to earn a line
+        (``ui.thought_min_tokens``) was only a "waiting" indicator: it is
+        removed rather than left as a near-empty "thought" line.
         """
         nonlocal current_msg, current_msg_type
         # Drain the revealer first, unconditionally: pending streamed text must
@@ -88,7 +89,7 @@ async def process_generation(app, user_input, user_msg) -> None:
         flush_text()
         if current_msg is None:
             return
-        if isinstance(current_msg.type, ThinkingMsg) and not current_msg.base_text.strip():
+        if isinstance(current_msg.type, ThinkingMsg) and not thought_worth_showing(current_msg.base_text):
             chat.remove_message(current_msg)
         else:
             current_msg.finalize()
@@ -361,8 +362,8 @@ async def process_generation(app, user_input, user_msg) -> None:
                 # stays and reads "thought for Xs".
                 if (current_msg_type is ThinkingMsg
                         and current_msg is not None
-                        and not current_msg.base_text.strip()):
-                    # Nothing was reasoned: drop the waiting line now.
+                        and not thought_worth_showing(current_msg.base_text)):
+                    # Nothing worth a line was reasoned: drop it now.
                     end_status_message()
                 elif smoothing and current_msg_type in (ThinkingMsg, PicoMsg):
                     app.defer_stream_finalize()

@@ -97,8 +97,9 @@ class ToolCallMsg(MsgType):
     frame_color = "TOOL"
     content_color = None
     actions = [MsgAction.OUTPUT, MsgAction.COPY]
-    # Normal message prefix, like any other transcript entry.
+    # Normal message prefix, muted so tool activity reads apart from prose.
     gutter = "▌"
+    gutter_color = "MUTED"
     clamped = True
 
 

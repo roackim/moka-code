@@ -215,7 +215,9 @@ def test_cancel_finalizes_in_flight_tool_draft():
     assert tools[0].tool_status == "cancelled"
 
 
-def test_reasoning_complete_before_content_appears():
+def test_reasoning_complete_before_content_appears(monkeypatch):
+    from pico_chat import pico_cfg
+    monkeypatch.setattr(pico_cfg.config, "ui_thought_min_tokens", 0)
     ui = chatTUI(StubAgent())
     script = [
         events.Start(message_id="m1", role="assistant"),
@@ -291,7 +293,9 @@ def test_waiting_line_removed_before_a_tool_call():
     assert "ThinkingMsg" not in kinds
     assert kinds.count("ToolCallMsg") == 1
 
-def test_thinking_message_finalizes_to_duration_summary():
+def test_thinking_message_finalizes_to_duration_summary(monkeypatch):
+    from pico_chat import pico_cfg
+    monkeypatch.setattr(pico_cfg.config, "ui_thought_min_tokens", 0)
     ui = chatTUI(StubAgent())
     script = [
         events.Start(message_id="m1", role="assistant"),
@@ -446,3 +450,24 @@ def test_tool_call_flushes_pending_text_without_frames():
 
     assert seen["reveal"] == len(seen["base"])
     assert seen["finalized"] is True
+
+
+def test_short_reasoning_gets_no_line_but_long_reasoning_does(monkeypatch):
+    monkeypatch.setattr(pico_cfg.config, "ui_thought_min_tokens", 10)
+    ui = chatTUI(StubAgent())
+    script = [
+        events.Start(message_id="m1", role="assistant"),
+        events.Reasoning(text="ok, ls."),                      # ~2 tokens: hidden
+        events.ToolCall(id="t1", name="bash", args='{"command": "ls"}'),
+        events.PermissionRequest(id="t1", name="bash", args='{"command": "ls"}', prompt="?", auto=True),
+        events.ToolResult(id="t1", name="bash", outcome="completed", output="[exit:0]"),
+        events.Start(message_id="m2", role="assistant"),
+        events.Reasoning(text="The listing shows two files; compare them. " * 2),  # ~21 tokens
+        events.Token(text="done"),
+        events.Done(),
+    ]
+    _run_script(ui, script)
+
+    think = [m for m in _messages(ui) if isinstance(m.type, ThinkingMsg)]
+    assert len(think) == 1
+    assert think[0].base_text.startswith("The listing")

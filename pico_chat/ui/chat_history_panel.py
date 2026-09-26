@@ -13,7 +13,7 @@ from pico_chat import pico_cfg
 from pico_chat.ui.clipboard import copy_to_clipboard
 from pico_chat.ui.message_selection import MessageSelection
 from pico_chat.ui.tui.colors import theme, RGB
-from pico_chat.ui.tui.msg_types import MsgType, MsgAction
+from pico_chat.ui.tui.msg_types import MsgType, MsgAction, ThinkingMsg
 
 from pico_chat.ui.chat_message import Message
 
@@ -22,8 +22,34 @@ _LIVE_TICK_INTERVAL = 0.25
 
 
 def _clamped(msg: Message) -> bool:
-    """True when ``msg`` clamps against an adjacent clamped message (no gap)."""
+    """True for activity lines (thoughts, tool calls) that stack without gaps."""
     return getattr(msg.type, "clamped", False)
+
+
+def _is_thought(msg: Message) -> bool:
+    return isinstance(msg.type, ThinkingMsg)
+
+
+def _needs_gap(prev: Message, msg: Optional[Message]) -> bool:
+    """Blank line between two messages: none inside a block of activity."""
+    return not (_clamped(prev) and (msg is None or _clamped(msg)))
+
+
+def _gap_before(messages: list, i: int) -> bool:
+    """Whether message ``i`` starts after a blank line.
+
+    A thought belongs to the message it precedes: it sits directly on top of
+    it, and when that message needs a gap the gap goes above the thought.
+    """
+    if i == 0:
+        return False
+    prev, msg = messages[i - 1], messages[i]
+    if _is_thought(prev):
+        return False
+    if _is_thought(msg):
+        following = next((m for m in messages[i + 1:] if not _is_thought(m)), None)
+        return _needs_gap(prev, following)
+    return _needs_gap(prev, msg)
 
 
 class ChatHistoryPanel(TextComponent):
@@ -284,16 +310,14 @@ class ChatHistoryPanel(TextComponent):
         starts: list[int] = []
         ends: list[int] = []
         y = 0
-        prev: Message | None = None
         for i, msg in enumerate(self.messages):
-            # Adjacent clamped messages (thoughts, tool calls) form one block
-            # with no gap; the gap still separates the final answer and turns.
-            if i > 0 and not (_clamped(prev) and _clamped(msg)):
+            # Activity (thoughts, tool calls) stacks without gaps; prose and
+            # turns are separated by one. See ``_gap_before``.
+            if _gap_before(self.messages, i):
                 y += gap
             starts.append(y)
             y += self._get_message_height(msg)
             ends.append(y)
-            prev = msg
         return starts, ends, y
 
     def _get_message_virtual_y_range(self, msg_index: int) -> tuple[int, int]:

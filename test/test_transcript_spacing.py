@@ -63,3 +63,24 @@ def test_nonempty_thought_expands_when_focused():
     panel.set_focused_message(0)
 
     assert thought.collapsed is False
+
+
+def _gaps(*types):
+    """Blank rows before each message after the first, for a type sequence."""
+    panel = _panel()
+    for msg_type in types:
+        panel.add_message("x", msg_type=msg_type())
+    starts, ends, _ = panel._row_index()
+    return [starts[i] - ends[i - 1] for i in range(1, len(types))]
+
+
+def test_a_thought_sits_on_the_message_it_precedes():
+    gap = pico_cfg.config.ui_msg_v_margin
+    # tool, thought, tool: one activity block, no gaps.
+    assert _gaps(ToolCallMsg, ThinkingMsg, ToolCallMsg) == [0, 0]
+    # tool, thought, prose: the prose needs a gap, so it goes above the thought.
+    assert _gaps(ToolCallMsg, ThinkingMsg, PicoMsg) == [gap, 0]
+    # user, thought, prose: same; the thought hugs the answer.
+    assert _gaps(UserMsg, ThinkingMsg, PicoMsg) == [gap, 0]
+    # prose, thought, tool: the tool block needs a gap after prose.
+    assert _gaps(PicoMsg, ThinkingMsg, ToolCallMsg) == [gap, 0]

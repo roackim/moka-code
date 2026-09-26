@@ -147,7 +147,8 @@ stored one file per role under `roles/<name>.toml`. `PermissionGate`
 `ui_status_bar_fields`, `ui_max_input_height` (input box caps + scrolls past
 this many wrapped lines), `ui_stream_smoothing` / `ui_smooth_target_fps`
 (streamed-text reveal smoothing), `target_fps`, and the rest of the `ui_*`
-attrs. `spinner_fps` is retired (`_RETIRED_UI`): tool and thinking lines show
+attrs, including `ui_thought_min_tokens` (reasoning shorter than this gets
+no transcript line; 0 = show all). `spinner_fps` is retired (`_RETIRED_UI`): tool and thinking lines show
 ticking elapsed time instead of a spinner.
 
 The `sandbox` status-bar field is composed from `ui_sandbox_glyph` +

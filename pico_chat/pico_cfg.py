@@ -131,6 +131,7 @@ DEFAULT_UI_TOML = """\
 # sandbox_prefix = "sandbox:"         # before the runtime name; empty hides it
 # sandbox_active_color = "SUCCESS"    # palette name or #rrggbb
 # sandbox_inactive_color = "WARNING"
+# thought_min_tokens = 100            # hide shorter reasoning lines (0 = show all)
 # stream_smoothing = true             # reveal streamed text smoothly
 # smooth_target_fps = 60              # reveal cadence (independent of render fps)
 # target_fps = 60
@@ -284,6 +285,7 @@ _UI_SPEC: Dict[str, tuple[str, str]] = {
     "sandbox_prefix": ("ui_sandbox_prefix", "str"),
     "sandbox_active_color": ("ui_sandbox_active_color", "str"),
     "sandbox_inactive_color": ("ui_sandbox_inactive_color", "str"),
+    "thought_min_tokens": ("ui_thought_min_tokens", "int"),
     "stream_smoothing": ("ui_stream_smoothing", "bool"),
     "smooth_target_fps": ("ui_smooth_target_fps", "int"),
     "target_fps": ("target_fps", "int"),
@@ -533,6 +535,7 @@ class Config:
         self.ui_sandbox_prefix: str = "sandbox:"
         self.ui_sandbox_active_color: str = "SUCCESS"
         self.ui_sandbox_inactive_color: str = "WARNING"
+        self.ui_thought_min_tokens: int = 100
         self.ui_stream_smoothing: bool = True
         self.ui_smooth_target_fps: int = 60
         self.target_fps: int = 60

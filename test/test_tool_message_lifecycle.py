@@ -67,7 +67,7 @@ def test_tool_line_has_no_status_glyph():
 
 def test_running_tool_shows_elapsed_time_only_when_not_instant(clock):
     msg = _tool(status="running")
-    assert _lines(msg)[0].rstrip() == "bash   ls"
+    assert _lines(msg)[0].rstrip() == "bash ls"
     clock[0] += 2.4
     msg.tick()
     assert _lines(msg)[0].endswith("running 2s")
@@ -75,7 +75,7 @@ def test_running_tool_shows_elapsed_time_only_when_not_instant(clock):
 
 def test_completed_line_has_no_trailing_word():
     msg = _tool(status="completed", finalized=True, output="a\n[exit:0]")
-    assert _lines(msg)[0].rstrip() == "bash   ls"
+    assert _lines(msg)[0].rstrip() == "bash ls"
 
 
 def test_bash_failure_shows_exit_code():
@@ -166,9 +166,9 @@ def test_bash_tool_schema_name_is_bash():
     assert tool.get_schema()["function"]["name"] == "bash"
 
 
-def test_gutter_prefix_is_a_colored_bar_per_type():
-    """Every message uses the ``▌`` bar; the color encodes the type."""
-    from pico_chat.ui.tui.msg_types import AskPermissionMsg
+def test_tool_lines_use_a_muted_bar():
+    """Tool lines get a muted ``▌``; an ask keeps its permission color."""
+    from pico_chat.ui.tui.msg_types import AskPermissionMsg, PicoMsg
     from pico_chat.ui.tui.colors import theme
 
     ask = Message("", msg_type=AskPermissionMsg(), max_width=40)
@@ -176,9 +176,11 @@ def test_gutter_prefix_is_a_colored_bar_per_type():
     assert ask.box.gutter == "▌"
     assert ask.box.gutter_color == theme.PERMISSION
 
-    tool = _tool(status="approved | executing", finalized=False)
+    tool = _tool(status="running", finalized=False)
     assert tool.box.gutter == "▌"
-    assert tool.box.gutter_color == theme.TOOL
+    assert tool.box.gutter_color == theme.MUTED
+
+    assert Message("hi", msg_type=PicoMsg()).box.gutter == "▌"
 
 
 # --- per-tool summary ------------------------------------------------------
@@ -187,8 +189,8 @@ def test_read_summary_uses_actual_line_count_once_done():
     assert _tool_summary("read", {"path": "src/main.py"}, None) == "src/main.py"
     assert _tool_summary(
         "read", {"path": "src/main.py"}, "one\ntwo\nthree\n"
-    ) == "src/main.py  3 lines"
-    assert _tool_summary("read", {"path": "a.py"}, "one") == "a.py  1 line"
+    ) == "src/main.py 3 lines"
+    assert _tool_summary("read", {"path": "a.py"}, "one") == "a.py 1 line"
 
 
 def test_read_summary_shows_the_range():
@@ -199,20 +201,28 @@ def test_read_summary_shows_the_range():
 def test_write_summary_counts_content_lines():
     assert _tool_summary(
         "write", {"path": "a.py", "content": "x\ny\n"}, None
-    ) == "a.py  +2 lines"
+    ) == "a.py +2 lines"
 
 
 def test_edit_summary_reports_added_and_removed():
     args = {"path": "a.py", "search": "a\nb", "replace": "a\nc\nd"}
-    assert _tool_summary("edit", args, None) == "a.py  +2 −1 lines"
+    assert _tool_summary("edit", args, None) == "a.py +2 lines −1 line"
     assert _edit_counts("a\nb", "a\nc\nd") == (2, 1)
+
+
+def test_each_side_is_colored_with_its_own_unit():
+    from pico_chat.ui.chat_message import _line_metric
+
+    metric = _line_metric(added=2, removed=2)
+    assert metric == (f"{theme.SUCCESS}+2 lines{theme.reset()} "
+                      f"{theme.ERROR}−2 lines{theme.reset()}")
 
 
 def test_edit_summary_shows_only_nonzero_sides_and_singular():
     add_one = {"path": "a.py", "search": "a", "replace": "a\nb"}
-    assert _tool_summary("edit", add_one, None) == "a.py  +1 line"
+    assert _tool_summary("edit", add_one, None) == "a.py +1 line"
     remove_two = {"path": "a.py", "search": "a\nb\nc", "replace": "a"}
-    assert _tool_summary("edit", remove_two, None) == "a.py  −2 lines"
+    assert _tool_summary("edit", remove_two, None) == "a.py −2 lines"
 
 
 def test_bash_summary_uses_first_command_line():
@@ -252,13 +262,11 @@ def test_draft_never_full_parses_even_when_args_look_closed():
     assert _parse_tool_args(raw)["content"] == "x" * 100_000
 
 
-def test_tool_names_are_padded_so_targets_line_up():
+def test_tool_line_uses_single_spaces_and_mutes_the_target():
     read = _tool(name="read", args={"path": "src/main.py"}, status="completed",
                  finalized=True, output="a\nb")
-    edit = _tool(name="edit", args={"path": "src/x.py", "search": "a", "replace": "b"},
-                 status="completed", finalized=True, output="ok")
-    assert _lines(read)[0] == "read   src/main.py  2 lines"
-    assert _lines(edit)[0].index("src/x.py") == _lines(read)[0].index("src/main.py")
+    assert _lines(read)[0] == "read src/main.py 2 lines"
+    assert f"{theme.MUTED}src/main.py" in read.get_formatted()
 
 
 def test_long_path_is_shortened_from_the_left_keeping_the_metric():
@@ -266,7 +274,7 @@ def test_long_path_is_shortened_from_the_left_keeping_the_metric():
     msg = _tool(name="write", args={"path": path, "content": "a\nb\n"},
                 status="completed", finalized=True, output="ok", width=50)
     header = _lines(msg)[0]
-    assert "…" in header and header.endswith("models.py  +2 lines")
+    assert "…" in header and header.endswith("models.py +2 lines")
     assert len(header) <= 50
 
 
@@ -289,10 +297,13 @@ def test_focused_write_shows_a_capped_head():
     assert len(body) == 21
 
 
-def test_focused_bash_shows_the_full_command():
+def test_focused_bash_shows_the_full_command_wrapped_not_repeated():
     msg = _tool(args={"command": "cd x\nmake test"}, status="completed",
                 finalized=True, output="[exit:0]", focused=True)
-    assert _lines(msg)[1:] == ["$ cd x", "  make test"]
+    assert _lines(msg) == ["bash", "$ cd x", "  make test"]
+    long = _tool(args={"command": "echo " + "a" * 30}, status="completed",
+                 finalized=True, output="[exit:0]", focused=True, width=20)
+    assert _lines(long) == ["bash", "$ echo aaaaaaaaaaaaa", "  aaaaaaaaaaaaaaaaa"]
 
 
 def test_compact_line_has_no_body():
@@ -332,7 +343,7 @@ def test_write_draft_grows_live_in_the_final_format():
     msg.set_tool_status("drafting")
     msg.rebuild_tool_display()
 
-    assert _lines(msg) == ["write  a.py  +2 lines"]
+    assert _lines(msg) == ["write a.py +2 lines"]
 
 
 def test_approving_turns_the_ask_into_a_running_tool_line():

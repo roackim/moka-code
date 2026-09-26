@@ -53,8 +53,6 @@ def _parse_tool_args(raw: Optional[str], *, full: bool = True) -> dict:
     return salvaged
 
 
-# Tool names are padded to this width so targets line up (read/write/edit/bash).
-_TOOL_NAME_WIDTH = 5
 # Focused view: lines of a write head / edit diff before "… N more lines".
 _BODY_LINES = 20
 # Toggled output (``o``): head and tail kept around the elided middle.
@@ -100,20 +98,17 @@ def _line_metric(*, count: Optional[int] = None, added: int = 0, removed: int = 
     """Colored line count; a sign means the file changed, a plain count not.
 
     ``count`` renders ``240 lines`` (read); ``added``/``removed`` render
-    ``+2 −1 lines`` with only the nonzero sides. The unit is written once,
-    singular when the total is one.
+    ``+2 lines −1 line`` with only the nonzero sides, each side fully colored
+    and with its own unit.
     """
     if count is not None:
         return f"{theme.MUTED}{count} {_lines_word(count)}{theme.reset()}"
     parts = []
     if added:
-        parts.append(f"{theme.SUCCESS}+{added}{theme.reset()}")
+        parts.append(f"{theme.SUCCESS}+{added} {_lines_word(added)}{theme.reset()}")
     if removed:
-        parts.append(f"{theme.ERROR}−{removed}{theme.reset()}")
-    if not parts:
-        return ""
-    word = _lines_word(added + removed)
-    return " ".join(parts) + f" {theme.MUTED}{word}{theme.reset()}"
+        parts.append(f"{theme.ERROR}−{removed} {_lines_word(removed)}{theme.reset()}")
+    return " ".join(parts)
 
 
 def _bash_exit_code(output: Optional[str]) -> Optional[int]:
@@ -171,9 +166,21 @@ def _tool_target_metric(name: str, args: dict, *, raw: Optional[str],
 
 
 def _tool_summary(name: str, args: dict, output: Optional[str]) -> str:
-    """Plain ``target  metric`` summary of a completed tool call."""
+    """Plain ``target metric`` summary of a completed tool call."""
     target, metric = _tool_target_metric(name, args, raw=None, output=output, drafting=False)
-    return "  ".join(part for part in (target, strip_ansi(metric)) if part)
+    return " ".join(part for part in (target, strip_ansi(metric)) if part)
+
+
+def thought_worth_showing(reasoning: str) -> bool:
+    """Whether reasoning earns its own transcript line (``ui.thought_min_tokens``).
+
+    Tokens are estimated at ~4 characters each. Shorter reasoning is still kept
+    in history and exports; it just gets no line.
+    """
+    text = reasoning.strip()
+    if not text:
+        return False
+    return len(text) / 4 >= pico_cfg.config.ui_thought_min_tokens
 
 
 def _clip(text: str, width: int, *, keep_end: bool = False) -> str:
@@ -197,6 +204,23 @@ def _clip(text: str, width: int, *, keep_end: bool = False) -> str:
     while head and display_width(head) > width - 1:
         head = head[:-1]
     return head + "…"
+
+
+def _hard_wrap(text: str, width: int) -> list[str]:
+    """Split plain ``text`` into chunks of at most ``width`` columns."""
+    text = text.replace("\t", "    ")
+    if width <= 0 or not text:
+        return [text]
+    chunks, current, used = [], "", 0
+    for char in text:
+        char_width = display_width(char)
+        if current and used + char_width > width:
+            chunks.append(current)
+            current, used = "", 0
+        current += char
+        used += char_width
+    chunks.append(current)
+    return chunks
 
 
 def _tool_body(name: str, args: dict) -> list[tuple]:
@@ -767,7 +791,7 @@ class Message:
     def rebuild_tool_display(self):
         """Rebuild the tool message from its metadata.
 
-        The header is ``name  target  metric  trailing``: no status glyph; the
+        The header is ``name target metric trailing``: no status glyph; the
         name color and a trailing word carry the state (``approve? a/x``,
         ``running 12s``, an error reason). While the model is still writing
         the call the same line grows live. Focused messages add a readable
@@ -797,7 +821,13 @@ class Message:
 
         failed = state in ("error", "denied")
         name_color = theme.ERROR if failed else theme.TOOL
-        name = self.tool_name.ljust(_TOOL_NAME_WIDTH)
+        name = self.tool_name
+        is_compact = self.box.compact_when_unfocused and not self.box.focused
+        # Expanded bash shows the whole command wrapped below, so the header
+        # does not repeat a cut-off copy of it.
+        wrap_body = self.tool_name == "bash" and not is_compact
+        if wrap_body:
+            target = ""
         trailing = self._tool_trailing()
         trailing_color = {
             "asking": theme.PERMISSION, "running": theme.MUTED,
@@ -805,27 +835,36 @@ class Message:
         }.get(state, theme.ERROR)
         trailing = _clip(trailing, width // 2)
 
-        fixed = display_width(name) + 2
+        # Single spaces; the parts read apart by color. Only the name (and
+        # colored counts/states) stand out: the rest is muted activity.
+        fixed = display_width(name) + 1
         if metric:
-            fixed += display_width(strip_ansi(metric)) + 2
+            fixed += display_width(strip_ansi(metric)) + 1
         if trailing:
-            fixed += display_width(trailing) + 2
+            fixed += display_width(trailing) + 1
         target = _clip(target, max(8, width - fixed), keep_end=self.tool_name != "bash")
 
         header = f"{name_color}{name}{theme.reset()}"
         if target:
-            header += f"  {target}"
+            header += f" {theme.MUTED}{target}{theme.reset()}"
         if metric:
-            header += f"  {metric}"
+            header += f" {metric}"
         if trailing:
-            header += f"  {trailing_color}{trailing}{theme.reset()}"
+            header += f" {trailing_color}{trailing}{theme.reset()}"
         lines = [header]
 
-        is_compact = self.box.compact_when_unfocused and not self.box.focused
         if not is_compact:
             for color, prefix, text in self._tool_display_body:
-                clipped = _clip(text, width - display_width(prefix))
-                lines.append(f"{color}{prefix}{theme.reset()}{clipped}")
+                room = width - display_width(prefix)
+                if wrap_body:
+                    chunks = _hard_wrap(text, room)
+                    lines += [
+                        f"{color}{prefix if k == 0 else ' ' * len(prefix)}{theme.reset()}"
+                        f"{theme.MUTED}{chunk}{theme.reset()}"
+                        for k, chunk in enumerate(chunks)
+                    ]
+                else:
+                    lines.append(f"{color}{prefix}{theme.reset()}{_clip(text, room)}")
 
         if state == "running" and self.live_output:
             tail = [line for line in self.live_output if line.strip()][-_LIVE_TAIL:]

@@ -58,7 +58,10 @@ export OPENROUTER_API_KEY=sk-or-...
 [servers.openrouter]
 type = "openrouter"
 api_key_env = "OPENROUTER_API_KEY"
-enabled_models = ["anthropic/claude-3.5-sonnet"]
+providers = ["anthropic"]            # optional: only these hosts, in this order
+
+# One table per enabled model; its own providers replace the default.
+[servers.openrouter.models."anthropic/claude-3.5-sonnet"]
 ```
 
 Save the file, and `/config` reloads it automatically. Then open the model
@@ -101,7 +104,9 @@ base_url = "http://localhost:8080/v1"
 [servers.ds]
 type = "openrouter"
 api_key_env = "OPENROUTER_API_KEY"
-enabled_models = ["deepseek/deepseek-v4-flash"]
+
+[servers.ds.models."deepseek/deepseek-v4-flash"]
+providers = ["deepseek", "fireworks"]
 ```
 Then:
 ```
