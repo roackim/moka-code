@@ -98,6 +98,11 @@ class Terminal:
         sys.stdout.write(ANSI.SHOW_CURSOR + ANSI.DISABLE_MOUSE + ANSI.DISABLE_BRACKETED_PASTE + ANSI.RESET)
         sys.stdout.flush()
 
+    def clear_screen(self):
+        """Blank the screen and home the cursor (e.g. before a shell starts)."""
+        sys.stdout.write(ANSI.MOVE_HOME + ANSI.CLEAR_SCREEN)
+        sys.stdout.flush()
+
     def resume(self):
         """Re-enter raw mode after a :meth:`suspend`."""
         try:

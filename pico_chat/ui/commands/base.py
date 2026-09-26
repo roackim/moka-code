@@ -161,7 +161,7 @@ def theme_descriptions() -> Dict[str, str]:
     }
 
 
-def open_project_sandbox(ui: ChatUIProtocol) -> None:
+async def open_project_sandbox(ui: ChatUIProtocol) -> None:
     """Open the current project's sandbox file and apply its active entry.
 
     Shared by ``/config sandbox`` and ``/sandbox config``.
@@ -180,7 +180,7 @@ def open_project_sandbox(ui: ChatUIProtocol) -> None:
         return
 
     path = projects.ensure_project_file(workspace)
-    open_editor(ui, path)
+    await open_editor(ui, path)
 
     errors: list[str] = []
     project = projects.load_project(workspace, errors)

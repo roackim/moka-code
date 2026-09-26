@@ -167,6 +167,35 @@ was removed. Configuration is edited as files: `/config <section>` and
 reserved for permission approval and destructive confirmation; see
 [notes/principles.md](./principles.md).
 
+## Foreground programs (`ui/external_editor.py`)
+
+`$EDITOR` (`/config`, `/edit`, `/config role`, `/sandbox config`) and
+`/terminal` run through `run_in_foreground(ui, argv, cwd)`, which hands the
+terminal to the child **without freezing the conversation** (streams, tools and
+permission prompts keep going; the transcript is redrawn on return):
+
+- the child (`preexec_fn`) resets SIGINT/SIGQUIT/SIGTSTP/SIGTTIN/SIGTTOU to
+  default, gets its own process group, and makes it the terminal's foreground
+  group before exec — so Ctrl+C / Ctrl+Z reach only the child;
+- pico ignores SIGINT meanwhile (backup), `Compositor.pause()`s (no input
+  reads, no drawing — `render()` is a no-op, so the presenter's direct render
+  for a permission prompt is safe), and polls `waitpid(WNOHANG|WUNTRACED)` so
+  the event loop stays free; a stopped child's **group** is `SIGCONT`ed
+  (continuing only the direct child left `sh` waiting on a stopped `sleep`);
+- afterwards it reclaims the terminal (`tcsetpgrp`, SIGTTOU ignored), resumes
+  raw mode and `Compositor.resume()`s with a full redraw.
+
+Without job control (pico not the terminal's foreground group) the handover is
+skipped and only the SIGINT backup applies. Verified in a pseudo-terminal: at
+HEAD before this change, Ctrl+C in a non-job-control child (`sh -c "sleep 5"`)
+killed pico; now it survives (also Ctrl+C at a shell prompt / on `sleep`,
+Ctrl+Z on a plain child, and an answer streaming throughout).
+
+**`/terminal`** opens `$SHELL` (else `/bin/sh`) in the workspace, or — when a
+project sandbox is active — a shell inside it (`sandbox.shell_argv`: the same
+mounts/network/limits as the worker, bash if present, `-it` for
+podman/docker). `/terminal host` forces the host. The screen is cleared first (`clear_screen=True`; editors draw on their own screen and are left as is). `exit` returns.
+
 
 ## Single Conversation
 
@@ -545,7 +574,7 @@ The package lives in `pico_chat/ui/commands/`:
 ### Registered Commands
 
 `help`, `clear`, `reload`, `config`, `edit`, `export`, `import`, `compact`,
-`exit`, `stop`, `activity`, `model`, `role`, `sandbox`, `theme`
+`exit`, `stop`, `terminal`, `activity`, `model`, `role`, `sandbox`, `theme`
 
 ### Sandbox (`/sandbox`)
 

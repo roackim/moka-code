@@ -48,6 +48,14 @@ class _UI:
         self.popups.append((title, content))
 
 
+def _recording_editor(opened):
+    """Async stand-in for ``open_editor`` that records the opened paths."""
+    async def _open(_ui, path):
+        opened.append(Path(path))
+        return True
+    return _open
+
+
 def test_resolve_editor_prefers_visual_then_editor(monkeypatch):
     monkeypatch.setenv("VISUAL", "my-editor --wait")
     monkeypatch.delenv("EDITOR", raising=False)
@@ -80,7 +88,7 @@ def test_config_command_opens_section_and_reloads(monkeypatch, tmp_path):
 
     opened = []
 
-    def _fake_open(_ui, path):
+    async def _fake_open(_ui, path):
         opened.append(Path(path))
         return True
 
@@ -132,7 +140,7 @@ def test_config_theme_materializes_section(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         "pico_chat.ui.external_editor.open_editor",
-        lambda _ui, path: opened.append(Path(path)) or True,
+        _recording_editor(opened),
     )
 
     asyncio.run(cmd_config(ui, ["theme", "nord"]))
@@ -149,7 +157,7 @@ def test_config_theme_unknown_reports_error(monkeypatch, tmp_path):
     monkeypatch.setattr(cfg_mod, "get_state_path", lambda: tmp_path / "state.toml")
     monkeypatch.setenv("EDITOR", "my-editor")
     ui = _UI()
-    monkeypatch.setattr("pico_chat.ui.external_editor.open_editor", lambda _ui, path: True)
+    monkeypatch.setattr("pico_chat.ui.external_editor.open_editor", _recording_editor([]))
 
     asyncio.run(cmd_config(ui, ["theme", "nope"]))
 
@@ -162,7 +170,7 @@ def test_edit_command_opens_requested_file(monkeypatch, tmp_path):
     opened = []
     monkeypatch.setattr(
         "pico_chat.ui.external_editor.open_editor",
-        lambda _ui, path: opened.append(Path(path)) or True,
+        _recording_editor(opened),
     )
 
     target = tmp_path / "notes.txt"

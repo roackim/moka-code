@@ -4,7 +4,7 @@
     [x] read write params, like 'read file.py 240 lines' something like that
     [x] edit file.py +10 -17 (git like with colors ?) (could be refined)
 
-[ ] /terminal opens a terminal like $EDITOR and quiting it restores pico ? is this feasable ?
+[x] /terminal opens a terminal like $EDITOR and quiting it restores pico ? is this feasable ?
     
 [x] when a tool call is drafting, the previous message hangs unfinished (missing chunk ?)
 [?] better UI / UX for tool calls in containers

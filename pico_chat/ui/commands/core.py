@@ -124,7 +124,7 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
             msg_type=SysMsgError(), title="config")
         return
     path = pico_cfg.config.ensure_section_file(section)
-    open_editor(ui, path)
+    await open_editor(ui, path)
     errors = pico_cfg.reload_config()
     _apply_theme(ui)
     reapply_endpoint(ui)
@@ -140,7 +140,7 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
 
 async def _config_sandbox(ui: ChatUIProtocol):
     """Open the current project's sandbox file and apply its active entry."""
-    open_project_sandbox(ui)
+    await open_project_sandbox(ui)
 
 
 class ConfigCommand(Command):
@@ -221,7 +221,7 @@ async def _config_role(ui: ChatUIProtocol, args: List[str]):
     except (OSError, ValueError) as exc:
         ui.chat_history_panel.add_message(str(exc), msg_type=SysMsgError(), title="config")
         return
-    open_editor(ui, path)
+    await open_editor(ui, path)
     errors = pico_cfg.reload_config() + roles.validate_roles()
     reapply_endpoint(ui)
     if errors:
@@ -262,7 +262,7 @@ async def _config_theme(ui: ChatUIProtocol, args: List[str]):
         if not any(line.strip() == header for line in text.splitlines()):
             path.write_text(text.rstrip() + "\n\n" + block, encoding="utf-8")
 
-    open_editor(ui, path)
+    await open_editor(ui, path)
     errors = pico_cfg.reload_config()
     _apply_theme(ui)
     reapply_endpoint(ui)
@@ -293,7 +293,7 @@ async def cmd_edit(ui: ChatUIProtocol, args: List[str]):
             msg_type=SysMsgError(), title="edit")
         return
     path = Path(args[0]).expanduser()
-    open_editor(ui, path)
+    await open_editor(ui, path)
 
 
 async def cmd_compact(ui: ChatUIProtocol, args: List[str]):
@@ -332,6 +332,38 @@ async def cmd_compact(ui: ChatUIProtocol, args: List[str]):
 async def cmd_exit(ui: ChatUIProtocol, args: List[str]):
     if ui.compositor:
         ui.compositor.running = False
+
+
+async def cmd_terminal(ui: ChatUIProtocol, args: List[str]):
+    """Open a shell where the tools run; ``exit`` returns to pico.
+
+    Inside the active sandbox (same mounts and network as the tools), or on the
+    host with ``/terminal host``. The conversation keeps running meanwhile.
+    """
+    import os
+
+    from pico_chat.ui.external_editor import run_in_foreground
+
+    if args and args[0] != "host":
+        ui.chat_history_panel.add_message(
+            "Usage: /terminal  |  /terminal host", msg_type=SysMsgError(), title="terminal")
+        return
+    agent = getattr(ui, "agent", None)
+    workspace = getattr(agent, "workspace", None) or os.getcwd()
+    spec = getattr(getattr(agent, "transport", None), "spec", None)
+    if spec is not None and not args:
+        from pico_chat.sandbox import shell_argv
+
+        argv, where = shell_argv(spec, workspace), f"{spec.runtime} sandbox"
+    else:
+        argv, where = [os.environ.get("SHELL") or "/bin/sh"], "host"
+    try:
+        await run_in_foreground(ui, argv, cwd=workspace, clear_screen=True)
+    except OSError as exc:
+        ui.chat_history_panel.add_message(
+            f"Could not open a {where} shell: {exc}", msg_type=SysMsgError(), title="terminal")
+        return
+    ui.chat_history_panel.add_message(f"Back from the {where} shell.", msg_type=SysMsg())
 
 
 async def cmd_stop(ui: ChatUIProtocol, args: List[str]):

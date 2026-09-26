@@ -30,6 +30,9 @@ class Compositor:
         self.idle_sleep_seconds = 0.0
         self._wake_event = asyncio.Event()
         self._frame_callbacks: list = []
+        # While a child program owns the terminal ($EDITOR, a shell) pico
+        # must neither read input nor draw; see ``pause``.
+        self.paused = False
 
         # Scroll coalescing: touchpads emit a high-frequency burst of tiny wheel
         # deltas. We accumulate them and dispatch a single event per frame so we
@@ -84,6 +87,18 @@ class Compositor:
             self.event_router.remove_overlay(component)
             self._full_redraw = True
             self.request_render()
+
+    def pause(self) -> None:
+        """Stay off the terminal (no input reads, no drawing) until ``resume``."""
+        self.paused = True
+
+    def resume(self) -> None:
+        """Take the terminal back and repaint everything that changed meanwhile."""
+        self.paused = False
+        self._update_size()
+        self._full_redraw = True
+        self.request_render()
+        self._wake_event.set()
 
     def request_render(self):
         """Request a repaint on the next loop iteration."""
@@ -147,6 +162,10 @@ class Compositor:
             next_frame_time = now
 
             while self.running:
+                if self.paused:
+                    await asyncio.sleep(0.05)
+                    next_frame_time = time.perf_counter()
+                    continue
                 # Pick up runtime FPS changes immediately
                 new_fps = self.fps
                 if new_fps != current_fps:
@@ -267,7 +286,7 @@ class Compositor:
 
     def render(self):
         """Render the compositor."""
-        if self.width == 0 or self.height == 0:
+        if self.paused or self.width == 0 or self.height == 0:
             return
 
         now = time.perf_counter()

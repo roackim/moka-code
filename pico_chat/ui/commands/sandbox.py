@@ -212,7 +212,7 @@ async def sandbox_help(ui: ChatUIProtocol, _args: List[str]) -> None:
 
 
 async def sandbox_config(ui: ChatUIProtocol, _args: List[str]) -> None:
-    open_project_sandbox(ui)
+    await open_project_sandbox(ui)
 
 
 async def sandbox_quit(ui: ChatUIProtocol, _args: List[str]) -> None:

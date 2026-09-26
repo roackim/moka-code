@@ -153,10 +153,10 @@ def test_unknown_subcommand_lists_options(tmp_path):
 
 def test_config_opens_project_file(tmp_path, monkeypatch):
     called = []
-    monkeypatch.setattr(
-        "pico_chat.ui.commands.sandbox.open_project_sandbox",
-        lambda ui: called.append(True),
-    )
+    async def _open(ui):
+        called.append(True)
+
+    monkeypatch.setattr("pico_chat.ui.commands.sandbox.open_project_sandbox", _open)
     ui = _UI(tmp_path)
     _run(ui, ["config"])
     assert called == [True]

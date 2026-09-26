@@ -84,10 +84,12 @@ def worker_path() -> Path:
 
 
 def _container_argv(spec: ContainerSpec, workspace: str, worker: str,
-                    interpreter: str) -> list[str]:
+                    interpreter: str, command: Optional[list[str]] = None) -> list[str]:
     argv = [
         spec.runtime, "run",
-        "-i",                       # pipe stdio; never -t (a TTY corrupts framing)
+        # Pipe stdio; never -t for the worker (a TTY corrupts framing). An
+        # interactive ``command`` (``/terminal``) does get a TTY.
+        "-it" if command else "-i",
         "--rm",
         "-w", "/workspace",
         "--read-only",
@@ -102,7 +104,7 @@ def _container_argv(spec: ContainerSpec, workspace: str, worker: str,
         "-v", f"{workspace}:/workspace:Z",
         "-v", f"{worker}:/opt/worker.py:ro",
         spec.image or DEFAULT_IMAGE,
-        interpreter, "/opt/worker.py",
+        *(command or [interpreter, "/opt/worker.py"]),
     ]
     return argv
 
@@ -124,7 +126,7 @@ def _bubblewrap_interpreter() -> str:
 
 
 def _bubblewrap_argv(spec: ContainerSpec, workspace: str, worker: str,
-                     interpreter: str) -> list[str]:
+                     interpreter: str, command: Optional[list[str]] = None) -> list[str]:
     argv = [
         "bwrap",
         "--die-with-parent",
@@ -153,7 +155,7 @@ def _bubblewrap_argv(spec: ContainerSpec, workspace: str, worker: str,
         "--bind", workspace, "/workspace",
         "--tmpfs", "/tmp",
         "--chdir", "/workspace",
-        "--", interpreter, "/opt/worker.py",
+        "--", *(command or [interpreter, "/opt/worker.py"]),
     ]
     return argv
 
@@ -164,32 +166,47 @@ def build_argv(
     worker: str | Path | None = None,
     *,
     interpreter: str | None = None,
+    command: Optional[list[str]] = None,
 ) -> list[str]:
     """Build the runtime command line for ``spec``.
 
     ``none`` runs the worker directly on the host (no isolation); container
     runtimes mirror the image-injection model (the host's ``worker.py`` is
     mounted read-only).  The launcher only has to produce a stdio pipe.
+    ``command`` replaces the worker with an interactive program (same mounts,
+    network and limits), for ``/terminal``.
     """
     workspace = str(Path(workspace).resolve())
     worker = str(Path(worker).resolve()) if worker is not None else str(worker_path())
 
     if spec.runtime == "none":
-        return [interpreter or sys.executable, worker]
+        return list(command) if command else [interpreter or sys.executable, worker]
 
     if spec.runtime in CONTAINER_RUNTIMES:
         # ``python3`` is present on python:* images and on any base with the
         # distro python3 package; ``python`` is not guaranteed outside python:*.
         return _container_argv(
-            spec, workspace, worker, interpreter or "python3",
+            spec, workspace, worker, interpreter or "python3", command,
         )
 
     if spec.runtime == "bubblewrap":
         return _bubblewrap_argv(
-            spec, workspace, worker, interpreter or _bubblewrap_interpreter(),
+            spec, workspace, worker, interpreter or _bubblewrap_interpreter(), command,
         )
 
     raise ValueError(f"Unknown container runtime: {spec.runtime!r}")
+
+
+def shell_argv(spec: ContainerSpec, workspace: str | Path) -> list[str]:
+    """An interactive shell inside ``spec``'s sandbox, where the tools run.
+
+    bash when the sandbox has it, else ``sh`` (minimal images).
+    """
+    if spec.runtime == "bubblewrap":
+        shell = ["/bin/bash"] if Path("/bin/bash").exists() else ["/bin/sh"]
+    else:
+        shell = ["/bin/sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh"]
+    return build_argv(spec, workspace, command=shell)
 
 
 def runtime_available(spec: ContainerSpec) -> bool:
@@ -512,6 +529,8 @@ class SandboxTransport:
 
     def __init__(self, process: SandboxProcess):
         self.process = process
+        # The spec this transport runs; ``/terminal`` opens a shell in it.
+        self.spec: Optional[ContainerSpec] = None
 
     @classmethod
     def from_spec(
@@ -532,7 +551,9 @@ class SandboxTransport:
             timeout=timeout,
             on_stderr=on_stderr,
         )
-        return cls(process)
+        transport = cls(process)
+        transport.spec = spec
+        return transport
 
     async def execute(self, name: str, args: dict, on_output=None) -> str:
         try:

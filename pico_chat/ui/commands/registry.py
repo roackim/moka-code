@@ -31,6 +31,7 @@ from .core import (
     cmd_help,
     cmd_reload,
     cmd_stop,
+    cmd_terminal,
 )
 from .models import known_model_ids, model_command
 from .roles import cmd_role
@@ -73,6 +74,9 @@ COMMANDS: Dict[str, Command] = {
                             handler=cmd_compact),
     "exit":         Command("exit", "Close the application", handler=cmd_exit),
     "stop":         Command("stop", "Stop current generation", handler=cmd_stop),
+    "terminal":     Command("terminal", "Open a shell where tools run ('host' for the host); exit returns",
+                            handler=cmd_terminal,
+                            params=[Param("WHERE", completions=["host"])]),
     "activity":     Command("activity", "Toggle the activity overlay (shell/status output)",
                             handler=cmd_activity),
     "model":        Command("model", "Change the active model (opens a picker)",
