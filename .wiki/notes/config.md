@@ -71,12 +71,16 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 
 ### Intent vs state
 
-- **Intent** (hand-edited): the section files above. `save_server()` writes
-  `servers.toml`; `remove_server()` deletes from it.
+- **Intent** (hand-edited): the section files above; pico never writes them.
+  Every `[servers.<name>]` needs a `type` (missing/unknown → load error, server
+  skipped). Load errors are shown at startup and on `/reload`/`/config`, and
+  every reload rebuilds the live endpoint if its server table or selection
+  changed.
 - **State** (machine-written, disposable): `state.toml` holds `last_server`,
-  `active_model`, `[last_model]` (per-server selection), `active_theme`, and
-  `[model_catalog]` (discovery cache). Written by `save_active_model` /
-  `save_model_selection` / `save_active_theme` / `save_model_catalog`. The
+  `[last_model]` (per-server selection), `active_theme`, and
+  `[model_catalog]` (discovery cache). Written by `set_active_server` /
+  `save_model_selection` / `save_active_theme` / `save_model_catalog`. A legacy
+  `active_model` key is accepted and ignored (dropped on the next write). The
   catalog is only a completion/offline cache — model selection is live
   discovery.
 
@@ -128,10 +132,9 @@ stored one file per role under `roles/<name>.toml`. `PermissionGate`
 
 ## Key settings
 
-**Servers:** `config.servers`, `config.active_server`, `config.active_model`,
+**Servers:** `config.servers`, `config.active_server`,
 `config.model_selection` (`server -> model`), `config.models_by_server`
-(catalog), `config.get_model_for_server(server)`,
-`config.get_active_server_config()`.
+(catalog), `config.get_model_for_server(server)`.
 
 **Context / ui:** `context_format`, `context_max_files`,
 `context_max_depth`, `context_ignore_gitignore`, `preserve_reasoning_traces`;
@@ -140,6 +143,11 @@ stored one file per role under `roles/<name>.toml`. `PermissionGate`
 this many wrapped lines), `ui_stream_smoothing` / `ui_smooth_target_fps`
 (streamed-text reveal smoothing), `ui_spinner_fps` (braille spinner cadence,
 independent of render fps), `target_fps`, and the rest of the `ui_*` attrs.
+
+The `sandbox` status-bar field is composed from `ui_sandbox_glyph` +
+`ui_sandbox_prefix` + the runtime name; it is green (`ui_sandbox_active_color`)
+when a sandbox is active and orange (`ui_sandbox_inactive_color`) when tools run
+unsandboxed. Both colors accept a palette name or `#rrggbb`.
 
 **Styles / themes:** `config.markdown_styles`, `config.syntax_highlight_styles`;
 `config.themes`, `config.active_theme`, `config.get_active_theme()`,

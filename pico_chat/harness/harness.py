@@ -32,6 +32,12 @@ logger = logging.getLogger(__name__)
 
 COMPACTION_MARKER_PREFIX = "[COMPACTION_SUMMARY]"
 
+# Minimum wall-clock seconds between live ``ToolCallDraft`` updates for one
+# call. The first named chunk always emits; later updates are time-throttled so
+# a large streamed body (e.g. a file write) neither emits an event per delta
+# nor freezes the draft line for seconds between size-based strides.
+_TOOL_DRAFT_INTERVAL = 0.1
+
 class Harness:
     def __init__(self, workspace_path: str | None = None,
                  transport: Optional[ToolTransport] = None):
@@ -200,12 +206,6 @@ class Harness:
         self._last_usage = None
         self.debug_stream.log("SWITCH", f"Server switched to: {new_endpoint.name} ({new_endpoint.type}) at {new_endpoint.base_url}")
         logger.info("Switched to server: %s (%s)", new_endpoint.name, new_endpoint.type)
-
-    def switch_model(self, model_name: str) -> None:
-        """Select another model on the current endpoint."""
-        self.endpoint.set_model(model_name)
-        self._last_usage = None
-        logger.info("Switched to model %s on endpoint %s", model_name, self.endpoint.name)
 
     def _is_compaction_message(self, msg: Dict[str, Any]) -> bool:
         """Return True if message is a compaction marker message."""
@@ -553,9 +553,11 @@ class Harness:
     async def _stream_llm_response(self, messages: List[Dict[str, Any]]) -> AsyncGenerator[events.Event, None]:
         """Stream LLM response and collect content/tool calls.
 
-        Yields: Reasoning, Token, Usage events. Tool calls are assembled but
-        emitted later, in execution order, by ``_execute_tool_calls`` so a
-        pending permission prompt blocks every subsequent tool call.
+        Yields: Reasoning, Token, Usage, and ToolCallDraft events. The draft
+        events announce a tool call as its arguments stream (so the UI is never
+        blank while the model writes them). The complete calls are emitted
+        later, in execution order, by ``_execute_tool_calls`` so a pending
+        permission prompt blocks every subsequent tool call.
 
         Sets: self._last_full_content, _last_full_reasoning, _last_tool_calls,
               _last_detected_thinking_tag.
@@ -576,6 +578,8 @@ class Harness:
         # the index itself when no id was ever seen) so id-less argument deltas
         # continue the right slot. Reset each stream.
         self._active_tool_slot_by_index: Dict[int, Any] = {}
+        # Buffer key -> (args length, time) of the last ToolCallDraft announced.
+        draft_emitted: Dict[Any, Tuple[int, float]] = {}
         # Keep the previous provider-reported usage until a new one arrives.
         # Resetting here made the status bar flicker between the authoritative
         # count and the (lower) heuristic estimate during generation.
@@ -639,7 +643,9 @@ class Harness:
                 m = metrics.maybe_metrics(metrics_interval)
                 if m:
                     yield m
-                continue
+                # No ``continue``: a delta may also carry content or tool-call
+                # fragments (at the reasoning→answer transition), which would
+                # otherwise be dropped and corrupt the call's arguments.
 
             # 2. Handle Content (with thinking tag parsing)
             content = delta.content
@@ -701,6 +707,26 @@ class Harness:
                         tool_calls_buffer[key]["function"]["name"] += tc.function.name
                     if getattr(tc.function, "arguments", None):
                         tool_calls_buffer[key]["function"]["arguments"] += tc.function.arguments
+
+                    # Announce the in-progress call so the UI can render a live
+                    # draft line (spinner + name + args so far) instead of
+                    # sitting on the thinking line until the stream ends.
+                    buffered = tool_calls_buffer[key]
+                    draft_name = buffered["function"]["name"]
+                    draft_args = buffered["function"]["arguments"]
+                    now = time.perf_counter()
+                    announced = draft_emitted.get(key)
+                    if draft_name and (
+                        announced is None
+                        or (len(draft_args) > announced[0]
+                            and now - announced[1] >= _TOOL_DRAFT_INTERVAL)
+                    ):
+                        draft_emitted[key] = (len(draft_args), now)
+                        yield events.ToolCallDraft(
+                            id=buffered["id"] or f"idx_{buffered.get('index', 0)}",
+                            name=draft_name,
+                            args=draft_args,
+                        )
 
         # Flush any remaining content buffer at end of stream
         for segment in parser.flush():
@@ -1089,6 +1115,10 @@ class Harness:
                     "role": "assistant",
                     "content": full_content if full_content else None,
                 }
+                # The tool results that follow reference these calls by id; the
+                # model must see its own calls or it acts on orphaned results.
+                if tool_calls_list:
+                    msg["tool_calls"] = tool_calls_list
                 if full_reasoning:
                     msg["reasoning"] = full_reasoning
                     if detected_tag:

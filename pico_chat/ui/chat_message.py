@@ -1,5 +1,8 @@
 """Chat message representation with formatting and action support."""
 
+import difflib
+import json
+import re
 import time
 from typing import Any, Optional
 from pico_chat import pico_cfg
@@ -11,6 +14,104 @@ from pico_chat.ui.tui.layout_utils import wrap_text
 from pico_chat.ui.tui.msg_types import MsgType, MsgAction
 from pico_chat.ui.tui import msg_types
 from pico_chat.ui.tui.components.box import SPINNER_FRAMES
+
+
+# Salvages complete ``"key": "value"`` string fields from a partial JSON args
+# string, so a draft line can show e.g. the path before the call finishes.
+_PARTIAL_STR_RE = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+# Cap on how much of a (possibly still-streaming) args string is scanned for
+# leading fields. A large streamed ``content`` value must not make every draft
+# render re-scan the whole buffer.
+_PARTIAL_PARSE_LIMIT = 4096
+
+
+def _parse_tool_args(raw: Optional[str], *, full: bool = True) -> dict:
+    """Best-effort parse of a (possibly partial) JSON tool-args string.
+
+    When ``full`` is False (a still-streaming draft) only the leading fields are
+    salvaged, bounded by ``_PARTIAL_PARSE_LIMIT``. This avoids a full
+    ``json.loads`` of a partial buffer: a ``"}"`` inside streamed content would
+    otherwise trigger an O(n) scan on every delta (O(n²) over the stream).
+    """
+    if not raw:
+        return {}
+    if full:
+        stripped = raw.rstrip()
+        if stripped.startswith("{") and stripped.endswith('"}'):
+            try:
+                data = json.loads(stripped)
+                if isinstance(data, dict):
+                    return data
+            except (ValueError, TypeError):
+                pass
+    salvaged: dict = {}
+    for key, value in _PARTIAL_STR_RE.findall(raw[:_PARTIAL_PARSE_LIMIT]):
+        try:
+            salvaged[key] = json.loads(f'"{value}"')
+        except ValueError:
+            salvaged[key] = value
+    return salvaged
+
+
+def _count_lines(text: str) -> int:
+    return len(text.splitlines())
+
+
+def _edit_counts(search: str, replace: str) -> tuple[int, int]:
+    """Return ``(added, removed)`` line counts for a search→replace edit."""
+    old = search.splitlines()
+    new = replace.splitlines()
+    added = removed = 0
+    matcher = difflib.SequenceMatcher(None, old, new)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag in ("replace", "delete"):
+            removed += i2 - i1
+        if tag in ("replace", "insert"):
+            added += j2 - j1
+    return added, removed
+
+
+def _short_value(value: Any, limit: int = 60) -> str:
+    text = value if isinstance(value, str) else json.dumps(value)
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _tool_summary(name: str, args: dict, output: Optional[str]) -> str:
+    """Compact, human summary of a tool call for its collapsed line.
+
+    ``output`` is the completed tool output when available, so ``read`` can
+    report the number of lines actually returned.
+    """
+    if name == "read":
+        path = args.get("path")
+        if not path:
+            return ""
+        if output is not None:
+            return f"{path} {_count_lines(output)} lines"
+        return str(path)
+    if name == "write":
+        path = args.get("path")
+        content = args.get("content")
+        if path and isinstance(content, str):
+            return f"{path} +{_count_lines(content)}"
+        return str(path or "")
+    if name == "edit":
+        path = args.get("path")
+        search = args.get("search")
+        replace = args.get("replace")
+        if path and isinstance(search, str) and isinstance(replace, str):
+            added, removed = _edit_counts(search, replace)
+            return f"{path} +{added} -{removed}"
+        return str(path or "")
+    if name == "bash":
+        command = args.get("command")
+        if isinstance(command, str) and command:
+            return command.splitlines()[0]
+        return ""
+    if len(args) == 1:
+        return _short_value(next(iter(args.values())))
+    return ""
 
 
 class Message:
@@ -135,7 +236,7 @@ class Message:
         self.box = MessageView(
             self.component,
             parent_msg=self,
-            compact_when_unfocused=(isinstance(msg_type, (msg_types.ToolCallMsg, msg_types.AskPermissionMsg))),  # Tool calls and permission requests use compact headers
+            compact_when_unfocused=(isinstance(msg_type, (msg_types.ToolCallMsg, msg_types.ToolDraftMsg, msg_types.AskPermissionMsg))),  # Tool calls and permission requests use compact headers
             gutter=thread_gutter,
             gutter_color=thread_gutter_color,
             content_pad_left=left_pad,
@@ -516,120 +617,121 @@ class Message:
         self.reveal_to(len(self.base_text))
     
     def rebuild_tool_display(self):
-        """Rebuild tool message display text based on current metadata and show_output state."""
+        """Rebuild the tool message from its metadata.
+
+        The first line is always ``<glyph> <name>  <summary>``: the lifecycle
+        glyph (spinner while drafting/running, then ✓/✗/⏹) leads the content,
+        the name is colored by message type, and a compact per-tool summary
+        carries the path/command and change counts. Expanded (focused) messages
+        additionally show the raw command and, when toggled, the output.
+        """
         if not self.tool_name:
             return
-        
-        from pico_chat.ui.tui.colors import theme
-        
-        # Build status line with colors - shown expanded only.
-        status_parts = []
-        if self.tool_status:
-            # Split status by | and color each part
-            parts = self.tool_status.split(' | ')
-            colored_parts = []
-            for part in parts:
-                part = part.strip()
-                if part in ['approved', 'completed']:
-                    colored_parts.append(f"{theme.SUCCESS}{part}{theme.reset()}")
-                elif part in ['denied', 'error']:
-                    colored_parts.append(f"{theme.ERROR}{part}{theme.reset()}")
-                else:
-                    colored_parts.append(f"{theme.MUTED}{part}{theme.reset()}")
-            status_parts = [' | '.join(colored_parts)]
 
-        # The lifecycle gutter already carries the type/status mark (? for a
-        # permission request, spinner/✓/✗ for a tool), so the header is just
-        # the tool name — no second "?" / ">" prefix.
-        from pico_chat.ui.tui import msg_types
         if isinstance(self.type, msg_types.AskPermissionMsg):
-            header = f"{theme.PERMISSION}{self.tool_name}{theme.reset()}"
+            name_color = theme.PERMISSION
+            glyph, glyph_color = "?", theme.PERMISSION
         else:
-            header = f"{theme.TOOL}{self.tool_name}{theme.reset()}"
-        
-        # Add compact arg summary to header for better single-line view
-        args_summary = ""
-        if self.tool_args:
-            import json
-            try:
-                args_dict = json.loads(self.tool_args)
-                # Extract key info for compact display
-                if self.tool_name == "edit" and isinstance(args_dict, dict):
-                    path = args_dict.get("path")
-                    if path:
-                        args_summary = f" {theme.MUTED}{path}{theme.reset()}"
-                elif len(args_dict) == 1:
-                    # Single arg - show value (truncate if too long)
-                    key, value = list(args_dict.items())[0]
-                    if isinstance(value, str):
-                        # Truncate long values
-                        if len(value) > 60:
-                            value = value[:57] + "..."
-                        args_summary = f" {theme.MUTED}{value}{theme.reset()}"
-                    else:
-                        args_summary = f" {theme.MUTED}{json.dumps(value)[:60]}{theme.reset()}"
-            except:
-                pass
-        
-        # Check if we're in compact mode for status display
-        # Compact when unfocused only
+            name_color = (
+                theme.MUTED if isinstance(self.type, msg_types.ToolDraftMsg)
+                else theme.TOOL
+            )
+            glyph, glyph_color = self.status_glyph()
+
+        # Only report an actual read length for a completed call; error/denial
+        # output is not file content.
+        completed_output = (
+            self.tool_output if self.tool_terminal_state() == "completed" else None
+        )
+
+        # Parse/summarize at most once per distinct args/output: the spinner
+        # rebuilds this message every tick, and re-parsing a huge completed
+        # ``write`` body (or a partial stream) on every tick is O(n²).
+        cache_key = (
+            id(self.tool_args),
+            self.tool_name,
+            id(completed_output),
+            isinstance(self.type, msg_types.ToolDraftMsg),
+        )
+        if getattr(self, "_tool_display_cache_key", None) != cache_key:
+            # A draft's args are partial: never attempt a full parse, or a
+            # ``"}"`` inside the streamed content would trigger a full-buffer
+            # scan on every delta.
+            args = _parse_tool_args(
+                self.tool_args,
+                full=not isinstance(self.type, msg_types.ToolDraftMsg),
+            )
+            summary = _tool_summary(self.tool_name, args, completed_output)
+            if (isinstance(self.type, msg_types.ToolDraftMsg)
+                    and self.tool_name == "write" and args.get("path")):
+                # The content is still streaming (never salvaged): count its
+                # escaped newlines so a long write visibly progresses.
+                streamed_lines = self.tool_args.count(r"\n")
+                summary = f"{args['path']} +{streamed_lines}"
+            cmd_text = self._tool_cmd_text(args)
+            self._tool_display_cache_key = cache_key
+            self._tool_display_args = args
+            self._tool_display_summary = summary
+            self._tool_display_cmd = cmd_text
+        else:
+            summary = self._tool_display_summary
+            cmd_text = self._tool_display_cmd
+
         is_compact = self.box.compact_when_unfocused and not self.box.focused
-        
-        header += args_summary
-        # The gutter already carries the lifecycle glyph (spinner/✓/✗/?), so a
-        # compact line has no status suffix; only the expanded line spells the
-        # status out.
-        if not is_compact and status_parts:
-            header += f" {status_parts[0]}"
-        
-        # Build text
+
+        header = f"{glyph_color}{glyph}{theme.reset()} {name_color}{self.tool_name}{theme.reset()}"
+        if summary:
+            header += f" {theme.MUTED}{summary}{theme.reset()}"
+        if not is_compact and self.tool_status:
+            header += f" {self._colored_status()}"
+
         lines = [header]
-        
-        # Add command/args if available - extract command value directly (skip in compact mode)
-        if self.tool_args and not is_compact:
-            # Try to parse as JSON to show nicely
-            import json
-            import re
-            try:
-                args_dict = json.loads(self.tool_args)
-                
-                if self.tool_name == "edit" and isinstance(args_dict, dict):
-                    edit_lines = 0
-                    path = args_dict.get("path")
-                    replace_content = args_dict.get("replace")
-                    if isinstance(replace_content, str) and replace_content:
-                        edit_lines = len(replace_content.splitlines())
-                    if path:
-                        lines.append(f"{theme.MUTED}cmd:{theme.reset()} {path} ({edit_lines} lines)")
-                    else:
-                        lines.append(f"{theme.MUTED}cmd:{theme.reset()} {edit_lines} lines")
-                elif len(args_dict) == 1:
-                    # Single arg - show the value with cmd: prefix
-                    key, value = list(args_dict.items())[0]
-                    if isinstance(value, str):
-                        lines.append(f"{theme.MUTED}cmd:{theme.reset()} {value}")
-                    else:
-                        lines.append(f"{theme.MUTED}cmd:{theme.reset()} {json.dumps(value)}")
-                else:
-                    lines.append(f"{theme.MUTED}cmd:{theme.reset()} {json.dumps(args_dict)}")
-            except:
-                # Not JSON or parse error - show raw
-                lines.append(f"{theme.MUTED}cmd:{theme.reset()} {self.tool_args}")
-        
-        # Add output if show_output is True (toggle with 'o' key)
+
+        if self.tool_args and not is_compact and cmd_text:
+            lines.append(f"{theme.MUTED}cmd:{theme.reset()} {cmd_text}")
+
+        # While a draft is still streaming, show its raw tail when focused so
+        # the call is observable (and clearly progressing) rather than a bare
+        # spinner.
+        if not is_compact and isinstance(self.type, msg_types.ToolDraftMsg) and self.tool_args:
+            tail = self.tool_args[-400:]
+            ellipsis = "…" if len(self.tool_args) > 400 else ""
+            lines.append(f"{theme.MUTED}draft:{theme.reset()} {ellipsis}{tail}")
+
         if self.show_output and self.tool_output and not is_compact:
-            # Split output into lines and format each one
-            output_lines = self.tool_output.split('\n')
-            for i, line in enumerate(output_lines):
+            for i, line in enumerate(self.tool_output.split('\n')):
                 if i == 0:
                     lines.append(f"{theme.MUTED}out:{theme.reset()} {line}")
                 else:
                     lines.append(f"     {line}")  # Indent continuation lines
-        
+
         self.base_text = '\n'.join(lines)
         self._reveal_len = len(self.base_text)
         self.reformat(self.max_width)
-    
+
+    def _tool_cmd_text(self, args: dict) -> str:
+        """The single ``cmd:`` line shown when a tool message is expanded."""
+        if not self.tool_args:
+            return ""
+        if args:
+            if len(args) == 1:
+                return _short_value(next(iter(args.values())))
+            return _short_value(args, limit=200)
+        return self.tool_args[:_PARTIAL_PARSE_LIMIT]
+
+    def _colored_status(self) -> str:
+        """Render ``tool_status`` parts with success/error/muted colors."""
+        colored = []
+        for part in self.tool_status.split(' | '):
+            part = part.strip()
+            if part in ('approved', 'completed'):
+                colored.append(f"{theme.SUCCESS}{part}{theme.reset()}")
+            elif part in ('denied', 'error'):
+                colored.append(f"{theme.ERROR}{part}{theme.reset()}")
+            else:
+                colored.append(f"{theme.MUTED}{part}{theme.reset()}")
+        return ' | '.join(colored)
+
     def update_metrics(self, tokens: int, tokens_per_second: float, ttft_ms: Optional[float] = None, duration_ms: Optional[float] = None):
         """Update generation metrics for this message."""
         self.metrics_tokens = tokens

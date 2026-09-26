@@ -233,6 +233,9 @@ class Endpoint:
         self._selected_model: Optional[str] = model
         self._model_name_pending: bool = False
         self._connection_state: str = "unknown"  # unknown|checking|ok|error
+        # ``(server table, selected model)`` this endpoint was built from, so a
+        # reload can tell whether the live endpoint is stale.
+        self.source: Optional[tuple] = None
 
     # -- construction --------------------------------------------------------
 
@@ -245,7 +248,7 @@ class Endpoint:
             api_key = os.getenv(api_key_env, api_key)
         return cls(
             name=name,
-            type=data.get("type", "llamacpp"),
+            type=data["type"],
             base_url=data.get("base_url", "http://localhost:8080/v1"),
             api_key=api_key,
             model=data.get("model"),
@@ -257,31 +260,6 @@ class Endpoint:
             enabled_models=data.get("enabled_models"),
             model_providers=data.get("model_providers"),
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Serializable form for ``servers.toml`` (secrets stripped)."""
-        data: dict[str, Any] = {
-            "type": self.type,
-            "base_url": self._original_base_url,
-        }
-        if self.api_key:
-            data["api_key"] = self.api_key
-        if self.model:
-            data["model"] = self.model
-        if self.max_context is not None:
-            data["max_context"] = self.max_context
-        data["timeout"] = self.timeout
-        data["retry_attempts"] = self.retry_attempts
-        data["retry_delay"] = self.retry_delay
-        if self.provider:
-            data["provider"] = self.provider
-        if self.enabled_models:
-            data["enabled_models"] = list(self.enabled_models)
-        if self.model_providers:
-            data["model_providers"] = {
-                model: dict(spec) for model, spec in self.model_providers.items()
-            }
-        return data
 
     @property
     def supports_model_selection(self) -> bool:
@@ -394,15 +372,16 @@ class Endpoint:
             self._cached_model_name = self._selected_model
             logger.info("Using model from config: %s", self._cached_model_name)
             return self._cached_model_name
-        self._cached_model_name = "unknown"
+        # Not cached: an offline server must be re-queried once it is back.
         logger.warning("Model name unknown, using 'unknown'")
-        return self._cached_model_name
+        return "unknown"
 
     async def get_context_window(self) -> int:
         """Get the context window size (cached or queried).
 
-        The result is cached on first success OR first fallback so a failing or
-        slow remote query is not re-run on every message in a conversation.
+        A queried (or catalog-seeded) value is memoized per model. The fallback
+        is only shown, not memoized, so a later probe can still find the real
+        window after a transient failure.
         """
         model_name = await self.get_model_name()
         if model_name in self._model_context_windows:
@@ -419,7 +398,6 @@ class Endpoint:
             self._cached_context_window = self.max_context
         else:
             self._cached_context_window = 32768
-        self._model_context_windows[model_name] = self._cached_context_window
         logger.warning("Context window unknown, using default: %s", self._cached_context_window)
         return self._cached_context_window
 
@@ -563,22 +541,16 @@ def get_active_endpoint() -> Endpoint:
     """
     from pico_chat import pico_cfg
 
-    name = pico_cfg.config.active_server
-    data = pico_cfg.config.get_active_server_config()
-    if data is None:
-        return default_endpoint()
-    endpoint = Endpoint.from_dict(name, data)
-    selected = pico_cfg.config.get_model_for_server(name)
-    if selected is None and pico_cfg.config.active_model is not None:
-        selected = pico_cfg.config.active_model
-    if selected is not None:
-        endpoint.model = selected
-        endpoint._selected_model = selected
-    return endpoint
+    return get_endpoint(pico_cfg.config.active_server) or default_endpoint()
 
 
 def get_endpoint(name: str) -> Optional[Endpoint]:
-    """Build a configured endpoint by name, applying its model selection."""
+    """Build a configured endpoint by name, applying its model selection.
+
+    Context windows already known from the discovery catalog are seeded so the
+    status bar is right immediately and no catalog download is repeated on
+    every switch.
+    """
     from pico_chat import pico_cfg
 
     data = pico_cfg.config.servers.get(name)
@@ -587,8 +559,12 @@ def get_endpoint(name: str) -> Optional[Endpoint]:
     endpoint = Endpoint.from_dict(name, data)
     selected = pico_cfg.config.get_model_for_server(name)
     if selected is not None:
-        endpoint.model = selected
         endpoint._selected_model = selected
+    endpoint.source = (dict(data), selected)
+    for model in pico_cfg.config.models_by_server.get(name, []):
+        ctx = model.get("context_window")
+        if model.get("id") and isinstance(ctx, int) and ctx > 0:
+            endpoint._model_context_windows[model["id"]] = ctx
     return endpoint
 
 

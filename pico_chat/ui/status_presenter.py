@@ -7,8 +7,28 @@ from __future__ import annotations
 
 from typing import Any
 
-from pico_chat.ui.tui.colors import theme
+from pico_chat import pico_cfg
+from pico_chat.ui.tui.colors import theme, RGB, ANSIColor
 from pico_chat.ui.tui.components.box import SPINNER_FRAMES
+
+
+def _resolve_color(value: str, fallback: Any) -> Any:
+    """Resolve a theme palette name or ``#rrggbb`` string to a color.
+
+    Falls back to ``fallback`` for an unknown name or invalid hex so a typo in
+    the config never blanks the field.
+    """
+    if not value:
+        return fallback
+    named = getattr(theme, value, None)
+    if isinstance(named, (RGB, ANSIColor)):
+        return named
+    if value.startswith("#"):
+        try:
+            return RGB(value)
+        except ValueError:
+            return fallback
+    return fallback
 
 
 def _format_tokens(value: int | None) -> str:
@@ -95,6 +115,23 @@ def refresh_status_bar(app) -> None:
     if context_used is None:
         context_used = 0
 
+    # Sandbox field: [glyph][prefix]runtime, colored green when active and
+    # orange when tools run unsandboxed. Always present so it stays visible.
+    sandboxed = getattr(agent, "sandboxed", None)
+    sandboxed = bool(sandboxed()) if callable(sandboxed) else False
+    runtime = getattr(agent, "_sandbox_runtime", "none") or "none"
+    if sandboxed and runtime == "none":
+        runtime = "sandbox"
+    sandbox_text = pico_cfg.config.ui_sandbox_glyph
+    if sandbox_text:
+        sandbox_text += " "
+    sandbox_text += f"{pico_cfg.config.ui_sandbox_prefix}{runtime}"
+    sandbox_color = _resolve_color(
+        pico_cfg.config.ui_sandbox_active_color if sandboxed
+        else pico_cfg.config.ui_sandbox_inactive_color,
+        theme.SUCCESS if sandboxed else theme.WARNING,
+    )
+
     app.status_bar.set_values({
         "endpoint_model": f"{endpoint.name}:{model}",
         "context": f"ctx {_format_tokens(context_used)}/{_format_tokens(context_max)}",
@@ -103,10 +140,12 @@ def refresh_status_bar(app) -> None:
         "endpoint": endpoint.name,
         "model": model,
         "workspace": getattr(agent, "workspace", ""),
+        "sandbox": sandbox_text,
     })
     app.status_bar.set_field_colors({
         "context": _context_color(context_used, context_max),
         "endpoint": server_color,
         "model": server_color,
         "endpoint_model": server_color,
+        "sandbox": sandbox_color,
     })

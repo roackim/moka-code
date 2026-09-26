@@ -49,9 +49,9 @@ per-project sandbox definitions. See [sandbox.md](./sandbox.md).
 The core reasoning loop:
 1. Build the message list (system prompt from the active role + history)
 2. Send to the active `Endpoint` (`endpoint.py`)
-3. Stream response events (`events.py`): `Token`/`Reasoning`/`Usage` (tool calls
-   are assembled during the stream but emitted in step 4, so all content is
-   flushed before the first tool)
+3. Stream response events (`events.py`): `Token`/`Reasoning`/`Usage`, plus a live
+   `ToolCallDraft` per tool call while its arguments stream. The complete
+   `ToolCall` is emitted in step 4, so all content is flushed before the first tool
 4. If tool calls present → `ToolCall` → `PermissionRequest` → check permissions → execute the tool through the active `ToolTransport` (in-process or sandbox; interim `ToolOutput` may stream from `bash`) → `ToolResult` (one tool at a time: a pending `ask` blocks later tools). Completed results are head/tail-elided before entering history (`elision.py`); the event keeps the full output
 5. Append tool results to history → repeat from step 2 until no more tool calls → `Done`
 

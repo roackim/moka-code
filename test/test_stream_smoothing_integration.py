@@ -112,6 +112,109 @@ def test_boundary_flush_orders_text_before_tool():
     assert all("checking" not in (m.base_text or "") for m in msgs[tool_idx + 1:])
 
 
+def test_content_resuming_after_tool_draft_stays_one_message():
+    """Content after a tool-call delta must not be sliced below the tool line.
+
+    Providers may interleave content and tool-call deltas within one response;
+    all of the response's content belongs to one assistant message.
+    """
+    ui = chatTUI(StubAgent())
+    args = '{"command": "ping -c 1 github.com"}'
+    script = [
+        events.Start(message_id="m1", role="assistant"),
+        events.Token(text="I'll ping github.com onc"),
+        events.ToolCallDraft(id="t1", name="bash", args=args),
+        events.Token(text="e for you."),
+        events.ToolCall(id="t1", name="bash", args=args),
+        events.PermissionRequest(id="t1", name="bash", args=args, prompt="?", auto=True),
+        events.ToolResult(id="t1", name="bash", outcome="completed", output="ok"),
+        events.Done(),
+    ]
+    _run_script(ui, script)
+
+    pico = _pico(ui)
+    assert len(pico) == 1
+    assert pico[0].base_text == "I'll ping github.com once for you."
+    assert pico[0].finalized is True
+
+    msgs = _messages(ui)
+    tool = [m for m in msgs if isinstance(m.type, ToolCallMsg)]
+    assert len(tool) == 1
+    assert msgs.index(pico[0]) < msgs.index(tool[0])
+
+
+def test_tool_draft_finalizes_text_above_it():
+    """The text before a tool call is complete as soon as the draft opens.
+
+    Its tail must not wait for the (possibly long) argument stream to finish.
+    """
+    ui = chatTUI(StubAgent())
+    observed = {}
+
+    def capture():
+        pico = _pico(ui)[0]
+        observed["text"] = pico.base_text[:pico._reveal_len]
+        observed["finalized"] = pico.finalized
+
+    args = '{"path": "a.py", "content": "x'
+    script = [
+        events.Start(message_id="m1", role="assistant"),
+        events.Token(text="Writing the **file** now."),
+        events.ToolCallDraft(id="t1", name="write", args=args),
+        capture,
+        events.Done(),
+    ]
+    _run_script(ui, script, pumps=0)
+
+    assert observed == {"text": "Writing the **file** now.", "finalized": True}
+
+
+def test_error_finalizes_in_flight_tool_draft():
+    """A dropped stream must not leave a tool draft spinning forever."""
+    ui = chatTUI(StubAgent())
+    script = [
+        events.Start(message_id="m1", role="assistant"),
+        events.Token(text="writing"),
+        events.ToolCallDraft(
+            id="t1", name="write",
+            args='{"path": "README.de.md", "content": "half',
+        ),
+        events.Error(message="connection lost"),
+    ]
+    _run_script(ui, script)
+
+    tools = [m for m in _messages(ui) if m.is_tool_message()]
+    assert tools
+    assert all(m.finalized for m in tools)
+    assert tools[0].tool_status in ("error", "cancelled")
+
+
+def test_cancel_finalizes_in_flight_tool_draft():
+    ui = chatTUI(StubAgent())
+    clock = [0.0]
+    ui._clock = lambda: clock[0]
+
+    async def chat(_):
+        yield events.Start(message_id="m1", role="assistant")
+        yield events.ToolCallDraft(
+            id="t1", name="write", args='{"path": "a", "content": "x',
+        )
+        for _ in range(2):
+            clock[0] += STEP
+            ui._on_frame(clock[0])
+            await asyncio.sleep(0)
+        raise asyncio.CancelledError()
+
+    ui.agent.chat = chat
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(ui._process_generation("hello", ui.chat_history_panel.add_message("hello")))
+
+    tools = [m for m in _messages(ui) if m.is_tool_message()]
+    assert tools
+    assert all(m.finalized for m in tools)
+    assert tools[0].tool_status == "cancelled"
+
+
 def test_reasoning_complete_before_content_appears():
     ui = chatTUI(StubAgent())
     script = [

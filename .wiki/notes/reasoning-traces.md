@@ -55,6 +55,12 @@ THINKING_TAGS = [
 
 When an opening tag is found in the content stream, content before the tag goes to `events.Token` (and is accumulated into `full_content`), while content *between* the tags goes to `events.Reasoning` **and** is accumulated into `full_reasoning`. The tag delimiters themselves are consumed and discarded.
 
+Across chunk boundaries the parser withholds only the tail that could still be
+a partial tag (`_partial_tag_len`), not a fixed-size suffix. Withholding a fixed
+tail delayed the last characters of a message until `flush()` at end-of-stream —
+very visible when a tool call followed the content (the tail appeared only after
+the call). Ordinary text is now emitted immediately.
+
 ---
 
 ## How the Assistant Message is Saved

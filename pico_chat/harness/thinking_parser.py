@@ -29,8 +29,19 @@ THINKING_TAGS: List[Tuple[str, str]] = [
     ("<thinking>", "</thinking>"),
 ]
 
-# Pre-computed max open-tag length for partial-tag buffering
-_MAX_TAG_LEN = max(len(tag[0]) for tag in THINKING_TAGS)
+
+def _partial_tag_len(text: str, tag: str) -> int:
+    """Length of the longest suffix of ``text`` that is a proper prefix of ``tag``.
+
+    Only characters that could still become ``tag`` are withheld. Ordinary text
+    is emitted immediately: withholding a fixed tail would delay the last
+    characters of a message until end-of-stream, which is very visible when a
+    tool call follows the content (the tail would only appear after the call).
+    """
+    for k in range(min(len(text), len(tag) - 1), 0, -1):
+        if text.endswith(tag[:k]):
+            return k
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -104,12 +115,17 @@ class ThinkingTagParser:
                     self.detected_open_tag = open_tag
                     self._buffer = self._buffer[earliest_pos + len(open_tag):]
                 else:
-                    # No opening tag — keep potential partial tag at the end
-                    if len(self._buffer) > _MAX_TAG_LEN:
-                        safe = self._buffer[:-_MAX_TAG_LEN]
+                    # No opening tag — hold back only a suffix that could still
+                    # be a partial opening tag.
+                    hold = max(
+                        _partial_tag_len(self._buffer, open_tag)
+                        for open_tag, _ in THINKING_TAGS
+                    )
+                    if len(self._buffer) > hold:
+                        safe = self._buffer[: len(self._buffer) - hold]
                         self.full_content += safe
                         results.append(ParsedContent(text=safe, is_thinking=False))
-                        self._buffer = self._buffer[-_MAX_TAG_LEN:]
+                        self._buffer = self._buffer[len(self._buffer) - hold:]
                     break  # Wait for more content
             else:
                 # Inside a thinking block — look for the matching close tag
@@ -130,13 +146,14 @@ class ThinkingTagParser:
                     self._current_open_tag = None
                     self._buffer = self._buffer[close_pos + len(close_tag):]
                 else:
-                    # No closing tag yet — keep potential partial at the end
-                    if len(self._buffer) > len(close_tag):
-                        safe = self._buffer[:-len(close_tag)]
+                    # No closing tag yet — hold back only a partial close tag.
+                    hold = _partial_tag_len(self._buffer, close_tag)
+                    if len(self._buffer) > hold:
+                        safe = self._buffer[: len(self._buffer) - hold]
                         if safe:
                             self.full_reasoning += safe
                             results.append(ParsedContent(text=safe, is_thinking=True))
-                        self._buffer = self._buffer[-len(close_tag):]
+                        self._buffer = self._buffer[len(self._buffer) - hold:]
                     break  # Wait for more content
 
         return results

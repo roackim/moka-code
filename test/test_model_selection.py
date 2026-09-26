@@ -9,7 +9,6 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
-import toml
 
 
 @pytest.fixture
@@ -22,7 +21,6 @@ def cfg(monkeypatch, tmp_path):
     monkeypatch.setattr(cfg_mod.config, "model_selection", {}, raising=False)
     monkeypatch.setattr(cfg_mod.config, "models_by_server", {}, raising=False)
     monkeypatch.setattr(cfg_mod.config, "active_server", "a", raising=False)
-    monkeypatch.setattr(cfg_mod.config, "active_model", None, raising=False)
     return cfg_mod
 
 
@@ -37,7 +35,7 @@ def test_get_endpoint_applies_per_server_selection(cfg):
 
     from pico_chat.harness.endpoint import get_endpoint
 
-    assert get_endpoint("srv").model == "selected-model"
+    assert get_endpoint("srv").selected_model == "selected-model"
 
 
 def test_get_endpoint_falls_back_to_legacy_model(cfg):
@@ -50,29 +48,7 @@ def test_get_endpoint_falls_back_to_legacy_model(cfg):
 
     from pico_chat.harness.endpoint import get_endpoint
 
-    assert get_endpoint("srv").model == "legacy-default"
-
-
-def test_remove_server_drops_config_and_catalog(cfg, tmp_path):
-    config_path = tmp_path / "servers.toml"
-    config_path.write_text(toml.dumps({
-        "servers": {
-            "a": {"type": "ollama", "base_url": "http://a/v1", "model": "ma"},
-            "b": {"type": "ollama", "base_url": "http://b/v1", "model": "mb"},
-        },
-    }))
-    cfg.config.servers = {
-        "a": {"type": "ollama", "base_url": "http://a/v1", "model": "ma"},
-        "b": {"type": "ollama", "base_url": "http://b/v1", "model": "mb"},
-    }
-    cfg.config.models_by_server = {"a": [{"id": "ma"}], "b": [{"id": "mb"}]}
-    cfg.config.active_server = "a"
-
-    assert cfg.config.remove_server("b") is True
-
-    assert "b" not in cfg.config.servers
-    assert "b" not in cfg.config.models_by_server
-    assert "b" not in toml.load(config_path)["servers"]
+    assert get_endpoint("srv").selected_model == "legacy-default"
 
 
 def test_llamacpp_reconciles_requested_selection_with_served_model(cfg, monkeypatch):
@@ -99,3 +75,106 @@ def test_llamacpp_reconciles_requested_selection_with_served_model(cfg, monkeypa
     assert endpoint._cached_model_name == "served-model"
 
 
+
+
+def test_active_endpoint_uses_only_its_own_server_selection(cfg):
+    """A server with no selection must not inherit another server's model."""
+    cfg.config.servers["a"] = {"type": "ollama", "base_url": "http://a/v1"}
+    cfg.config.servers["b"] = {"type": "openrouter", "base_url": "http://b/v1"}
+    cfg.config.model_selection["b"] = "vendor/model-b"
+    cfg.config.active_server = "a"
+
+    from pico_chat.harness.endpoint import get_active_endpoint
+
+    endpoint = get_active_endpoint()
+    assert endpoint.name == "a"
+    assert endpoint.selected_model is None
+
+
+def test_get_endpoint_seeds_context_window_from_catalog(cfg):
+    cfg.config.servers["or"] = {"type": "openrouter", "base_url": "http://or/v1"}
+    cfg.config.model_selection["or"] = "vendor/m"
+    cfg.config.models_by_server["or"] = [{"id": "vendor/m", "context_window": 1048576}]
+
+    from pico_chat.harness.endpoint import get_endpoint
+
+    endpoint = get_endpoint("or")
+
+    async def _no_network(_model):
+        raise AssertionError("catalog-known window must not be re-queried")
+
+    endpoint.query_context_window = _no_network
+    assert asyncio.run(endpoint.get_context_window()) == 1048576
+
+
+def test_context_window_fallback_is_not_memoized():
+    """A transient failure shows the fallback but a later probe can succeed."""
+    from pico_chat.harness.endpoint import Endpoint
+
+    endpoint = Endpoint(name="o", type="ollama", base_url="http://o/v1", model="m")
+    answers = [RuntimeError("down"), 65536]
+
+    async def _query(_model):
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    endpoint.query_context_window = _query
+    assert asyncio.run(endpoint.get_context_window()) == 32768
+    assert asyncio.run(endpoint.get_context_window()) == 65536
+
+
+def test_model_name_fallback_is_not_memoized():
+    from pico_chat.harness.endpoint import Endpoint
+
+    endpoint = Endpoint(name="o", type="ollama", base_url="http://o/v1")
+    answers = [RuntimeError("down"), "llama3"]
+
+    async def _query():
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    endpoint.query_model_name = _query
+    assert asyncio.run(endpoint.get_model_name()) == "unknown"
+    assert asyncio.run(endpoint.get_model_name()) == "llama3"
+
+
+class _ReloadAgent:
+    def __init__(self, endpoint):
+        self.endpoint = endpoint
+        self.switched = []
+
+    def switch_server(self, endpoint):
+        self.endpoint = endpoint
+        self.switched.append(endpoint)
+
+
+def _reapply(agent):
+    from pico_chat.ui.commands.base import reapply_endpoint
+
+    async def _run():
+        reapply_endpoint(SimpleNamespace(agent=agent))
+
+    asyncio.run(_run())
+
+
+def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatch):
+    from pico_chat.harness.endpoint import Endpoint, get_active_endpoint
+
+    async def _no_probe(self):
+        return None
+
+    monkeypatch.setattr(Endpoint, "prewarm_model_name", _no_probe)
+    cfg.config.servers["a"] = {"type": "ollama", "base_url": "http://old/v1"}
+    agent = _ReloadAgent(get_active_endpoint())
+
+    _reapply(agent)
+    assert agent.switched == []  # unchanged config keeps the live endpoint
+
+    cfg.config.servers["a"] = {"type": "ollama", "base_url": "http://new/v1"}
+    _reapply(agent)
+    assert len(agent.switched) == 1
+    assert agent.endpoint.base_url == "http://new/v1"

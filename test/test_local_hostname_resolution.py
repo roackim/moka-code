@@ -155,35 +155,6 @@ def test_connect_failure_non_local_does_not_retry():
     down.get.assert_called_once()
 
 
-# --- Context-window fallback caching ---
-
-
-def test_context_window_fallback_is_cached():
-    """A failing context-window query must not re-run on every message."""
-    server = make_server("http://localhost:8080")
-    server._cached_model_name = "m"
-
-    # query_context_window always fails (e.g. /props not available).
-    async def always_fail():
-        raise RuntimeError("no n_ctx")
-
-    with patch.object(
-        server, "query_context_window", side_effect=AsyncMock(side_effect=RuntimeError("no n_ctx"))
-    ):
-        first = _run(server.get_context_window())
-    assert first == 32768  # default fallback
-
-    # Second call, with the query eagerly re-queried, must NOT call again.
-    with patch.object(
-        server, "query_context_window", side_effect=RuntimeError("no n_ctx")
-    ) as qmock:
-        second = _run(server.get_context_window())
-
-    assert second == 32768
-    # Because the fallback is cached, the network query is never re-attempted.
-    qmock.assert_not_called()
-
-
 def _run(coro):
     import asyncio
 

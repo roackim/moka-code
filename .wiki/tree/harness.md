@@ -14,9 +14,11 @@ See [notes/architecture.md](../notes/architecture.md), [notes/tools-and-permissi
 `Harness` — main class. Owns the agent state machine and conversation history.
 - `chat(user_input)` — async generator; full agent turn (stream → handle tool calls)
 - `_stream_llm_response()` — delegates thinking-tag parsing to `ThinkingTagParser`;
-  buffers tool-call deltas without emitting `ToolCall` (content flushes first)
-- `_execute_tool_calls()` — emits `ToolCall` then `PermissionRequest` per tool in
-  order (a pending `ask` blocks later tools); delegates to `PermissionGate`.
+  buffers tool-call deltas and emits a live `ToolCallDraft` as arguments arrive
+  (first named chunk, then a stride that backs off with argument size), so the UI
+  is never blank while the model writes a call
+- `_execute_tool_calls()` — emits the complete `ToolCall` then `PermissionRequest`
+  per tool in order (a pending `ask` blocks later tools); delegates to `PermissionGate`.
   Runs the tool as a task and forwards its `on_output` chunks as `ToolOutput`
   events as they arrive (bash streaming), then `ToolResult`
 - `_build_transport(spec, workspace)` — builds a `SandboxTransport` for a
@@ -46,7 +48,8 @@ See [notes/security.md](../notes/security.md) and
 
 ### `events.py`
 The one harness→UI event protocol. A single union yielded by `Harness.chat()`:
-`Start`, `Token`, `Reasoning`, `ToolCall`, `PermissionRequest`, `ToolOutput`
+`Start`, `Token`, `Reasoning`, `ToolCallDraft` (live, partial args),
+`ToolCall` (complete, announced at execution), `PermissionRequest`, `ToolOutput`
 (interim tool stream chunks), `ToolResult` (`outcome` =
 completed/denied/error), `Usage`, `Error`, `Done`.
 The harness yields events; the UI renders them. There is no separate chunk/status type.
@@ -61,9 +64,13 @@ subclasses; server-family differences are internal branches:
 - `openrouter` — enabled-models allowlist, per-model provider routing
 - `openai` — configured model + known context-window table
 `Endpoint.from_dict(name, data)` reads a `[servers.<name>]` table and resolves
-`api_key_env`; `to_dict()` strips secrets. Also hosts `ModelInfo`,
-`ConnectionDiagnosis`, and `.local` hostname resolution helpers. Factories:
-`get_active_endpoint()`, `get_endpoint(name)`, `default_endpoint()`.
+`api_key_env` (`type` is required; the loader skips a server without one).
+Also hosts `ModelInfo`, `ConnectionDiagnosis`, and `.local` hostname resolution
+helpers. Factories: `get_active_endpoint()` (= `get_endpoint(active_server)` or
+`default_endpoint()`), `get_endpoint(name)` (applies the server's own
+`last_model`, seeds context windows from the catalog, records `source` so
+`/reload` can tell whether the live endpoint is stale). Model-name and
+context-window fallbacks are shown but not memoized.
 `Harness.endpoint` is an `Endpoint`. See [notes/local-hostname-resolution.md](../notes/local-hostname-resolution.md).
 
 This one type replaced the former `LLMServerConfig` + `ServerService` +

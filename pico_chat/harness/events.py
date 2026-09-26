@@ -28,10 +28,24 @@ class Reasoning:
 
 
 @dataclass
-class ToolCall:
+class ToolCallDraft:
     """A tool call whose JSON arguments are still streaming.
 
-    ``args`` is the cumulative JSON string so far.
+    Emitted live as argument deltas arrive so the UI can show progress before
+    the call is complete. ``id``/``name``/``args`` may be partial; ``args`` is
+    the cumulative JSON string so far. The complete call is announced later by
+    :class:`ToolCall` at execution time.
+    """
+    id: str
+    name: str
+    args: str
+
+
+@dataclass
+class ToolCall:
+    """A completed tool call, announced as it is executed.
+
+    ``args`` is the full JSON argument string.
     """
     id: str
     name: str
@@ -105,6 +119,6 @@ class Done:
 
 
 Event = Union[
-    Start, Token, Reasoning, ToolCall, PermissionRequest, ToolOutput,
-    ToolResult, Usage, Error, Done
+    Start, Token, Reasoning, ToolCallDraft, ToolCall, PermissionRequest,
+    ToolOutput, ToolResult, Usage, Error, Done
 ]

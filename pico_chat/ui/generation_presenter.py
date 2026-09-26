@@ -28,7 +28,6 @@ from pico_chat.ui.tui.msg_types import (
     ToolDraftMsg,
 )
 
-
 logger = logging.getLogger("tui")
 
 
@@ -49,8 +48,14 @@ async def process_generation(app, user_input, user_msg) -> None:
     # collapsed "thought for Xs" summary above the answer.
     current_msg = None
     current_msg_type = None
+    # The assistant text message for the current model response. Content may
+    # resume after a tool-call delta (providers interleave them), so all of a
+    # response's content must land in this one message rather than being sliced
+    # around the tool line. Reset at each ``Start(assistant)``.
+    response_text_msg = None
     current_harness_ids = []
     natural_done = False
+    aborted_status = "cancelled"
     status_is_processing = False
 
     def ensure_tool_message_type(msg: Message, target_type: MsgType) -> Message:
@@ -103,6 +108,23 @@ async def process_generation(app, user_input, user_msg) -> None:
         current_msg = None
         current_msg_type = None
 
+    def finalize_active_tools(status: str) -> None:
+        """Close any tool message left in flight when generation ends.
+
+        A dropped stream or a cancel can end a generation between a tool draft
+        and its result; without this the draft's spinner would spin forever.
+        """
+        for tool_id in list(app.active_tool_messages):
+            msg = app.active_tool_messages.get(tool_id)
+            if msg is None:
+                continue
+            msg = ensure_tool_message_type(msg, ToolCallMsg())
+            if not msg.tool_status or msg.tool_status == "drafting":
+                msg.tool_status = status
+            msg.rebuild_tool_display()
+            msg.finalize()
+            app.active_tool_messages.pop(tool_id, None)
+
     # Context ingestion happens before the first harness event, so open the
     # placeholder now: otherwise the UI looks frozen during that work.
     current_msg = chat.add_message("", msg_type=ThinkingMsg())
@@ -125,6 +147,9 @@ async def process_generation(app, user_input, user_msg) -> None:
                         user_msg.harness_message_ids = [event.message_id]
                         logger.debug(f"Linked user message to harness ID {event.message_id}")
                 else:
+                    # A new assistant response begins: its content is a fresh
+                    # message even if the previous response was split by tools.
+                    response_text_msg = None
                     if status_is_processing and current_msg_type is ThinkingMsg:
                         # Context is ingested and the request is in flight.
                         status_is_processing = False
@@ -155,14 +180,48 @@ async def process_generation(app, user_input, user_msg) -> None:
                 emit_text(event.text)
 
             elif isinstance(event, events.Token):
-                # If not currently in a content message, create one
+                # All content of one assistant response belongs to a single
+                # message. If content resumes after a tool-call draft opened
+                # (providers interleave content and tool-call deltas), append to
+                # that response's message rather than slicing a second one out
+                # below the tool line.
                 if current_msg_type != PicoMsg:
-                    end_status_message()
-                    current_msg = chat.add_message("", msg_type=PicoMsg(), harness_message_ids=current_harness_ids)
+                    if response_text_msg is None:
+                        end_status_message()
+                        response_text_msg = chat.add_message(
+                            "", msg_type=PicoMsg(), harness_message_ids=current_harness_ids
+                        )
+                    current_msg = response_text_msg
                     current_msg_type = PicoMsg
                     begin_text_message(current_msg)
 
                 emit_text(event.text)
+
+            elif isinstance(event, events.ToolCallDraft):
+                # A tool call's arguments are still streaming: open (or refresh)
+                # a draft line so the UI shows a live spinner + name instead of
+                # hanging on the thinking message. The text above is finalized
+                # now (fully revealed and styled) rather than when the whole
+                # call has streamed; content resuming after the draft still
+                # goes back into ``response_text_msg``.
+                tool_id = event.id
+                end_status_message()
+
+                msg = app.active_tool_messages.get(tool_id)
+                if not msg:
+                    msg = chat.add_message(
+                        "", msg_type=ToolDraftMsg(), harness_message_ids=current_harness_ids
+                    )
+                    app.active_tool_messages[tool_id] = msg
+
+                msg = ensure_tool_message_type(msg, ToolDraftMsg())
+                app.active_tool_messages[tool_id] = msg
+                msg.tool_name = event.name or msg.tool_name
+                msg.tool_args = event.args
+                msg.tool_status = "drafting"
+                msg.rebuild_tool_display()
+                # Deliberately do not take over current_msg: any content that
+                # follows must go back to the message above this line.
 
             elif isinstance(event, events.ToolCall):
                 tool_id = event.id
@@ -179,10 +238,10 @@ async def process_generation(app, user_input, user_msg) -> None:
                     end_status_message()
 
                 if not msg:
-                    msg = chat.add_message("", msg_type=ToolDraftMsg(), harness_message_ids=current_harness_ids)
+                    msg = chat.add_message("", msg_type=ToolCallMsg(), harness_message_ids=current_harness_ids)
                     app.active_tool_messages[tool_id] = msg
 
-                msg = ensure_tool_message_type(msg, ToolDraftMsg())
+                msg = ensure_tool_message_type(msg, ToolCallMsg())
                 app.active_tool_messages[tool_id] = msg
                 msg.tool_name = event.name or msg.tool_name
                 msg.tool_args = event.args
@@ -289,9 +348,15 @@ async def process_generation(app, user_input, user_msg) -> None:
 
             elif isinstance(event, events.Usage):
                 # Update message metrics (for live display in footer).
-                # Only update for thinking/content messages, not tool messages.
-                if current_msg_type in (ThinkingMsg, PicoMsg):
-                    current_msg.update_metrics(
+                # Only update for thinking/content messages, not tool messages;
+                # while a tool call drafts, the response's text message keeps
+                # receiving them.
+                metrics_msg = (
+                    current_msg if current_msg_type in (ThinkingMsg, PicoMsg)
+                    else response_text_msg
+                )
+                if metrics_msg is not None:
+                    metrics_msg.update_metrics(
                         tokens=event.tokens,
                         tokens_per_second=event.tokens_per_second,
                         ttft_ms=event.ttft_ms,
@@ -300,6 +365,7 @@ async def process_generation(app, user_input, user_msg) -> None:
                 app.refresh_status_bar()
 
             elif isinstance(event, events.Error):
+                aborted_status = "error"
                 end_status_message()
                 if smoothing:
                     app.disengage_stream()
@@ -341,6 +407,7 @@ async def process_generation(app, user_input, user_msg) -> None:
         # Backstop for torn-down/aborted streams. On a natural Done with
         # smoothing on, the frame callback owns finalization so the reveal can
         # finish animating; otherwise finalize now.
+        finalize_active_tools(aborted_status)
         if not natural_done or not smoothing:
             end_status_message()
             if smoothing:

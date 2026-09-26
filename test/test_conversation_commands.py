@@ -135,11 +135,10 @@ def test_conversation_import_handles_tool_call_only_assistant(tmp_path):
 def test_conversation_import_keeps_assistant_reply_in_one_message(tmp_path):
     """A plain assistant reply must be one PicoMsg, not split by the tag parser.
 
-    ``ThinkingTagParser.feed`` holds back the last ``_MAX_TAG_LEN`` chars (a
-    possible partial thinking tag); ``flush`` then emits them as a separate
-    segment. Import used to turn each segment into its own message, splitting
-    the final ~10 characters into a second PicoMsg (rendered as a mid-word
-    break with the inter-message gap in between).
+    ``ThinkingTagParser.feed`` may hold back a partial thinking tag and ``flush``
+    then emits it as a separate segment. Import used to turn each segment into
+    its own message, splitting the reply into a second PicoMsg (rendered as a
+    mid-word break with the inter-message gap in between).
     """
     from pico_chat.ui.tui.msg_types import PicoMsg
 

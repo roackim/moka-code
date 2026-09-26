@@ -4,9 +4,15 @@ Verifies the "no ✓ until finished" rule and that a loading spinner is shown
 while a tool command is running.
 """
 
-from pico_chat.ui.chat_message import Message
+from pico_chat.ui.chat_message import (
+    Message,
+    _edit_counts,
+    _parse_tool_args,
+    _tool_summary,
+)
 from pico_chat.ui.tui.msg_types import ToolCallMsg
 from pico_chat.ui.tui.colors import theme
+from pico_chat.ui.tui.layout_utils import strip_ansi
 
 
 class _StubBashTool:
@@ -157,3 +163,103 @@ def test_gutter_prefix_is_a_colored_bar_per_type():
     tool = _tool(status="approved | executing", finalized=False)
     assert tool.box.gutter == "▌"
     assert tool.box.gutter_color == theme.TOOL
+
+
+# --- per-tool summary ------------------------------------------------------
+
+def test_read_summary_uses_actual_line_count_once_done():
+    assert _tool_summary("read", {"path": "src/main.py"}, None) == "src/main.py"
+    assert _tool_summary(
+        "read", {"path": "src/main.py"}, "one\ntwo\nthree\n"
+    ) == "src/main.py 3 lines"
+
+
+def test_write_summary_counts_content_lines():
+    assert _tool_summary(
+        "write", {"path": "a.py", "content": "x\ny\n"}, None
+    ) == "a.py +2"
+
+
+def test_edit_summary_reports_added_and_removed():
+    args = {"path": "a.py", "search": "a\nb", "replace": "a\nc\nd"}
+    assert _tool_summary("edit", args, None) == "a.py +2 -1"
+    assert _edit_counts("a\nb", "a\nc\nd") == (2, 1)
+
+
+def test_bash_summary_uses_first_command_line():
+    assert _tool_summary("bash", {"command": "ls -la\necho hi"}, None) == "ls -la"
+
+
+def test_parse_tool_args_salvages_partial_json():
+    parsed = _parse_tool_args('{"path": "src/main.py", "content": "half')
+    assert parsed["path"] == "src/main.py"
+
+
+def test_parse_tool_args_bounds_huge_partial_content():
+    """A large, unterminated content value must not be scanned into the summary.
+
+    The path (early) is salvaged; the still-streaming content is skipped so the
+    per-draft cost stays constant no matter how large the streamed body grows.
+    """
+    raw = '{"path": "README.de.md", "content": "' + ("x" * 200_000)
+    parsed = _parse_tool_args(raw)
+    assert parsed == {"path": "README.de.md"}
+
+
+def test_parse_tool_args_full_parse_when_closed():
+    raw = '{"path": "a.py", "content": "x\\ny"}'
+    assert _parse_tool_args(raw) == {"path": "a.py", "content": "x\ny"}
+
+
+def test_draft_never_full_parses_even_when_args_look_closed():
+    """A draft must not scan the whole body even if the buffer ends like JSON.
+
+    Streaming a `write` whose body contains ``"}"`` can make the partial args
+    look closed at a chunk boundary; a full parse there would be O(n) per delta.
+    """
+    raw = '{"path": "README.de.md", "content": "' + ("x" * 100_000) + '"}'
+    assert _parse_tool_args(raw, full=False) == {"path": "README.de.md"}
+    # The completed call still parses fully.
+    assert _parse_tool_args(raw)["content"] == "x" * 100_000
+
+
+def test_collapsed_tool_line_leads_with_glyph_and_has_no_dot():
+    from pico_chat.ui.tui.components.box import SPINNER_FRAMES
+
+    msg = Message("", msg_type=ToolCallMsg(), max_width=60)
+    msg.tool_name = "read"
+    msg.tool_args = '{"path": "src/main.py"}'
+    msg.rebuild_tool_display()
+
+    plain = strip_ansi(msg.get_formatted())
+    assert plain[0] in SPINNER_FRAMES
+    assert "read" in plain and "src/main.py" in plain
+    assert "·" not in plain
+
+
+def test_focused_draft_shows_raw_stream():
+    from pico_chat.ui.tui.msg_types import ToolDraftMsg
+
+    msg = Message("", msg_type=ToolDraftMsg(), max_width=80)
+    msg.tool_name = "write"
+    msg.tool_args = '{"path": "README.de.md", "content": "hello world'
+    msg.tool_status = "drafting"
+    msg.set_focused(True)
+    msg.rebuild_tool_display()
+
+    plain = strip_ansi(msg.get_formatted())
+    assert "draft:" in plain
+    assert "hello world" in plain
+
+
+def test_write_draft_counts_streamed_lines():
+    """A streaming write shows its line count so far, not just the path."""
+    from pico_chat.ui.tui.msg_types import ToolDraftMsg
+
+    msg = Message("", msg_type=ToolDraftMsg(), max_width=80)
+    msg.tool_name = "write"
+    msg.tool_args = '{"path": "a.py", "content": "one\\ntwo\\nthr'
+    msg.tool_status = "drafting"
+    msg.rebuild_tool_display()
+
+    assert "a.py +2" in strip_ansi(msg.get_formatted())

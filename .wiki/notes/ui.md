@@ -42,13 +42,20 @@ order come from `pico_cfg.config.ui_status_bar_fields`; the default is:
 
 ```toml
 [ui]
-status_bar_fields = ["endpoint_model", "role", "context"]
+status_bar_fields = ["endpoint_model", "role", "context", "sandbox"]
 ```
 
-The default display is `endpoint:model  role agent  ctx 12.4k/32k`.
+The default display is `endpoint:model  role agent  ctx 12.4k/32k  ⬢ sandbox:none`.
 Available values include `endpoint_model`, `endpoint`, `model`, `context`,
-`role`, `state`, and `workspace`. Provider-reported prompt usage replaces the
-context estimate after a response supplies authoritative usage data.
+`role`, `state`, `workspace`, and `sandbox`.
+
+The `sandbox` field is composed as `glyph + " " + prefix + runtime` from
+`ui.sandbox_glyph` / `ui.sandbox_prefix` and is colored green
+(`ui.sandbox_active_color`) when a sandbox is active and orange
+(`ui.sandbox_inactive_color`) when tools run unsandboxed. Both colors accept a
+palette name or `#rrggbb`. It is always non-empty, so it stays visible.
+Provider-reported prompt usage replaces the context estimate after a response
+supplies authoritative usage data.
 
 The `context` field is colorized by how full the context window is:
 green below 33%, orange/amber below 66%, and red at or above 66%.
@@ -288,6 +295,40 @@ Every message displayed in the chat history has a `MsgType` that controls its ti
 render with no inter-message gap against an adjacent clamped message; the final
 `PicoMsg` answer keeps its gap.
 
+### Tool-call lines
+
+`ToolCallMsg` / `ToolDraftMsg` / `AskPermissionMsg` render compact (single-line
+when unfocused) with a leading lifecycle glyph in the content, then the tool
+name colored by type (`TOOL` / `MUTED` for a draft / `PERMISSION`, with a `?`
+glyph for a permission ask), then a per-tool summary:
+
+```
+⠋ read   src/main.py          (ToolDraftMsg: arguments still streaming)
+✓ read   src/main.py 240 lines
+✓ write  src/main.py +312
+✓ edit   src/main.py +10 -17
+✓ bash   pytest -q
+? bash   rm -rf /              (AskPermissionMsg)
+```
+
+`chat_message._tool_summary()` owns the summary: `read` reports actual lines
+once the call completes, `write` a `+N` line count, `edit` an `+A -D` line
+diff, `bash` the first command line. Partial (still-streaming) JSON args are
+salvaged by `_parse_tool_args()` so the path can appear before the call is
+complete. A **draft never full-parses** (`full=False`): a `"}` inside a streamed
+`write` body would otherwise trigger a full-buffer scan on every delta. Parsing
++ summary + cmd are also cached by args identity so the spinner's per-tick
+rebuild is O(1) instead of re-parsing a large body. The harness backs the
+`ToolCallDraft` cadence off as arguments grow (`stride = max(32, len//8)`), so
+drafting a large file is O(log n) events with O(1) work each rather than O(n²).
+A focused draft shows a live `draft:` tail of the raw streamed args, so the call
+is observable while it streams. Expanded (focused) lines add `cmd:`/`out:`. The
+dialog is driven by `generation_presenter`: a `ToolCallDraft` event opens the
+`ToolDraftMsg`; the complete `ToolCall` event promotes it in place to
+`ToolCallMsg`. If generation ends abnormally (`Error`, cancel),
+`finalize_active_tools()` closes any message still in flight so no spinner is
+left running.
+
 `ThinkingMsg` and `SysMsgError/Warning` extend `PicoMsg` / `SysMsg` — they inherit defaults and override only what differs.
 
 Actions are deliberately limited to non-destructive operations. State-changing
@@ -418,6 +459,14 @@ check — so pending revealer text cannot survive a boundary "hand-off" and
 surface only once the tool finishes. `chatTUI.disengage_stream()` flushes once
 more before dropping the stream reference. A later turn after tool calls opens a
 fresh wait line.
+
+A tool-call delta is **not** a content boundary. Providers may interleave
+content and tool-call deltas within one response, so the presenter tracks
+`response_text_msg` (reset at each `Start(assistant)`) and appends all of a
+response's content to that one `PicoMsg`; the `ToolCallDraft` handler leaves an
+in-progress text message open and only finalizes the wait line. This prevents
+the assistant's sentence from being sliced into a second message below the tool
+line (regression test: `test_content_resuming_after_tool_draft_stays_one_message`).
 
 ---
 

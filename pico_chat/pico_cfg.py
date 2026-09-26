@@ -126,7 +126,11 @@ DEFAULT_UI_TOML = """\
 # metrics_show_speed = true
 # metrics_show_ttft = false
 # metrics_refresh_interval = 0.1
-# status_bar_fields = ["endpoint_model", "role", "context"]
+# status_bar_fields = ["endpoint_model", "role", "context", "sandbox"]
+# sandbox_glyph = "⬢"                 # before the sandbox field; empty hides it (emoji ok)
+# sandbox_prefix = "sandbox:"         # before the runtime name; empty hides it
+# sandbox_active_color = "SUCCESS"    # palette name or #rrggbb
+# sandbox_inactive_color = "WARNING"
 # stream_smoothing = true             # reveal streamed text smoothly
 # smooth_target_fps = 60              # reveal cadence (independent of render fps)
 # spinner_fps = 10                    # braille spinner cadence (independent of render fps)
@@ -167,8 +171,8 @@ DEFAULT_STYLES_TOML = """\
 """
 
 DEFAULT_SERVERS_TOML = """\
-# Pico-Chat servers. One table per server; select with /server use <name>.
-# Available types: llamacpp, ollama, openrouter, openai.
+# Pico-Chat servers. One table per server; select a model with /model.
+# Every server needs a type: llamacpp, ollama, openrouter, openai.
 # Common keys: base_url, api_key (or api_key_env), model, max_context, timeout,
 # retry_attempts, retry_delay.
 
@@ -272,6 +276,10 @@ _UI_SPEC: Dict[str, tuple[str, str]] = {
     "metrics_show_ttft": ("ui_metrics_show_ttft", "bool"),
     "metrics_refresh_interval": ("ui_metrics_refresh_interval", "float"),
     "status_bar_fields": ("ui_status_bar_fields", "str_list"),
+    "sandbox_glyph": ("ui_sandbox_glyph", "str"),
+    "sandbox_prefix": ("ui_sandbox_prefix", "str"),
+    "sandbox_active_color": ("ui_sandbox_active_color", "str"),
+    "sandbox_inactive_color": ("ui_sandbox_inactive_color", "str"),
     "stream_smoothing": ("ui_stream_smoothing", "bool"),
     "smooth_target_fps": ("ui_smooth_target_fps", "int"),
     "spinner_fps": ("ui_spinner_fps", "int"),
@@ -389,6 +397,8 @@ _SERVER_STR_KEYS = {"type", "base_url", "api_key", "api_key_env", "model", "prov
 _SERVER_INT_KEYS = {"max_context", "retry_attempts"}
 _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
 
+# ``active_model`` is a retired key (the model is per server, ``last_model``);
+# it is accepted and ignored so older state files load without errors.
 _STATE_SECTIONS = {"last_server", "active_model", "last_model", "model_catalog", "active_theme"}
 
 # Palette keys a ``[themes.<name>]`` table may define.
@@ -483,7 +493,6 @@ class Config:
         # LLM servers (intent) and selection (state).
         self.servers: Dict[str, Dict[str, Any]] = {}
         self.active_server: str = "llamacpp_default"
-        self.active_model: Optional[str] = None
         self.model_selection: Dict[str, str] = {}
         self.models_by_server: Dict[str, list] = {}
 
@@ -510,7 +519,11 @@ class Config:
         self.ui_metrics_show_speed: bool = True
         self.ui_metrics_show_ttft: bool = False
         self.ui_metrics_refresh_interval: float = 0.1
-        self.ui_status_bar_fields: list[str] = ["endpoint_model", "role", "context"]
+        self.ui_status_bar_fields: list[str] = ["endpoint_model", "role", "context", "sandbox"]
+        self.ui_sandbox_glyph: str = "⬢"
+        self.ui_sandbox_prefix: str = "sandbox:"
+        self.ui_sandbox_active_color: str = "SUCCESS"
+        self.ui_sandbox_inactive_color: str = "WARNING"
         self.ui_stream_smoothing: bool = True
         self.ui_smooth_target_fps: int = 60
         self.ui_spinner_fps: int = 10
@@ -563,28 +576,7 @@ class Config:
         _load_state_file(self._state_file(), self, self.load_errors)
         return self.load_errors
 
-    # -- intent mutations ----------------------------------------------------
-
-    def save_server(self, name: str, server_config: Dict[str, Any],
-                    set_active: bool = True) -> None:
-        """Write a server definition to ``servers.toml`` (intent)."""
-        path = self.section_file("servers")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        data = toml.load(path) if path.exists() else {}
-        data.setdefault("servers", {})[name] = dict(server_config)
-        path.write_text(toml.dumps(data), encoding="utf-8")
-
-        self.servers[name] = dict(server_config)
-        if set_active:
-            self.active_server = name
-            self._save_state()
-
     # -- state mutations -----------------------------------------------------
-
-    def save_active_model(self, model: Optional[str]) -> None:
-        """Persist the selected model independently from endpoint definitions."""
-        self.active_model = model
-        self._save_state()
 
     def save_model_selection(self, server: str, model: Optional[str]) -> None:
         """Persist the selected model for a specific server."""
@@ -613,8 +605,6 @@ class Config:
         data: Dict[str, Any] = {}
         if self.active_server:
             data["last_server"] = self.active_server
-        if self.active_model:
-            data["active_model"] = self.active_model
         if self.model_selection:
             data["last_model"] = dict(self.model_selection)
         if self.active_theme:
@@ -627,30 +617,11 @@ class Config:
         path.write_text(toml.dumps(data), encoding="utf-8")
 
     def set_active_server(self, name: str) -> None:
-        """Make ``name`` the active server and restore its last model."""
+        """Make ``name`` the active server (its model is ``last_model``)."""
         if name not in self.servers:
             raise KeyError(name)
         self.active_server = name
-        self.active_model = self.get_model_for_server(name)
         self._save_state()
-
-    def remove_server(self, name: str) -> bool:
-        """Delete a server from ``servers.toml``; returns False if unknown."""
-        if name not in self.servers:
-            return False
-        path = self.section_file("servers")
-        data = toml.load(path) if path.exists() else {}
-        data.get("servers", {}).pop(name, None)
-        path.write_text(toml.dumps(data), encoding="utf-8")
-
-        self.servers.pop(name, None)
-        self.models_by_server.pop(name, None)
-        self.model_selection.pop(name, None)
-        if self.active_server == name:
-            self.active_server = next(iter(self.servers), "llamacpp_default")
-            self.active_model = None
-        self._save_state()
-        return True
 
     def ensure_section_file(self, section: str) -> Path:
         """Create a section file from its commented template if missing.
@@ -697,9 +668,6 @@ class Config:
             return server_cfg.get("model")
         return None
 
-    def get_active_server_config(self) -> Optional[Dict[str, Any]]:
-        """Get the configuration for the currently active server."""
-        return self.servers.get(self.active_server)
 
 
 def _read_toml(path: Path, errors: list[str]) -> Optional[dict]:
@@ -778,8 +746,12 @@ def _load_servers(config: Config, data: dict, filename: str,
             if key not in _SERVER_KEYS:
                 errors.append(f"{where} unknown key '{key}'")
         server_type = server.get("type")
-        if server_type is not None and server_type not in _SERVER_TYPES:
-            errors.append(f"{where}.type unknown server type '{server_type}'")
+        if server_type is None:
+            errors.append(
+                f"{where}.type is required ({', '.join(sorted(_SERVER_TYPES))}); "
+                "server skipped")
+        elif server_type not in _SERVER_TYPES:
+            errors.append(f"{where}.type unknown server type '{server_type}'; server skipped")
         for key in _SERVER_STR_KEYS:
             if key in server and not isinstance(server[key], str):
                 errors.append(f"{where}.{key} must be a string")
@@ -797,6 +769,11 @@ def _load_servers(config: Config, data: dict, filename: str,
                 errors.append(f"{where}.enabled_models must be a list of strings")
         if "model_providers" in server and not isinstance(server["model_providers"], dict):
             errors.append(f"{where}.model_providers must be a table")
+        # The type selects the transport and whether a model selection is
+        # honored; guessing one silently routed e.g. an Ollama server as
+        # single-model llama.cpp, ignoring the selected model.
+        if server_type not in _SERVER_TYPES:
+            continue
         config.servers[name] = dict(server)
 
 
@@ -873,13 +850,6 @@ def _load_state_file(path: Path, config: Config, errors: list[str]) -> None:
             config.active_server = last_server
         else:
             errors.append(f"{path.name}: last_server must be a string")
-
-    active_model = data.get("active_model")
-    if active_model is not None:
-        if isinstance(active_model, str):
-            config.active_model = active_model
-        else:
-            errors.append(f"{path.name}: active_model must be a string")
 
     active_theme = data.get("active_theme")
     if active_theme is not None:

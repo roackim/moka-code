@@ -164,12 +164,12 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
                 # parser the harness uses so it renders as a ThinkingMsg.
                 parser = ThinkingTagParser()
                 raw_segments = parser.feed(content) + parser.flush()
-                # ``feed`` holds back up to _MAX_TAG_LEN characters (a possible
-                # partial thinking tag) and ``flush`` emits them as a separate
-                # segment. Coalesce adjacent same-kind segments so import does
-                # not split one assistant reply into multiple messages (which
-                # showed up as a mid-word split separated by the inter-message
-                # gap, e.g. "narro" / "w it down.").
+                # ``feed`` may hold back a partial thinking tag (and ``flush``
+                # emits it as a separate segment once the stream ends). Coalesce
+                # adjacent same-kind segments so import does not split one
+                # assistant reply into multiple messages (which showed up as a
+                # mid-word split separated by the inter-message gap, e.g.
+                # "narro" / "w it down.").
                 segments = []
                 for segment in raw_segments:
                     if not segment.text:

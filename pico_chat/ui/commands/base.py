@@ -197,3 +197,43 @@ def open_project_sandbox(ui: ChatUIProtocol) -> None:
             msg_type=SysMsg(), title="config")
     if hasattr(ui, "refresh_status_bar"):
         ui.refresh_status_bar()
+
+
+def activate_endpoint(ui: ChatUIProtocol, endpoint) -> None:
+    """Make ``endpoint`` the agent's live endpoint and probe it in the background.
+
+    Shared by ``/model`` and the config reloads. The status bar refreshes now
+    and again once the probe resolves the served model and context window.
+    """
+    import asyncio
+    from pico_chat.harness.endpoint import prewarm_local_resolution
+
+    ui.agent.switch_server(endpoint)
+    prewarm_local_resolution(endpoint._original_base_url)
+
+    async def _prewarm():
+        await endpoint.prewarm_model_name()
+        if hasattr(ui, "refresh_status_bar"):
+            ui.refresh_status_bar()
+
+    asyncio.ensure_future(_prewarm())
+    if hasattr(ui, "refresh_status_bar"):
+        ui.refresh_status_bar()
+
+
+def reapply_endpoint(ui: ChatUIProtocol) -> None:
+    """Apply a reloaded ``servers.toml``/state to the live endpoint.
+
+    The endpoint is rebuilt only when its server, definition or selected model
+    changed, so an unrelated reload keeps the connection and usage display.
+    """
+    from pico_chat.harness.endpoint import get_active_endpoint
+
+    agent = getattr(ui, "agent", None)
+    current = getattr(agent, "endpoint", None)
+    if current is None or not hasattr(agent, "switch_server"):
+        return
+    fresh = get_active_endpoint()
+    if (fresh.name, fresh.source) == (current.name, getattr(current, "source", None)):
+        return
+    activate_endpoint(ui, fresh)

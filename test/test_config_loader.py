@@ -78,14 +78,14 @@ def test_malformed_toml_reports_error_and_keeps_defaults(tmp_path):
 def test_state_toml_loads_selection_and_catalog(tmp_path):
     state = _write(tmp_path / "state.toml", {
         "last_server": "local",
-        "active_model": "fallback-model",
+        "active_model": "retired-key-is-ignored",
         "last_model": {"local": "qwen"},
         "model_catalog": {"local": [{"id": "qwen", "context_window": 32768}]},
     })
     config = Config(config_dir=tmp_path, state_path=state)
 
+    assert config.load_errors == []
     assert config.active_server == "local"
-    assert config.active_model == "fallback-model"
     assert config.model_selection == {"local": "qwen"}
     assert config.models_by_server == {"local": [{"id": "qwen", "context_window": 32768}]}
     assert config.get_model_for_server("local") == "qwen"
@@ -99,7 +99,6 @@ def test_state_is_written_separately_from_intent(tmp_path):
     config = Config(config_dir=tmp_path, state_path=state)
 
     config.save_model_selection("local", "qwen")
-    config.save_active_model("qwen")
     config.models_by_server = {"local": [{"id": "qwen"}]}
     config.save_model_catalog()
 
@@ -109,20 +108,23 @@ def test_state_is_written_separately_from_intent(tmp_path):
 
     persisted = toml.load(state)
     assert persisted["last_model"] == {"local": "qwen"}
-    assert persisted["active_model"] == "qwen"
+    assert "active_model" not in persisted
     assert persisted["model_catalog"] == {"local": [{"id": "qwen"}]}
 
 
-def test_save_server_does_not_touch_other_section_files(tmp_path):
-    ui = _write(tmp_path / "ui.toml", {"theme": "pastel"})
-    state = tmp_path / "state.toml"
-    config = Config(config_dir=tmp_path, state_path=state)
+def test_server_without_type_is_reported_and_skipped(tmp_path):
+    """A missing type must not silently become llama.cpp (single-model)."""
+    _write(tmp_path / "servers.toml", {
+        "servers": {
+            "ollama": {"base_url": "http://localhost:11434/v1"},
+            "ok": {"type": "ollama", "base_url": "http://localhost:11434/v1"},
+        },
+    })
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
-    config.save_server("local", {"type": "llamacpp", "base_url": "http://x/v1"})
-
-    assert toml.load(ui)["theme"] == "pastel"
-    assert toml.load(tmp_path / "servers.toml")["servers"]["local"]["base_url"] == "http://x/v1"
-    assert toml.load(state)["last_server"] == "local"
+    assert "[servers.ollama].type is required" in "\n".join(config.load_errors)
+    assert "ollama" not in config.servers
+    assert "ok" in config.servers
 
 
 def test_default_templates_are_valid_and_error_free(tmp_path):

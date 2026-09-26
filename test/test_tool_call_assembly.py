@@ -7,8 +7,10 @@ The assembler must handle two real streaming patterns:
    distinct ids — they must NOT merge into e.g. "bashbash".
 """
 
+import asyncio
 from types import SimpleNamespace
 
+from pico_chat.harness import events
 from pico_chat.harness.harness import Harness
 
 
@@ -99,3 +101,108 @@ def test_no_mixed_int_str_keys_when_only_ids():
         [_tc(0, "call_x", name="bash", arguments='{}')],
     ])
     assert len(calls) == 1
+
+
+# --- live drafting ---------------------------------------------------------
+
+class _NoopDebug:
+    def log(self, *args, **kwargs):
+        pass
+
+
+def _stream_drafts(chunks, monkeypatch=None, step=0.0):
+    """Drive _stream_llm_response over a canned chunk stream, return events.
+
+    With ``monkeypatch``, the harness clock advances by ``step`` seconds per
+    chunk so the time-throttled draft cadence is deterministic.
+    """
+    harness = Harness.__new__(Harness)
+    harness.debug_stream = _NoopDebug()
+    harness.state = None
+    harness.history = []
+    harness.workspace = "."
+    harness.tool_schemas = []
+    harness._current_reasoning = ""
+    harness._last_usage = None
+
+    clock = [0.0]
+    if monkeypatch is not None:
+        import pico_chat.harness.harness as harness_mod
+        monkeypatch.setattr(harness_mod, "time", SimpleNamespace(perf_counter=lambda: clock[0]))
+
+    async def create_completion(messages, tools=None, stream=True):
+        for chunk in chunks:
+            clock[0] += step
+            yield chunk
+
+    harness.endpoint = SimpleNamespace(create_completion=create_completion)
+
+    async def _collect():
+        return [event async for event in harness._stream_llm_response([])]
+
+    return asyncio.run(_collect())
+
+
+def test_draft_event_emitted_while_arguments_stream(monkeypatch):
+    """A named, still-streaming call is announced before the stream ends."""
+    chunks = [
+        _delta_with_tool_calls([_tc(0, "call_1", name="bash", arguments="")]),
+        _delta_with_tool_calls([_tc(0, None, arguments='{"command": "echo ')]),
+        _delta_with_tool_calls([_tc(0, None, arguments='hi"}')]),
+    ]
+    drafts = [e for e in _stream_drafts(chunks, monkeypatch, step=1.0)
+              if isinstance(e, events.ToolCallDraft)]
+
+    assert len(drafts) == 3
+    assert all(d.id == "call_1" and d.name == "bash" for d in drafts)
+    assert drafts[0].args == ""
+    assert drafts[-1].args == '{"command": "echo hi"}'
+
+
+def test_no_draft_before_name_is_known():
+    """Deltas carrying only argument fragments do not announce a call."""
+    chunks = [
+        _delta_with_tool_calls([_tc(0, "call_1", arguments='{"path": "a"')]),
+        _delta_with_tool_calls([_tc(0, "call_1", name="read", arguments='.py"}')]),
+    ]
+    drafts = [e for e in _stream_drafts(chunks) if isinstance(e, events.ToolCallDraft)]
+
+    assert len(drafts) == 1
+    assert drafts[0].name == "read"
+
+
+def test_draft_cadence_is_time_throttled(monkeypatch):
+    """A large streamed body updates the draft on a steady clock, not per delta.
+
+    400 deltas over 4s (10ms apart) yield about one draft per 100ms: enough for
+    a live line, far fewer than one event per delta, and never frozen for long
+    stretches as the body grows.
+    """
+    body = "x" * 20_000
+    chunks = [_delta_with_tool_calls(
+        [_tc(0, "call_1", name="write", arguments='{"content": "')]
+    )]
+    for i in range(0, len(body), 50):
+        chunks.append(_delta_with_tool_calls(
+            [_tc(0, None, arguments=body[i:i + 50])]
+        ))
+    drafts = [e for e in _stream_drafts(chunks, monkeypatch, step=0.01)
+              if isinstance(e, events.ToolCallDraft)]
+
+    assert 30 <= len(drafts) <= 45
+    assert drafts[-1].name == "write"
+    # Late in the body the draft still advances every ~100ms (~5000 chars/s
+    # here), rather than backing off to multi-second gaps.
+    growth = [len(b.args) - len(a.args) for a, b in zip(drafts, drafts[1:])]
+    assert max(growth) <= 600
+
+
+def test_reasoning_delta_does_not_drop_tool_call_fragment():
+    """A delta carrying reasoning and a tool-call fragment keeps both."""
+    chunk = _delta_with_tool_calls([_tc(0, "call_1", name="read", arguments='{"path": "a.py"}')])
+    chunk.choices[0].delta.reasoning_content = "thinking"
+    harness_events = _stream_drafts([chunk])
+
+    assert any(isinstance(e, events.Reasoning) for e in harness_events)
+    drafts = [e for e in harness_events if isinstance(e, events.ToolCallDraft)]
+    assert drafts and drafts[-1].args == '{"path": "a.py"}'

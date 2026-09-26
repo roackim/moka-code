@@ -24,8 +24,13 @@ def main():
     # Insert commented lines for newly added config keys (and drop retired ones)
     # in existing files, then reload so the fresh file is what the app sees.
     pico_cfg.sync_config_files()
-    pico_cfg.reload_config()
+    config_errors = pico_cfg.reload_config()
     harness = get_harness()
+    # Shown in the transcript at startup, like /reload does, so a broken
+    # config file is never silently ignored.
+    if config_errors:
+        harness.startup_warnings.append(
+            "Config loaded with errors:\n" + "\n".join(config_errors))
     print() 
 
     # Apply theme from config

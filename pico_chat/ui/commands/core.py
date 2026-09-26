@@ -21,6 +21,7 @@ from .base import (
     Param,
     config_section_completions,
     open_project_sandbox,
+    reapply_endpoint,
     role_descriptions,
     role_name_completions,
     theme_descriptions,
@@ -73,6 +74,7 @@ async def cmd_reload(ui: ChatUIProtocol, args: List[str]):
 
     errors = pico_cfg.reload_config() + roles.validate_roles()
     _apply_theme(ui)
+    reapply_endpoint(ui)
 
     if errors:
         ui.chat_history_panel.add_message(
@@ -125,6 +127,7 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
     open_editor(ui, path)
     errors = pico_cfg.reload_config()
     _apply_theme(ui)
+    reapply_endpoint(ui)
     if errors:
         ui.chat_history_panel.add_message(
             "Config reloaded with errors:\n" + "\n".join(errors),
@@ -220,6 +223,7 @@ async def _config_role(ui: ChatUIProtocol, args: List[str]):
         return
     open_editor(ui, path)
     errors = pico_cfg.reload_config() + roles.validate_roles()
+    reapply_endpoint(ui)
     if errors:
         ui.chat_history_panel.add_message(
             "Config reloaded with errors:\n" + "\n".join(errors),
@@ -261,6 +265,7 @@ async def _config_theme(ui: ChatUIProtocol, args: List[str]):
     open_editor(ui, path)
     errors = pico_cfg.reload_config()
     _apply_theme(ui)
+    reapply_endpoint(ui)
     if errors:
         ui.chat_history_panel.add_message(
             "Config reloaded with errors:\n" + "\n".join(errors),

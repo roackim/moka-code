@@ -127,3 +127,50 @@ def test_api_message_folds_reasoning_when_enabled(monkeypatch):
     assert "<think>\na deep thought\n</think>" in api["content"]
     assert api["content"].rstrip().endswith("answer")
     assert "reasoning" not in api
+
+
+def test_tool_calls_are_sent_back_with_their_results(tmp_path, monkeypatch):
+    """The follow-up request must pair each tool result with the call it answers.
+
+    A regression stored the assistant turn without ``tool_calls``, so the model
+    received orphaned ``tool`` results and never saw its own call.
+    """
+    from pico_chat.harness.roles import Role
+
+    monkeypatch.setattr(pico_cfg.config, "preserve_reasoning_traces", False)
+    (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
+    with patch(
+        "pico_chat.harness.harness.get_active_endpoint",
+        return_value=Endpoint(name="test", type="llamacpp"),
+    ):
+        harness = Harness(workspace_path=str(tmp_path))
+    harness.set_role(Role(name="t", tools={"read": "yes"}))
+
+    call = SimpleNamespace(
+        index=0, id="call_1",
+        function=SimpleNamespace(name="read", arguments='{"path": "a.txt"}'),
+    )
+    requests = []
+
+    async def fake_completion(messages, tools=None, stream=True):
+        requests.append([dict(m) for m in messages])
+        if len(requests) == 1:
+            delta = SimpleNamespace(content=None, reasoning_content=None, tool_calls=[call])
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=None)], usage=None)
+        else:
+            yield _chunk(content="done")
+        yield _chunk(finish="stop")
+
+    harness.endpoint.create_completion = fake_completion
+
+    async def drain():
+        return [event async for event in harness.chat("read it")]
+
+    asyncio.run(drain())
+
+    follow_up = requests[1]
+    tool_msg = next(m for m in follow_up if m.get("role") == "tool")
+    caller = follow_up[follow_up.index(tool_msg) - 1]
+    assert caller["role"] == "assistant"
+    assert [tc["id"] for tc in caller["tool_calls"]] == [tool_msg["tool_call_id"]]
+    assert caller["tool_calls"][0]["function"]["arguments"] == '{"path": "a.txt"}'

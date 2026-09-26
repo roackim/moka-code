@@ -14,7 +14,7 @@ from typing import List, Optional, Tuple
 from pico_chat import pico_cfg
 from pico_chat.ui.tui.msg_types import SysMsg, SysMsgError
 
-from .base import ChatUIProtocol
+from .base import ChatUIProtocol, activate_endpoint
 
 # Cap on live discovery so an unreachable server cannot stall the picker.
 _DISCOVERY_TIMEOUT = 8.0
@@ -131,8 +131,8 @@ def _list_models_text(ui: ChatUIProtocol, pairs) -> None:
     if not pairs:
         ui.chat_history_panel.add_message(
             "No models discovered.\n\n"
-            "Configure a server with '/config', then check it is reachable "
-            "with '/server diagnose <name>'.",
+            "Configure a server with '/config servers', then run '/model' "
+            "again once it is reachable.",
             msg_type=SysMsg(), title="model")
         return
     active_name, selected = _current_selection(ui)
@@ -221,26 +221,14 @@ def _split_server_model(raw: str) -> Tuple[Optional[str], str]:
 
 
 def _activate(ui: ChatUIProtocol, server: str, model: str) -> None:
-    """Persist the selection, switch the endpoint, and prewarm the status bar."""
-    from pico_chat.harness.endpoint import get_endpoint, prewarm_local_resolution
+    """Persist the selection and switch to a fresh endpoint that applies it."""
+    from pico_chat.harness.endpoint import get_endpoint
 
     pico_cfg.config.save_model_selection(server, model)
     pico_cfg.config.set_active_server(server)
     endpoint = get_endpoint(server)
-    if endpoint is None:
-        return
-    ui.agent.switch_server(endpoint)
-    ui.agent.switch_model(model)
-    prewarm_local_resolution(endpoint._original_base_url)
-
-    async def _prewarm():
-        await endpoint.prewarm_model_name()
-        if hasattr(ui, "refresh_status_bar"):
-            ui.refresh_status_bar()
-
-    asyncio.ensure_future(_prewarm())
-    if hasattr(ui, "refresh_status_bar"):
-        ui.refresh_status_bar()
+    if endpoint is not None:
+        activate_endpoint(ui, endpoint)
 
 
 async def model_use(ui: ChatUIProtocol, args: List[str]):
@@ -255,7 +243,9 @@ async def model_use(ui: ChatUIProtocol, args: List[str]):
         if server_hint not in pico_cfg.config.servers:
             ui.chat_history_panel.add_message(
                 f"Server '{server_hint}' not found.\n\n"
-                "Use '/server list' to see configured servers.",
+                "Configured servers: "
+                + (", ".join(pico_cfg.config.servers) or "none")
+                + " ('/config servers').",
                 msg_type=SysMsgError(), title="model")
             return
         servers = [server_hint]
