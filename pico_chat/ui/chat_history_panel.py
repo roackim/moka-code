@@ -26,6 +26,13 @@ def _clamped(msg: Message) -> bool:
     return getattr(msg.type, "clamped", False)
 
 
+class AnswerGroup:
+    """Shared by the segments of one split answer (see ``split_answer``)."""
+
+    def __init__(self, text: str):
+        self.text = text  # the whole answer, copied when the group is selected
+
+
 def _is_thought(msg: Message) -> bool:
     return isinstance(msg.type, ThinkingMsg)
 
@@ -44,6 +51,8 @@ def _gap_before(messages: list, i: int) -> bool:
     if i == 0:
         return False
     prev, msg = messages[i - 1], messages[i]
+    if prev.group is not None and prev.group is msg.group:
+        return False  # segments of one split answer touch
     if _is_thought(prev):
         return False
     if _is_thought(msg):
@@ -71,6 +80,11 @@ class ChatHistoryPanel(TextComponent):
         self.auto_scroll = True
         self.anchored_start_y: Optional[int] = None  # Absolute Y position when scrolled up (for stability)
         self.focused_message_index: Optional[int] = None  # Index of the currently focused message
+        # True while one segment of a split answer is selected (``→``);
+        # otherwise a split answer is selected as a whole.
+        self.inside_group = False
+        # Brief hint callback (the app flashes it on the action line).
+        self.on_hint: Optional[callable] = None
         self.has_keyboard_focus = False  # Track if this panel should handle keyboard input
         # Notified (no args) whenever the selected message changes, so the app
         # can refresh its contextual mode line.
@@ -116,30 +130,44 @@ class ChatHistoryPanel(TextComponent):
     def _request_repaint(self):
         self.mark_changed((self.x, self.y, self.width, self.height))
     
-    def set_focused_message(self, index: Optional[int]):
+    def set_focused_message(self, index: Optional[int], inside: bool = False):
         """Set the focused message by index.
-        
-        Args:
-            index: Index of message to focus, or None to clear focus
+
+        The segments of a split answer (``Message.group``) are one message for
+        navigation: by default the whole group is selected and ``index`` snaps
+        to its first segment. ``inside=True`` selects the single segment at
+        ``index`` (``→``, or a click on a segment); it has no effect on a
+        message that is not split.
         """
         # Clear previous focus
         if (self.focused_message_index is not None
                 and 0 <= self.focused_message_index < len(self.messages)):
-            prev = self.messages[self.focused_message_index]
-            prev.set_focused(False)
-            # Collapsible messages (thinking) fold back when unfocused.
-            if hasattr(prev, "set_collapsed") and getattr(prev, "collapsible", False):
-                prev.set_collapsed(True)
+            start, end = self._group_range(self.focused_message_index)
+            for prev in self.messages[start:end]:
+                prev.set_focused(False)
+                # Collapsible messages (thinking) fold back when unfocused.
+                if hasattr(prev, "set_collapsed") and getattr(prev, "collapsible", False):
+                    prev.set_collapsed(True)
 
         # Normalize an out-of-range index to "no focus".
         if index is not None and not (0 <= index < len(self.messages)):
             index = None
+        start = end = 0
+        if index is not None:
+            start, end = self._group_range(index)
+            inside = inside and end - start > 1
+            if not inside:
+                index = start
+        else:
+            inside = False
 
         # Set new focus
         self.focused_message_index = index
-        if self.focused_message_index is not None:
-            current = self.messages[self.focused_message_index]
-            current.set_focused(True)
+        self.inside_group = inside
+        if index is not None:
+            current = self.messages[index]
+            for msg in ([current] if inside else self.messages[start:end]):
+                msg.set_focused(True)
             # Collapsible messages (thinking) expand when focused — but only
             # when there is text to reveal: an empty thought stays a summary
             # line instead of collapsing to a bare prefix.
@@ -149,10 +177,101 @@ class ChatHistoryPanel(TextComponent):
                 current.set_collapsed(False)
             # Disable auto-scroll when focusing a message, UNLESS it's the last message
             # (we want to follow the last message's content as it updates)
-            if self.focused_message_index < len(self.messages) - 1:
+            if end < len(self.messages):
                 self.auto_scroll = False
         self._request_repaint()
         self._notify_selection_changed()
+
+    def _group_range(self, index: int) -> tuple[int, int]:
+        """``[start, end)`` of the split answer containing ``index`` (or itself)."""
+        group = self.messages[index].group
+        if group is None:
+            return index, index + 1
+        start, end = index, index + 1
+        while start > 0 and self.messages[start - 1].group is group:
+            start -= 1
+        while end < len(self.messages) and self.messages[end].group is group:
+            end += 1
+        return start, end
+
+    def enter_group(self) -> bool:
+        """``→``: select the first segment of the selected split answer."""
+        index = self.focused_message_index
+        if index is None or self.inside_group:
+            return False
+        start, end = self._group_range(index)
+        if end - start < 2:
+            if self.on_hint is not None:
+                self.on_hint("single block")
+            return True
+        self.set_focused_message(start, inside=True)
+        self._scroll_to_show_message(start, prefer_top=True)
+        return True
+
+    def exit_group(self) -> bool:
+        """``←``/Esc: back from a segment to the whole answer."""
+        if not self.inside_group or self.focused_message_index is None:
+            return False
+        self.set_focused_message(self.focused_message_index)
+        return True
+
+    def segment_label(self) -> str:
+        """``code 2/4`` while a segment is selected, else empty."""
+        index = self.focused_message_index
+        if not self.inside_group or index is None:
+            return ""
+        start, end = self._group_range(index)
+        kind = self.messages[index].segment_kind or "text"
+        return f"{kind} {index - start + 1}/{end - start}"
+
+    def copy_text_for(self, msg: Message) -> str:
+        """What ``c`` copies: the whole answer, or the selected segment."""
+        if msg.group is not None and not self.inside_group:
+            return msg.group.text
+        return msg.copy_text if msg.copy_text is not None else msg.base_text
+
+    def split_answer(self, msg: Message) -> None:
+        """Replace a finished answer by its segments (prose / code / table).
+
+        Done once the answer is complete, never while it streams. An answer
+        with a single segment stays as is.
+        """
+        from pico_chat.ui.answer_split import split_answer
+        from pico_chat.ui.tui.msg_types import PicoMsg
+
+        if type(msg.type) is not PicoMsg or msg.group is not None:
+            return
+        try:
+            index = self.messages.index(msg)
+        except ValueError:
+            return
+        segments = split_answer(msg.base_text)
+        if len(segments) < 2:
+            return
+        group = AnswerGroup(msg.base_text)
+        parts = []
+        for segment in segments:
+            part = self.new_message(segment.text, msg_type=PicoMsg(),
+                                    harness_message_ids=list(msg.harness_message_ids))
+            part.group, part.segment_kind, part.copy_text = group, segment.kind, segment.copy
+            part.finalize()
+            part.get_component().parent = self
+            parts.append(part)
+        for attr in ("metrics_tokens", "metrics_tokens_per_second",
+                     "metrics_ttft_ms", "metrics_duration_ms"):
+            setattr(parts[-1], attr, getattr(msg, attr))
+
+        focused = self.focused_message_index
+        if focused == index:
+            msg.set_focused(False)
+            self.focused_message_index = None
+        self.messages[index:index + 1] = parts
+        if focused is not None and focused > index:
+            self.focused_message_index = focused + len(parts) - 1
+        self._message_height_cache.clear()
+        if focused == index:
+            self.set_focused_message(index)
+        self._request_repaint()
 
     def _notify_selection_changed(self):
         if self.on_selection_changed is not None:
@@ -207,45 +326,59 @@ class ChatHistoryPanel(TextComponent):
             logging.getLogger("tui").warning("No clipboard method for selection copy")
 
     def move_focus_up(self) -> bool:
-        """Move focus to the previous message.
-        
+        """Move focus to the previous message (or segment, inside an answer).
+
         Returns:
-            True if focus moved, False if at top or no messages
+            True if focus moved, False at the top (or the first segment)
         """
         if not self.messages:
             return False
-        
-        if self.focused_message_index is None:
+        index = self.focused_message_index
+        if index is None:
             # Focus the last message if nothing is focused
             self.set_focused_message(len(self.messages) - 1)
-            self._scroll_to_show_message(self.focused_message_index, prefer_top=True)
-            return True
-        elif self.focused_message_index > 0:
-            self.set_focused_message(self.focused_message_index - 1)
-            self._scroll_to_show_message(self.focused_message_index, prefer_top=True)
-            return True
-        return False
-    
+        elif self.inside_group:
+            start, _ = self._group_range(index)
+            if index <= start:
+                return False
+            self.set_focused_message(index - 1, inside=True)
+        else:
+            start, _ = self._group_range(index)
+            if start == 0:
+                return False
+            self.set_focused_message(start - 1)
+        self._scroll_to_show_message(self.focused_message_index, prefer_top=True)
+        return True
+
     def move_focus_down(self) -> bool:
-        """Move focus to the next message.
-        
+        """Move focus to the next message (or segment, inside an answer).
+
         Returns:
-            True if focus moved, False if at bottom or no messages
+            True if focus moved, False at the bottom (or the last segment)
         """
         if not self.messages:
             return False
-        
-        if self.focused_message_index is None:
+        index = self.focused_message_index
+        if index is None:
             # Focus the first message if nothing is focused
             self.set_focused_message(0)
-            self._scroll_to_show_message(self.focused_message_index, prefer_top=False)
-            return True
-        elif self.focused_message_index < len(self.messages) - 1:
-            self.set_focused_message(self.focused_message_index + 1)
-            self._scroll_to_show_message(self.focused_message_index, prefer_top=False)
-            return True
-        return False
-    
+            shown = self.focused_message_index
+        elif self.inside_group:
+            _, end = self._group_range(index)
+            if index + 1 >= end:
+                return False
+            self.set_focused_message(index + 1, inside=True)
+            shown = self.focused_message_index
+        else:
+            _, end = self._group_range(index)
+            if end >= len(self.messages):
+                return False
+            self.set_focused_message(end)
+            # A split answer: bring its end into view, like one tall message.
+            shown = self._group_range(self.focused_message_index)[1] - 1
+        self._scroll_to_show_message(shown, prefer_top=False)
+        return True
+
     def clear_focus(self):
         """Clear the focused message."""
         self.set_focused_message(None)
@@ -458,6 +591,10 @@ class ChatHistoryPanel(TextComponent):
         # walking every message (the bottom-up early-exit, generalized).
         first = bisect.bisect_right(ends, start_y)
         last = min(len(self.messages), bisect.bisect_left(starts, start_y + self.height))
+        focus_start = focus_end = -1
+        if (self.focused_message_index is not None
+                and 0 <= self.focused_message_index < len(self.messages)):
+            focus_start, focus_end = self._group_range(self.focused_message_index)
         for i in range(first, last):
             msg = self.messages[i]
             child = msg.get_component()
@@ -469,11 +606,19 @@ class ChatHistoryPanel(TextComponent):
             child.render(buffer)
 
             # Selected message: draw a bright selection bar in the left margin.
-            if i == self.focused_message_index:
+            # A whole split answer gets ``▌`` on every segment; a single
+            # selected segment gets the wider ``█`` (the rest keep their bar).
+            marker = None
+            if focus_start <= i < focus_end:
+                if not self.inside_group:
+                    marker = "▌"
+                elif i == self.focused_message_index:
+                    marker = "█"
+            if marker is not None:
                 top = max(child_y, viewport_top)
                 bottom = min(child_y + child_h, viewport_bottom)
                 for row_y in range(top, bottom):
-                    buffer.write_str(self.x, row_y, "▌", fg=theme.FOCUSED,
+                    buffer.write_str(self.x, row_y, marker, fg=theme.FOCUSED,
                                      bg=theme.get_bg(), max_width=1)
 
             # Render selection highlight if this message has an active selection
@@ -513,6 +658,8 @@ class ChatHistoryPanel(TextComponent):
                     self.selection.clear()
                     self._request_repaint()
                     return True
+                if self.inside_group:
+                    return self.exit_group()
                 if self.focused_message_index is not None:
                     self.clear_focus()
                     return True
@@ -522,6 +669,10 @@ class ChatHistoryPanel(TextComponent):
                 return self.move_focus_up()
             elif event == '\x1b[B':  # Down arrow
                 return self.move_focus_down()
+            elif event == '\x1b[C':  # Right arrow: into a split answer
+                return self.enter_group()
+            elif event == '\x1b[D':  # Left arrow: back to the whole answer
+                return self.exit_group()
             
             # Handle action keys when a message is focused
             if self.focused_message_index is not None:
@@ -559,8 +710,14 @@ class ChatHistoryPanel(TextComponent):
                             msg = self.messages[msg_index]
                             box = msg.get_component()
 
-                            # Focus the message and start text selection
-                            self.set_focused_message(msg_index)
+                            # Focus the message and start text selection. On a
+                            # split answer the first click selects it whole; a
+                            # click on the already-selected answer selects the
+                            # segment under the cursor.
+                            start, end = self._group_range(msg_index)
+                            focused = self.focused_message_index
+                            already = focused is not None and start <= focused < end
+                            self.set_focused_message(msg_index, inside=already)
 
                             content_y = local_y - 1  # subtract top border
                             if 0 <= content_y < box.height - 2:

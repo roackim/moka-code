@@ -31,6 +31,15 @@ def _resolve_color(value: str, fallback: Any) -> Any:
     return fallback
 
 
+def _format_cost(cost: float | None) -> str:
+    """``$0.0123`` for this conversation; empty when no cost is reported."""
+    if cost is None:
+        return ""
+    if cost >= 1:
+        return f"${cost:.2f}"
+    return f"${cost:.4f}"
+
+
 def _format_tokens(value: int | None) -> str:
     if value is None:
         return "?"
@@ -141,6 +150,8 @@ def refresh_status_bar(app) -> None:
         "model": model,
         "workspace": getattr(agent, "workspace", ""),
         "sandbox": sandbox_text,
+        # Empty (so hidden) until the provider reports a cost.
+        "cost": _format_cost(getattr(agent, "conversation_cost", None)),
     })
     app.status_bar.set_field_colors({
         "context": _context_color(context_used, context_max),

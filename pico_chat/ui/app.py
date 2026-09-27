@@ -170,6 +170,7 @@ class chatTUI(ChatActionHandlers):
         self.action_bar.set_align_right(True)
         self._hint_flash_until = 0.0
         self.chat_history_panel.on_selection_changed = self._update_mode_line
+        self.chat_history_panel.on_hint = self.flash_hint
         self.input_component.on_change = self._update_action_strip
         self.command_queue = asyncio.Queue()
         self.shutdown_event = asyncio.Event()
@@ -248,6 +249,8 @@ class chatTUI(ChatActionHandlers):
     def _finalize_stream(self):
         if self.stream_message is not None:
             self.stream_message.finalize()
+            # The deferred end of an answer: split it now that it is complete.
+            self.chat_history_panel.split_answer(self.stream_message)
         self.stream_message = None
         self.stream_revealed = 0
         self._stream_finalize_pending = False
@@ -537,8 +540,15 @@ class chatTUI(ChatActionHandlers):
                            callback=lambda a=action, m=message: self._handle_message_action(m, a))
                 for action in actions
             ])
-            self.action_bar.set_prefix("")
-            self.action_bar.set_hint(self._mode_hint_default)
+            panel = self.chat_history_panel
+            self.action_bar.set_prefix(panel.segment_label())
+            if panel.inside_group:
+                hint = "↑↓ part · ← back"
+            elif message.group is not None:
+                hint = "↑↓ move · → parts · esc back"
+            else:
+                hint = self._mode_hint_default
+            self.action_bar.set_hint(hint)
             self._hint_flash_until = 0.0
             self.action_bar.set_focused(False)
             self.action_bar.set_expanded(True)

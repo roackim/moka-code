@@ -387,6 +387,12 @@ class Message:
         # Last rendered live label (elapsed seconds); ``tick`` redraws on change.
         self._live_label: Optional[str] = None
 
+        # Split answers (``ChatHistoryPanel.split_answer``): the shared group,
+        # this segment's kind ("text"/"code"/"table") and what ``c`` copies.
+        self.group = None
+        self.segment_kind: Optional[str] = None
+        self.copy_text: Optional[str] = None
+
         # Steering / queue state
         self.is_queued: bool = False   # UserMsg waiting while generation is active
         self.is_paused: bool = False   # PicoMsg/ThinkingMsg cancelled via pause action

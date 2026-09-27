@@ -126,7 +126,7 @@ DEFAULT_UI_TOML = """\
 # metrics_show_speed = true
 # metrics_show_ttft = false
 # metrics_refresh_interval = 0.1
-# status_bar_fields = ["endpoint_model", "role", "context", "sandbox"]
+# status_bar_fields = ["endpoint_model", "role", "context", "cost", "sandbox"]
 # sandbox_glyph = "⬢"                 # before the sandbox field; empty hides it (emoji ok)
 # sandbox_prefix = "sandbox:"         # before the runtime name; empty hides it
 # sandbox_active_color = "SUCCESS"    # palette name or #rrggbb
@@ -530,7 +530,7 @@ class Config:
         self.ui_metrics_show_speed: bool = True
         self.ui_metrics_show_ttft: bool = False
         self.ui_metrics_refresh_interval: float = 0.1
-        self.ui_status_bar_fields: list[str] = ["endpoint_model", "role", "context", "sandbox"]
+        self.ui_status_bar_fields: list[str] = ["endpoint_model", "role", "context", "cost", "sandbox"]
         self.ui_sandbox_glyph: str = "⬢"
         self.ui_sandbox_prefix: str = "sandbox:"
         self.ui_sandbox_active_color: str = "SUCCESS"

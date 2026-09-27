@@ -53,8 +53,12 @@ class ChatActionHandlers:
                 
                 text_to_copy = "\n".join(lines)
             else:
-                # Strip ANSI escape codes for clean clipboard content
-                text_to_copy = strip_ansi(message.base_text)
+                # Strip ANSI escape codes for clean clipboard content. A split
+                # answer copies whole, or just the selected segment (code
+                # without its fences).
+                copy_text_for = getattr(self.chat_history_panel, "copy_text_for", None)
+                text = copy_text_for(message) if callable(copy_text_for) else message.base_text
+                text_to_copy = strip_ansi(text)
                 # Ensure a trailing newline so pasting keeps the line break.
                 if text_to_copy and not text_to_copy.endswith("\n"):
                     text_to_copy += "\n"

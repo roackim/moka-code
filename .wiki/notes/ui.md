@@ -42,12 +42,16 @@ order come from `pico_cfg.config.ui_status_bar_fields`; the default is:
 
 ```toml
 [ui]
-status_bar_fields = ["endpoint_model", "role", "context", "sandbox"]
+status_bar_fields = ["endpoint_model", "role", "context", "cost", "sandbox"]
 ```
 
-The default display is `endpoint:model  role agent  ctx 12.4k/32k  ⬢ sandbox:none`.
+The default display is `endpoint:model  role agent  ctx 12.4k/32k  $0.0123  ⬢ sandbox:none`.
 Available values include `endpoint_model`, `endpoint`, `model`, `context`,
-`role`, `state`, `workspace`, and `sandbox`.
+`cost`, `role`, `state`, `workspace`, and `sandbox`. Empty values are hidden:
+`cost` (`$0.0123`, from `Harness.conversation_cost`) only appears once the
+provider reports a cost (`TokenUsage.cost`, e.g. OpenRouter's `usage.cost`;
+`/compact`'s request counts too). It is per conversation: `/clear` and
+`/import` (`Harness.load_history`) start it over.
 
 The `sandbox` field is composed as `glyph + " " + prefix + runtime` from
 `ui.sandbox_glyph` / `ui.sandbox_prefix` and is colored green
@@ -433,6 +437,23 @@ type: user `USER`, pico/thinking/tool calls `MUTED`, permission asks
 `ChatHistoryPanel` keeps a `focused_message_index`
 (the selected message); the selected message's prefix bar is replaced with a
 brighter `▌` marker (no extra column, nothing shifts, no leading margin).
+
+**Split answers.** Once an answer is complete (end of generation, or the
+deferred reveal finalize in `chatTUI._finalize_stream`; also `/import`),
+`ChatHistoryPanel.split_answer` replaces it with segment messages from
+`ui/answer_split.py` — prose, top-level code blocks (fence at column 0), tables
+(header + separator) — sharing an `AnswerGroup` (`Message.group`,
+`segment_kind`, `copy_text`). Segments touch (no gap, no blank lines between
+them). Navigation has two levels:
+
+- **↑/↓** move between messages; a split answer is one stop, selected whole
+  (bright `▌` on all its segments), and `c` copies the whole answer;
+- **→** enters it (`inside_group`): the selected segment gets a wide `█`, the
+  action line reads `code 2/5` with `↑↓ part · ← back`; ↑/↓ move between
+  segments and stop at the edges; `c` copies the segment (`copy_text_for`: code
+  without fences). **←**/**Esc** return to the whole answer. **→** on a single
+  message only flashes "single block". A click selects a split answer whole;
+  a click on the already-selected answer selects the segment under the cursor.
 
 An **action line** sits above the input with a blank pad row above it
 (`ActionBar.set_top_pad`): an `ActionBar` mounted permanently in the workspace

@@ -214,3 +214,17 @@ def test_conversation_import_rejects_invalid_json(tmp_path):
     asyncio.run(conversation_import(ui, [str(filename)]))
 
     assert "Invalid JSON file" in ui.chat_history_panel.messages[-1].text
+
+
+def test_import_splits_answers_like_live_ones(tmp_path):
+    from pico_chat.ui.chat_history_panel import ChatHistoryPanel
+    from pico_chat.ui.commands.conversation import _rebuild_ui_from_history
+
+    ui = FakeUI()
+    ui.chat_history_panel = ChatHistoryPanel()
+    _rebuild_ui_from_history(ui, [
+        {"id": "u", "role": "user", "content": "q"},
+        {"id": "a", "role": "assistant", "content": "Text\n\n```\ncode\n```"},
+    ])
+    kinds = [m.segment_kind for m in ui.chat_history_panel.messages if m.group is not None]
+    assert kinds == ["text", "code"]

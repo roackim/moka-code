@@ -52,6 +52,9 @@ async def process_generation(app, user_input, user_msg) -> None:
     # response's content must land in this one message rather than being sliced
     # around the tool line. Reset at each ``Start(assistant)``.
     response_text_msg = None
+    # Every answer message of this generation, split into prose / code /
+    # table segments once complete (see ``ChatHistoryPanel.split_answer``).
+    answer_msgs = []
     current_harness_ids = []
     natural_done = False
     aborted_status = "cancelled"
@@ -180,6 +183,7 @@ async def process_generation(app, user_input, user_msg) -> None:
                         response_text_msg = chat.add_message(
                             "", msg_type=PicoMsg(), harness_message_ids=current_harness_ids
                         )
+                        answer_msgs.append(response_text_msg)
                     current_msg = response_text_msg
                     current_msg_type = PicoMsg
                     begin_text_message(current_msg)
@@ -410,3 +414,8 @@ async def process_generation(app, user_input, user_msg) -> None:
             end_status_message()
             if smoothing:
                 app.disengage_stream()
+        # Complete answers split now; one still revealing splits when the
+        # frame callback finalizes it (``chatTUI._finalize_stream``).
+        for answer in answer_msgs:
+            if answer.finalized:
+                chat.split_answer(answer)

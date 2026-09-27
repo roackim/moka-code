@@ -110,7 +110,11 @@ async def conversation_import(ui: ChatUIProtocol, args: List[str]):
                 )
             ui.switch_role(role)
 
-        ui.agent.history = history
+        load = getattr(ui.agent, "load_history", None)
+        if callable(load):
+            load(history)  # also starts the conversation's cost over
+        else:
+            ui.agent.history = history
         ui.chat_history_panel.clear()
         _rebuild_ui_from_history(ui, history)
         if hasattr(ui, "refresh_status_bar"):
@@ -130,6 +134,15 @@ async def conversation_import(ui: ChatUIProtocol, args: List[str]):
     except Exception as exc:
         ui.chat_history_panel.add_message(
             f"Import failed: {exc}", msg_type=SysMsgError(), title="conversation")
+
+
+def _add_answer(ui: ChatUIProtocol, text: str, ids) -> None:
+    """Add a restored answer, split into segments like a live one."""
+    answer = ui.chat_history_panel.add_message(text, msg_type=PicoMsg(), harness_message_ids=ids)
+    answer.finalize()
+    split = getattr(ui.chat_history_panel, "split_answer", None)
+    if callable(split):
+        split(answer)
 
 
 def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
@@ -159,8 +172,7 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
                     think.set_collapsed(True)
                     think.finalize()
                 if content:
-                    ui.chat_history_panel.add_message(
-                        content, msg_type=PicoMsg(), harness_message_ids=ids)
+                    _add_answer(ui, content, ids)
             else:
                 # Older exports (or preserve_reasoning_traces): reasoning is
                 # inline in content as thinking tags. Split it with the same
@@ -188,11 +200,9 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
                         think.set_collapsed(True)
                         think.finalize()
                     else:
-                        ui.chat_history_panel.add_message(
-                            segment.text, msg_type=PicoMsg(), harness_message_ids=ids)
+                        _add_answer(ui, segment.text, ids)
                 if not segments and content:
-                    ui.chat_history_panel.add_message(
-                        content, msg_type=PicoMsg(), harness_message_ids=ids)
+                    _add_answer(ui, content, ids)
             for tool_call in message.get("tool_calls", []):
                 if not isinstance(tool_call, dict) or "function" not in tool_call:
                     continue

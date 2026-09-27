@@ -801,7 +801,9 @@ class Markdown:
         # preserving the table's carefully aligned spacing.
         style_cfg = _get_style("table") if "table" in pico_cfg.config.markdown_styles else _get_style("paragraph")
         result: List[List[StyledSegment]] = []
-        for line in table_str.split("\n"):
+        # AsciiTable output starts with a newline; markdown's own blank lines
+        # already separate a table from its neighbours.
+        for line in table_str.strip("\n").split("\n"):
             if line.strip():
                 result.append([StyledSegment(line, code_block=True, **style_cfg)])
             else:

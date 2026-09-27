@@ -68,6 +68,9 @@ class Harness:
         self.startup_warnings: list[str] = []
         # (tool name, task) while a tool runs; see _abort_tool_calls.
         self._running_tool = None
+        # USD spent on this conversation, when the provider reports costs
+        # (None until one does, so local servers show nothing).
+        self.conversation_cost: Optional[float] = None
         self.project_context = build_harness_context(self.workspace)
         self.debug_stream.log("CONTEXT", "Project context built")
         # Cache for the @ file picker listing (invalidated on workspace change).
@@ -369,9 +372,22 @@ class Harness:
     def get_state(self) -> AgentState:
         return self.state
 
+    def _add_cost(self, usage: Optional[TokenUsage]) -> None:
+        """Add a request's reported cost to the conversation total."""
+        cost = getattr(usage, "cost", None)
+        if cost is not None:
+            self.conversation_cost = (getattr(self, "conversation_cost", None) or 0.0) + cost
+
+    def load_history(self, history: List[Dict[str, Any]]) -> None:
+        """Replace the conversation (``/import``); its cost starts over."""
+        self.history = history
+        self._last_usage = None
+        self.conversation_cost = None
+
     def clear_history(self):
         """Clear the conversation history for the agent."""
         self.history = []
+        self.conversation_cost = None
         # Drop the provider-reported usage so the status bar no longer shows
         # the previous conversation's accumulated context after /clear.
         self._last_usage = None
@@ -484,6 +500,7 @@ class Harness:
             tools=None,
             stream=False,
         ):
+            self._add_cost(usage_from_response(response))
             if not response.choices:
                 continue
             message = response.choices[0].message
@@ -624,6 +641,7 @@ class Harness:
 
         chunk_count = 0
         empty_chunks = 0
+        stream_usage: Optional[TokenUsage] = None
         async for chunk in self.endpoint.create_completion(messages, tools=self.tool_schemas, stream=True):
             chunk_count += 1
 
@@ -631,6 +649,7 @@ class Harness:
             if usage is not None:
                 metrics.set_usage(usage)
                 self._last_usage = usage
+                stream_usage = usage
 
             if not chunk.choices:
                 empty_chunks += 1
@@ -760,6 +779,9 @@ class Harness:
                             name=draft_name,
                             args=draft_args,
                         )
+
+        # One request, one cost: the last usage the stream reported.
+        self._add_cost(stream_usage)
 
         # Flush any remaining content buffer at end of stream
         for segment in parser.flush():

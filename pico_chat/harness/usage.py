@@ -15,6 +15,8 @@ class TokenUsage:
     total_tokens: int | None = None
     reasoning_tokens: int | None = None
     cached_prompt_tokens: int | None = None
+    # Price of the request in USD, when the provider reports it (OpenRouter).
+    cost: float | None = None
     raw: Any = None
 
     @property
@@ -55,6 +57,9 @@ def normalize_usage(value: Any) -> TokenUsage | None:
     details = _value(value, "completion_tokens_details", "prompt_tokens_details")
     reasoning = _value(details, "reasoning_tokens", "reasoning_token_count")
     cached = _value(details, "cached_tokens", "cache_read_input_tokens")
+    cost = _value(value, "cost")
+    if isinstance(cost, bool) or not isinstance(cost, (int, float)):
+        cost = None
 
     usage = TokenUsage(
         prompt_tokens=prompt,
@@ -62,6 +67,7 @@ def normalize_usage(value: Any) -> TokenUsage | None:
         total_tokens=total,
         reasoning_tokens=reasoning,
         cached_prompt_tokens=cached,
+        cost=cost,
         raw=value,
     )
     return None if usage.is_empty else usage
