@@ -558,6 +558,9 @@ class ChatHistoryPanel(TextComponent):
         # Clear background first (to prevent artifacts from previous frames/scrolls)
         buffer.fill(self.x, self.y, self.width, self.height, " ", bg=theme.get_bg())
 
+        if not self.messages and pico_cfg.config.ui_show_banner:
+            self._render_banner(buffer)
+
         # Virtual layout: (starts, ends, total). O(messages), no per-row map.
         starts, ends, total_height = self._row_index()
 
@@ -629,6 +632,24 @@ class ChatHistoryPanel(TextComponent):
         # Clear clipping region
         if hasattr(buffer, 'clear_clip'):
             buffer.clear_clip()
+
+    def _render_banner(self, buffer: Buffer) -> None:
+        """The moka art, centered in the empty transcript (see ``ui/banner.py``)."""
+        from pico_chat.ui.banner import banner_lines
+        from pico_chat.ui.tui.layout_utils import display_width
+
+        lines = banner_lines(self.width)
+        if not lines or len(lines) > self.height:
+            return
+        art_width = max(display_width(line) for line in lines)
+        left = self.x + (self.width - art_width) // 2
+        top = self.y + (self.height - len(lines)) // 2
+        # Plain text color, like the transcript's own text.
+        fg, bg = theme.DEFAULT, theme.get_bg()
+        for row, line in enumerate(lines):
+            for col, char in enumerate(line):
+                if char != " ":
+                    buffer.write_str(left + col, top + row, char, fg=fg, bg=bg, max_width=1)
 
     def handle_input(self, event: Any) -> bool:
         """Handle mouse wheel for scrolling and keyboard navigation."""

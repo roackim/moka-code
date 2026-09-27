@@ -35,6 +35,15 @@ panel, queue, worker, and conversation-local tool/permission state. Slash
 commands use one application-level worker and remain responsive while
 conversation generation is running.
 
+## Startup banner (`ui/banner.py`)
+
+An empty transcript shows the moka art (letters + cup), centered and drawn by
+`ChatHistoryPanel._render_banner` — not a message, so it never enters history
+or exports; it disappears with the first message and returns after `/clear`.
+`banner_lines(width)` degrades: letters + cup (70 cols), letters only (46), the
+plain name, nothing. It is drawn in the normal text color (`theme.DEFAULT`).
+`show_banner = false` in `ui.toml` turns it off.
+
 ## Status Bar
 
 The chat workspace includes a one-line `StatusBar`. Its visible fields and
