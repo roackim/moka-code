@@ -64,3 +64,10 @@ def test_hard_break_counts_emoji_clusters():
 
     assert all(display_width(line) <= 40 for line in rendered)
     assert sum(display_width(line) for line in rendered) == 80
+
+
+def test_header_marker_matches_the_source_level():
+    for level in range(1, 7):
+        src = "#" * level + " Title"
+        (line,) = Markdown().parse(src)
+        assert "".join(seg.text for seg in line) == src

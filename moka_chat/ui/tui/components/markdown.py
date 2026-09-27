@@ -782,8 +782,8 @@ class Markdown:
         return [[]]
 
     def _header_marker(self, level: int) -> str:
-        markers = ["", "## ", "### ", "#### ", "##### ", "###### ", "####### "]
-        return markers[level] if level < len(markers) else ""
+        """The source's own ``#`` run, so the level reads as written."""
+        return "#" * level + " "
 
     def _render_table(self, table_blocks: List[TableLine]) -> List[List[StyledSegment]]:
         """Render a group of TableLine blocks as an ASCII table.

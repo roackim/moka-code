@@ -1,6 +1,6 @@
 """Reasoning is persisted in history and only re-sent when configured.
 
-``preserve_reasoning_traces`` used to control whether reasoning was *stored*;
+``preserve_reasoning`` (servers.toml, per server or model) controls only whether earlier turns' reasoning is re-sent;
 it now controls only whether stored reasoning is folded back into the request
 so the model sees its prior chain-of-thought.
 """
@@ -28,7 +28,6 @@ def _harness():
 
 
 def test_chat_stores_reasoning_verbatim_in_history(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
     with patch(
         "moka_chat.harness.harness.get_active_endpoint",
         return_value=Endpoint(name="test", type="llamacpp"),
@@ -72,7 +71,6 @@ def test_openrouter_streamed_reasoning_reaches_history(tmp_path, monkeypatch):
     """The whole pipe: adapter → harness → history entry."""
     from moka_chat.harness.endpoint_openai import _adapt_stream_chunk
 
-    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
     with patch(
         "moka_chat.harness.harness.get_active_endpoint",
         return_value=Endpoint(name="test", type="openrouter"),
@@ -101,32 +99,86 @@ def test_openrouter_streamed_reasoning_reaches_history(tmp_path, monkeypatch):
     assert assistant[0]["content"] == "answer"
 
 
-def test_api_message_drops_reasoning_by_default(monkeypatch):
-    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
+def test_api_message_sends_only_api_fields():
     entry = {
-        "id": "a1", "role": "assistant", "content": "answer",
+        "id": "a1", "role": "assistant", "content": "answer", "source": "x",
         "reasoning": "a deep thought", "reasoning_tag": "<think>",
+        "reasoning_details": [{"type": "reasoning.text", "text": "t"}],
     }
 
-    api = _harness()._to_api_message(entry)
-
-    assert api["content"] == "answer"
-    assert "reasoning" not in api
-    assert "reasoning_tag" not in api
-
-
-def test_api_message_folds_reasoning_when_enabled(monkeypatch):
-    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", True)
-    entry = {
-        "id": "a1", "role": "assistant", "content": "answer",
-        "reasoning": "a deep thought", "reasoning_tag": "<think>",
+    assert _harness()._to_api_message(entry) == {"role": "assistant", "content": "answer"}
+    assert _harness()._to_api_message(entry, keep_reasoning=True) == {
+        "role": "assistant", "content": "answer", "reasoning": "a deep thought",
+        "reasoning_details": [{"type": "reasoning.text", "text": "t"}],
     }
 
-    api = _harness()._to_api_message(entry)
 
-    assert "<think>\na deep thought\n</think>" in api["content"]
-    assert api["content"].rstrip().endswith("answer")
-    assert "reasoning" not in api
+def _history_with_two_turns(preserve):
+    harness = _harness()
+    harness.endpoint = Endpoint(name="t", type="llamacpp", preserve_reasoning=preserve)
+    harness.history = [
+        {"id": "u1", "role": "user", "content": "first"},
+        {"id": "a1", "role": "assistant", "content": "old answer", "reasoning": "old thought"},
+        {"id": "u2", "role": "user", "content": "second"},
+        {"id": "a2", "role": "assistant", "content": None, "reasoning": "why I call",
+         "tool_calls": [{"id": "c1", "type": "function",
+                         "function": {"name": "read", "arguments": "{}"}}]},
+        {"id": "t1", "role": "tool", "content": "result", "tool_call_id": "c1"},
+        {"id": "u3", "role": "user", "content": "[images returned by read: a.png]",
+         "images": [], "source": "tool"},
+    ]
+    return harness
+
+
+def test_current_turn_reasoning_is_always_sent_back():
+    api = _history_with_two_turns(preserve=False)._api_history()
+
+    assert "reasoning" not in api[1]                  # an earlier turn
+    assert api[3]["reasoning"] == "why I call"        # the tool loop in progress
+    assert all("id" not in m and "source" not in m for m in api)
+
+
+def test_preserve_sends_every_turns_reasoning():
+    api = _history_with_two_turns(preserve=True)._api_history()
+
+    assert api[1]["reasoning"] == "old thought"
+    assert api[3]["reasoning"] == "why I call"
+
+
+def test_each_server_gets_reasoning_in_its_own_field():
+    from moka_chat.harness.endpoint_ollama import ollama_messages
+    from moka_chat.harness.endpoint_openai import outgoing_messages
+
+    details = [{"type": "reasoning.encrypted", "data": "xyz", "index": 0}]
+    plain = {"role": "assistant", "content": "a", "reasoning": "r"}
+    rich = {**plain, "reasoning_details": details}
+
+    assert outgoing_messages("llamacpp", [rich]) == [
+        {"role": "assistant", "content": "a", "reasoning_content": "r"}]
+    assert outgoing_messages("openrouter", [rich]) == [
+        {"role": "assistant", "content": "a", "reasoning_details": details}]
+    assert outgoing_messages("openrouter", [plain]) == [
+        {"role": "assistant", "content": "a", "reasoning": "r"}]
+    assert outgoing_messages("openai", [rich]) == [{"role": "assistant", "content": "a"}]
+    assert ollama_messages([rich]) == [{"role": "assistant", "content": "a", "thinking": "r"}]
+
+
+def test_streamed_reasoning_details_are_rebuilt_per_block():
+    from moka_chat.harness.endpoint_openai import merge_reasoning_details
+
+    blocks = []
+    merge_reasoning_details(blocks, [{"type": "reasoning.text", "text": "Let ", "index": 0,
+                                      "format": "anthropic-claude-v1", "signature": None}])
+    merge_reasoning_details(blocks, [{"type": "reasoning.text", "text": "me see", "index": 0}])
+    merge_reasoning_details(blocks, [{"type": "reasoning.text", "text": "", "index": 0,
+                                      "signature": "sig"}])
+    merge_reasoning_details(blocks, [{"type": "reasoning.encrypted", "data": "xyz", "index": 1}])
+
+    assert blocks == [
+        {"type": "reasoning.text", "text": "Let me see", "index": 0,
+         "format": "anthropic-claude-v1", "signature": "sig"},
+        {"type": "reasoning.encrypted", "data": "xyz", "index": 1},
+    ]
 
 
 def test_tool_calls_are_sent_back_with_their_results(tmp_path, monkeypatch):
@@ -137,7 +189,6 @@ def test_tool_calls_are_sent_back_with_their_results(tmp_path, monkeypatch):
     """
     from moka_chat.harness.roles import Role
 
-    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
     (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
     with patch(
         "moka_chat.harness.harness.get_active_endpoint",
@@ -174,3 +225,61 @@ def test_tool_calls_are_sent_back_with_their_results(tmp_path, monkeypatch):
     assert caller["role"] == "assistant"
     assert [tc["id"] for tc in caller["tool_calls"]] == [tool_msg["tool_call_id"]]
     assert caller["tool_calls"][0]["function"]["arguments"] == '{"path": "a.txt"}'
+
+
+def test_tool_loop_request_carries_the_reasoning_behind_the_call(tmp_path, monkeypatch):
+    from moka_chat.harness.roles import Role
+
+    (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
+    with patch("moka_chat.harness.harness.get_active_endpoint",
+               return_value=Endpoint(name="test", type="llamacpp")):
+        harness = Harness(workspace_path=str(tmp_path))
+    harness.set_role(Role(name="t", tools={"read": "yes"}))
+    call = SimpleNamespace(index=0, id="call_1",
+                           function=SimpleNamespace(name="read", arguments='{"path": "a.txt"}'))
+    details = [{"type": "reasoning.text", "text": "need the file", "index": 0}]
+    requests = []
+
+    async def fake_completion(messages, tools=None, stream=True):
+        requests.append([dict(m) for m in messages])
+        if len(requests) == 1:
+            delta = SimpleNamespace(content=None, reasoning_content="need the file",
+                                    reasoning_details=details, tool_calls=[call])
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=None)], usage=None)
+        else:
+            yield _chunk(content="done")
+        yield _chunk(finish="stop")
+
+    harness.endpoint.create_completion = fake_completion
+
+    async def drain():
+        return [event async for event in harness.chat("read it")]
+
+    asyncio.run(drain())
+
+    caller = next(m for m in requests[1] if m.get("tool_calls"))
+    assert caller["reasoning"] == "need the file"
+    assert caller["reasoning_details"] == details
+    stored = next(m for m in harness.history if m.get("tool_calls"))
+    assert stored["reasoning_details"] == details
+
+
+def test_preserve_reasoning_defaults_true_and_a_model_table_overrides_it():
+    server = Endpoint(name="or", type="openrouter", model="a/one",
+                      models={"a/one": {}, "a/two": {"preserve_reasoning": False}})
+    assert server.preserves_reasoning() is True           # absent → true
+    server.set_model("a/two")
+    assert server.preserves_reasoning() is False          # model override
+    off = Endpoint.from_dict("local", {"type": "llamacpp", "preserve_reasoning": False})
+    assert off.preserves_reasoning() is False
+
+
+def test_preserve_reasoning_is_validated(tmp_path):
+    from moka_chat.settings import Config
+
+    (tmp_path / "servers.toml").write_text(
+        '[servers.or]\ntype = "openrouter"\npreserve_reasoning = "yes"\n'
+        '[servers.or.models."a/b"]\npreserve_reasoning = false\n')
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+    assert any("preserve_reasoning must be true or false" in e for e in config.load_errors)
+    assert not any("unknown key" in e for e in config.load_errors)

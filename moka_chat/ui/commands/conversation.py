@@ -182,7 +182,7 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
                 if content:
                     _add_answer(ui, content, ids)
             else:
-                # Older exports (or preserve_reasoning_traces): reasoning is
+                # Older exports: reasoning is
                 # inline in content as thinking tags. Split it with the same
                 # parser the harness uses so it renders as a ThinkingMsg.
                 parser = ThinkingTagParser()

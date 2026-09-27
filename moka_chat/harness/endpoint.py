@@ -202,6 +202,7 @@ class Endpoint:
         retry_delay: float = 2.0,
         providers: Optional[list[str]] = None,
         models: Optional[dict[str, dict[str, Any]]] = None,
+        preserve_reasoning: bool = True,
     ):
         self.name = name
         self.type: ServerType = type
@@ -216,6 +217,8 @@ class Endpoint:
         # order) and one entry per enabled model, which may override it.
         self.providers = list(providers) if providers is not None else None
         self.models = {model_id: dict(entry) for model_id, entry in (models or {}).items()}
+        # Re-send earlier turns' reasoning (a model table may override it).
+        self.preserve_reasoning = preserve_reasoning
 
         # .local hosts are rewritten to a routable IP. Resolution can block for
         # seconds on an offline mDNS host, so it is kicked off in the background
@@ -260,6 +263,7 @@ class Endpoint:
             retry_delay=data.get("retry_delay", 2.0),
             providers=data.get("providers"),
             models=data.get("models"),
+            preserve_reasoning=data.get("preserve_reasoning", True),
         )
 
     @property
@@ -533,6 +537,16 @@ class Endpoint:
             if model_name.endswith("/" + model_id):
                 return entry
         return None
+
+    def preserves_reasoning(self) -> bool:
+        """Whether earlier turns' reasoning is re-sent to the current model:
+        its model table's ``preserve_reasoning``, else the server's (default
+        true)."""
+        model_name = self._cached_model_name or self._selected_model
+        entry = self._model_entry(model_name) if model_name else None
+        if entry is not None and "preserve_reasoning" in entry:
+            return entry["preserve_reasoning"]
+        return self.preserve_reasoning
 
     def _provider_spec(self, model_name: str) -> Optional[dict]:
         """Build the OpenRouter ``provider`` payload for a model.

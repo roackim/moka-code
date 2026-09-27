@@ -15,7 +15,8 @@ from moka_chat.harness.elision import elide
 from moka_chat.harness import events, images
 from moka_chat.harness.endpoint import Endpoint, get_active_endpoint
 from moka_chat.harness.permissions import PermissionGate
-from moka_chat.harness.thinking_parser import ThinkingTagParser, MetricsState, THINKING_TAGS
+from moka_chat.harness.thinking_parser import ThinkingTagParser, MetricsState
+from moka_chat.harness.endpoint_openai import merge_reasoning_details
 from moka_chat.harness.usage import TokenUsage, usage_from_response
 
 # Import the minimal toolset
@@ -32,6 +33,9 @@ logger = logging.getLogger(__name__)
 
 
 COMPACTION_MARKER_PREFIX = "[COMPACTION_SUMMARY]"
+
+# Fields of a history entry that are sent to the model (see ``_to_api_message``).
+_API_FIELDS = ("role", "content", "tool_calls", "tool_call_id")
 
 # Minimum wall-clock seconds between live ``ToolCallDraft`` updates for one
 # call. The first named chunk always emits; later updates are time-throttled so
@@ -84,13 +88,10 @@ class Harness:
         self._last_usage: Optional[TokenUsage] = None
         self.debug_stream.log("INIT", f"Server initialized: {self.endpoint.name} ({self.endpoint.type}) at {self.endpoint.base_url}")
 
-        # Steering / pause state
-        # Updated live on every Thinking chunk so the UI can snapshot it.
+        # Reasoning of the response being streamed: text, and OpenRouter's
+        # structured blocks (sent back unmodified, see ``_to_api_message``).
         self._current_reasoning: str = ""
-        # Set before a generation starts to prefill the assistant thinking block.
-        self._pending_thinking_prefill: Optional[str] = None
-        # Tracks which open tag the last generation actually used.
-        self._last_detected_thinking_tag: Optional[str] = None
+        self._current_reasoning_details: List[Dict[str, Any]] = []
 
     def set_role(self, role) -> None:
         """Apply a role to this conversation before its next turn."""
@@ -234,35 +235,41 @@ class Harness:
             return self.history
         return self.history[last_compaction_idx:]
 
-    @staticmethod
-    def _reasoning_tag_pair(tag: Optional[str]) -> Tuple[str, str]:
-        """Resolve a stored reasoning tag to its ``(open, close)`` pair."""
-        for open_tag, close_tag in THINKING_TAGS:
-            if open_tag == tag:
-                return open_tag, close_tag
-        return THINKING_TAGS[0]
-
-    def _to_api_message(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+    def _to_api_message(self, entry: Dict[str, Any], keep_reasoning: bool = False) -> Dict[str, Any]:
         """Project a stored history entry onto the API message shape.
 
-        Stored history keeps ``reasoning``/``reasoning_tag`` for persistence and
-        the transcript; they are not valid API fields. Image references
-        (``images``) become content parts, encoded only here. When
-        ``preserve_reasoning_traces`` is enabled the reasoning is folded back
-        into ``content`` using the model's own thinking tag so the model sees
-        its prior chain-of-thought.
+        Only API fields leave (``_API_FIELDS``; moka's ``id``, ``source`` and
+        image references stay home). Image references become content parts,
+        encoded only here. With ``keep_reasoning`` an assistant entry carries
+        its reasoning under the neutral ``reasoning`` / ``reasoning_details``
+        keys; each endpoint moves them to its own field
+        (``endpoint_openai.outgoing_messages``, ``endpoint_ollama``).
         """
-        from moka_chat import settings
-
-        msg = {key: value for key, value in entry.items()
-               if key not in ("reasoning", "reasoning_tag", "images", "source")}
-        reasoning = entry.get("reasoning")
-        if reasoning and settings.config.preserve_reasoning_traces:
-            open_tag, close_tag = self._reasoning_tag_pair(entry.get("reasoning_tag"))
-            msg["content"] = f"{open_tag}\n{reasoning}\n{close_tag}\n\n{msg.get('content') or ''}"
+        msg = {key: entry[key] for key in _API_FIELDS if key in entry}
         if entry.get("images"):
             msg["content"] = images.api_content(msg.get("content"), entry["images"])
+        if keep_reasoning and entry.get("role") == "assistant":
+            if entry.get("reasoning"):
+                msg["reasoning"] = entry["reasoning"]
+            if entry.get("reasoning_details"):
+                msg["reasoning_details"] = entry["reasoning_details"]
         return msg
+
+    def _api_history(self) -> List[Dict[str, Any]]:
+        """The effective history as API messages.
+
+        Reasoning goes back for the current turn — every assistant message
+        since the last user message, i.e. the tool loop in progress, which
+        continues from it — and for earlier turns when the server/model has
+        ``preserve_reasoning`` (default true; more context, better continuity
+        where the server keeps it, e.g. llama.cpp ``--reasoning-preserve``).
+        """
+        history = self._get_effective_history()
+        last_user = max((i for i, m in enumerate(history)
+                         if m.get("role") == "user" and m.get("source") != "tool"), default=-1)
+        keep_all = self.endpoint.preserves_reasoning()
+        return [self._to_api_message(m, keep_reasoning=keep_all or i > last_user)
+                for i, m in enumerate(history)]
 
     def _get_tool_output(self, ref: str) -> Optional[str]:
         """
@@ -308,15 +315,6 @@ class Harness:
     def set_user_response(self, text: str):
         """Called by the UI when a response to a tool's prompt is ready."""
         self._permission_gate.set_user_response(text)
-
-    def set_thinking_prefill(self, content: str):
-        """Queue content to be prepended as the assistant <thinking> prefix on
-        the next LLM call.  Subsequent calls overwrite any pending prefill."""
-        self._pending_thinking_prefill = content
-
-    def get_current_reasoning(self) -> str:
-        """Return the reasoning accumulated so far in the active generation."""
-        return self._current_reasoning
 
     def _abort_tool_calls(self, tool_calls_list: List[Dict[str, Any]]) -> None:
         """Clean up after a turn stopped during tool execution.
@@ -556,15 +554,7 @@ class Harness:
         user_msg_id = self._add_message_to_history("user", user_input, **extra)
         self._last_user_message_id = user_msg_id
 
-        messages = self._system_messages()
-        messages.extend(self._to_api_message(m) for m in self._get_effective_history())
-        # Log how much reasoning context is in history
-        think_msgs = [m for m in messages if isinstance(m.get('content'), str) and '<think>' in m.get('content', '')]
-        if think_msgs:
-            logger.info(f"[reasoning] {len(think_msgs)} message(s) in history contain <think> blocks")
-        else:
-            logger.debug("[reasoning] No <think> blocks in history messages")
-        return messages
+        return self._system_messages() + self._api_history()
 
     async def get_current_context(self) -> List[Dict[str, Any]]:
         """Get the current conversation context (system + history) without modifying state.
@@ -572,9 +562,7 @@ class Harness:
         Returns the exact message list that would be sent to the LLM.
         Useful for debugging and inspecting what the model sees.
         """
-        messages = self._system_messages()
-        messages.extend(self._to_api_message(m) for m in self._get_effective_history())
-        return messages
+        return self._system_messages() + self._api_history()
 
     async def get_system_prompt(self) -> str:
         """Return the exact system prompt that would be sent on the next turn.
@@ -615,8 +603,8 @@ class Harness:
         later, in execution order, by ``_execute_tool_calls`` so a pending
         permission prompt blocks every subsequent tool call.
 
-        Sets: self._last_full_content, _last_full_reasoning, _last_tool_calls,
-              _last_detected_thinking_tag.
+        Sets: self._last_full_content, _last_full_reasoning,
+              _last_reasoning_details, _last_tool_calls.
         """
         from moka_chat import settings
 
@@ -642,6 +630,7 @@ class Harness:
 
         # Reset live reasoning accumulator for this generation
         self._current_reasoning = ""
+        self._current_reasoning_details = []
 
         metrics_interval = settings.config.ui_metrics_refresh_interval
 
@@ -691,6 +680,8 @@ class Harness:
             delta = chunk.choices[0].delta
 
             # 1. Handle Reasoning (DeepSeek/R1 style — reasoning_content API field)
+            merge_reasoning_details(self._current_reasoning_details,
+                                    getattr(delta, "reasoning_details", None))
             reasoning = getattr(delta, "reasoning_content", None)
             if reasoning:
                 if self.state != AgentState.THINKING:
@@ -832,7 +823,7 @@ class Harness:
         # Store results for caller
         self._last_full_content = full_content
         self._last_full_reasoning = full_reasoning
-        self._last_detected_thinking_tag = parser.detected_open_tag  # None = reasoning_content API path
+        self._last_reasoning_details = self._current_reasoning_details
         self._last_tool_calls = tool_calls_list
 
 
@@ -1187,37 +1178,19 @@ class Harness:
                         if tool_call_id == "MISSING!":
                             logger.error("Tool message is missing tool_call_id - this will cause API errors!")
                 
-                # Inject pending thinking prefill: append a partial assistant message
-                # so the model continues thinking from the steered/resumed position.
-                prefill_messages = list(messages)
-                if self._pending_thinking_prefill:
-                    # Use the same tag the model used last turn so the format is consistent.
-                    open_tag = self._last_detected_thinking_tag or THINKING_TAGS[0][0]
-                    prefill = self._pending_thinking_prefill
-                    if not prefill.endswith('\n'):
-                        prefill += '\n'
-                    prefill_content = f"{open_tag}\n{prefill}"
-                    prefill_messages = messages + [{"role": "assistant", "content": prefill_content}]
-                    logger.debug(f"Injecting thinking prefill ({len(prefill)} chars)")
-                    self._pending_thinking_prefill = None
-
                 # Stream LLM response
-                async for chunk in self._stream_llm_response(prefill_messages):
+                async for chunk in self._stream_llm_response(messages):
                     yield chunk
                 
                 # Collect results from instance variables
                 full_content = self._last_full_content
                 full_reasoning = self._last_full_reasoning
                 tool_calls_list = self._last_tool_calls
-                # Tag the model actually used (None for reasoning_content field path)
-                detected_tag = getattr(self, '_last_detected_thinking_tag', None)
                 
                 logger.debug(f"LLM response complete. Content length: {len(full_content) if full_content else 0}, Reasoning length: {len(full_reasoning) if full_reasoning else 0}, Tool calls: {len(tool_calls_list) if tool_calls_list else 0}")
                 
-                # Persist the raw reasoning separately so export/import and the
-                # transcript never lose it. ``preserve_reasoning_traces`` now
-                # only controls whether it is folded back into the request sent
-                # to the model (see ``_to_api_message``), not whether it is kept.
+                # Reasoning is always stored (export/import, transcript); what
+                # goes back to the model is decided by ``_api_history``.
                 msg = {
                     "id": assistant_msg_id,
                     "role": "assistant",
@@ -1229,15 +1202,14 @@ class Harness:
                     msg["tool_calls"] = tool_calls_list
                 if full_reasoning:
                     msg["reasoning"] = full_reasoning
-                    if detected_tag:
-                        msg["reasoning_tag"] = detected_tag
-                    logger.info(f"[reasoning] Stored {len(full_reasoning)} chars of reasoning in history (tag={detected_tag!r})")
+                if self._last_reasoning_details:
+                    msg["reasoning_details"] = self._last_reasoning_details
                 self.history.append(msg)
                 self._last_assistant_message_id = assistant_msg_id
 
-                # The API message for this turn is projected from the stored
-                # entry (reasoning re-sent only when configured).
-                messages.append(self._to_api_message(msg))
+                # This turn continues (tool results follow): its reasoning goes
+                # back with it.
+                messages.append(self._to_api_message(msg, keep_reasoning=True))
                 
                 # If no tools, we're done
                 if not tool_calls_list:

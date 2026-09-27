@@ -227,6 +227,8 @@ single-concern files:
 - `ui.toml` — theme, padding, metrics, fps (flat keys).
 - `context.toml` — context building (flat keys).
 - `debug.toml` — debug logging (flat keys).
+- `servers.toml` — `preserve_reasoning = false` on a server (or an OpenRouter
+  model table) stops re-sending earlier turns' reasoning; absent means true.
 - `styles.toml` — `[markdown_styles.*]` / `[syntax_highlight.*]` overrides
   (`fg`/`bg` as hex or a theme color name like `"MUTED"`; `bold`, `italic`,
   `underline`).

@@ -63,6 +63,59 @@ def _extract_reasoning(data: Dict[str, Any]) -> Optional[str]:
     return reasoning
 
 
+def merge_reasoning_details(blocks: list, pieces: Any) -> None:
+    """Fold streamed OpenRouter ``reasoning_details`` pieces into ``blocks``.
+
+    Pieces sharing an ``index`` are one block: their ``text``/``summary``/
+    ``data`` strings concatenate and later non-null fields (``signature``,
+    ``id``, ``format``) fill in, rebuilding the blocks as the model produced
+    them — they must be sent back unmodified.
+    """
+    if not isinstance(pieces, list):
+        return
+    for piece in pieces:
+        if not isinstance(piece, dict):
+            continue
+        index = piece.get("index")
+        block = next((b for b in blocks if index is not None and b.get("index") == index), None)
+        if block is None:
+            blocks.append(dict(piece))
+            continue
+        for key, value in piece.items():
+            if key in ("text", "summary", "data") and isinstance(value, str):
+                block[key] = (block.get(key) or "") + value
+            elif value is not None:
+                block[key] = value
+
+
+def outgoing_messages(server_type: str, messages: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    """Put reasoning sent back to the model in this server's own field.
+
+    History-built messages carry it under neutral ``reasoning`` (text) and
+    ``reasoning_details`` (OpenRouter blocks) keys: llama.cpp reads
+    ``reasoning_content``; OpenRouter takes ``reasoning_details`` unmodified
+    when the model produced them, else ``reasoning``; plain OpenAI Chat
+    Completions has no such field.
+    """
+    out = []
+    for message in messages:
+        if "reasoning" not in message and "reasoning_details" not in message:
+            out.append(message)
+            continue
+        message = dict(message)
+        text = message.pop("reasoning", None)
+        details = message.pop("reasoning_details", None)
+        if server_type == "llamacpp" and text:
+            message["reasoning_content"] = text
+        elif server_type == "openrouter":
+            if details:
+                message["reasoning_details"] = details
+            elif text:
+                message["reasoning"] = text
+        out.append(message)
+    return out
+
+
 def _adapt_stream_chunk(data: Dict[str, Any]) -> Any:
     """Adapt one streaming ``chat.completions`` SSE object to SDK chunk shape."""
     choice = None
@@ -75,6 +128,7 @@ def _adapt_stream_chunk(data: Dict[str, Any]) -> Any:
             delta=SimpleNamespace(
                 content=delta.get("content"),
                 reasoning_content=_extract_reasoning(delta),
+                reasoning_details=delta.get("reasoning_details"),
                 refusal=delta.get("refusal"),
                 tool_calls=_adapt_tool_calls(delta.get("tool_calls")),
             ),
@@ -93,6 +147,7 @@ def _adapt_message(message: Dict[str, Any]) -> SimpleNamespace:
         role=message.get("role"),
         content=message.get("content"),
         reasoning_content=_extract_reasoning(message),
+        reasoning_details=message.get("reasoning_details"),
         refusal=message.get("refusal"),
         tool_calls=_adapt_tool_calls(message.get("tool_calls")),
     )
@@ -151,7 +206,7 @@ async def create_completion(
     for attempt in range(max_retries):
         payload: Dict[str, Any] = {
             "model": model_name,
-            "messages": messages,
+            "messages": outgoing_messages(endpoint.type, messages),
             "stream": stream,
         }
         if tools:

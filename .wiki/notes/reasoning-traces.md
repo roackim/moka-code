@@ -2,13 +2,13 @@
 
 *How moka preserves model reasoning/thinking traces across turns, export and import.*
 
-> **Status**: Reasoning is **always stored** in history under the assistant entry's
-> `reasoning` field (with the open tag in `reasoning_tag`), so it survives
-> multi-turn context, `/export`, `/import` and the transcript — nothing is lost.
-> The `preserve_reasoning_traces` config flag (default: `off`) now controls only
-> whether that stored reasoning is folded back into the request sent to the
-> model as a `<think>...</think>` block; it no longer controls whether reasoning
-> is kept.
+> **Status**: Reasoning is **always stored** in history (the assistant entry's
+> `reasoning` text, plus OpenRouter's structured `reasoning_details` as
+> produced). What goes back to the model follows one rule (`_api_history`):
+> the **current turn's** reasoning (every assistant message since the last user
+> message — the tool loop in progress) is always sent; **earlier turns'** when
+> the server/model has `preserve_reasoning` (servers.toml, default true). It is
+> sent in each server's own reasoning field, never folded into `content`.
 
 ---
 
@@ -65,71 +65,71 @@ the call). Ordinary text is now emitted immediately.
 
 ## How the Assistant Message is Saved
 
-After the stream ends, the assistant message is saved to history with its raw
-reasoning kept in a dedicated field:
-
 ```python
 msg = {"id": assistant_msg_id, "role": "assistant", "content": full_content or None}
-if full_reasoning:
-    msg["reasoning"] = full_reasoning
-    if detected_tag:
-        msg["reasoning_tag"] = detected_tag   # e.g. "<think>"
 if tool_calls_list:
     msg["tool_calls"] = tool_calls_list
-self.history.append(msg)
+if full_reasoning:
+    msg["reasoning"] = full_reasoning
+if self._last_reasoning_details:          # OpenRouter blocks, as produced
+    msg["reasoning_details"] = self._last_reasoning_details
 ```
 
-`content` is always the raw answer; reasoning is never folded into it at write
-time, so it can be restored exactly.
+OpenRouter streams `reasoning_details` in pieces;
+`endpoint_openai.merge_reasoning_details` folds pieces sharing an `index` into
+one block (`text`/`summary`/`data` concatenate, `signature`/`id`/`format` fill
+in), rebuilding the blocks as the model produced them — OpenRouter requires
+them back **unmodified**.
 
 ---
 
 ## How History is Re-sent to the LLM
 
-On subsequent turns, `_build_messages()` projects each stored entry through
-`Harness._to_api_message()`, which strips `reasoning`/`reasoning_tag` (not valid
-API fields) and — only when `preserve_reasoning_traces` is enabled — folds the
-reasoning back into `content` using the model's own tag:
+`Harness._to_api_message(entry, keep_reasoning)` sends only `_API_FIELDS`
+(`role`, `content`, `tool_calls`, `tool_call_id`) — moka's `id`, `source`,
+`reasoning_tag` of old exports, image references never leave. With
+`keep_reasoning` an assistant message carries its reasoning under neutral
+`reasoning` / `reasoning_details` keys, which each endpoint moves to its field:
 
-```python
-messages = [system_msg]
-messages.extend(self._to_api_message(m) for m in self._get_effective_history())
+| Server (`type`) | Field sent | Source |
+|---|---|---|
+| `llamacpp` | `reasoning_content` | llama.cpp `common/chat.cpp` parses it from input messages; `--reasoning-preserve` (default on) + the chat template decide whether earlier turns reach the prompt |
+| `openrouter` | `reasoning_details` unmodified when the model produced them, else `reasoning` | OpenRouter reasoning docs; required across tool calls |
+| `ollama` | `thinking` | Ollama `/api/chat` message fields |
+| `openai` | none | Chat Completions has no such field |
 
-def _to_api_message(self, entry):
-    msg = {k: v for k, v in entry.items() if k not in ("reasoning", "reasoning_tag")}
-    reasoning = entry.get("reasoning")
-    if reasoning and settings.config.preserve_reasoning_traces:
-        open_tag, close_tag = self._reasoning_tag_pair(entry.get("reasoning_tag"))
-        msg["content"] = f"{open_tag}\n{reasoning}\n{close_tag}\n\n{msg.get('content') or ''}"
-    return msg
-```
+(`endpoint_openai.outgoing_messages`, `endpoint_ollama.ollama_messages`.)
 
-With the flag off (default), the model does not see prior chain-of-thought. With
-it on, each assistant message regains its reasoning inline.
+Which messages keep it (`Harness._api_history`): assistant messages after the
+last *user* message (a `source: "tool"` image entry does not count) always —
+the model continues that turn from its reasoning; the rest only when
+`Endpoint.preserves_reasoning()` is true. Inside `chat()` each new assistant turn is
+appended with `keep_reasoning=True` (it is by definition in the current turn).
+
+Removed (2026-09-28): folding reasoning into `content` as `<think>…</think>`
+(the model saw its old thoughts as answer text and servers could not treat them
+as reasoning), `reasoning_tag`, and the uncalled thinking-prefill injection.
 
 ---
 
 ## Configuration
 
-Enable in `~/.config/moka/context.toml`:
+`servers.toml`, per server and per OpenRouter model table (the model's value
+wins; absent means `true`; the template ships it commented):
 
 ```toml
-preserve_reasoning_traces = true
+[servers.local]
+type = "llamacpp"
+# preserve_reasoning = true           # llama.cpp also needs --reasoning-preserve
+
+[servers.openrouter.models."anthropic/claude-sonnet-4"]
+preserve_reasoning = false            # this model: current turn only
 ```
 
-The flag defaults to `false`; reasoning is still saved either way.
-
----
-
-## Impact Assessment
-
-| Scenario | Flag Off | Flag On |
-|---|---|---|
-| **Stored in history / export / import** | ✅ Always preserved | ✅ Always preserved |
-| **Visible in the transcript** | ✅ When reasoned (`▌ thought for Xs`) | ✅ When reasoned |
-| **Model sees prior CoT** | ❌ Not re-sent | ✅ Re-sent inline |
-| **Multi-turn, non-reasoning model** | No issue | No issue (no reasoning to preserve) |
-| **Tool-calling multi-step** | Reasoning kept in history for all steps | ✅ Reasoning between calls re-sent |
+On: more context per request (paid input tokens on OpenRouter), better
+continuity where the server/template keeps it. Off: only the current tool
+loop's reasoning goes back. The former `context.preserve_reasoning_traces`
+(global, default off) is retired and removed from `context.toml` on startup.
 
 ---
 

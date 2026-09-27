@@ -165,7 +165,6 @@ DEFAULT_CONTEXT_TOML = """\
 # max_files = 500
 # max_depth = 4
 # ignore_gitignore = false
-# preserve_reasoning_traces = false  # re-send prior reasoning to the model (always stored)
 # max_image_mb = 5                    # largest image a message can attach
 """
 
@@ -199,7 +198,11 @@ DEFAULT_SERVERS_TOML = """\
 # moka servers. One table per server; select a model with /model.
 # Every server needs a type: llamacpp, ollama, openrouter, openai.
 # Common keys: base_url, api_key (or api_key_env), model, max_context, timeout,
-# retry_attempts, retry_delay.
+# retry_attempts, retry_delay, preserve_reasoning.
+#
+# preserve_reasoning (default true): also re-send earlier turns' reasoning to
+# the model (more context, better continuity). The current turn's reasoning is
+# always sent. A model table's value overrides the server's.
 
 # llama.cpp -------------------------------------------------------------
 # [servers.local]
@@ -210,6 +213,7 @@ DEFAULT_SERVERS_TOML = """\
 # timeout = 30.0
 # retry_attempts = 3
 # retry_delay = 2.0
+# preserve_reasoning = true           # llama.cpp also needs --reasoning-preserve
 
 # Ollama ----------------------------------------------------------------
 # [servers.ollama]
@@ -218,6 +222,7 @@ DEFAULT_SERVERS_TOML = """\
 # api_key = "ollama"
 # model = "llama3.1:8b"               # optional; discover with /model
 # timeout = 30.0
+# preserve_reasoning = true
 
 # OpenRouter ------------------------------------------------------------
 # [servers.openrouter]
@@ -226,6 +231,7 @@ DEFAULT_SERVERS_TOML = """\
 # api_key_env = "OPENROUTER_API_KEY"  # read the key from the environment
 # providers = ["deepseek"]            # default routing for every model below:
 #                                     # only these, tried in this order
+# preserve_reasoning = true           # earlier reasoning costs input tokens
 #
 # One table per enabled model (the keys are what /model lists). Provider
 # values are slugs from the model's "Providers" tab on openrouter.ai.
@@ -234,6 +240,7 @@ DEFAULT_SERVERS_TOML = """\
 #
 # [servers.openrouter.models."anthropic/claude-sonnet-4"]
 #                                     # no providers: uses the server default
+# preserve_reasoning = false          # this model: current turn only
 # [servers.openrouter.models."qwen/qwen3-coder"]
 # providers = []                      # OpenRouter's own routing
 
@@ -322,7 +329,6 @@ _CONTEXT_SPEC: Dict[str, tuple[str, str]] = {
     "max_files": ("context_max_files", "int"),
     "max_depth": ("context_max_depth", "int"),
     "ignore_gitignore": ("context_ignore_gitignore", "bool"),
-    "preserve_reasoning_traces": ("preserve_reasoning_traces", "bool"),
     "max_image_mb": ("context_max_image_mb", "int_or_float"),
 }
 
@@ -334,7 +340,9 @@ _DEBUG_SPEC: Dict[str, tuple[str, str]] = {
 # cleaned up on startup. Add a key here when you delete it from its ``*_SPEC``
 # and ``DEFAULT_*_TOML`` (see "Adding or deprecating a config key" in AGENTS.md).
 _RETIRED_UI: set[str] = {"spinner_fps"}  # spinner replaced by elapsed-time labels
-_RETIRED_CONTEXT: set[str] = set()
+# preserve_reasoning_traces moved to servers.toml as per-server/per-model
+# preserve_reasoning.
+_RETIRED_CONTEXT: set[str] = {"preserve_reasoning_traces"}
 _RETIRED_DEBUG: set[str] = set()
 
 # Flat sections that can be synced line-by-line against their template. Each
@@ -422,6 +430,7 @@ _STYLE_SECTIONS = {"markdown_styles", "syntax_highlight"}
 _SERVER_KEYS = {
     "type", "base_url", "api_key", "api_key_env", "model", "max_context",
     "timeout", "retry_attempts", "retry_delay", "providers", "models",
+    "preserve_reasoning",
 }
 # Retired OpenRouter keys -> what replaces them. A server still using one is
 # reported and skipped (servers.toml is never rewritten by moka).
@@ -570,7 +579,6 @@ class Config:
 
         # Debug / reasoning.
         self.debug_log_enabled: bool = False
-        self.preserve_reasoning_traces: bool = False
 
         # Context building.
         self.context_format: Literal["tree", "flat"] = "tree"
@@ -807,6 +815,8 @@ def _load_servers(config: Config, data: dict, filename: str,
             if key in server and (isinstance(server[key], bool)
                                   or not isinstance(server[key], (int, float))):
                 errors.append(f"{where}.{key} must be a number")
+        if "preserve_reasoning" in server and not isinstance(server["preserve_reasoning"], bool):
+            errors.append(f"{where}.preserve_reasoning must be true or false")
         _validate_openrouter_routing(server, server_type, where, errors)
         # The type selects the transport and whether a model selection is
         # honored; guessing one silently routed e.g. an Ollama server as
@@ -840,8 +850,10 @@ def _validate_openrouter_routing(server: dict, server_type: Any, where: str,
             errors.append(f"{at} must be a table")
             continue
         for key in entry:
-            if key != "providers":
+            if key not in ("providers", "preserve_reasoning"):
                 errors.append(f"{at} unknown key '{key}'")
+        if "preserve_reasoning" in entry and not isinstance(entry["preserve_reasoning"], bool):
+            errors.append(f"{at}.preserve_reasoning must be true or false")
         if "providers" in entry and not _is_str_list(entry["providers"]):
             errors.append(f"{at}.providers must be a list of provider slugs")
 

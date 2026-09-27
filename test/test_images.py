@@ -125,14 +125,13 @@ def _chunk(content=None, finish=None):
 
 
 def test_history_keeps_a_reference_and_the_request_gets_parts(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
     with patch("moka_chat.harness.harness.get_active_endpoint",
                return_value=Endpoint(name="test", type="llamacpp")):
         harness = Harness(workspace_path=str(tmp_path))
     sent = []
 
     async def fake_completion(messages, tools=None, stream=True):
-        sent.append(messages)
+        sent.append(list(messages))
         yield _chunk(content="a cat")
         yield _chunk(finish="stop")
 
@@ -368,7 +367,6 @@ def test_worker_protocol_carries_the_image(tmp_path):
 def _read_harness(tmp_path, monkeypatch, accepts=None):
     from moka_chat.harness.roles import Role
 
-    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
     (tmp_path / "shot.png").write_bytes(png(10, 20))
     with patch("moka_chat.harness.harness.get_active_endpoint",
                return_value=Endpoint(name="test", type="llamacpp", model="m")):

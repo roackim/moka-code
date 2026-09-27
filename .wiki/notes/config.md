@@ -84,7 +84,11 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   default, or per model, replacing the default) is a strict whitelist tried in
   order — `order` alone would let OpenRouter fall back to any host. The retired
   keys `provider`, `enabled_models` and `model_providers` are reported with
-  their replacement and the server is skipped (`_RETIRED_SERVER_KEYS`). Load errors are shown at startup and on `/reload`/`/config`, and
+  their replacement and the server is skipped (`_RETIRED_SERVER_KEYS`).
+  `preserve_reasoning` (bool, any server type, and in an OpenRouter model
+  table, which overrides the server) re-sends earlier turns' reasoning;
+  absent means true (`Endpoint.preserves_reasoning`, see
+  [reasoning-traces.md](./reasoning-traces.md)). Load errors are shown at startup and on `/reload`/`/config`, and
   every reload rebuilds the live endpoint if its server table or selection
   changed.
 - **State** (machine-written, disposable): `state.toml` holds `last_server`,
@@ -148,7 +152,7 @@ stored one file per role under `roles/<name>.toml`. `PermissionGate`
 (catalog), `config.get_model_for_server(server)`.
 
 **Context / ui:** `context_format`, `context_max_files`,
-`context_max_depth`, `context_ignore_gitignore`, `preserve_reasoning_traces`,
+`context_max_depth`, `context_ignore_gitignore`,
 `context_max_image_mb` (`context.max_image_mb`, largest attachable image);
 `ui_theme`, `ui_box_style`, `ui_show_metrics`,
 `ui_status_bar_fields`, `ui_max_input_height` (input box caps + scrolls past
