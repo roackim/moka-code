@@ -9,7 +9,7 @@ import time
 from typing import Any
 
 from moka_chat.ui.tui.compositor import Compositor
-from moka_chat.ui.tui.events import KeyEvent, MouseEvent, TickEvent
+from moka_chat.ui.tui.events import KeyEvent, MouseEvent, PasteEvent, TickEvent
 from moka_chat.ui.tui.components import (
     Box, InputComponent,
 )
@@ -19,7 +19,7 @@ from moka_chat.ui.tui.components.popup import Popup, PopupScreen
 from moka_chat.ui.tui.components.debug_popup import DebugPopup
 from moka_chat.ui.tui.components.bars import StatusBar
 from moka_chat.ui.chat_history_panel import ChatHistoryPanel
-from moka_chat.ui.chat_message import Message
+from moka_chat.ui.chat_message import Message, reference_spans
 from moka_chat.ui.commands import (
     handle_command, get_command_list, get_command_descriptions,
     get_subcommand_list, get_subcommand_descriptions,
@@ -35,11 +35,13 @@ from moka_chat.ui.tui.chat_screen import ChatScreen
         # Setup logging to debug panel
 import logging
 from moka_chat.ui.tui.colors import theme
-from moka_chat.ui.tui.msg_types import MsgAction, UserMsg, SysMsg, SysMsgError, SysMsgWarning
+from moka_chat.ui.tui.msg_types import MsgAction, SysMsg, SysMsgError, SysMsgWarning
 
 from moka_chat import settings
 from moka_chat.ui.logging_handlers import setup_tui_logging
 from moka_chat.ui.chat_action_handlers import ChatActionHandlers
+from moka_chat.ui.clipboard import read_clipboard
+from moka_chat.harness import images
 
 
 class _AppFocusTarget:
@@ -119,6 +121,7 @@ class chatTUI(ChatActionHandlers):
         self.input_component = InputComponent("", id="entry", frame_color=theme.USER)
         self.input_component.config = settings.config
         self.input_component.on_submit = self.on_user_submit
+        self.input_component.highlighter = reference_spans
         self.input_component.setup_commands(get_command_list(), get_command_descriptions())
         self.input_component.setup_subcommands(get_subcommand_list, get_subcommand_descriptions)
         get_context_items = lambda: agent.list_files_and_folders() if hasattr(agent, "list_files_and_folders") else []
@@ -184,6 +187,8 @@ class chatTUI(ChatActionHandlers):
         self.pending_permission_prompt = None
         self._active_user_input = None
         self._active_user_msg = None
+        # Images pasted into the input draft, by their ``[image #N]`` number.
+        self._pasted_images = {}
         # Stream smoothing: the revealer owns timing, the message owns the
         # canonical arrived text plus its rendered prefix.
         self.stream_revealer = None
@@ -351,12 +356,12 @@ class chatTUI(ChatActionHandlers):
                 pass
 
 
-    async def _process_generation(self, user_input, user_msg):
+    async def _process_generation(self, user_input, user_msg, attached=()):
         """Process a single generation request.
 
         The event→UI mapping lives in ``ui/generation_presenter.py``.
         """
-        await process_generation(self, user_input, user_msg)
+        await process_generation(self, user_input, user_msg, attached)
 
     async def agent_worker(self):
         """Process queued requests for the conversation."""
@@ -379,7 +384,7 @@ class chatTUI(ChatActionHandlers):
                 if shutdown_task in done:
                     self.stop_generation()
                     return
-                user_input, user_msg = get_task.result()
+                user_input, user_msg, attached = get_task.result()
                 if getattr(user_msg, "is_queued", False):
                     user_msg.is_queued = False
                     user_msg.set_title("user")
@@ -389,7 +394,7 @@ class chatTUI(ChatActionHandlers):
                 self._active_user_msg = user_msg
                 self._stop_requested = False
                 self.current_generation_task = asyncio.create_task(
-                    self._process_generation(user_input, user_msg)
+                    self._process_generation(user_input, user_msg, attached)
                 )
                 try:
                     await self.current_generation_task
@@ -452,15 +457,15 @@ class chatTUI(ChatActionHandlers):
                 return
             self.worker_task = asyncio.create_task(self.agent_worker())
 
-    def _enqueue_message(self, text: str, message: Message) -> None:
-        """Queue a message and apply queued presentation."""
+    def _enqueue_message(self, text: str, message: Message, attached=()) -> None:
+        """Queue a message (with its image references) and apply queued presentation."""
         if self.is_generating() and message is not self._active_user_msg:
             message.is_queued = True
             message.set_title("user (queued)")
             message.set_frame_color(theme.MUTED)
 
         self._ensure_worker()
-        self.message_queue.put_nowait((text, message))
+        self.message_queue.put_nowait((text, message, list(attached)))
 
     def on_command_submit(self, text: str):
         """Handle execution of commands."""
@@ -605,8 +610,57 @@ class chatTUI(ChatActionHandlers):
                    on_highlight=on_highlight, initial_index=initial_index)
         return modal
 
+    def paste_clipboard(self) -> None:
+        """Ctrl+V: paste the clipboard into the input.
+
+        Text is inserted like a terminal paste. An image is saved to the image
+        cache and inserted as an ``[image #N]`` marker; it is attached when the
+        message is sent (see ``harness.images.collect``).
+        """
+        content = read_clipboard()
+        if content is None:
+            self.notify("Clipboard is empty (or no wl-paste/xclip/xsel).", "warning")
+            return
+        if isinstance(content, bytes):
+            try:
+                image = images.store(content, self._max_image_bytes())
+            except images.ImageError as exc:
+                self.notify(f"Can't paste the image: {exc}", "warning")
+                return
+            n = max(self._pasted_images, default=0) + 1
+            self._pasted_images[n] = image
+            content = f"[image #{n}]"
+        self.input_component.handle_input(PasteEvent(content))
+
+    @staticmethod
+    def _max_image_bytes() -> int:
+        return int(settings.config.context_max_image_mb * 1024 * 1024)
+
+    def _collect_images(self, text: str):
+        """The images *text* attaches, or ``None`` when the message is refused
+        (the reason is shown and the text stays in the input)."""
+        try:
+            attached = images.collect(text, self._pasted_images,
+                                      getattr(self.agent, "workspace", "."),
+                                      self._max_image_bytes())
+        except images.ImageError as exc:
+            self.chat_history_panel.add_message(f"Can't attach {exc}", msg_type=SysMsgWarning())
+            return None
+        endpoint = getattr(self.agent, "endpoint", None)
+        accepts = getattr(endpoint, "accepts_images", lambda: None)()
+        if attached and accepts is False:
+            model = getattr(endpoint, "selected_model", None) or "This model"
+            self.chat_history_panel.add_message(
+                f"{model} can't read images. Remove the image, or pick a vision model with /model.",
+                msg_type=SysMsgWarning())
+            return None
+        return attached
+
     def on_user_submit(self, text: str):
-        """Handle user input submission."""
+        """Handle user input submission.
+
+        Returns False when the message is refused, which keeps it in the input.
+        """
         clean_text = text.strip()
         if not clean_text:
             return  # Ignore empty or whitespace-only input
@@ -646,10 +700,15 @@ class chatTUI(ChatActionHandlers):
             logger = logging.getLogger("tui")
             logger.info(f"User submitted: {text[:50]}...")
 
-            # Create user message and queue it
-            user_msg = self.chat_history_panel.add_message(text, msg_type=UserMsg())
+            attached = self._collect_images(text)
+            if attached is None:
+                return False
+            self._pasted_images = {}
 
-            self._enqueue_message(text, user_msg)
+            # Create user message and queue it
+            user_msg = self.chat_history_panel.add_user_message(text, attached)
+
+            self._enqueue_message(text, user_msg, attached)
             
             # Enable auto-scroll to show the new message
             self.chat_history_panel.auto_scroll = True
@@ -722,6 +781,10 @@ class chatTUI(ChatActionHandlers):
         # Handle keyboard navigation between input and history
         if isinstance(event, (str, KeyEvent)):
             key = event.key if isinstance(event, KeyEvent) else event
+
+            if key == '\x16' and self._last_focus_id == "input":  # Ctrl+V
+                self.paste_clipboard()
+                return True
 
             if self._last_focus_id == "input" and self.input_component.has_active_completion():
                 if key in ('\x1b', '\x1b[A', '\x1b[B', '\t', '\r', '\n'):

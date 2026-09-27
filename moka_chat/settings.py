@@ -166,6 +166,7 @@ DEFAULT_CONTEXT_TOML = """\
 # max_depth = 4
 # ignore_gitignore = false
 # preserve_reasoning_traces = false  # re-send prior reasoning to the model (always stored)
+# max_image_mb = 5                    # largest image a message can attach
 """
 
 DEFAULT_DEBUG_TOML = """\
@@ -319,6 +320,7 @@ _CONTEXT_SPEC: Dict[str, tuple[str, str]] = {
     "max_depth": ("context_max_depth", "int"),
     "ignore_gitignore": ("context_ignore_gitignore", "bool"),
     "preserve_reasoning_traces": ("preserve_reasoning_traces", "bool"),
+    "max_image_mb": ("context_max_image_mb", "int_or_float"),
 }
 
 _DEBUG_SPEC: Dict[str, tuple[str, str]] = {
@@ -572,6 +574,7 @@ class Config:
         self.context_max_files: int = 500
         self.context_max_depth: int = 4
         self.context_ignore_gitignore: bool = False
+        self.context_max_image_mb: float = 5
 
         # Style tables.
         self.markdown_styles: Dict[str, Dict[str, Any]] = {

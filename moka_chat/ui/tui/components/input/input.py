@@ -18,6 +18,7 @@ from .completion import (
 from moka_chat.ui.tui.buffer import Buffer
 from moka_chat.ui.tui.events import KeyEvent, MouseEvent, TickEvent
 from moka_chat.ui.tui.layout_utils import display_width
+from moka_chat.ui.tui.components.text import paint_spans
 
 from moka_chat.ui.tui.colors import theme
 
@@ -33,6 +34,8 @@ class InputComponent(Component):
         self.bg = theme.get_bg()  # Use global background
         self.config = None  # Config object passed during initialization
         self.focused = True  # Track focus state for input handling and cursor rendering
+        # Optional ``line -> [(start, end, fg)]``: spans drawn in their own color.
+        self.highlighter = None
         
         # Core components
         self.buffer = TextBuffer()
@@ -372,6 +375,9 @@ class InputComponent(Component):
                 display_line = line
             
             buffer.write_str(self.x, self.y + line_idx, display_line, fg=content_color, bg=self.bg, max_width=self.width)
+            if self.highlighter is not None and self.focused:
+                paint_spans(buffer, self.x, self.y + line_idx, display_line,
+                            self.highlighter, self.bg, self.width)
         
         # Note: Cursor is rendered separately via render_cursor() called after SubBuffer blit
         

@@ -11,7 +11,7 @@ from moka_chat.harness.llm_status import AgentState
 from moka_chat.harness.debug import get_debug_stream
 from moka_chat.harness.context_builder import build_harness_context
 from moka_chat.harness.elision import elide
-from moka_chat.harness import events
+from moka_chat.harness import events, images
 from moka_chat.harness.endpoint import Endpoint, get_active_endpoint
 from moka_chat.harness.permissions import PermissionGate
 from moka_chat.harness.thinking_parser import ThinkingTagParser, MetricsState, THINKING_TAGS
@@ -245,7 +245,8 @@ class Harness:
         """Project a stored history entry onto the API message shape.
 
         Stored history keeps ``reasoning``/``reasoning_tag`` for persistence and
-        the transcript; they are not valid API fields. When
+        the transcript; they are not valid API fields. Image references
+        (``images``) become content parts, encoded only here. When
         ``preserve_reasoning_traces`` is enabled the reasoning is folded back
         into ``content`` using the model's own thinking tag so the model sees
         its prior chain-of-thought.
@@ -253,11 +254,13 @@ class Harness:
         from moka_chat import settings
 
         msg = {key: value for key, value in entry.items()
-               if key not in ("reasoning", "reasoning_tag")}
+               if key not in ("reasoning", "reasoning_tag", "images")}
         reasoning = entry.get("reasoning")
         if reasoning and settings.config.preserve_reasoning_traces:
             open_tag, close_tag = self._reasoning_tag_pair(entry.get("reasoning_tag"))
             msg["content"] = f"{open_tag}\n{reasoning}\n{close_tag}\n\n{msg.get('content') or ''}"
+        if entry.get("images"):
+            msg["content"] = images.api_content(msg.get("content"), entry["images"])
         return msg
 
     def _get_tool_output(self, ref: str) -> Optional[str]:
@@ -544,10 +547,12 @@ class Harness:
         prompt = (getattr(getattr(self, "role", None), "prompt", "") or "").strip()
         return [{"role": "system", "content": prompt}] if prompt else []
 
-    async def _build_messages(self, user_input: str) -> List[Dict[str, Any]]:
+    async def _build_messages(self, user_input: str,
+                              attached: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
         """Build message list with the role's system prompt and history."""
         # Add user message to history and store its ID
-        user_msg_id = self._add_message_to_history("user", user_input)
+        extra = {"images": list(attached)} if attached else {}
+        user_msg_id = self._add_message_to_history("user", user_input, **extra)
         self._last_user_message_id = user_msg_id
 
         messages = self._system_messages()
@@ -1083,10 +1088,14 @@ class Harness:
         
         return status
 
-    async def chat(self, user_input: str) -> AsyncGenerator[events.Event, None]:
+    async def chat(self, user_input: str,
+                   attached: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[events.Event, None]:
         """
         Main chat loop orchestrator.
         Handles: User Input -> LLM -> [Tool Calls -> Tool Execution -> LLM]* -> Final Answer
+
+        ``attached``: image references (``harness.images``) sent with the
+        user message.
 
         Yields: events from ``moka_chat.harness.events``.
         """
@@ -1100,7 +1109,7 @@ class Harness:
             yield events.Done()
             return
 
-        messages = await self._build_messages(user_input)
+        messages = await self._build_messages(user_input, attached)
         
         # Emit user message start with its ID
         yield events.Start(message_id=self._last_user_message_id, role="user")

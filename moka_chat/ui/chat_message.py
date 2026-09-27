@@ -6,6 +6,7 @@ import re
 import time
 from typing import Any, Optional
 from moka_chat import settings
+from moka_chat.harness import images
 from moka_chat.ui.tui.colors import theme, RGB
 from moka_chat.ui.tui.components import TextComponent
 from moka_chat.ui.tui.components.markdown import MarkdownComponent
@@ -169,6 +170,15 @@ def _tool_summary(name: str, args: dict, output: Optional[str]) -> str:
     """Plain ``target metric`` summary of a completed tool call."""
     target, metric = _tool_target_metric(name, args, raw=None, output=output, drafting=False)
     return " ".join(part for part in (target, strip_ansi(metric)) if part)
+
+
+_REFERENCE_RE = re.compile(f"{images.MARKER_RE.pattern}|{images.MENTION_RE.pattern}")
+
+
+def reference_spans(line: str) -> list[tuple[int, int, Any]]:
+    """``[image #N]`` markers and ``@path`` mentions in *line*, drawn in the focus
+    color (input field and user messages)."""
+    return [(m.start(), m.end(), theme.FOCUSED) for m in _REFERENCE_RE.finditer(line)]
 
 
 def thought_worth_showing(reasoning: str) -> bool:

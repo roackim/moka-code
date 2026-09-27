@@ -31,7 +31,7 @@ def test_one_generation_at_a_time_and_queued_message_stays_last(monkeypatch):
     running, overlap = [], []
     gate = {}
 
-    async def chat(text):
+    async def chat(text, attached=None):
         running.append(text)
         if len(running) > 1:
             overlap.append(list(running))
@@ -73,7 +73,7 @@ def test_one_generation_at_a_time_and_queued_message_stays_last(monkeypatch):
 def test_stop_cancels_the_generation_but_not_the_worker(monkeypatch):
     started = []
 
-    async def chat(text):
+    async def chat(text, attached=None):
         started.append(text)
         yield events.Start(message_id=text, role="assistant")
         yield events.Token(text=f"answer to {text}")
@@ -101,7 +101,7 @@ def test_stop_cancels_the_generation_but_not_the_worker(monkeypatch):
 
 
 def test_submitting_never_starts_a_second_worker(monkeypatch):
-    async def chat(text):
+    async def chat(text, attached=None):
         yield events.Done()
 
     async def scenario():

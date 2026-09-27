@@ -4,10 +4,21 @@ from moka_chat.ui.tui.buffer import Buffer
 from moka_chat.ui.tui.colors import theme
 from moka_chat.ui.tui.layout_utils import display_width, wrap_text
 
+def paint_spans(buffer: Buffer, x: int, y: int, line: str, highlighter, bg, max_width: int) -> None:
+    """Repaint the spans ``highlighter(line)`` returns (``(start, end, fg)``,
+    character offsets) over a line already written at ``(x, y)``."""
+    for start, end, fg in highlighter(line):
+        col = display_width(line[:start])
+        if col < max_width:
+            buffer.write_str(x + col, y, line[start:end], fg=fg, bg=bg, max_width=max_width - col)
+
+
 class TextComponent(Component):
     def __init__(self, text: str, id: Optional[str] = None, fg=None, bg=None, auto_scroll_bottom: bool = False):
         super().__init__(id)
         self.text = text
+        # Optional ``line -> [(start, end, fg)]``: spans drawn in their own color.
+        self.highlighter = None
         self._lines = text.splitlines()
         self.fg = fg
         self.bg = bg
@@ -42,6 +53,9 @@ class TextComponent(Component):
         for i in range(start_line, end_line):
             line_index = i - start_line
             buffer.write_str(self.x, self.y + line_index, lines[i], fg=self.fg, bg=self.bg, max_width=self.width)
+            if self.highlighter is not None:
+                paint_spans(buffer, self.x, self.y + line_index, lines[i],
+                            self.highlighter, self.bg, self.width)
 
     def get_preferred_height(self, width: int) -> int:
         """Calculate height needed for wrapped text."""

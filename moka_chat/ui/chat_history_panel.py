@@ -15,7 +15,7 @@ from moka_chat.ui.message_selection import MessageSelection
 from moka_chat.ui.tui.colors import theme, RGB
 from moka_chat.ui.tui.msg_types import MsgType, MsgAction, ThinkingMsg
 
-from moka_chat.ui.chat_message import Message
+from moka_chat.ui.chat_message import Message, reference_spans
 
 # Seconds between refreshes of live labels (elapsed time) on in-progress lines.
 _LIVE_TICK_INTERVAL = 0.25
@@ -1025,6 +1025,21 @@ class ChatHistoryPanel(TextComponent):
             self.remove_message_by_index(self.messages.index(msg))
         except ValueError:
             pass
+
+    def add_user_message(self, text: str, attached=(), harness_message_ids: list = None) -> Message:
+        """Add a user message; its attached images are listed under the text
+        (``▣ image #N · name · W×H · size``). ``c`` copies only the text."""
+        from moka_chat.harness import images
+        from moka_chat.ui.tui.msg_types import UserMsg
+
+        lines = [images.describe(image) + ("" if images.available(image) else " · unavailable")
+                 for image in attached]
+        shown = "\n".join([text.rstrip(), *lines]) if lines else text
+        msg = self.add_message(shown, msg_type=UserMsg(), harness_message_ids=harness_message_ids)
+        msg.component.highlighter = reference_spans
+        if lines:
+            msg.copy_text = text
+        return msg
 
     def add_message(self, message: str, msg_type: MsgType = None, title: str = None, frame_color: RGB = None, content_color: RGB = None, left_margin: int = 0, right_margin: int = 0, harness_message_ids: list = None) -> Message:
         """Add a message to chat history and update UI.

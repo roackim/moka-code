@@ -84,9 +84,22 @@ Server-family code is split out and reached through thin `Endpoint` wrappers:
 - `endpoint_discovery.py` — `list_models` / `discover_models` / `query_*`
 - `endpoint_local.py` — `.local` mDNS resolution
 
-### `clipboard.py`
-OSC 52 clipboard escape for headless Linux terminals (fallback for
-`ui/clipboard.py`).
+### `images.py`
+Image attachments on user messages. History stores a reference (`path`,
+`name`, `mime`, `size`, `width`, `height`, `n`) under the entry's `images`;
+`_to_api_message` turns it into OpenAI content parts (`api_content`: text,
+then `image_url` data URLs, base64 read at request time). `probe` reads
+PNG/JPEG/GIF/WebP headers (no Pillow); `store` caches pasted bytes in
+`~/.cache/moka/images/<hash>.<ext>`; `collect` resolves a draft's `[image #N]`
+markers and `@path` mentions; `embed`/`restore` carry bytes through
+`/export`/`/import`. `endpoint_ollama.ollama_messages` converts the parts to
+Ollama's `images: [base64]`.
+
+Image support per model: `Endpoint.accepts_images()` (True/False/None) from
+`_image_input`, seeded from catalog metadata in `get_endpoint` and filled by
+`probe_image_input()` during prewarm (`endpoint_discovery.query_image_input`:
+Ollama `/api/show` `capabilities`, llama.cpp `/props` `modalities.vision`,
+OpenRouter `/models/<id>/endpoints` `architecture.input_modalities`).
 
 ### `usage.py`
 `TokenUsage` and normalization helpers convert OpenAI-compatible and Ollama

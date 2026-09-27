@@ -79,11 +79,16 @@ applies a saved role).
 
 ## Conversation import/export
 
-`/export <file>` writes `{"role": ..., "history": [...]}`.
+`/export <file>` writes `{"role": ..., "history": [...]}`; image references
+carry their bytes (`"data"`, base64 — `harness.images.embed`) so the file is
+self-contained.
 `/import <file>`:
 - Fuzzy-autocompletes `.json` files in the current directory.
 - Restores the saved role; if the role no longer exists, it falls back to the
   `agent` role and posts a warning message in the chat.
+- Writes embedded images back to the image cache and repoints the references
+  (`harness.images.restore`); an image with neither bytes nor file is listed
+  as `unavailable` and sent as an `[image #N unavailable]` text part.
 - Rebuilds visible messages, splitting assistant thinking/content with the
   same `ThinkingTagParser` the harness uses (so imported reasoning renders as
   a `ThinkingMsg`).
@@ -292,6 +297,29 @@ closes the menu like ESC (`_accept_completion` → `cancel()`, which suppresses
 the menu for that word); the next menu opens once the user types the space.
 The exception is a folder picked from the `@` menu, which keeps the menu open
 to drill into it.
+
+`KeyboardHandler.on_submit` may return `False` to refuse a submission; the text
+then stays in the input (used when an image cannot be attached).
+
+### Image attachments (`harness/images.py`)
+
+- **Ctrl+V** (`\x16`, input focused) → `chatTUI.paste_clipboard()`:
+  `ui/clipboard.read_clipboard()` asks `wl-paste`, then `xclip`, then `xsel`
+  (text only). Text goes through the normal `PasteEvent` path. An image is
+  saved by content hash to `~/.cache/moka/images/` (`images.store`) and
+  inserted as `[image #N]`; `chatTUI._pasted_images` maps N to it for the draft.
+- **On submit** `images.collect` attaches the pasted images whose marker is
+  still in the text, then `@path` mentions of existing image files (relative
+  to the workspace; numbered after the pasted ones). Too large → refused.
+  `endpoint.accepts_images() is False` → refused ("<model> can't read
+  images…"); unknown → sent.
+- The user message lists them under its text (`ChatHistoryPanel.add_user_message`);
+  `c` copies only the text. `[image #N]` markers and `@path` mentions are drawn
+  in the `FOCUSED` color, in the focused input and in user messages
+  (`chat_message.reference_spans`, set as the component's `highlighter`; the
+  toolkit's `TextComponent`/`InputComponent` repaint those spans per line via
+  `text.paint_spans`). The references travel through `message_queue`
+  as `(text, message, attached)` to `agent.chat(text, attached)`.
 | `scroll_manager.py` | Scroll offset for large input |
 | `cursor_renderer.py` | Cursor visibility and animation |
 | `coordinate_mapper.py` | Screen position → text offset |

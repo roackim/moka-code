@@ -42,11 +42,22 @@ def ollama_messages(messages: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
 
     OpenAI allows ``content=None`` on tool-call-only assistant turns, but
     Ollama (and proxies in front of it) validate content as a string and
-    reject the request with HTTP 422 otherwise.
+    reject the request with HTTP 422 otherwise. Content parts (a message with
+    images) become text plus Ollama's ``images: [base64]`` field.
     """
     normalized = []
     for message in messages:
         msg = dict(message)
+        if isinstance(msg.get("content"), list):
+            texts, images = [], []
+            for part in msg["content"]:
+                if part.get("type") == "image_url":
+                    images.append(part["image_url"]["url"].split(",", 1)[1])
+                else:
+                    texts.append(part.get("text", ""))
+            msg["content"] = "\n".join(texts)
+            if images:
+                msg["images"] = images
         if msg.get("content") is None:
             msg["content"] = ""
         if msg.get("tool_calls") is None:

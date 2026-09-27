@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from moka_chat.harness.roles import Role
 from moka_chat.ui.commands.conversation import conversation_export, conversation_import
+from moka_chat.ui.tui.msg_types import UserMsg
 
 
 class FakeAgent:
@@ -30,6 +31,11 @@ class FakePanel:
             set_collapsed=lambda *a, **k: None,
         )
         self.messages.append(msg)
+        return msg
+
+    def add_user_message(self, text, attached=(), harness_message_ids=None):
+        msg = self.add_message(text, msg_type=UserMsg(), harness_message_ids=harness_message_ids)
+        msg.attached = list(attached)
         return msg
 
     def clear(self):

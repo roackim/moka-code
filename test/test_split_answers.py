@@ -143,7 +143,7 @@ def test_answers_split_when_the_generation_ends(monkeypatch):
     monkeypatch.setattr(settings.config, "ui_stream_smoothing", False)
     ui = chatTUI(StubAgent())
 
-    async def chat(_):
+    async def chat(_, attached=None):
         yield events.Start(message_id="a", role="assistant")
         yield events.Token(text=ANSWER)
         yield events.Done()

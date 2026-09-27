@@ -1,10 +1,9 @@
-"""Clipboard writing: native helpers, OSC 52 fallback, and copy actions."""
+"""Clipboard: native helpers, OSC 52 fallback, paste reading, copy actions."""
 
 import base64
 
 import pytest
 
-from moka_chat.harness import clipboard as core_clipboard
 from moka_chat.ui import clipboard as ui_clipboard
 from moka_chat.ui.chat_action_handlers import ChatActionHandlers
 from moka_chat.ui.tui.msg_types import SysMsgError, UserMsg
@@ -89,13 +88,13 @@ def test_no_method_returns_none(monkeypatch, capfd):
 
 
 # ---------------------------------------------------------------------------
-# harness.clipboard primitive
+# OSC 52 primitive
 # ---------------------------------------------------------------------------
 
 def test_osc52_truncation_stays_valid_base64(monkeypatch, terminal_env, capfd):
-    monkeypatch.setattr(core_clipboard, "OSC52_MAX_BYTES", 8)
+    monkeypatch.setattr(ui_clipboard, "OSC52_MAX_BYTES", 8)
 
-    assert core_clipboard.copy_to_clipboard("abcdefghijklmnop") is True
+    assert ui_clipboard._osc52_copy("abcdefghijklmnop") is True
 
     out, _ = capfd.readouterr()
     payload = out[len(OSC52_PREFIX):-len(OSC52_SUFFIX)]
@@ -105,8 +104,58 @@ def test_osc52_truncation_stays_valid_base64(monkeypatch, terminal_env, capfd):
 
 def test_dumb_terminal_does_not_emit(monkeypatch, capfd):
     monkeypatch.setenv("TERM", "dumb")
-    assert core_clipboard.copy_to_clipboard("hello") is False
+    assert ui_clipboard._osc52_copy("hello") is False
     assert capfd.readouterr().out == ""
+
+
+# ---------------------------------------------------------------------------
+# read_clipboard (Ctrl+V)
+# ---------------------------------------------------------------------------
+
+def _fake_helpers(monkeypatch, outputs):
+    """``outputs`` maps a command tuple to its stdout; others are missing."""
+    calls = []
+
+    class _Result:
+        def __init__(self, stdout):
+            self.stdout = stdout
+
+    def _run(command, **kwargs):
+        calls.append(tuple(command))
+        if tuple(command) not in outputs:
+            raise FileNotFoundError
+        return _Result(outputs[tuple(command)])
+
+    monkeypatch.setattr("moka_chat.ui.clipboard.subprocess.run", _run)
+    return calls
+
+
+def test_read_prefers_image_on_wayland(monkeypatch):
+    _fake_helpers(monkeypatch, {
+        ("wl-paste", "--list-types"): b"text/plain\nimage/jpeg\nimage/png\n",
+        ("wl-paste", "--no-newline", "--type", "image/png"): b"PNGDATA",
+    })
+    assert ui_clipboard.read_clipboard() == b"PNGDATA"
+
+
+def test_read_text_on_x11(monkeypatch):
+    calls = _fake_helpers(monkeypatch, {
+        ("xclip", "-selection", "clipboard", "-t", "TARGETS", "-o"): b"UTF8_STRING\nTEXT\n",
+        ("xclip", "-selection", "clipboard", "-o"): "héllo\nworld".encode(),
+    })
+    assert ui_clipboard.read_clipboard() == "héllo\nworld"
+    assert calls[0][0] == "wl-paste"
+
+
+def test_read_empty_clipboard(monkeypatch):
+    _fake_helpers(monkeypatch, {("wl-paste", "--list-types"): b"",
+                                ("wl-paste", "--no-newline"): b""})
+    assert ui_clipboard.read_clipboard() is None
+
+
+def test_read_without_helpers(monkeypatch):
+    _fake_helpers(monkeypatch, {})
+    assert ui_clipboard.read_clipboard() is None
 
 
 # ---------------------------------------------------------------------------

@@ -230,6 +230,8 @@ class Endpoint:
         self._cached_model_name: Optional[str] = None
         self._cached_context_window: Optional[int] = None
         self._model_context_windows: dict[str, int] = {}
+        # Whether a model reads images, per model; absent = unknown.
+        self._image_input: dict[str, bool] = {}
         self._selected_model: Optional[str] = model
         self._model_name_pending: bool = False
         self._connection_state: str = "unknown"  # unknown|checking|ok|error
@@ -295,6 +297,7 @@ class Endpoint:
     async def prewarm_model_name(self) -> None:
         """Probe the connection and cache model name/context in the background."""
         if self._cached_model_name and self._connection_state == "ok":
+            await self.probe_image_input()
             return
         self._model_name_pending = True
         self._connection_state = "checking"
@@ -334,8 +337,26 @@ class Endpoint:
                 await self.get_context_window()
             except Exception as e:
                 logger.warning("prewarm context window failed: %s", e)
+            await self.probe_image_input()
         finally:
             self._model_name_pending = False
+
+    def accepts_images(self) -> Optional[bool]:
+        """Whether the current model reads images; ``None`` when unknown."""
+        return self._image_input.get(self._cached_model_name or self._selected_model or "")
+
+    async def probe_image_input(self) -> None:
+        """Learn whether the current model reads images (no-op once known)."""
+        model_name = self._cached_model_name or self._selected_model
+        if not model_name or model_name in self._image_input:
+            return
+        try:
+            known = await _discovery.query_image_input(self, model_name)
+        except Exception as e:
+            logger.debug("image input probe failed: %s", e)
+            return
+        if known is not None:
+            self._image_input[model_name] = known
 
     # -- model / context discovery (delegates to endpoint_discovery) ---------
 
@@ -556,9 +577,9 @@ def get_active_endpoint() -> Endpoint:
 def get_endpoint(name: str) -> Optional[Endpoint]:
     """Build a configured endpoint by name, applying its model selection.
 
-    Context windows already known from the discovery catalog are seeded so the
-    status bar is right immediately and no catalog download is repeated on
-    every switch.
+    Context windows (and image support) already known from the discovery
+    catalog are seeded so the status bar is right immediately and no catalog
+    download is repeated on every switch.
     """
     from moka_chat import settings
 
@@ -574,6 +595,9 @@ def get_endpoint(name: str) -> Optional[Endpoint]:
         ctx = model.get("context_window")
         if model.get("id") and isinstance(ctx, int) and ctx > 0:
             endpoint._model_context_windows[model["id"]] = ctx
+        known = _discovery.image_input_from_metadata(model.get("metadata") or {})
+        if model.get("id") and known is not None:
+            endpoint._image_input[model["id"]] = known
     return endpoint
 
 

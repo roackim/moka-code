@@ -95,7 +95,7 @@ def test_presenter_unblocks_input_after_stop_during_permission(monkeypatch):
     monkeypatch.setattr(settings.config, "ui_stream_smoothing", False)
     ui = chatTUI(StubAgent())
 
-    async def chat(_):
+    async def chat(_, attached=None):
         yield events.Start(message_id="a", role="assistant")
         yield events.ToolCall(id="t1", name="bash", args='{"command": "ls"}')
         yield events.PermissionRequest(id="t1", name="bash", args='{"command": "ls"}', prompt="?", auto=False)

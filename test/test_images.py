@@ -1,0 +1,337 @@
+"""Image attachments: header probing, cache, collection, sending, export/import,
+the text-only refusal and Ctrl+V."""
+
+import asyncio
+import base64
+import json
+import struct
+import zlib
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
+
+from moka_chat import settings
+from moka_chat.harness import images
+from moka_chat.harness.endpoint import Endpoint
+from moka_chat.harness.endpoint_discovery import image_input_from_metadata
+from moka_chat.harness.endpoint_ollama import ollama_messages
+from moka_chat.harness.harness import Harness
+from moka_chat.ui.app import chatTUI
+from moka_chat.ui.commands.conversation import conversation_export, conversation_import
+from moka_chat.ui.tui.msg_types import UserMsg
+
+from conftest import StubAgent
+
+MB = 1024 * 1024
+
+
+def png(width=3, height=2) -> bytes:
+    """A real (tiny) PNG."""
+    def chunk(kind, data):
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+    raw = b"".join(b"\x00" + b"\x00\x00\x00" * width for _ in range(height))
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def jpeg(width, height) -> bytes:
+    app0 = b"\xff\xe0" + struct.pack(">H", 16) + b"JFIF\x00" + b"\x00" * 9
+    sof = b"\xff\xc0" + struct.pack(">HBHH", 11, 8, height, width) + b"\x00" * 6
+    return b"\xff\xd8" + app0 + sof + b"\xff\xd9"
+
+
+@pytest.fixture(autouse=True)
+def cache(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    return tmp_path / "cache" / "moka" / "images"
+
+
+# ---------------------------------------------------------------------------
+# probing
+# ---------------------------------------------------------------------------
+
+def test_probe_reads_dimensions_from_headers():
+    assert images.probe(png(640, 480)) == ("image/png", 640, 480)
+    assert images.probe(b"GIF89a" + struct.pack("<HH", 32, 16) + b"\x00" * 8) == ("image/gif", 32, 16)
+    assert images.probe(jpeg(1920, 1080)) == ("image/jpeg", 1920, 1080)
+    vp8 = b"RIFF\x00\x00\x00\x00WEBPVP8 " + b"\x00" * 10 + struct.pack("<HH", 100, 50)
+    assert images.probe(vp8) == ("image/webp", 100, 50)
+    vp8x = (b"RIFF\x00\x00\x00\x00WEBPVP8X" + b"\x00" * 8
+            + (799).to_bytes(3, "little") + (599).to_bytes(3, "little"))
+    assert images.probe(vp8x) == ("image/webp", 800, 600)
+    # VP8L packs 14-bit (width-1, height-1) after the 0x2f signature byte.
+    bits = (300 - 1) | ((200 - 1) << 14)
+    vp8l = b"RIFF\x00\x00\x00\x00WEBPVP8L" + b"\x00" * 4 + b"\x2f" + bits.to_bytes(4, "little") + b"\x00" * 8
+    assert images.probe(vp8l) == ("image/webp", 300, 200)
+
+
+def test_probe_rejects_other_files():
+    with pytest.raises(images.ImageError):
+        images.probe(b"%PDF-1.7 not an image")
+
+
+# ---------------------------------------------------------------------------
+# cache / collection
+# ---------------------------------------------------------------------------
+
+def test_store_saves_once_by_content(cache):
+    first = images.store(png(), 5 * MB)
+    second = images.store(png(), 5 * MB)
+    assert first["path"] == second["path"]
+    assert first["path"].startswith(str(cache)) and first["path"].endswith(".png")
+    assert (first["name"], first["width"], first["height"]) == ("clipboard", 3, 2)
+
+
+def test_store_refuses_over_the_limit():
+    with pytest.raises(images.ImageError, match="max_image_mb"):
+        images.store(png(), 10)
+
+
+def test_collect_pasted_markers_then_mentions(tmp_path):
+    (tmp_path / "shot.png").write_bytes(png(10, 20))
+    (tmp_path / "my pic.jpg").write_bytes(jpeg(4, 4))
+    pasted = {1: images.store(png(), 5 * MB), 2: images.store(png(5, 5), 5 * MB)}
+
+    text = ("see [image #2] and @shot.png, also @'my pic.jpg' "
+            "@missing.png @notes.md")
+    attached = images.collect(text, pasted, str(tmp_path), 5 * MB)
+
+    # [image #1] was deleted from the draft: not attached. Mentions number on.
+    assert [(i["n"], i["name"]) for i in attached] == [
+        (2, "clipboard"), (3, "shot.png"), (4, "my pic.jpg")]
+
+
+def test_collect_refuses_too_large_mention(tmp_path):
+    (tmp_path / "big.png").write_bytes(png())
+    with pytest.raises(images.ImageError, match="big.png"):
+        images.collect("@big.png", {}, str(tmp_path), 10)
+
+
+def test_describe_line():
+    image = {"n": 1, "name": "shot.png", "width": 1920, "height": 1080, "size": 245 * 1024}
+    assert images.describe(image) == "▣ image #1 · shot.png · 1920×1080 · 245 KB"
+
+
+# ---------------------------------------------------------------------------
+# sending
+# ---------------------------------------------------------------------------
+
+def _chunk(content=None, finish=None):
+    delta = SimpleNamespace(content=content, reasoning_content=None, tool_calls=None)
+    return SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=finish)], usage=None)
+
+
+def test_history_keeps_a_reference_and_the_request_gets_parts(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
+    with patch("moka_chat.harness.harness.get_active_endpoint",
+               return_value=Endpoint(name="test", type="llamacpp")):
+        harness = Harness(workspace_path=str(tmp_path))
+    sent = []
+
+    async def fake_completion(messages, tools=None, stream=True):
+        sent.append(messages)
+        yield _chunk(content="a cat")
+        yield _chunk(finish="stop")
+
+    harness.endpoint.create_completion = fake_completion
+    image = {**images.store(png(), 5 * MB), "n": 1}
+
+    async def drain():
+        return [event async for event in harness.chat("what is [image #1]?", [image])]
+
+    asyncio.run(drain())
+
+    user = [m for m in harness.history if m["role"] == "user"][0]
+    assert user["content"] == "what is [image #1]?"
+    assert user["images"] == [image]          # a reference, no bytes
+    parts = sent[0][-1]["content"]
+    assert parts[0] == {"type": "text", "text": "what is [image #1]?"}
+    assert parts[1]["image_url"]["url"] == (
+        "data:image/png;base64," + base64.b64encode(png()).decode())
+    assert "images" not in sent[0][-1]
+
+
+def test_missing_image_is_sent_as_placeholder():
+    parts = images.api_content("hi", [{"n": 3, "path": "/nonexistent.png", "mime": "image/png"}])
+    assert parts[1] == {"type": "text", "text": "[image #3 unavailable]"}
+
+
+def test_ollama_gets_an_images_field():
+    parts = images.api_content("look", [{**images.store(png(), 5 * MB), "n": 1}])
+    (msg,) = ollama_messages([{"role": "user", "content": parts}])
+    assert msg["content"] == "look"
+    assert msg["images"] == [base64.b64encode(png()).decode()]
+
+
+# ---------------------------------------------------------------------------
+# capability
+# ---------------------------------------------------------------------------
+
+def test_image_input_from_metadata():
+    assert image_input_from_metadata({"architecture": {"input_modalities": ["text"]}}) is False
+    assert image_input_from_metadata({"architecture": {"input_modalities": ["text", "image"]}}) is True
+    assert image_input_from_metadata({"capabilities": ["completion", "vision"]}) is True
+    assert image_input_from_metadata({}) is None
+
+
+def _ui_with_endpoint(tmp_path, accepts):
+    agent = StubAgent()
+    agent.workspace = str(tmp_path)
+    agent.endpoint = SimpleNamespace(selected_model="deepseek/deepseek-chat",
+                                     accepts_images=lambda: accepts,
+                                     _original_base_url="http://localhost:8080/v1")
+    return chatTUI(agent)
+
+
+def test_text_only_model_refuses_and_keeps_the_input(tmp_path):
+    (tmp_path / "a.png").write_bytes(png())
+    ui = _ui_with_endpoint(tmp_path, accepts=False)
+    ui.input_component.update("describe @a.png")
+
+    ui.input_component.handle_input("\r")
+
+    assert ui.input_component.text == "describe @a.png"
+    assert ui.message_queue.qsize() == 0
+    assert any("deepseek/deepseek-chat can't read images" in line
+               for line in ui.activity_panel.lines)
+
+
+def test_unknown_capability_sends(tmp_path):
+    (tmp_path / "a.png").write_bytes(png(7, 9))
+    ui = _ui_with_endpoint(tmp_path, accepts=None)
+    ui.input_component.update("describe @a.png")
+
+    ui.input_component.handle_input("\r")
+
+    assert ui.input_component.text == ""
+    text, msg, attached = ui.message_queue.get_nowait()
+    assert text == "describe @a.png"
+    assert [(i["name"], i["width"], i["height"]) for i in attached] == [("a.png", 7, 9)]
+    assert msg.base_text.splitlines()[-1].startswith("▣ image #1 · a.png · 7×9")
+    assert ui.chat_history_panel.copy_text_for(msg) == "describe @a.png"
+
+
+# ---------------------------------------------------------------------------
+# Ctrl+V
+# ---------------------------------------------------------------------------
+
+def test_ctrl_v_pastes_an_image_as_a_marker(tmp_path, monkeypatch):
+    monkeypatch.setattr("moka_chat.ui.app.read_clipboard", lambda: png())
+    ui = _ui_with_endpoint(tmp_path, accepts=True)
+
+    ui.handle_global_input("\x16")
+    ui.handle_global_input("\x16")
+
+    assert ui.input_component.text == "[image #1][image #2]"
+    ui.input_component.handle_input("\r")
+    _, _, attached = ui.message_queue.get_nowait()
+    assert [i["n"] for i in attached] == [1, 2]
+    assert ui._pasted_images == {}
+
+
+def test_ctrl_v_pastes_text_like_a_paste(tmp_path, monkeypatch):
+    monkeypatch.setattr("moka_chat.ui.app.read_clipboard", lambda: "line 1\r\nline 2")
+    ui = _ui_with_endpoint(tmp_path, accepts=True)
+
+    ui.handle_global_input("\x16")
+
+    assert ui.input_component.text == "line 1\nline 2"
+
+
+# ---------------------------------------------------------------------------
+# export / import
+# ---------------------------------------------------------------------------
+
+class _Panel:
+    def __init__(self):
+        self.users = []
+
+    def add_user_message(self, text, attached=(), harness_message_ids=None):
+        self.users.append((text, list(attached)))
+
+    def add_message(self, *args, **kwargs):
+        return SimpleNamespace()
+
+    def clear(self):
+        self.users.clear()
+
+
+def test_export_embeds_images_and_import_restores_them(tmp_path, cache):
+    image = {**images.store(png(4, 4), 5 * MB), "n": 1}
+    history = [{"role": "user", "content": "[image #1]", "images": [image]}]
+    ui = SimpleNamespace(agent=SimpleNamespace(history=history), chat_history_panel=_Panel(),
+                         switch_role=lambda role: role)
+    exported = tmp_path / "conv.json"
+
+    asyncio.run(conversation_export(ui, [str(exported)]))
+
+    data = json.loads(exported.read_text())
+    assert base64.b64decode(data["history"][0]["images"][0]["data"]) == png(4, 4)
+    assert "data" not in history[0]["images"][0]        # live history untouched
+
+    for file in cache.iterdir():                         # a fresh machine
+        file.unlink()
+    ui.agent.history = []
+    asyncio.run(conversation_import(ui, [str(exported)]))
+
+    (restored,) = ui.agent.history[0]["images"]
+    assert "data" not in restored
+    assert open(restored["path"], "rb").read() == png(4, 4)
+    assert ui.chat_history_panel.users == [("[image #1]", [restored])]
+
+
+def test_import_without_bytes_marks_the_image_unavailable(tmp_path):
+    from moka_chat.ui.chat_history_panel import ChatHistoryPanel
+
+    panel = ChatHistoryPanel()
+    image = {"n": 1, "name": "gone.png", "path": "/nonexistent.png",
+             "width": 2, "height": 2, "size": 10}
+    msg = panel.add_user_message("look", [image])
+    assert isinstance(msg.type, UserMsg)
+    assert msg.base_text.endswith("· unavailable")
+
+
+def test_endpoint_learns_image_support_once(monkeypatch):
+    calls = []
+
+    async def query(endpoint, model_name):
+        calls.append(model_name)
+        return False
+
+    monkeypatch.setattr("moka_chat.harness.endpoint_discovery.query_image_input", query)
+    endpoint = Endpoint(name="local", type="ollama", model="llama3")
+    assert endpoint.accepts_images() is None
+
+    asyncio.run(endpoint.probe_image_input())
+    asyncio.run(endpoint.probe_image_input())
+
+    assert endpoint.accepts_images() is False
+    assert calls == ["llama3"]
+
+
+def test_references_are_colored_in_input_and_transcript(tmp_path):
+    from moka_chat.ui.chat_message import reference_spans
+    from moka_chat.ui.tui.buffer import Buffer
+    from moka_chat.ui.tui.colors import theme
+
+    line = "see [image #1] and @src/a.png, not a@b.c"
+    spans = [(line[s:e], fg) for s, e, fg in reference_spans(line)]
+    assert spans == [("[image #1]", theme.FOCUSED), ("@src/a.png", theme.FOCUSED)]
+
+    ui = _ui_with_endpoint(tmp_path, accepts=True)
+    ui.input_component.set_layout(0, 0, 60, 1)
+    ui.input_component.update("see [image #1] ok")
+    buffer = Buffer(60, 1)
+    ui.input_component.render(buffer)
+    assert buffer.cells[0][4].fg == theme.FOCUSED and buffer.cells[0][0].fg != theme.FOCUSED
+
+    from moka_chat.ui.chat_history_panel import ChatHistoryPanel
+    msg = ChatHistoryPanel().add_user_message("look @a.png")
+    component = msg.component
+    component.set_layout(0, 0, 40, 1)
+    buffer = Buffer(40, 1)
+    component.render(buffer)
+    assert buffer.cells[0][5].fg == theme.FOCUSED and buffer.cells[0][0].fg != theme.FOCUSED

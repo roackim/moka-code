@@ -196,3 +196,45 @@ async def llamacpp_context_window(endpoint: "Endpoint", model_name: str) -> int:
         if model.id == model_name and model.context_window:
             return model.context_window
     raise RuntimeError("Could not determine context window from server")
+
+
+def image_input_from_metadata(metadata: dict) -> bool | None:
+    """Image support recorded in catalog metadata; ``None`` when absent.
+
+    OpenRouter lists ``architecture.input_modalities``; Ollama's ``/api/show``
+    lists ``capabilities`` (``"vision"``).
+    """
+    modalities = (metadata.get("architecture") or {}).get("input_modalities")
+    if isinstance(modalities, list):
+        return "image" in modalities
+    capabilities = metadata.get("capabilities")
+    if isinstance(capabilities, list):
+        return "vision" in capabilities
+    return None
+
+
+async def query_image_input(endpoint: "Endpoint", model_name: str) -> bool | None:
+    """Ask the server whether *model_name* reads images; ``None`` when unknown."""
+    async with httpx.AsyncClient() as client:
+        if endpoint.type == "ollama":
+            response = await client.post(
+                f"{endpoint_ollama.native_base_url(endpoint)}/api/show",
+                json={"name": model_name}, timeout=endpoint.timeout,
+            )
+            response.raise_for_status()
+            return image_input_from_metadata(response.json())
+        if endpoint.type == "openrouter":
+            response = await client.get(
+                f"https://openrouter.ai/api/v1/models/{model_name}/endpoints",
+                timeout=endpoint.timeout,
+            )
+            response.raise_for_status()
+            return image_input_from_metadata(response.json().get("data") or {})
+        if endpoint.type == "llamacpp":
+            response = await client.get(
+                endpoint.base_url.replace("/v1", "/props"), timeout=endpoint.timeout,
+            )
+            response.raise_for_status()
+            vision = (response.json().get("modalities") or {}).get("vision")
+            return vision if isinstance(vision, bool) else None
+    return None

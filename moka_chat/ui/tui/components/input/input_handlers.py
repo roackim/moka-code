@@ -80,7 +80,9 @@ class KeyboardHandler(InputHandler):
     KEY_ESC = '\x1b'
     
     def __init__(self):
-        self.on_submit = None  # Callback for when enter is pressed
+        # Callback for when enter is pressed; returning False refuses the
+        # submission and keeps the text in the input.
+        self.on_submit = None
     
     def can_handle(self, event: Any) -> bool:
         return isinstance(event, (str, KeyEvent))
@@ -185,9 +187,9 @@ class KeyboardHandler(InputHandler):
         # Regular Enter -> Submit
         if event in (self.KEY_ENTER, self.KEY_NEWLINE):
             if self.on_submit and not context.buffer.is_empty():
-                self.on_submit(context.buffer.text)
-                context.buffer.clear()
-                context.scroll.reset()
+                if self.on_submit(context.buffer.text) is not False:
+                    context.buffer.clear()
+                    context.scroll.reset()
             return True
         
         return False

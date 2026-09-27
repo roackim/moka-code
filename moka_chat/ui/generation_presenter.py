@@ -30,8 +30,11 @@ from moka_chat.ui.tui.msg_types import (
 logger = logging.getLogger("tui")
 
 
-async def process_generation(app, user_input, user_msg) -> None:
-    """Process a single generation request, mapping events to messages."""
+async def process_generation(app, user_input, user_msg, attached=()) -> None:
+    """Process a single generation request, mapping events to messages.
+
+    ``attached``: image references sent with the user message.
+    """
     logger.info(f"Starting generation for user input: {user_input[:50]}...")
 
     chat = app.chat_history_panel
@@ -126,7 +129,7 @@ async def process_generation(app, user_input, user_msg) -> None:
     begin_text_message(current_msg)
 
     # Process streaming events from Harness
-    stream = agent.chat(user_input)
+    stream = agent.chat(user_input, list(attached))
     try:
         async for event in stream:
             if isinstance(event, events.Start):

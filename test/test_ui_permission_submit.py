@@ -97,7 +97,7 @@ class TestPendingPermissionPromptClearing:
         )
 
         # Patch agent.chat to yield the denied result then stop
-        ui.agent.chat = lambda _: make_chunk_stream(denied)
+        ui.agent.chat = lambda _, attached=None: make_chunk_stream(denied)
         asyncio.run(ui._process_generation("hello", ui.chat_history_panel.add_message("hello")))
 
         assert ui.pending_permission_prompt is None, (
@@ -117,7 +117,7 @@ class TestPendingPermissionPromptClearing:
             auto=True,
         )
 
-        ui.agent.chat = lambda _: make_chunk_stream(approved)
+        ui.agent.chat = lambda _, attached=None: make_chunk_stream(approved)
         asyncio.run(ui._process_generation("hello", ui.chat_history_panel.add_message("hello")))
 
         assert ui.pending_permission_prompt is None, (
@@ -136,7 +136,7 @@ class TestPendingPermissionPromptClearing:
             output="Auto-denied by security policy",
         )
 
-        ui.agent.chat = lambda _: make_chunk_stream(denied)
+        ui.agent.chat = lambda _, attached=None: make_chunk_stream(denied)
         asyncio.run(ui._process_generation("hello", ui.chat_history_panel.add_message("hello")))
 
         # Now submit a follow-up message – it must NOT be blocked

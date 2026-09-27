@@ -28,7 +28,7 @@ def _run_script(ui, script, pumps=2):
     clock = [0.0]
     ui._clock = lambda: clock[0]
 
-    async def chat(_):
+    async def chat(_, attached=None):
         for item in script:
             if callable(item):
                 item()
@@ -194,7 +194,7 @@ def test_cancel_finalizes_in_flight_tool_draft():
     clock = [0.0]
     ui._clock = lambda: clock[0]
 
-    async def chat(_):
+    async def chat(_, attached=None):
         yield events.Start(message_id="m1", role="assistant")
         yield events.ToolCallDraft(
             id="t1", name="write", args='{"path": "a", "content": "x',
@@ -244,7 +244,7 @@ def test_processing_phase_shown_while_context_is_ingested():
     clock = [0.0]
     ui._clock = lambda: clock[0]
 
-    async def chat(_):
+    async def chat(_, attached=None):
         # Runs during context ingestion, before the first harness event.
         observed["phase"] = _messages(ui)[-1].status_phase
         yield events.Start(message_id="m1", role="assistant")
@@ -334,7 +334,7 @@ def test_cancel_retains_text_and_finalizes():
     clock = [0.0]
     ui._clock = lambda: clock[0]
 
-    async def chat(_):
+    async def chat(_, attached=None):
         yield events.Start(message_id="m1", role="assistant")
         yield events.Token(text="partial")
         for _ in range(2):
@@ -365,7 +365,7 @@ def test_finalize_deferred_until_revealer_drains():
     clock = [0.0]
     ui._clock = lambda: clock[0]
 
-    async def chat(_):
+    async def chat(_, attached=None):
         for item in script:
             yield item
             if ui.stream_revealer is not None:
@@ -434,7 +434,7 @@ def test_tool_call_flushes_pending_text_without_frames():
     ui._clock = lambda: clock[0]
     seen = {}
 
-    async def chat(_):
+    async def chat(_, attached=None):
         yield events.Start(message_id="m1", role="assistant")
         yield events.Token(text="hello world")
         # No frame pump: the revealer still holds every cluster.

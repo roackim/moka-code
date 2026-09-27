@@ -15,7 +15,6 @@ from moka_chat.ui.tui.msg_types import (
     SysMsgWarning,
     ThinkingMsg,
     ToolCallMsg,
-    UserMsg,
 )
 
 
@@ -47,9 +46,12 @@ async def conversation_export(ui: ChatUIProtocol, args: List[str]):
                 "No conversation history to export.", msg_type=SysMsgError())
             return
 
+        from moka_chat.harness import images
+
         active_role = getattr(getattr(ui.agent, "role", None), "name", "agent")
+        # Images are embedded (base64) so the file is self-contained.
         with open(filename, "w", encoding="utf-8") as stream:
-            json.dump({"role": active_role, "history": history}, stream,
+            json.dump({"role": active_role, "history": images.embed(history)}, stream,
                       indent=2, ensure_ascii=False)
         ui.chat_history_panel.add_message(
             f"Conversation exported to {filename}\n({len(history)} messages)",
@@ -96,6 +98,10 @@ async def conversation_import(ui: ChatUIProtocol, args: List[str]):
                     f"Invalid message at index {index}: missing 'role' field",
                     msg_type=SysMsgError(), title="conversation")
                 return
+
+        # Embedded images go back to the image cache.
+        from moka_chat.harness import images
+        history = images.restore(history)
 
         # Apply the saved role, warning if it no longer exists.
         role_warning = None
@@ -156,8 +162,8 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
         ids = [message_id] if message_id else None
 
         if role == "user":
-            ui.chat_history_panel.add_message(content or "", msg_type=UserMsg(),
-                                              harness_message_ids=ids)
+            ui.chat_history_panel.add_user_message(content or "", message.get("images") or (),
+                                                   harness_message_ids=ids)
         elif role == "assistant":
             # content may be None for tool-call-only assistant messages.
             content = content or ""

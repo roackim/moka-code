@@ -30,6 +30,7 @@ All tests use pytest. Run with the project virtualenv (see HANDOFF §1):
 | `test_command_import_graph.py` | `ui/commands/` | Domain modules import only `base`; no cycles |
 | `test_core_ui_boundary.py` | `harness/` | R9 guard: harness imports no UI |
 | `test_config_loader.py` | `settings.py` | Split config files, validation, state |
+| `test_images.py` | `harness/images.py`, `ui/app.py`, `commands/conversation.py` | Header probing, image cache, attachment collection, content parts (OpenAI/Ollama), text-only refusal, Ctrl+V, export/import round trip |
 | `test_config_commands.py` | `ui/commands/core.py` | `/config`, `/edit`, `/reload`, external editor |
 | `test_conversation_commands.py` | `ui/commands/conversation.py` | `/import`, `/export`, history rebuild |
 | `test_compaction.py` | `harness.py` | Conversation history summarization (FakeServer) |
