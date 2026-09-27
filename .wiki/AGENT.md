@@ -1,4 +1,4 @@
-# Pico-Chat Wiki — Agent Guide
+# moka Wiki — Agent Guide
 
 This document tells AI agents and humans how to operate and maintain this wiki.
 
@@ -12,7 +12,7 @@ This document tells AI agents and humans how to operate and maintain this wiki.
   notes/
     principles.md           ← Canonical design principles (direction; read first)
     architecture.md         ← High-level system design and data flow
-    config.md               ← Configuration reference (split files under ~/.config/pico-chat/)
+    config.md               ← Configuration reference (split files under ~/.config/moka/)
     reasoning-traces.md     ← Reasoning trace handling (thinking tags, reasoning_content)
     security.md             ← Approval model and trust boundary
     sandbox.md              ← Sandboxed tool execution: worker, transport, project store
@@ -22,10 +22,10 @@ This document tells AI agents and humans how to operate and maintain this wiki.
     local-hostname-resolution.md ← `.local` mDNS resolution in the endpoint layer
   tree/
     README.md               ← Root package overview
-    harness.md              ← pico_chat/harness/ — LLM agent core
-    ui.md                   ← pico_chat/ui/ — Chat UI layer
-    ui-tui.md               ← pico_chat/ui/tui/ — Rendering engine
-    ui-tui-components.md    ← pico_chat/ui/tui/components/ — UI widgets
+    harness.md              ← moka_chat/harness/ — LLM agent core
+    ui.md                   ← moka_chat/ui/ — Chat UI layer
+    ui-tui.md               ← moka_chat/ui/tui/ — Rendering engine
+    ui-tui-components.md    ← moka_chat/ui/tui/components/ — UI widgets
     test.md                 ← test/ — Test suite
 ```
 

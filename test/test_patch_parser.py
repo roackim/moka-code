@@ -4,7 +4,7 @@ Covers parse_patch, apply_patch, and PatchParseError.
 """
 
 import pytest
-from pico_chat.worker import (
+from moka_chat.worker import (
     PatchBlock,
     PatchParseError,
     parse_patch,

@@ -1,10 +1,14 @@
+[ ] /terminal should be able to run in (current default) and out of the sandbox
+    -> add a param ?
+
+[ ] add a /sandbox stop ? alternative to quit ?
 
 [x] better UI for tools calls
     [x] when drafting
     [x] read write params, like 'read file.py 240 lines' something like that
     [x] edit file.py +10 -17 (git like with colors ?) (could be refined)
 
-[x] /terminal opens a terminal like $EDITOR and quiting it restores pico ? is this feasable ?
+[x] /terminal opens a terminal like $EDITOR and quiting it restores moka ? is this feasable ?
     
 [x] when a tool call is drafting, the previous message hangs unfinished (missing chunk ?)
 [?] better UI / UX for tool calls in containers

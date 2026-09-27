@@ -3,8 +3,8 @@
 The next menu opens only once the user types the space themselves.
 """
 
-from pico_chat.ui.commands.registry import COMMANDS
-from pico_chat.ui.tui.components.input.input import InputComponent
+from moka_chat.ui.commands.registry import COMMANDS
+from moka_chat.ui.tui.components.input.input import InputComponent
 
 
 def _input(context_items=()):

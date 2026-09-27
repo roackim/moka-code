@@ -1,6 +1,6 @@
 """Tests for the modal list selector (ListModal)."""
 
-from pico_chat.ui.tui.components.list_modal import ListModal
+from moka_chat.ui.tui.components.list_modal import ListModal
 
 
 class FakeCompositor:

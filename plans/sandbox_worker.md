@@ -1,14 +1,14 @@
 # Sandboxed Worker — Plan
 
 **Status:** proposed (agreed direction, no code yet) · **Owner:** Joackim · **Created:** 2026-09-24
-**Supersedes:** `plans/containerization.md` (the "pico ships nothing container-related"
+**Supersedes:** `plans/containerization.md` (the "moka ships nothing container-related"
 decision) for the execution path. The reasoning there is kept as history; the
 "the boundary belongs to the environment / explicit over user magic" principles
 carry over.
 **Companion docs:** `.wiki/notes/principles.md`, `plans/roles_rework.md`,
 `notes/` (streaming, tool output).
 
-Goal: let pico run its **tool execution inside a container it starts**, while the
+Goal: let moka run its **tool execution inside a container it starts**, while the
 UI, the agent loop, the conversation, the LLM calls, and the config all stay on
 the host. The container side is a tiny, stateless **worker** with no config, no
 network, no model, and no policy — just the pair of hands.
@@ -17,16 +17,16 @@ network, no model, and no policy — just the pair of hands.
 
 ## 1. Why
 
-Today pico is one process: `ui/` + `harness/` running on the host, tools touching
+Today moka is one process: `ui/` + `harness/` running on the host, tools touching
 the host filesystem directly. The only isolation options are the per-tool
-`no`/`ask`/`yes` approval (`plans/roles_rework.md`) and running the *whole* pico
+`no`/`ask`/`yes` approval (`plans/roles_rework.md`) and running the *whole* moka
 inside a user-written sandbox (`plans/containerization.md`). Both are all-or-
 nothing:
 
-- Bare pico: the model's `write`/`edit`/`bash` hit the host; the only
+- Bare moka: the model's `write`/`edit`/`bash` hit the host; the only
   guard is `ask`, and there is **no path confinement** (deliberately — path
   logic is not a security boundary).
-- Whole-pico-in-a-container: strong, but the user must install/run pico inside
+- Whole-moka-in-a-container: strong, but the user must install/run moka inside
   the box, and the UI, config, and secrets go in with it.
 
 This plan splits the difference: run the **agent** on the host (trusted) and the
@@ -47,14 +47,14 @@ So this is a **transport and lifecycle change**, not a rewrite.
 ## 2. Principles
 
 1. **The container is the boundary.** No path confinement, no allowlists, no
-   command parsing in pico. The mount, the namespace, and `--network=none` are
+   command parsing in moka. The mount, the namespace, and `--network=none` are
    the wall. (Continues `plans/roles_rework.md`.)
 2. **One mechanism, two places.** The tool bodies live once (`worker.py`) and run
    either in-process (bare) or in the container (sandboxed). No second copy.
 3. **Host thinks, worker does.** The worker has no config, no roles, no model,
    no history, no permissions. It executes a named tool with arguments and
    returns a result.
-4. **Explicit over implicit.** The user selects the backend with a flag; pico
+4. **Explicit over implicit.** The user selects the backend with a flag; moka
    never detects or guesses a sandbox. (Continues `plans/containerization.md`.)
 5. **Config files are the settings UI.** No new interactive surface; the backend
    is config/flag, the image is the user's Containerfile.
@@ -91,15 +91,15 @@ So this is a **transport and lifecycle change**, not a rewrite.
 
 ---
 
-## 4. The worker (`pico_chat/worker.py`)
+## 4. The worker (`moka_chat/worker.py`)
 
 A single, stdlib-only module that is both:
 
 - the container entrypoint (`python3 /opt/worker.py`), and
-- the host's source of tool bodies (`from pico_chat.worker import read, …`).
+- the host's source of tool bodies (`from moka_chat.worker import read, …`).
 
 Stdlib-only is what makes the container need no install (see §7). Host import
-runs the heavy `pico_chat/__init__.py` (`Harness`, `httpx`), which is fine; the
+runs the heavy `moka_chat/__init__.py` (`Harness`, `httpx`), which is fine; the
 container runs the file **as a script**, so the package `__init__` never runs.
 
 ### 4.1 Functions (mechanism)
@@ -180,7 +180,7 @@ The registry, schemas, role `enabled_tool_names()`, and prompts are unchanged.
 - Newline-delimited JSON; each request carries an integer `id`, echoed by the
   response.
 - **`-i`, never `-t`** — a TTY injects CRLF and corrupts framing.
-- stdout is protocol only; stderr is pumped to pico's debug log.
+- stdout is protocol only; stderr is pumped to moka's debug log.
 
 ```jsonc
 {"id":7,"tool":"bash","args":{"command":"pytest -q"}}
@@ -209,7 +209,7 @@ The registry, schemas, role `enabled_tool_names()`, and prompts are unchanged.
 
 ## 7. Container image & worker injection (Model 1)
 
-**The image contains no pico.** Because `worker.py` is stdlib-only, the
+**The image contains no moka.** Because `worker.py` is stdlib-only, the
 container needs only a Python interpreter plus whatever *the project* needs
 (compilers, test runners, …).
 
@@ -220,29 +220,29 @@ container needs only a Python interpreter plus whatever *the project* needs
 - The host mounts its own installed `worker.py` read-only and runs it as a
   script:
   ```sh
-  PYSRC=$(python -c 'import pico_chat,os;print(os.path.dirname(pico_chat.__file__))')
+  PYSRC=$(python -c 'import moka_chat,os;print(os.path.dirname(moka_chat.__file__))')
   podman run -i --rm -w /workspace \
     -v "$PWD:/workspace:Z" \
     -v "$PYSRC/worker.py:/opt/worker.py:ro" \
-    $PICO_IMAGE python3 /opt/worker.py
+    $MOKA_IMAGE python3 /opt/worker.py
   ```
 - Version-locking is free: the container runs the host's exact worker (no skew,
-  no rebuild on pico updates, no build-time network).
-- If pico *is* installed in the image (`pip install`), `pico --worker` is an
+  no rebuild on moka updates, no build-time network).
+- If moka *is* installed in the image (`pip install`), `moka --worker` is an
   equivalent entrypoint; Model 1 does not require it.
 - `pipx` is a host CLI installer and is not used inside images; use `pip`/`uv`.
 
-**Starter Containerfile.** pico can generate a commented, virgin Containerfile
+**Starter Containerfile.** moka can generate a commented, virgin Containerfile
 for a chosen base (friendly names `python` / `debian` / `ubuntu`) with the right
 workdir/mount/network notes, which the user edits and builds. Generating is the
-user's convenience; pico never builds or ships an image (preserves
+user's convenience; moka never builds or ships an image (preserves
 `containerization.md`'s "the user builds").
 
 ---
 
 ## 8. Launcher & lifecycle (host)
 
-`pico_chat/sandbox.py` (host-only; no `ui/` import) owns:
+`moka_chat/sandbox.py` (host-only; no `ui/` import) owns:
 
 - **Selection:** the `--container` flag (see §9) chooses the backend.
 - **argv construction:** one place builds the runtime command.
@@ -268,7 +268,7 @@ The launcher only has to produce a pipe; the protocol layer is identical.
 ## 9. Configuration
 
 - Per-project scoping comes from **invocation**, not project-local config (P1 is
-  preserved): e.g. a shell alias or `pico --container=podman:my-project`.
+  preserved): e.g. a shell alias or `moka --container=podman:my-project`.
 - A user-level default may live in a new flat `sandbox.toml`
   (`enabled`, `runtime`, `image`, `network`) surfaced by `/config sandbox`.
   Keys added per `AGENTS.md` (spec + `_apply_defaults` + commented template).
@@ -282,7 +282,7 @@ The launcher only has to produce a pipe; the protocol layer is identical.
 | Concern | Decision |
 |---|---|
 | File boundary | The workspace bind mount; all `read`/`write`/`edit` run in-container |
-| Path confinement | None in pico (the container is the wall) |
+| Path confinement | None in moka (the container is the wall) |
 | Network | `--network=none`; LLM calls happen on the host |
 | Secrets | Stay on the host; never passed into the container |
 | Rootfs | `--read-only`, `--tmpfs /tmp` (edit needs scratch) |
@@ -329,14 +329,14 @@ old role files. Recorded here so the worker verb set stays exactly four
 Each ends green on §14 gates.
 
 - **W1 — Worker extraction (no behavior change).** Move `read`/`write`/`edit`/
-  `bash` bodies into `pico_chat/worker.py`; fold `patch_parser.py`;
+  `bash` bodies into `moka_chat/worker.py`; fold `patch_parser.py`;
   `harness/tools.py` imports from `worker` and keeps schemas. `tools.py` tests
   stay green.
 - **W2 — Transport seam.** Introduce `ToolTransport`; `InProcessTransport`;
   `Harness`/`create_toolset` take a transport. Bare mode unchanged.
 - **W3 — Protocol + `__main__`.** JSONL loop in `worker.py` (stdlib, `-i`-safe,
   stdout=protocol); tests for framing, each verb, errors, timeout, shutdown.
-- **W4 — Launcher.** `pico_chat/sandbox.py`: `--container` selection, argv
+- **W4 — Launcher.** `moka_chat/sandbox.py`: `--container` selection, argv
   construction, process ownership, lazy start, restart, stop. Unit-test argv;
   integration-test against a trivial fake runtime that echoes protocol.
 - **W5 — SandboxTransport.** Client side of the protocol; map frames; wire into
@@ -354,8 +354,8 @@ Each ends green on §14 gates.
 
 ```bash
 .pixi/envs/default/bin/python -m pytest test/ -q
-.pixi/envs/default/bin/python -m compileall -q pico_chat
-.pixi/envs/default/bin/python -m vulture pico_chat --min-confidence 80
+.pixi/envs/default/bin/python -m compileall -q moka_chat
+.pixi/envs/default/bin/python -m vulture moka_chat --min-confidence 80
 .pixi/envs/default/bin/python -m pytest test/test_core_ui_boundary.py -q
 .pixi/envs/default/bin/python -m pytest test/test_command_import_graph.py -q
 ```
@@ -399,7 +399,7 @@ Each ends green on §14 gates.
 
 1. Flag grammar: `--container=podman:image` vs `--sandbox=podman --image=…`.
 2. `sandbox.toml` now, or flag-only until the flag proves annoying?
-3. Where the starter Containerfile is written (`./Containerfile.pico`?) and from
+3. Where the starter Containerfile is written (`./Containerfile.moka`?) and from
    what surface (flag vs command).
 4. `bubblewrap` details: which host paths to bind (`python`, `worker.py`,
    workspace, `/tmp`), no image.
@@ -411,7 +411,7 @@ Each ends green on §14 gates.
 
 ## 18. Deletions (delete before you design)
 
-- `pico_chat/harness/patch_parser.py` (folded into `worker.py`; `worker.edit`
+- `moka_chat/harness/patch_parser.py` (folded into `worker.py`; `worker.edit`
   owns the parse/apply cascade).
 - Tool bodies in `harness/tools.py` (moved to `worker.py`).
 - Subagent machinery — already deleted (§12).

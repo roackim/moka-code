@@ -4,7 +4,7 @@ import asyncio
 import io
 import json
 
-from pico_chat.worker import handle_request, serve
+from moka_chat.worker import handle_request, serve
 
 
 def _run(coro):

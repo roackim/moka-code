@@ -1,11 +1,17 @@
 # Configuration
 
 Configuration is files. Everything hand-edited lives under
-`~/.config/pico-chat/` (override the directory with `PICO_CONFIG_DIR`), split
+`~/.config/moka/` (override the directory with `MOKA_CONFIG_DIR`), split
 into small single-concern files so each stays easy to edit. There is **no
 project-local config**: per-project settings are stored *here* (keyed by the
 workspace name), never in the repository, and there is no trust model.
 
+
+The project was renamed from pico-chat to moka. On the first start after the
+rename, `settings.migrate_legacy_config_dir()` (called first in `main()`) moves
+`~/.config/pico-chat` to `~/.config/moka` when `MOKA_CONFIG_DIR` is unset, the
+new directory is missing and the old one exists, and reports it once in the
+activity panel. Nothing else reads the old location.
 ## Files
 
 | File | Contents | Shape |
@@ -25,12 +31,12 @@ workspace name), never in the repository, and there is no trust model.
 [tools-and-permissions.md](./tools-and-permissions.md)).
 
 Missing files are created from fully commented templates
-(`pico_cfg.DEFAULT_CONFIG_TEMPLATES`) by `Config.ensure_section_file()` /
+(`settings.DEFAULT_CONFIG_TEMPLATES`) by `Config.ensure_section_file()` /
 `ensure_config_files()`. The built-in role files (`agent.toml`, `chat.toml`)
 are seeded by `roles.ensure_roles_dir()` on startup.
 
 Existing **flat** files (`ui`, `context`, `debug`) are kept in sync
-with their templates: on startup (`pico_cfg.sync_config_files()` in `main()`) and
+with their templates: on startup (`settings.sync_config_files()` in `main()`) and
 when `/config <section>` opens one, `_sync_flat_file()` inserts the commented
 line for any spec key missing from the file (at its template-relative position)
 and removes lines whose key is in that section's `_RETIRED_*` set. Only keys
@@ -42,19 +48,19 @@ changes. Structured files (`styles`, `servers`, `theme`, and per-project
 
 ### Project files (sandboxes)
 
-`~/.config/pico-chat/projects/<name>.toml` holds a project's sandbox
+`~/.config/moka/projects/<name>.toml` holds a project's sandbox
 definitions, keyed by the workspace **directory name** (`projects.project_name`)
 and loaded/managed by `projects.py`. The file is self-describing
 (`path = "<resolved workspace>"`), lists named `[sandboxes.<id>]` tables
 (`type` = podman/docker/bubblewrap plus `description`, `image`, `dockerfile`,
 `network`, `timeout`, `run_args`) and an `active = "<id>"` selection. Missing
 files are seeded from a thorough commented template; `set_active()` updates the
-`active` line in place, preserving comments. pico never writes into the
+`active` line in place, preserving comments. moka never writes into the
 repository. See [sandbox.md](./sandbox.md).
 
-## Loader (`pico_cfg.py`)
+## Loader (`settings.py`)
 
-`Config` is a plain class with a flat attribute surface (`pico_cfg.config.<attr>`),
+`Config` is a plain class with a flat attribute surface (`settings.config.<attr>`),
 instantiated once at module load as `config`. The split files map onto flat
 attributes via per-section specs (`_UI_SPEC`, `_CONTEXT_SPEC`,
 `_DEBUG_SPEC`); `styles.toml` and `servers.toml` are merged
@@ -71,7 +77,7 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 
 ### Intent vs state
 
-- **Intent** (hand-edited): the section files above; pico never writes them.
+- **Intent** (hand-edited): the section files above; moka never writes them.
   Every `[servers.<name>]` needs a `type` (missing/unknown → load error, server
   skipped). OpenRouter servers enable models with one
   `[servers.<name>.models."<id>"]` table each; `providers = [...]` (server
@@ -113,7 +119,7 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 
 A theme is a palette (`themes.toml`, `[themes.<name>]`) mapping the eleven
 `_theme` fields (`BACKGROUND`, `DEFAULT`, `MUTED`, `ERROR`, `WARNING`,
-`SUCCESS`, `PERMISSION`, `TOOL`, `USER`, `PICO`, `FOCUSED`) to either a
+`SUCCESS`, `PERMISSION`, `TOOL`, `USER`, `ASSISTANT`, `FOCUSED`) to either a
 `"#RRGGBB"` hex string or an ANSI table (`{ ansi = 90 }`, `{ ansi = 39, bg = 49 }`).
 Missing entries inherit the built-in base of the same name (or `terminal`).
 Built-ins are always available and are listed by `/theme` (or

@@ -8,16 +8,16 @@ import json
 
 import pytest
 
-import pico_chat.ui.chat_message as chat_message
-from pico_chat.ui.chat_message import (
+import moka_chat.ui.chat_message as chat_message
+from moka_chat.ui.chat_message import (
     Message,
     _edit_counts,
     _parse_tool_args,
     _tool_summary,
 )
-from pico_chat.ui.tui.msg_types import AskPermissionMsg, ToolCallMsg
-from pico_chat.ui.tui.colors import theme
-from pico_chat.ui.tui.layout_utils import strip_ansi
+from moka_chat.ui.tui.msg_types import AskPermissionMsg, ToolCallMsg
+from moka_chat.ui.tui.colors import theme
+from moka_chat.ui.tui.layout_utils import strip_ansi
 
 GLYPHS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓✗⏹?"
 
@@ -102,8 +102,8 @@ def test_permission_ask_names_its_keys():
 
 
 def test_panel_tick_refreshes_live_labels_at_a_steady_cadence(clock):
-    from pico_chat.ui.chat_history_panel import ChatHistoryPanel
-    from pico_chat.ui.tui.events import TickEvent
+    from moka_chat.ui.chat_history_panel import ChatHistoryPanel
+    from moka_chat.ui.tui.events import TickEvent
 
     panel = ChatHistoryPanel()
     msg = panel.add_message("", msg_type=ToolCallMsg())
@@ -123,7 +123,7 @@ def test_panel_tick_refreshes_live_labels_at_a_steady_cadence(clock):
 
 def test_tool_message_exposes_only_non_destructive_actions():
     """Tool messages expose output/copy; state-changing actions are commands."""
-    from pico_chat.ui.tui.msg_types import MsgAction
+    from moka_chat.ui.tui.msg_types import MsgAction
 
     running = _tool(status="approved | executing", finalized=False)
     actions = running.get_active_actions()
@@ -136,8 +136,8 @@ def test_tool_message_exposes_only_non_destructive_actions():
 def test_harness_stop_tool_kills_bash(tmp_path):
     """Harness.stop_tool() terminates the active command."""
     import asyncio
-    from pico_chat.harness.harness import Harness
-    from pico_chat.harness.tools import MinimalToolset
+    from moka_chat.harness.harness import Harness
+    from moka_chat.harness.tools import MinimalToolset
 
     h = Harness.__new__(Harness)
     ts = MinimalToolset(tmp_path)
@@ -158,7 +158,7 @@ def test_harness_stop_tool_kills_bash(tmp_path):
 
 def test_bash_tool_schema_name_is_bash():
     """The LLM-facing tool name is 'bash'."""
-    from pico_chat.harness.tools import create_toolset
+    from moka_chat.harness.tools import create_toolset
     import tempfile
 
     tmp = tempfile.mkdtemp()
@@ -168,8 +168,8 @@ def test_bash_tool_schema_name_is_bash():
 
 def test_tool_lines_use_a_muted_bar():
     """Tool lines get a muted ``▌``; an ask keeps its permission color."""
-    from pico_chat.ui.tui.msg_types import AskPermissionMsg, PicoMsg
-    from pico_chat.ui.tui.colors import theme
+    from moka_chat.ui.tui.msg_types import AskPermissionMsg, AssistantMsg
+    from moka_chat.ui.tui.colors import theme
 
     ask = Message("", msg_type=AskPermissionMsg(), max_width=40)
     ask.tool_name = "bash"
@@ -180,7 +180,7 @@ def test_tool_lines_use_a_muted_bar():
     assert tool.box.gutter == "▌"
     assert tool.box.gutter_color == theme.MUTED
 
-    assert Message("hi", msg_type=PicoMsg()).box.gutter == "▌"
+    assert Message("hi", msg_type=AssistantMsg()).box.gutter == "▌"
 
 
 # --- per-tool summary ------------------------------------------------------
@@ -211,7 +211,7 @@ def test_edit_summary_reports_added_and_removed():
 
 
 def test_each_side_is_colored_with_its_own_unit():
-    from pico_chat.ui.chat_message import _line_metric
+    from moka_chat.ui.chat_message import _line_metric
 
     metric = _line_metric(added=2, removed=2)
     assert metric == (f"{theme.SUCCESS}+2 lines{theme.reset()} "
@@ -270,7 +270,7 @@ def test_tool_line_uses_single_spaces_and_mutes_the_target():
 
 
 def test_long_path_is_shortened_from_the_left_keeping_the_metric():
-    path = "pico_chat/ui/commands/" + "deep/" * 10 + "models.py"
+    path = "moka_chat/ui/commands/" + "deep/" * 10 + "models.py"
     msg = _tool(name="write", args={"path": path, "content": "a\nb\n"},
                 status="completed", finalized=True, output="ok", width=50)
     header = _lines(msg)[0]
@@ -359,7 +359,7 @@ def test_write_draft_grows_live_in_the_final_format():
 
 def test_approving_turns_the_ask_into_a_running_tool_line():
     from conftest import StubAgent
-    from pico_chat.ui.app import chatTUI
+    from moka_chat.ui.app import chatTUI
 
     agent = StubAgent()
     responses = []

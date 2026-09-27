@@ -3,12 +3,12 @@
 import asyncio
 import json
 
-from pico_chat.harness import events as events_module
-from pico_chat.harness.harness import Harness
-from pico_chat.harness.llm_status import AgentState
-from pico_chat.harness.permissions import PermissionGate
-from pico_chat.harness.roles import Role
-from pico_chat.harness.tools import (
+from moka_chat.harness import events as events_module
+from moka_chat.harness.harness import Harness
+from moka_chat.harness.llm_status import AgentState
+from moka_chat.harness.permissions import PermissionGate
+from moka_chat.harness.roles import Role
+from moka_chat.harness.tools import (
     InProcessTransport,
     MinimalToolset,
     create_toolset,

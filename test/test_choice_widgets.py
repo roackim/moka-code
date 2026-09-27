@@ -1,6 +1,6 @@
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.components.choice import Checkbox, RadioGroup
-from pico_chat.ui.tui.terminal import MouseEvent
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.components.choice import Checkbox, RadioGroup
+from moka_chat.ui.tui.terminal import MouseEvent
 
 
 def row_text(buffer, row):

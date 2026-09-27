@@ -1,6 +1,6 @@
 """Tests for Compositor frame callbacks (S1)."""
 
-from pico_chat.ui.tui.compositor import Compositor
+from moka_chat.ui.tui.compositor import Compositor
 
 
 def _bare():

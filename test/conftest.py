@@ -1,4 +1,4 @@
-"""Shared test fixtures for pico-chat.
+"""Shared test fixtures for moka.
 
 Centralises the stubs and helpers that were previously duplicated across
 test_permissions.py, test_compaction.py, and test_ui_permission_submit.py.
@@ -11,9 +11,9 @@ from typing import Optional
 
 import pytest
 
-from pico_chat.harness.harness import Harness
-from pico_chat.harness.llm_status import AgentState
-from pico_chat.harness.permissions import PermissionGate
+from moka_chat.harness.harness import Harness
+from moka_chat.harness.llm_status import AgentState
+from moka_chat.harness.permissions import PermissionGate
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +115,7 @@ def harness_stub(tmp_path, stub_read_tool):
     harness.history = []
     harness.workspace = str(tmp_path)
     harness.tools_map = {"read": stub_read_tool}
-    from pico_chat.harness.roles import Role
+    from moka_chat.harness.roles import Role
 
     harness._permission_gate = PermissionGate(role=Role(name="test", tools={"read": "yes"}))
     return harness

@@ -1,7 +1,7 @@
-from pico_chat.ui.tui.actions import Action, ActionMap, action
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.components.base import Component
-from pico_chat.ui.tui.router import EventRouter
+from moka_chat.ui.tui.actions import Action, ActionMap, action
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.components.base import Component
+from moka_chat.ui.tui.router import EventRouter
 
 
 class RecordingComponent(Component):

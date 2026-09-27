@@ -2,11 +2,11 @@
 
 import asyncio
 
-from pico_chat import pico_cfg
-from pico_chat.harness import events
-from pico_chat.ui.answer_split import split_answer
-from pico_chat.ui.chat_history_panel import ChatHistoryPanel
-from pico_chat.ui.tui.msg_types import PicoMsg, UserMsg
+from moka_chat import settings
+from moka_chat.harness import events
+from moka_chat.ui.answer_split import split_answer
+from moka_chat.ui.chat_history_panel import ChatHistoryPanel
+from moka_chat.ui.tui.msg_types import AssistantMsg, UserMsg
 
 ANSWER = """Here is the fix:
 
@@ -45,7 +45,7 @@ def _panel_with_answer():
     panel = ChatHistoryPanel()
     panel.width = 80
     panel.add_message("question", msg_type=UserMsg())
-    answer = panel.add_message(ANSWER, msg_type=PicoMsg())
+    answer = panel.add_message(ANSWER, msg_type=AssistantMsg())
     answer.finalize()
     panel.split_answer(answer)
     panel.add_message("next question", msg_type=UserMsg())
@@ -123,7 +123,7 @@ def test_right_on_a_plain_message_only_hints():
 
 
 def test_selected_segment_gets_the_wide_marker():
-    from pico_chat.ui.tui.buffer import Buffer
+    from moka_chat.ui.tui.buffer import Buffer
 
     panel = _panel_with_answer()
     panel.set_layout(0, 0, 60, 40)
@@ -138,9 +138,9 @@ def test_selected_segment_gets_the_wide_marker():
 
 def test_answers_split_when_the_generation_ends(monkeypatch):
     from conftest import StubAgent
-    from pico_chat.ui.app import chatTUI
+    from moka_chat.ui.app import chatTUI
 
-    monkeypatch.setattr(pico_cfg.config, "ui_stream_smoothing", False)
+    monkeypatch.setattr(settings.config, "ui_stream_smoothing", False)
     ui = chatTUI(StubAgent())
 
     async def chat(_):
@@ -155,8 +155,8 @@ def test_answers_split_when_the_generation_ends(monkeypatch):
 
 
 def test_click_selects_the_answer_first_then_the_part(monkeypatch):
-    from pico_chat.ui.tui.buffer import Buffer
-    from pico_chat.ui.tui.events import MouseEvent
+    from moka_chat.ui.tui.buffer import Buffer
+    from moka_chat.ui.tui.events import MouseEvent
 
     panel = _panel_with_answer()
     panel.set_layout(0, 0, 60, 40)

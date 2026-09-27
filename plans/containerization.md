@@ -1,5 +1,5 @@
-> **Superseded (2026-09-24).** The "pico ships nothing container-related"
-> decision below is reversed for the **execution path**: pico will start a
+> **Superseded (2026-09-24).** The "moka ships nothing container-related"
+> decision below is reversed for the **execution path**: moka will start a
 > container itself and run only the tool **worker** inside it, keeping the UI,
 > agent loop, conversation, config, secrets, and LLM calls on the host. See
 > [`plans/sandbox_worker.md`](./sandbox_worker.md).
@@ -7,7 +7,7 @@
 > The reasoning here is kept as the historical record. The parts that carry
 > over: **the boundary belongs to the environment**, **explicit over implicit**
 > (the user names the backend; no detection), the per-tool `no`/`ask`/`yes`
-> model, and **the user builds the image** (pico does not ship one).
+> model, and **the user builds the image** (moka does not ship one).
 
 # Containerization — Decision Record
 
@@ -24,13 +24,13 @@ deliberate **non-feature**.
 
 ## The decision
 
-**pico ships nothing container-related.** No image, no Dockerfile, no wrapper
-script, no launcher flag, no detection. pico is a plain program that runs
+**moka ships nothing container-related.** No image, no Dockerfile, no wrapper
+script, no launcher flag, no detection. moka is a plain program that runs
 wherever the user puts it. If the user wants isolation, *they* write a
-`podman run …` script, choose the image, and mount the workspace. pico neither
+`podman run …` script, choose the image, and mount the workspace. moka neither
 knows nor cares whether it is sandboxed.
 
-The one place this shows up in pico is the **tool approval model**
+The one place this shows up in moka is the **tool approval model**
 (`plans/roles_rework.md`): a tool is `no` / `ask` / `yes`. Run inside a sandbox
 → set `yes`. Run bare → set `ask`. The user makes the call explicitly; nothing
 is inferred.
@@ -43,27 +43,27 @@ is inferred.
   build, confinement, detection) was fully designed, then deleted once we saw it
   was the wrong layer.
 - **Explicit over implicit.** No heuristic sandbox detection, no TOFU, no
-  auto-build. The user's script is the explicit statement of how pico runs.
+  auto-build. The user's script is the explicit statement of how moka runs.
 - **Config files are the settings UI / no project-local config.** P1 is
-  *preserved*: there is no `.pico.toml`, no project container config. The
-  sandbox invocation lives outside pico, in the user's own script.
+  *preserved*: there is no `.moka.toml`, no project container config. The
+  sandbox invocation lives outside moka, in the user's own script.
 - **The boundary belongs to the environment.** Containers, VMs, bubblewrap,
-  `sandbox-exec` — the user picks the tool. pico should not reimplement any of
+  `sandbox-exec` — the user picks the tool. moka should not reimplement any of
   them.
 - **The agent runs in a container; that is the expected mode, but it is the
   user's responsibility.**
 
 ---
 
-## What pico does and doesn't provide
+## What moka does and doesn't provide
 
-| pico provides | pico does **not** provide |
+| moka provides | moka does **not** provide |
 |---|---|
 | A normal CLI/TUI that runs anywhere | An image or Dockerfile for itself |
-| `PICO_CONFIG_DIR` honored from the environment | A `--container` launcher |
+| `MOKA_CONFIG_DIR` honored from the environment | A `--container` launcher |
 | Per-tool `no`/`ask`/`yes` approval | Runtime detection (podman/docker) |
 | The approval prompt | Image building, cache, lifecycle, recreate |
-| — | `.pico.toml` or any project-local config |
+| — | `.moka.toml` or any project-local config |
 | — | Workspace path confinement — the container mount is the boundary |
 
 ---
@@ -75,8 +75,8 @@ user declares which via tool config:
 
 | Situation | Boundary | Tool settings |
 |---|---|---|
-| pico run inside the user's container | the container | `yes` (auto-approve; the mount is the wall) |
-| pico run bare on the host | none | `ask` (confirm `write` / `edit` / `bash`) |
+| moka run inside the user's container | the container | `yes` (auto-approve; the mount is the wall) |
+| moka run bare on the host | none | `ask` (confirm `write` / `edit` / `bash`) |
 
 This is the whole safety story. No profiles, no command allowlists, no
 inside/outside repo logic, no chain policy — see `plans/roles_rework.md`.
@@ -96,8 +96,8 @@ inside/outside repo logic, no chain policy — see `plans/roles_rework.md`.
   soft spot (absolute paths resolve to the container's filesystem), but needs a
   read/write/edit RPC/helper into the container — more machinery for the same
   files (the workspace is a bind mount either way).
-- **(C) The user sandboxes pico itself. (Chosen.)** The container isolates the
-  harness, files, and commands at once. pico implements nothing. The
+- **(C) The user sandboxes moka itself. (Chosen.)** The container isolates the
+  harness, files, and commands at once. moka implements nothing. The
   real boundary is the mount, not our code.
 
 Note the network trade-off: under (C) the LLM traffic originates inside the
@@ -108,33 +108,33 @@ agent, with egress being the user's script's concern.
 
 ### 2. Who builds the image — chose "the user"
 
-- **pico builds from the project Dockerfile, gated by TOFU/hash-pinning.**
+- **moka builds from the project Dockerfile, gated by TOFU/hash-pinning.**
   Rejected: it executes repo-authored `RUN` on the host, unsandboxed, with the
   network and build context; approval prompts decay into rubber stamps;
   hash-pinning is theater if you always approve and doesn't make the build
   reproducible.
-- **pico builds from a recipe in user config.** Rejected: the env must be
+- **moka builds from a recipe in user config.** Rejected: the env must be
   maintained in two places and drifts from `requirements.txt`/`package.json`.
-- **The user builds, outside pico. (Chosen.)** `podman build -t <image> …`.
-  pico never builds, so there is no pico-triggered unsandboxed execution. The
+- **The user builds, outside moka. (Chosen.)** `podman build -t <image> …`.
+  moka never builds, so there is no moka-triggered unsandboxed execution. The
   agent may still *edit* the project Dockerfile — that is normal agent work —
-  but nothing pico does runs it; only the user's explicit build does. This is
+  but nothing moka does runs it; only the user's explicit build does. This is
   what dissolves the cross-session escalation problem (agent writes recipe →
   host compiles it): the human build is the gate.
 
-### 3. How the image is identified — chose "nothing in pico"
+### 3. How the image is identified — chose "nothing in moka"
 
-- `.pico.toml` in the project with `image`/`containerfile`. **Dropped.**
+- `.moka.toml` in the project with `image`/`containerfile`. **Dropped.**
 - `[projects."/path"]` tables in a user-level file. **Dropped.**
-- Convention (`pico/<project>`). **Dropped.**
+- Convention (`moka/<project>`). **Dropped.**
 
 The image is named in the *user's run script*. This keeps the project free of
-pico config and preserves P1.
+moka config and preserves P1.
 
-### 4. Where run-time arguments live — chose "nowhere in pico"
+### 4. Where run-time arguments live — chose "nowhere in moka"
 
 `mounts`, `network`, `cpus`, `memory`, GPU, `--shm-size` are all expressed
-natively in the user's `podman run` script. pico models none of them, so it never
+natively in the user's `podman run` script. moka models none of them, so it never
 has to track each runtime's flag differences (`docker --gpus all` vs
 `podman --device nvidia.com/gpu=all`, etc.).
 
@@ -144,18 +144,18 @@ No lazy start, no recreate-on-image-change, no orphan cleanup. `--rm` plus the
 user restarting the container is the whole lifecycle. This removed an entire
 class of state-management code.
 
-### 6. A built-in launcher (`pico --container`, `--image`, `--no-network`, …) — rejected
+### 6. A built-in launcher (`moka --container`, `--image`, `--no-network`, …) — rejected
 
 Considered and designed, then dropped:
 
 - The launcher's only real merit over a script is discoverability and central
-  correctness. But pico's container contract is tiny (mount `$PWD`, mount the
+  correctness. But moka's container contract is tiny (mount `$PWD`, mount the
   config dir, `-it`, `--rm`, a self-set marker), so a 10-line script is as
   correct and far more transparent.
 - Per-project compute needs (CPU/RAM/GPU/`shm`) are *easier* in a script than
-  through pico's flags.
+  through moka's flags.
 - Shipping an image (the actual hard part) would be required either way, and we
-  decided pico ships no image.
+  decided moka ships no image.
 - Principle 5: no new UI surfaces without need.
 
 Revisit only if the script ergonomics actually bite.
@@ -181,11 +181,11 @@ illusion and deny-lists fail open to obfuscation. The container is the boundary;
 
 ## Why the trust problem disappears
 
-Every earlier approach needed a trust mechanism because pico *did something*
+Every earlier approach needed a trust mechanism because moka *did something*
 with repo content (build it, or read project config that could widen the
-sandbox). Under the final decision pico does neither: it runs no build, reads no
+sandbox). Under the final decision moka does neither: it runs no build, reads no
 project config, and executes only the user's own launch script. A cloned repo
-cannot authorize itself to pico. There is nothing to trust because pico takes no
+cannot authorize itself to moka. There is nothing to trust because moka takes no
 action on the repo's behalf.
 
 ---
@@ -194,13 +194,13 @@ action on the repo's behalf.
 
 ```sh
 #!/bin/sh
-exec "${PICO_RUNTIME:-podman}" run --rm -it \
+exec "${MOKA_RUNTIME:-podman}" run --rm -it \
   -v "$PWD:/workspace" -w /workspace \
-  -v "${PICO_CONFIG_DIR:-$HOME/.config/pico-chat}:/root/.config/pico-chat:ro" \
+  -v "${MOKA_CONFIG_DIR:-$HOME/.config/moka}:/root/.config/moka:ro" \
   --read-only --tmpfs /tmp \
   --cap-drop=all --security-opt no-new-privileges \
-  ${PICO_NETWORK:---network=none} \
-  "$PICO_IMAGE" pico "$@"
+  ${MOKA_NETWORK:---network=none} \
+  "$MOKA_IMAGE" moka "$@"
 ```
 
 Rootless, read-only rootfs, no caps, no new privileges, workspace-only mount,
@@ -232,7 +232,7 @@ Fetched at decision time, for contrast (see `.wiki/notes/principles.md`).
 Takeaways that shaped us: layered config with **project-scope safety
 restrictions** is the state of the art, and `deny`/`ask` applying immediately
 while `allow` waits for trust is a good split. But **neither incumbent runs the
-agent in a container by default** — pico's bet (container-as-user-responsibility,
+agent in a container by default** — moka's bet (container-as-user-responsibility,
 zero container code) is more hands-off than both, and that is intentional.
 
 ---

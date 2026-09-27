@@ -1,6 +1,6 @@
 """Command surface: top-level /import & /export, leaf /model, descriptions."""
 
-from pico_chat.ui.commands import COMMANDS, get_command_descriptions
+from moka_chat.ui.commands import COMMANDS, get_command_descriptions
 
 
 def test_export_and_import_are_top_level():
@@ -56,8 +56,8 @@ def test_every_command_has_a_description():
 
 
 def test_build_rows_marks_active_and_aligns_description():
-    from pico_chat.harness.endpoint import ModelInfo
-    from pico_chat.ui.commands.models import _build_rows
+    from moka_chat.harness.endpoint import ModelInfo
+    from moka_chat.ui.commands.models import _build_rows
 
     pairs = [
         ("local", ModelInfo(id="qwen", context_window=32768)),
@@ -78,8 +78,8 @@ def test_build_rows_marks_active_and_aligns_description():
 
 
 def test_build_rows_disambiguates_duplicate_model_ids():
-    from pico_chat.harness.endpoint import ModelInfo
-    from pico_chat.ui.commands.models import _build_rows
+    from moka_chat.harness.endpoint import ModelInfo
+    from moka_chat.ui.commands.models import _build_rows
 
     pairs = [
         ("a", ModelInfo(id="qwen", context_window=32768)),
@@ -97,8 +97,8 @@ def test_open_picker_shows_cached_catalog_without_network(monkeypatch):
     import asyncio
     from types import SimpleNamespace
 
-    import pico_chat.ui.commands.models as models
-    from pico_chat.harness.endpoint import ModelInfo
+    import moka_chat.ui.commands.models as models
+    from moka_chat.harness.endpoint import ModelInfo
 
     pairs = [
         ("local", ModelInfo(id="qwen2.5:7b", context_window=32768)),

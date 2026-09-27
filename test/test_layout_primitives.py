@@ -1,11 +1,11 @@
-from pico_chat.ui.tui.components.text import TextComponent
-from pico_chat.ui.tui.components.layout import EmptyLine, SeparatorLine
-from pico_chat.ui.tui.container import (
+from moka_chat.ui.tui.components.text import TextComponent
+from moka_chat.ui.tui.components.layout import EmptyLine, SeparatorLine
+from moka_chat.ui.tui.container import (
     Align, Content, Fill, Fixed, Hsplit, Overlay, Padding, Percent,
     ScrollView, Stack, Vsplit,
 )
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.events import KeyEvent, MouseEvent
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.events import KeyEvent, MouseEvent
 
 
 def test_empty_line_renders_one_blank_row():

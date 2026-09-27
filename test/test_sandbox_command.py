@@ -2,10 +2,10 @@
 
 import asyncio
 
-import pico_chat.pico_cfg as pico_cfg
-import pico_chat.sandbox as sandbox
-from pico_chat import projects
-from pico_chat.ui.commands.registry import COMMANDS
+import moka_chat.settings as settings
+import moka_chat.sandbox as sandbox
+from moka_chat import projects
+from moka_chat.ui.commands.registry import COMMANDS
 
 
 class _Panel:
@@ -86,7 +86,7 @@ def _ready(monkeypatch):
 def _workdir(tmp_path, monkeypatch, active=None):
     workspace = tmp_path / "proj"
     workspace.mkdir()
-    monkeypatch.setattr(pico_cfg, "get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr(settings, "get_config_dir", lambda: tmp_path)
     monkeypatch.chdir(workspace)
     _project(tmp_path, workspace, active=active)
     return workspace
@@ -129,7 +129,7 @@ def test_init_completes_runtimes_then_bases(monkeypatch, tmp_path):
 
 
 def test_subcommand_descriptions_exposed():
-    from pico_chat.ui.commands.registry import get_subcommand_descriptions
+    from moka_chat.ui.commands.registry import get_subcommand_descriptions
 
     descriptions = get_subcommand_descriptions("sandbox")
 
@@ -156,7 +156,7 @@ def test_config_opens_project_file(tmp_path, monkeypatch):
     async def _open(ui):
         called.append(True)
 
-    monkeypatch.setattr("pico_chat.ui.commands.sandbox.open_project_sandbox", _open)
+    monkeypatch.setattr("moka_chat.ui.commands.sandbox.open_project_sandbox", _open)
     ui = _UI(tmp_path)
     _run(ui, ["config"])
     assert called == [True]
@@ -311,7 +311,7 @@ def test_init_docker_writes_dockerfile(monkeypatch, tmp_path):
     ui = _UI(workspace)
     _run(ui, ["init", "docker"])
     assert (workspace / "Dockerfile").exists()
-    assert (workspace / "Dockerfile").read_text().startswith("# Built by pico")
+    assert (workspace / "Dockerfile").read_text().startswith("# Built by moka")
     assert "FROM python:3.12-slim" in (workspace / "Dockerfile").read_text()
     assert not (workspace / "Containerfile").exists()
 

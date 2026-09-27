@@ -2,8 +2,8 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-from pico_chat.harness.roles import Role
-from pico_chat.ui.commands.conversation import conversation_export, conversation_import
+from moka_chat.harness.roles import Role
+from moka_chat.ui.commands.conversation import conversation_export, conversation_import
 
 
 class FakeAgent:
@@ -63,12 +63,12 @@ def test_conversation_import_restores_role_before_history_replay(tmp_path, monke
     history = [{"role": "user", "content": "imported"}]
     filename.write_text(json.dumps({"role": "reviewer", "history": history}))
     monkeypatch.setattr(
-        "pico_chat.harness.roles.load_role",
+        "moka_chat.harness.roles.load_role",
         lambda name: Role(name),
     )
 
     monkeypatch.setattr(
-        "pico_chat.ui.commands.conversation._rebuild_ui_from_history",
+        "moka_chat.ui.commands.conversation._rebuild_ui_from_history",
         lambda ui, history: setattr(ui, "replayed_role", ui.agent.role.name),
     )
     asyncio.run(conversation_import(ui, [str(filename)]))
@@ -101,7 +101,7 @@ def test_conversation_import_defaults_role_when_missing(tmp_path, monkeypatch):
             raise KeyError(f"Role not found: {name}")
         return Role(name)
 
-    monkeypatch.setattr("pico_chat.harness.roles.load_role", fake_load)
+    monkeypatch.setattr("moka_chat.harness.roles.load_role", fake_load)
 
     asyncio.run(conversation_import(ui, [str(filename)]))
 
@@ -133,14 +133,14 @@ def test_conversation_import_handles_tool_call_only_assistant(tmp_path):
 
 
 def test_conversation_import_keeps_assistant_reply_in_one_message(tmp_path):
-    """A plain assistant reply must be one PicoMsg, not split by the tag parser.
+    """A plain assistant reply must be one AssistantMsg, not split by the tag parser.
 
     ``ThinkingTagParser.feed`` may hold back a partial thinking tag and ``flush``
     then emits it as a separate segment. Import used to turn each segment into
-    its own message, splitting the reply into a second PicoMsg (rendered as a
+    its own message, splitting the reply into a second AssistantMsg (rendered as a
     mid-word break with the inter-message gap in between).
     """
-    from pico_chat.ui.tui.msg_types import PicoMsg
+    from moka_chat.ui.tui.msg_types import AssistantMsg
 
     ui = FakeUI()
     content = "If you tell me what you're looking for, I can narrow it down."
@@ -154,16 +154,16 @@ def test_conversation_import_keeps_assistant_reply_in_one_message(tmp_path):
     asyncio.run(conversation_import(ui, [str(filename)]))
 
     assistant = [m for m in ui.chat_history_panel.messages
-                 if isinstance(m.type, PicoMsg)]
+                 if isinstance(m.type, AssistantMsg)]
     assert len(assistant) == 1
     assert assistant[0].text == content
 
 
 def test_conversation_import_restores_stored_reasoning(tmp_path, monkeypatch):
     """The explicit ``reasoning`` field survives export/import as a ThinkingMsg."""
-    from pico_chat import pico_cfg
-    monkeypatch.setattr(pico_cfg.config, "ui_thought_min_tokens", 0)
-    from pico_chat.ui.tui.msg_types import PicoMsg, ThinkingMsg
+    from moka_chat import settings
+    monkeypatch.setattr(settings.config, "ui_thought_min_tokens", 0)
+    from moka_chat.ui.tui.msg_types import AssistantMsg, ThinkingMsg
 
     ui = FakeUI()
     history = [
@@ -181,7 +181,7 @@ def test_conversation_import_restores_stored_reasoning(tmp_path, monkeypatch):
     thinking = [m for m in ui.chat_history_panel.messages
                 if isinstance(m.type, ThinkingMsg)]
     answers = [m for m in ui.chat_history_panel.messages
-               if type(m.type) is PicoMsg]
+               if type(m.type) is AssistantMsg]
     assert len(thinking) == 1 and thinking[0].text == "deep thought"
     assert len(answers) == 1 and answers[0].text == "answer"
 
@@ -217,8 +217,8 @@ def test_conversation_import_rejects_invalid_json(tmp_path):
 
 
 def test_import_splits_answers_like_live_ones(tmp_path):
-    from pico_chat.ui.chat_history_panel import ChatHistoryPanel
-    from pico_chat.ui.commands.conversation import _rebuild_ui_from_history
+    from moka_chat.ui.chat_history_panel import ChatHistoryPanel
+    from moka_chat.ui.commands.conversation import _rebuild_ui_from_history
 
     ui = FakeUI()
     ui.chat_history_panel = ChatHistoryPanel()

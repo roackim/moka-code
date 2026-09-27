@@ -1,8 +1,8 @@
 """Tests for Buffer and SubBuffer rendering components."""
 
 import pytest
-from pico_chat.ui.tui.buffer import Buffer, SubBuffer, Cell
-from pico_chat.ui.tui.components import TextComponent, Box, InputComponent
+from moka_chat.ui.tui.buffer import Buffer, SubBuffer, Cell
+from moka_chat.ui.tui.components import TextComponent, Box, InputComponent
 
 
 class TestSubBuffer:

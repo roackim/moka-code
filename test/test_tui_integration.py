@@ -1,10 +1,10 @@
-from pico_chat.ui.tui.actions import Action, ActionMap
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.components.base import Component
-from pico_chat.ui.tui.components.text import Label
-from pico_chat.ui.tui.events import KeyEvent, MouseEvent, ResizeEvent
-from pico_chat.ui.tui.focus import FocusScope
-from pico_chat.ui.tui.router import EventRouter
+from moka_chat.ui.tui.actions import Action, ActionMap
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.components.base import Component
+from moka_chat.ui.tui.components.text import Label
+from moka_chat.ui.tui.events import KeyEvent, MouseEvent, ResizeEvent
+from moka_chat.ui.tui.focus import FocusScope
+from moka_chat.ui.tui.router import EventRouter
 
 
 class RecordingComponent(Component):

@@ -1,4 +1,4 @@
-"""Interactive programs ($EDITOR, /terminal) run without freezing pico.
+"""Interactive programs ($EDITOR, /terminal) run without freezing moka.
 
 The Ctrl+C / Ctrl+Z and terminal-ownership behavior is verified end to end in
 a pseudo-terminal (see the wiki); these tests pin the pieces that do not need
@@ -11,8 +11,8 @@ import signal
 
 import pytest
 
-from pico_chat.sandbox import ContainerSpec, build_argv, shell_argv
-from pico_chat.ui.external_editor import run_in_foreground
+from moka_chat.sandbox import ContainerSpec, build_argv, shell_argv
+from moka_chat.ui.external_editor import run_in_foreground
 
 
 class _Recorder:
@@ -33,7 +33,7 @@ def _ui(calls):
     return type("UI", (), {"compositor": compositor})()
 
 
-def test_handoff_pauses_pico_returns_the_exit_code_and_restores_sigint():
+def test_handoff_pauses_moka_returns_the_exit_code_and_restores_sigint():
     calls = []
     before = signal.getsignal(signal.SIGINT)
     code = asyncio.run(run_in_foreground(_ui(calls), ["sh", "-c", "exit 3"]))
@@ -77,7 +77,7 @@ def test_a_stopped_child_is_continued_instead_of_hanging():
 
 
 def test_compositor_pause_stays_off_the_terminal(monkeypatch):
-    import pico_chat.ui.tui.compositor as compositor_mod
+    import moka_chat.ui.tui.compositor as compositor_mod
 
     class _Term:
         resized = False
@@ -126,17 +126,17 @@ def test_sandbox_shell_uses_the_tools_mounts_with_a_tty(tmp_path):
     (["host"], "bubblewrap", "host"),
 ])
 def test_terminal_opens_where_tools_run_unless_host(monkeypatch, tmp_path, args, spec, expected):
-    from pico_chat.ui.commands.core import cmd_terminal
+    from moka_chat.ui.commands.core import cmd_terminal
 
     opened = []
 
     async def _run(ui, argv, cwd=None, clear_screen=False, env=None):
         opened.append((argv, cwd))
         assert clear_screen  # a shell draws in place: start on a blank screen
-        assert env["PICO_TERMINAL"] == str(os.getpid())  # marks the shell: no nesting
+        assert env["MOKA_TERMINAL"] == str(os.getpid())  # marks the shell: no nesting
         return 0
 
-    monkeypatch.setattr("pico_chat.ui.external_editor.run_in_foreground", _run)
+    monkeypatch.setattr("moka_chat.ui.external_editor.run_in_foreground", _run)
     monkeypatch.setenv("SHELL", "/bin/zsh")
     transport = type("T", (), {"spec": ContainerSpec(runtime=spec) if spec else None})()
     agent = type("A", (), {"workspace": str(tmp_path), "transport": transport})()
@@ -155,7 +155,7 @@ def test_terminal_opens_where_tools_run_unless_host(monkeypatch, tmp_path, args,
 
 
 def test_terminal_rejects_unknown_arguments(monkeypatch):
-    from pico_chat.ui.commands.core import cmd_terminal
+    from moka_chat.ui.commands.core import cmd_terminal
 
     messages = []
     panel = type("P", (), {"add_message": lambda self, text, **k: messages.append(text)})()
@@ -164,21 +164,21 @@ def test_terminal_rejects_unknown_arguments(monkeypatch):
     assert messages and messages[0].startswith("Usage: /terminal")
 
 
-def test_pico_refuses_to_start_inside_its_own_terminal(monkeypatch, capsys):
-    import pico_chat.main as main_mod
+def test_moka_refuses_to_start_inside_its_own_terminal(monkeypatch, capsys):
+    import moka_chat.main as main_mod
 
-    monkeypatch.setenv("PICO_TERMINAL", "4242")
+    monkeypatch.setenv("MOKA_TERMINAL", "4242")
     monkeypatch.setattr(main_mod, "get_harness",
                         lambda: pytest.fail("must refuse before any setup"))
 
     assert main_mod.main() == 1
     err = capsys.readouterr().err
-    assert "pico is already running (pid 4242)" in err
+    assert "moka is already running (pid 4242)" in err
     assert "Type 'exit' to return to it." in err
 
 
 def test_the_shell_marker_reaches_the_child():
     code = asyncio.run(run_in_foreground(
-        _ui([]), ["sh", "-c", 'test "$PICO_TERMINAL" = 7'],
-        env={**os.environ, "PICO_TERMINAL": "7"}))
+        _ui([]), ["sh", "-c", 'test "$MOKA_TERMINAL" = 7'],
+        env={**os.environ, "MOKA_TERMINAL": "7"}))
     assert code == 0

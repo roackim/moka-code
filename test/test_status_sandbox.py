@@ -2,8 +2,8 @@
 
 from types import SimpleNamespace
 
-from pico_chat.ui.status_presenter import _resolve_color, refresh_status_bar
-from pico_chat.ui.tui.colors import theme
+from moka_chat.ui.status_presenter import _resolve_color, refresh_status_bar
+from moka_chat.ui.tui.colors import theme
 
 
 class _Bar:

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from pico_chat.ui.tui.events import CommandEvent, KeyEvent, MouseEvent, normalize_key
-from pico_chat.ui.tui.focus import FocusManager, FocusScope
+from moka_chat.ui.tui.events import CommandEvent, KeyEvent, MouseEvent, normalize_key
+from moka_chat.ui.tui.focus import FocusManager, FocusScope
 
 
 @dataclass

@@ -1,6 +1,6 @@
 # UI Architecture
 
-Pico's TUI is built from scratch — no curses, no third-party TUI framework. It owns the full rendering pipeline.
+Moka's TUI is built from scratch — no curses, no third-party TUI framework. It owns the full rendering pipeline.
 
 ---
 
@@ -47,7 +47,7 @@ plain name, nothing. It is drawn in the normal text color (`theme.DEFAULT`).
 ## Status Bar
 
 The chat workspace includes a one-line `StatusBar`. Its visible fields and
-order come from `pico_cfg.config.ui_status_bar_fields`; the default is:
+order come from `settings.config.ui_status_bar_fields`; the default is:
 
 ```toml
 [ui]
@@ -190,7 +190,7 @@ permission prompts keep going; the transcript is redrawn on return):
 - the child (`preexec_fn`) resets SIGINT/SIGQUIT/SIGTSTP/SIGTTIN/SIGTTOU to
   default, gets its own process group, and makes it the terminal's foreground
   group before exec — so Ctrl+C / Ctrl+Z reach only the child;
-- pico ignores SIGINT meanwhile (backup), `Compositor.pause()`s (no input
+- moka ignores SIGINT meanwhile (backup), `Compositor.pause()`s (no input
   reads, no drawing — `render()` is a no-op, so the presenter's direct render
   for a permission prompt is safe), and polls `waitpid(WNOHANG|WUNTRACED)` so
   the event loop stays free; a stopped child's **group** is `SIGCONT`ed
@@ -198,20 +198,20 @@ permission prompts keep going; the transcript is redrawn on return):
 - afterwards it reclaims the terminal (`tcsetpgrp`, SIGTTOU ignored), resumes
   raw mode and `Compositor.resume()`s with a full redraw.
 
-Without job control (pico not the terminal's foreground group) the handover is
+Without job control (moka not the terminal's foreground group) the handover is
 skipped and only the SIGINT backup applies. Verified in a pseudo-terminal: at
 HEAD before this change, Ctrl+C in a non-job-control child (`sh -c "sleep 5"`)
-killed pico; now it survives (also Ctrl+C at a shell prompt / on `sleep`,
+killed moka; now it survives (also Ctrl+C at a shell prompt / on `sleep`,
 Ctrl+Z on a plain child, and an answer streaming throughout).
 
 **`/terminal`** opens `$SHELL` (else `/bin/sh`) in the workspace, or — when a
 project sandbox is active — a shell inside it (`sandbox.shell_argv`: the same
 mounts/network/limits as the worker, bash if present, `-it` for
 podman/docker). `/terminal host` forces the host. The screen is cleared first (`clear_screen=True`; editors draw on their own screen and are left as is). `exit` returns.
-The shell gets `PICO_TERMINAL=<outer pid>`; `main()` refuses to start when it
-is set ("pico is already running (pid N) … Type 'exit' to return to it.",
-exit code 1), so picos never nest and fight over one terminal
-(`PICO_TERMINAL= pico` overrides deliberately). Editors are not marked.
+The shell gets `MOKA_TERMINAL=<outer pid>`; `main()` refuses to start when it
+is set ("moka is already running (pid N) … Type 'exit' to return to it.",
+exit code 1), so mokas never nest and fight over one terminal
+(`MOKA_TERMINAL= moka` overrides deliberately). Editors are not marked.
 
 
 ## Single Conversation
@@ -351,7 +351,7 @@ Every message displayed in the chat history has a `MsgType` that controls its ti
 |-------|-------|-------------|---------|
 | `MsgType` | *(base)* | DEFAULT | none |
 | `UserMsg` | "user" | USER | COPY |
-| `PicoMsg` | "pico" | PICO | COPY |
+| `AssistantMsg` | "moka" | ASSISTANT | COPY |
 | `ThinkingMsg` | "thinking" | MUTED | COPY |
 | `SysMsg` | "system" | MUTED | COPY |
 | `SysMsgError` | "error" | ERROR | COPY |
@@ -422,7 +422,7 @@ drafting/running as `cancelled`/`error`.
 Live labels are refreshed by the panel's `TickEvent` path every 250 ms
 (`_LIVE_TICK_INTERVAL`); `Message.tick()` redraws only when its label changes.
 
-`ThinkingMsg` and `SysMsgError/Warning` extend `PicoMsg` / `SysMsg` — they inherit defaults and override only what differs.
+`ThinkingMsg` and `SysMsgError/Warning` extend `AssistantMsg` / `SysMsg` — they inherit defaults and override only what differs.
 
 Actions are deliberately limited to non-destructive operations. State-changing
 actions (retry/stop/steer/pause/resume) and removal/edit are **not** message
@@ -441,7 +441,7 @@ routed to the activity surface rather than the transcript (see below).
 ### Message Selection and the Mode Line
 Messages are gutter-threaded and do not render actions inline. Messages use a
 full-height `▌` prefix bar (`Box.full_height_gutter`) whose color encodes the
-type: user `USER`, pico/thinking/tool calls `MUTED`, permission asks
+type: user `USER`, assistant/thinking/tool calls `MUTED`, permission asks
 `PERMISSION`. User content is normal text color (the accent is only the bar).
 `ChatHistoryPanel` keeps a `focused_message_index`
 (the selected message); the selected message's prefix bar is replaced with a
@@ -498,7 +498,7 @@ overlay only.
 
 ### How to Add a New Message Type
 
-1. **Define the class** in `pico_chat/ui/tui/msg_types.py`:
+1. **Define the class** in `moka_chat/ui/tui/msg_types.py`:
    ```python
    class MyMsg(MsgType):
        name = "my_type"
@@ -574,7 +574,7 @@ stream reference. A later turn after tool calls opens a fresh wait line.
 A tool-call delta is **not** a content boundary. Providers may interleave
 content and tool-call deltas within one response, so the presenter tracks
 `response_text_msg` (reset at each `Start(assistant)`) and appends all of a
-response's content to that one `PicoMsg`. The `ToolCallDraft` handler finalizes
+response's content to that one `AssistantMsg`. The `ToolCallDraft` handler finalizes
 the text above (fully revealed and styled at once); content resuming after the
 draft goes back into `response_text_msg`. This prevents
 the assistant's sentence from being sliced into a second message below the tool
@@ -585,7 +585,7 @@ line (regression test: `test_content_resuming_after_tool_draft_stays_one_message
 ## Commands (`commands/` package)
 
 Slash commands typed by the user (e.g. `/model`, `/theme`, `/help`).
-The package lives in `pico_chat/ui/commands/`:
+The package lives in `moka_chat/ui/commands/`:
 
 - `registry.py` — the single `COMMANDS` assembly point and `handle_command()`.
 - `base.py` — `Param`, `Command`, `ChatUIProtocol`, completion helpers.
@@ -808,7 +808,7 @@ Decouples how fast text *arrives* from how fast it *appears*.
 
 ### Styling
 
-Styles are driven by `pico_cfg.config.markdown_styles` (see [config.md](./config.md)). Each element (`header1`–`header6`, `bold`, `italic`, `code`, `code_block`, `quote`, `list`, `hr`, `table`, `link`, `paragraph`) maps to `fg`/`bg`/`bold`/`reverse`. Emphasis (`bold`, `italic`, headers) uses an `fg` color rather than terminal bold/reverse, which render as an ugly inversion in many terminals. Unordered list items use pastilles (`•`/`◦`/`▪` by nesting level).
+Styles are driven by `settings.config.markdown_styles` (see [config.md](./config.md)). Each element (`header1`–`header6`, `bold`, `italic`, `code`, `code_block`, `quote`, `list`, `hr`, `table`, `link`, `paragraph`) maps to `fg`/`bg`/`bold`/`reverse`. Emphasis (`bold`, `italic`, headers) uses an `fg` color rather than terminal bold/reverse, which render as an ugly inversion in many terminals. Unordered list items use pastilles (`•`/`◦`/`▪` by nesting level).
 
 ### Tables
 

@@ -8,9 +8,9 @@ generation; the worker keeps serving the queue.
 
 import asyncio
 
-from pico_chat import pico_cfg
-from pico_chat.harness import events
-from pico_chat.ui.app import chatTUI
+from moka_chat import settings
+from moka_chat.harness import events
+from moka_chat.ui.app import chatTUI
 
 from conftest import StubAgent
 
@@ -20,8 +20,8 @@ def _texts(ui):
 
 
 def _ui(monkeypatch, chat):
-    monkeypatch.setattr(pico_cfg.config, "ui_stream_smoothing", False)
-    monkeypatch.setattr(pico_cfg.config, "ui_thought_min_tokens", 0)
+    monkeypatch.setattr(settings.config, "ui_stream_smoothing", False)
+    monkeypatch.setattr(settings.config, "ui_thought_min_tokens", 0)
     ui = chatTUI(StubAgent())
     ui.agent.chat = chat
     return ui

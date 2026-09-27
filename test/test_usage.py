@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from pico_chat.harness.usage import normalize_usage, usage_from_response
+from moka_chat.harness.usage import normalize_usage, usage_from_response
 
 
 def test_normalizes_openai_usage():

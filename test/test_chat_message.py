@@ -1,5 +1,5 @@
-from pico_chat.ui.chat_message import Message
-from pico_chat.ui.tui.msg_types import ToolCallMsg
+from moka_chat.ui.chat_message import Message
+from moka_chat.ui.tui.msg_types import ToolCallMsg
 
 
 def test_focusing_compact_single_line_message_invalidates_height_cache():
@@ -19,39 +19,39 @@ def test_focusing_compact_single_line_message_invalidates_height_cache():
 
 
 def test_thread_mode_uses_role_gutter():
-    from pico_chat.ui.tui.msg_types import UserMsg, PicoMsg
+    from moka_chat.ui.tui.msg_types import UserMsg, AssistantMsg
 
     user = Message("hi", msg_type=UserMsg(), max_width=40)
-    pico = Message("hello", msg_type=PicoMsg(), max_width=40)
+    moka = Message("hello", msg_type=AssistantMsg(), max_width=40)
 
     assert user.box.thread_mode is True
     assert user.box.gutter == "▌"
-    assert pico.box.gutter == "▌"
+    assert moka.box.gutter == "▌"
 
 
 def test_user_message_content_is_normal_but_gutter_is_user_colored():
     """User message text is normal color; the prefix bar keeps the USER color."""
-    from pico_chat.ui.tui.msg_types import UserMsg
-    from pico_chat.ui.tui.colors import theme
+    from moka_chat.ui.tui.msg_types import UserMsg
+    from moka_chat.ui.tui.colors import theme
 
     msg = Message("hello", msg_type=UserMsg(), max_width=40)
     assert msg.component.fg == theme.DEFAULT  # normal text color
     assert msg.box.gutter_color == theme.USER
 
 
-def test_pico_message_gutter_is_gray():
-    from pico_chat.ui.tui.msg_types import PicoMsg
-    from pico_chat.ui.tui.colors import theme
+def test_assistant_message_gutter_is_gray():
+    from moka_chat.ui.tui.msg_types import AssistantMsg
+    from moka_chat.ui.tui.colors import theme
 
-    msg = Message("hello", msg_type=PicoMsg(), max_width=40)
+    msg = Message("hello", msg_type=AssistantMsg(), max_width=40)
     assert msg.box.gutter_color == theme.MUTED
 
 
 def test_append_strips_leading_whitespace_on_first_chunk():
     """Streamed assistant content often opens with a space; drop it once."""
-    from pico_chat.ui.tui.msg_types import PicoMsg
+    from moka_chat.ui.tui.msg_types import AssistantMsg
 
-    msg = Message("", msg_type=PicoMsg(), max_width=40, render_markdown=True)
+    msg = Message("", msg_type=AssistantMsg(), max_width=40, render_markdown=True)
     msg.append(" Hello.")
     assert msg.base_text == "Hello."
 
@@ -60,7 +60,7 @@ def test_append_strips_leading_whitespace_on_first_chunk():
 
 
 def test_thinking_message_is_collapsible():
-    from pico_chat.ui.tui.msg_types import ThinkingMsg
+    from moka_chat.ui.tui.msg_types import ThinkingMsg
 
     msg = Message("deep reasoning", msg_type=ThinkingMsg(), max_width=40)
 
@@ -75,9 +75,9 @@ def test_thinking_message_is_collapsible():
 
 def test_thinking_line_ticks_and_previews_then_summarizes(monkeypatch):
     """Live: ``thinking Ns`` plus the reasoning tail; done: ``thought for Xs``."""
-    import pico_chat.ui.chat_message as cm
-    from pico_chat.ui.tui.buffer import Buffer
-    from pico_chat.ui.tui.msg_types import ThinkingMsg
+    import moka_chat.ui.chat_message as cm
+    from moka_chat.ui.tui.buffer import Buffer
+    from moka_chat.ui.tui.msg_types import ThinkingMsg
 
     clock = [100.0]
     monkeypatch.setattr(cm.time, "perf_counter", lambda: clock[0])
@@ -112,7 +112,7 @@ def test_empty_message_keeps_minimum_row():
     A thought with no exposed reasoning is empty; focusing it used to un-collapse
     it to a zero-height box, so the message and its prefix vanished.
     """
-    from pico_chat.ui.tui.msg_types import ThinkingMsg
+    from moka_chat.ui.tui.msg_types import ThinkingMsg
 
     msg = Message("", msg_type=ThinkingMsg(), max_width=40)
     assert msg.get_component().get_preferred_height(40) == 1
@@ -120,8 +120,8 @@ def test_empty_message_keeps_minimum_row():
 
 def test_waiting_label_before_any_reasoning(monkeypatch):
     """No reasoning yet: ``waiting``; a slow pre-request phase: ``preparing``."""
-    import pico_chat.ui.chat_message as cm
-    from pico_chat.ui.tui.msg_types import ThinkingMsg
+    import moka_chat.ui.chat_message as cm
+    from moka_chat.ui.tui.msg_types import ThinkingMsg
 
     clock = [0.0]
     monkeypatch.setattr(cm.time, "perf_counter", lambda: clock[0])
@@ -135,7 +135,7 @@ def test_waiting_label_before_any_reasoning(monkeypatch):
     assert msg._thinking_label() == "waiting 2s"
 
 def _render_rows(msg, width, height):
-    from pico_chat.ui.tui.buffer import Buffer
+    from moka_chat.ui.tui.buffer import Buffer
 
     box = msg.get_component()
     box.set_layout(0, 0, width, height)
@@ -146,9 +146,9 @@ def _render_rows(msg, width, height):
 
 def test_thread_render_smoke_text_message():
     """Thread-mode render draws the gutter and the content (regression guard)."""
-    from pico_chat.ui.tui.msg_types import PicoMsg
+    from moka_chat.ui.tui.msg_types import AssistantMsg
 
-    msg = Message("hello world", msg_type=PicoMsg(), max_width=20)
+    msg = Message("hello world", msg_type=AssistantMsg(), max_width=20)
     msg.finalize()
     rows = _render_rows(msg, 20, 4)
 
@@ -158,7 +158,7 @@ def test_thread_render_smoke_text_message():
 
 
 def test_thread_render_smoke_markdown_message():
-    from pico_chat.ui.tui.msg_types import UserMsg
+    from moka_chat.ui.tui.msg_types import UserMsg
 
     msg = Message("a **bold** line", msg_type=UserMsg(), max_width=24,
                   render_markdown=True)

@@ -2,9 +2,9 @@
 
 import asyncio
 
-import pico_chat.pico_cfg as pico_cfg
-from pico_chat.ui.commands.themes import theme_command
-from pico_chat.ui.tui import colors
+import moka_chat.settings as settings
+from moka_chat.ui.commands.themes import theme_command
+from moka_chat.ui.tui import colors
 
 
 class _Panel:
@@ -42,12 +42,12 @@ def test_theme_names_include_builtins():
 
 
 def test_theme_picker_previews_and_restores(monkeypatch, tmp_path):
-    monkeypatch.setattr(pico_cfg, "get_state_path", lambda: tmp_path / "state.toml")
+    monkeypatch.setattr(settings, "get_state_path", lambda: tmp_path / "state.toml")
     original = colors.theme.name
-    original_active = pico_cfg.config.active_theme
+    original_active = settings.config.active_theme
     try:
         colors.set_theme("terminal")
-        pico_cfg.config.active_theme = "terminal"
+        settings.config.active_theme = "terminal"
         ui = _UI()
 
         asyncio.run(theme_command(ui, []))
@@ -56,28 +56,28 @@ def test_theme_picker_previews_and_restores(monkeypatch, tmp_path):
         highlight("nord")
         assert colors.theme.name == "nord"
         # Preview must not persist the selection.
-        assert pico_cfg.config.active_theme == "terminal"
+        assert settings.config.active_theme == "terminal"
 
         cancel()
         assert colors.theme.name == "terminal"
     finally:
-        pico_cfg.config.active_theme = original_active
+        settings.config.active_theme = original_active
         colors.set_theme(original)
 
 
 def test_theme_command_selects_and_persists(monkeypatch, tmp_path):
-    monkeypatch.setattr(pico_cfg, "get_state_path", lambda: tmp_path / "state.toml")
+    monkeypatch.setattr(settings, "get_state_path", lambda: tmp_path / "state.toml")
     original_theme = colors.theme.name
-    original_active = pico_cfg.config.active_theme
+    original_active = settings.config.active_theme
     try:
         ui = _UI()
         asyncio.run(theme_command(ui, ["pastel"]))
 
         assert colors.theme.name == "pastel"
-        assert pico_cfg.config.active_theme == "pastel"
+        assert settings.config.active_theme == "pastel"
         assert any("Theme: pastel" in m for m in ui.chat_history_panel.messages)
     finally:
-        pico_cfg.config.active_theme = original_active
+        settings.config.active_theme = original_active
         colors.set_theme(original_theme)
 
 
@@ -90,7 +90,7 @@ def test_theme_command_unknown_reports_error():
 
 
 def test_theme_command_opens_picker(monkeypatch, tmp_path):
-    monkeypatch.setattr(pico_cfg, "get_state_path", lambda: tmp_path / "state.toml")
+    monkeypatch.setattr(settings, "get_state_path", lambda: tmp_path / "state.toml")
     ui = _UI()
 
     asyncio.run(theme_command(ui, []))
@@ -104,23 +104,23 @@ def test_theme_command_opens_picker(monkeypatch, tmp_path):
 
 
 def test_refresh_theme_recolors_existing_message():
-    from pico_chat.ui.chat_message import Message
-    from pico_chat.ui.tui.msg_types import PicoMsg
+    from moka_chat.ui.chat_message import Message
+    from moka_chat.ui.tui.msg_types import AssistantMsg
 
     original = colors.theme.name
     try:
         colors.set_theme("terminal")
-        message = Message("hi", msg_type=PicoMsg())
+        message = Message("hi", msg_type=AssistantMsg())
         colors.set_theme("pastel")
         message.refresh_theme()
-        assert message.frame_color == colors.theme.PICO
-        assert message.box.fg == colors.theme.PICO
+        assert message.frame_color == colors.theme.ASSISTANT
+        assert message.box.fg == colors.theme.ASSISTANT
     finally:
         colors.set_theme(original)
 
 
 def test_refresh_theme_forces_full_redraw():
-    from pico_chat.ui.app import chatTUI
+    from moka_chat.ui.app import chatTUI
     from conftest import StubAgent
 
     ui = chatTUI(StubAgent())
@@ -136,8 +136,8 @@ def test_refresh_theme_forces_full_redraw():
 
 
 def test_modal_refresh_theme():
-    from pico_chat.ui.tui.components.popup import Popup
-    from pico_chat.ui.tui.components.menu import SelectionMenu
+    from moka_chat.ui.tui.components.popup import Popup
+    from moka_chat.ui.tui.components.menu import SelectionMenu
 
     popup = Popup()
     menu = SelectionMenu()
@@ -157,9 +157,9 @@ def test_modal_refresh_theme():
 
 
 def test_completion_menu_refresh_theme():
-    from pico_chat.ui.commands.base import Command, Param
-    from pico_chat.ui.tui.components.input.completion import ArgumentCompletion
-    from pico_chat.ui.tui.components.menu import SelectionMenu
+    from moka_chat.ui.commands.base import Command, Param
+    from moka_chat.ui.tui.components.input.completion import ArgumentCompletion
+    from moka_chat.ui.tui.components.menu import SelectionMenu
 
     comp = ArgumentCompletion(SelectionMenu(), {
         "demo": Command("demo", "d", params=[Param("A", completions=["x"])]),
@@ -177,7 +177,7 @@ def test_completion_menu_refresh_theme():
 
 def test_refresh_theme_recolors_status_server_model():
     from types import SimpleNamespace
-    from pico_chat.ui.app import chatTUI
+    from moka_chat.ui.app import chatTUI
 
     endpoint = SimpleNamespace(
         name="local",
@@ -209,8 +209,8 @@ def test_refresh_theme_recolors_status_server_model():
 
 
 def test_theme_picker_registers_preview_overlay(monkeypatch, tmp_path):
-    monkeypatch.setattr(pico_cfg, "get_state_path", lambda: tmp_path / "state.toml")
-    from pico_chat.ui.tui.components.theme_preview import ThemePreview
+    monkeypatch.setattr(settings, "get_state_path", lambda: tmp_path / "state.toml")
+    from moka_chat.ui.tui.components.theme_preview import ThemePreview
 
     class _Compositor:
         def __init__(self):
@@ -228,7 +228,7 @@ def test_theme_picker_registers_preview_overlay(monkeypatch, tmp_path):
     ui = _UI()
     ui.compositor = _Compositor()
     original = colors.theme.name
-    original_active = pico_cfg.config.active_theme
+    original_active = settings.config.active_theme
     try:
         asyncio.run(theme_command(ui, []))
         assert any(isinstance(o, ThemePreview) for o in ui.compositor.overlays)
@@ -238,13 +238,13 @@ def test_theme_picker_registers_preview_overlay(monkeypatch, tmp_path):
         cancel()
         assert not ui.compositor.overlays
     finally:
-        pico_cfg.config.active_theme = original_active
+        settings.config.active_theme = original_active
         colors.set_theme(original)
 
 
 def test_theme_preview_stays_in_top_strip():
-    from pico_chat.ui.tui.buffer import Buffer
-    from pico_chat.ui.tui.components.theme_preview import ThemePreview
+    from moka_chat.ui.tui.buffer import Buffer
+    from moka_chat.ui.tui.components.theme_preview import ThemePreview
 
     preview = ThemePreview()
     preview.is_visible = True
@@ -257,7 +257,7 @@ def test_theme_preview_stays_in_top_strip():
 
 
 def test_theme_preview_registers_as_overlay():
-    from pico_chat.ui.tui.components.theme_preview import ThemePreview
+    from moka_chat.ui.tui.components.theme_preview import ThemePreview
 
     class _Compositor:
         def __init__(self):
@@ -285,8 +285,8 @@ def test_theme_preview_registers_as_overlay():
 
 
 def test_theme_preview_renders_palette_swatches():
-    from pico_chat.ui.tui.buffer import Buffer
-    from pico_chat.ui.tui.components.theme_preview import ThemePreview
+    from moka_chat.ui.tui.buffer import Buffer
+    from moka_chat.ui.tui.components.theme_preview import ThemePreview
 
     original = colors.theme.name
     try:

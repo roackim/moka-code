@@ -1,6 +1,6 @@
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.components.table_view import TableView
-from pico_chat.ui.tui.terminal import MouseEvent
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.components.table_view import TableView
+from moka_chat.ui.tui.terminal import MouseEvent
 
 
 def row_text(buffer, row):

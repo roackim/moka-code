@@ -1,4 +1,4 @@
-# pico_chat/ui/tui/components/ — UI Components
+# moka_chat/ui/tui/components/ — UI Components
 
 Reusable TUI widgets. Most extend `Component` from `base.py`. Documentation
 style: one row per file.

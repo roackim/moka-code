@@ -1,6 +1,6 @@
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.components.bars import ActionBar, ActionItem, StatusBar
-from pico_chat.ui.tui.terminal import MouseEvent
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.components.bars import ActionBar, ActionItem, StatusBar
+from moka_chat.ui.tui.terminal import MouseEvent
 
 
 def row_text(buffer):
@@ -37,7 +37,7 @@ def test_status_bar_renders_configured_fields_in_order():
 
 
 def test_status_bar_renders_field_colors():
-    from pico_chat.ui.tui.colors import RGB
+    from moka_chat.ui.tui.colors import RGB
 
     status = StatusBar(fields=["endpoint_model", "context"])
     status.set_layout(0, 0, 40, 1)
@@ -84,7 +84,7 @@ def test_action_bar_activates_by_key_and_mouse():
 
 
 def test_action_bar_focus_uses_shared_style_without_inversion():
-    from pico_chat.ui.tui.colors import theme
+    from moka_chat.ui.tui.colors import theme
 
     activated = []
     bar = ActionBar([ActionItem("x", "close", lambda: activated.append(True))])

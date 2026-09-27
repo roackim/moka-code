@@ -1,8 +1,8 @@
 """Markdown presentation: emphasis colors, list pastilles, cluster-aware wrap."""
 
-from pico_chat.ui.tui.components.markdown import Markdown, MarkdownComponent
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.layout_utils import display_width
+from moka_chat.ui.tui.components.markdown import Markdown, MarkdownComponent
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.layout_utils import display_width
 
 
 def _rendered_lines(md: str, width: int = 60, height: int = 20):

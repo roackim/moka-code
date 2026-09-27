@@ -1,6 +1,6 @@
 # Design Principles
 
-The canonical statement of what pico is and how it should evolve. **Read this
+The canonical statement of what moka is and how it should evolve. **Read this
 before proposing or making changes.** These principles emerged from a large
 simplification effort (recorded in `SIMPLIFICATION.md`), but they are not about
 simplifying — they are the project's design rules.
@@ -12,7 +12,7 @@ simplifying — they are the project's design rules.
 
 ## North star
 
-Pico is a thin runtime over hand-editable configuration:
+Moka is a thin runtime over hand-editable configuration:
 
 > Stream from one endpoint, run approved tools, render a transcript.
 > Configuration is files. The UI is the transcript, one input line, and one

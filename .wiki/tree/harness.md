@@ -1,4 +1,4 @@
-# pico_chat/harness/ — LLM Agent Core
+# moka_chat/harness/ — LLM Agent Core
 
 The agent backbone. Manages the LLM conversation loop, tool execution, approval gating, context construction, and endpoint management.
 
@@ -22,7 +22,7 @@ See [notes/architecture.md](../notes/architecture.md), [notes/tools-and-permissi
   Runs the tool as a task and forwards its `on_output` chunks as `ToolOutput`
   events as they arrive (bash streaming), then `ToolResult`
 - `_build_transport(spec, workspace)` — builds a `SandboxTransport` for a
-  `ContainerSpec` (lazy `pico_chat.sandbox` import); empty/`none` → in-process
+  `ContainerSpec` (lazy `moka_chat.sandbox` import); empty/`none` → in-process
 - `set_sandbox(spec)` — swap the transport live (used by `/sandbox`): closes the
   old worker, rebuilds the tool map, records a `[Sandbox: …]` notice
 - `get_harness()` — loads the current project's active sandbox (by directory
@@ -76,7 +76,7 @@ context-window fallbacks are shown but not memoized.
 This one type replaced the former `LLMServerConfig` + `ServerService` +
 `LLMServer` ABC/four-subclass split (`llm_server.py`, `llm_server_config.py`,
 `server_service.py` are deleted). The UI `commands/` package calls into
-`endpoint.py` and `pico_cfg` directly.
+`endpoint.py` and `settings` directly.
 
 Server-family code is split out and reached through thin `Endpoint` wrappers:
 - `endpoint_openai.py` — SSE transport/adapters
@@ -144,7 +144,7 @@ default false). There is no permission engine.
 - `create_role(name)` writes a template listing every registered tool with
 	value `no` (all disabled); `delete_role(name)` unlinks, refusing to remove
 	the last role. `load_role` / `list_roles` read one file per role at
-	`~/.config/pico-chat/roles/<name>.toml`.
+	`~/.config/moka/roles/<name>.toml`.
 - `validate_roles()` reports unknown tool names and values other than
 	`no`/`ask`/`yes` as `roles/<name>.toml: ...`, surfaced by `/reload` and
 	`/config role`.

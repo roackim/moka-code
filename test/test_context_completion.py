@@ -1,7 +1,7 @@
 """Tests for ContextCompletion subdirectory drilling and Tab path building."""
 
-from pico_chat.ui.tui.components.input.completion import ContextCompletion
-from pico_chat.ui.tui.components.menu import SelectionMenu
+from moka_chat.ui.tui.components.input.completion import ContextCompletion
+from moka_chat.ui.tui.components.menu import SelectionMenu
 
 
 def make_completion(items):

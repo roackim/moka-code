@@ -1,5 +1,5 @@
-from pico_chat.ui.tui import colors
-from pico_chat.ui.tui.components.box import theme as imported_box_theme
+from moka_chat.ui.tui import colors
+from moka_chat.ui.tui.components.box import theme as imported_box_theme
 
 
 def test_set_theme_updates_existing_theme_imports():

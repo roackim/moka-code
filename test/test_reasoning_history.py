@@ -9,9 +9,9 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from pico_chat import pico_cfg
-from pico_chat.harness.endpoint import Endpoint
-from pico_chat.harness.harness import Harness
+from moka_chat import settings
+from moka_chat.harness.endpoint import Endpoint
+from moka_chat.harness.harness import Harness
 
 
 def _chunk(content=None, reasoning=None, finish=None):
@@ -28,9 +28,9 @@ def _harness():
 
 
 def test_chat_stores_reasoning_verbatim_in_history(tmp_path, monkeypatch):
-    monkeypatch.setattr(pico_cfg.config, "preserve_reasoning_traces", False)
+    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
     with patch(
-        "pico_chat.harness.harness.get_active_endpoint",
+        "moka_chat.harness.harness.get_active_endpoint",
         return_value=Endpoint(name="test", type="llamacpp"),
     ):
         harness = Harness(workspace_path=str(tmp_path))
@@ -55,7 +55,7 @@ def test_chat_stores_reasoning_verbatim_in_history(tmp_path, monkeypatch):
 
 def test_openai_adapter_reads_openrouter_reasoning_field():
     """OpenRouter streams ``reasoning``; DeepSeek streams ``reasoning_content``."""
-    from pico_chat.harness.endpoint_openai import _adapt_stream_chunk
+    from moka_chat.harness.endpoint_openai import _adapt_stream_chunk
 
     def reason(payload):
         chunk = _adapt_stream_chunk(
@@ -70,11 +70,11 @@ def test_openai_adapter_reads_openrouter_reasoning_field():
 
 def test_openrouter_streamed_reasoning_reaches_history(tmp_path, monkeypatch):
     """The whole pipe: adapter → harness → history entry."""
-    from pico_chat.harness.endpoint_openai import _adapt_stream_chunk
+    from moka_chat.harness.endpoint_openai import _adapt_stream_chunk
 
-    monkeypatch.setattr(pico_cfg.config, "preserve_reasoning_traces", False)
+    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
     with patch(
-        "pico_chat.harness.harness.get_active_endpoint",
+        "moka_chat.harness.harness.get_active_endpoint",
         return_value=Endpoint(name="test", type="openrouter"),
     ):
         harness = Harness(workspace_path=str(tmp_path))
@@ -102,7 +102,7 @@ def test_openrouter_streamed_reasoning_reaches_history(tmp_path, monkeypatch):
 
 
 def test_api_message_drops_reasoning_by_default(monkeypatch):
-    monkeypatch.setattr(pico_cfg.config, "preserve_reasoning_traces", False)
+    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
     entry = {
         "id": "a1", "role": "assistant", "content": "answer",
         "reasoning": "a deep thought", "reasoning_tag": "<think>",
@@ -116,7 +116,7 @@ def test_api_message_drops_reasoning_by_default(monkeypatch):
 
 
 def test_api_message_folds_reasoning_when_enabled(monkeypatch):
-    monkeypatch.setattr(pico_cfg.config, "preserve_reasoning_traces", True)
+    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", True)
     entry = {
         "id": "a1", "role": "assistant", "content": "answer",
         "reasoning": "a deep thought", "reasoning_tag": "<think>",
@@ -135,12 +135,12 @@ def test_tool_calls_are_sent_back_with_their_results(tmp_path, monkeypatch):
     A regression stored the assistant turn without ``tool_calls``, so the model
     received orphaned ``tool`` results and never saw its own call.
     """
-    from pico_chat.harness.roles import Role
+    from moka_chat.harness.roles import Role
 
-    monkeypatch.setattr(pico_cfg.config, "preserve_reasoning_traces", False)
+    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
     (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
     with patch(
-        "pico_chat.harness.harness.get_active_endpoint",
+        "moka_chat.harness.harness.get_active_endpoint",
         return_value=Endpoint(name="test", type="llamacpp"),
     ):
         harness = Harness(workspace_path=str(tmp_path))

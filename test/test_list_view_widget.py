@@ -1,6 +1,6 @@
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.components.list_view import ListView, Select, SelectionModel
-from pico_chat.ui.tui.terminal import MouseEvent
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.components.list_view import ListView, Select, SelectionModel
+from moka_chat.ui.tui.terminal import MouseEvent
 
 
 def rows(buffer):

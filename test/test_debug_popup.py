@@ -1,9 +1,9 @@
 """Tests for the DebugPopup overlay component."""
 import pytest
-from pico_chat.ui.tui.components.debug_popup import DebugPopup
-from pico_chat.ui.tui.components.debug_panel import DebugLogPanel
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.terminal import MouseEvent
+from moka_chat.ui.tui.components.debug_popup import DebugPopup
+from moka_chat.ui.tui.components.debug_panel import DebugLogPanel
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.terminal import MouseEvent
 
 
 class FakeCompositor:

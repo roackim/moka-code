@@ -1,10 +1,10 @@
-"""Tests for the stdlib-only tool bodies in :mod:`pico_chat.worker`."""
+"""Tests for the stdlib-only tool bodies in :mod:`moka_chat.worker`."""
 
 import asyncio
 
 import pytest
 
-from pico_chat.worker import (
+from moka_chat.worker import (
     ToolError,
     bash,
     bash_sync,

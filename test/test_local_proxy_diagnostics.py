@@ -3,7 +3,7 @@
 import httpx
 import pytest
 
-from pico_chat.harness.endpoint import (
+from moka_chat.harness.endpoint import (
     ConnectionDiagnosis,
     Endpoint,
     _is_local_target,

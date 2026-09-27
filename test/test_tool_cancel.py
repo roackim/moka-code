@@ -2,7 +2,7 @@
 
 import asyncio
 import pytest
-from pico_chat.harness.tools import ShellTool, MinimalToolset, ToolError
+from moka_chat.harness.tools import ShellTool, MinimalToolset, ToolError
 
 def asyncio_run(coro):
     return asyncio.run(coro)

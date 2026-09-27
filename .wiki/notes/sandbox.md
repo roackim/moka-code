@@ -1,11 +1,11 @@
 # Sandbox
 
-Pico can run **tool execution** inside a container (`podman`/`docker`) or under
+Moka can run **tool execution** inside a container (`podman`/`docker`) or under
 `bubblewrap`, while the UI, agent loop, conversation, LLM calls, and config all
 stay on the host. The container side is a tiny, stateless **worker** with no
 config, no network, no model, and no policy.
 
-This is transport, not policy: pico adds no path confinement or command parsing.
+This is transport, not policy: moka adds no path confinement or command parsing.
 The isolation is the runtime's, and the user names the backend explicitly. See
 [security.md](./security.md) for the trust boundary.
 
@@ -22,7 +22,7 @@ The isolation is the runtime's, and the user names the backend explicitly. See
 The harness only knows the `ToolTransport` seam, so the tool registry and
 schemas are identical in all modes.
 
-## The worker (`pico_chat/worker.py`)
+## The worker (`moka_chat/worker.py`)
 
 A **stdlib-only** module that is both the host's source of tool bodies and the
 container entrypoint (`python3 /opt/worker.py`, run as a script so the package
@@ -50,7 +50,7 @@ time).
   handler against a `MinimalToolset`; `SandboxTransport` (in `sandbox.py`) sends
   the request over JSONL. `RegisteredTool.execute(on_output=..., **args)`
   delegates to the transport.
-- `pico_chat/sandbox.py` owns the launcher and client:
+- `moka_chat/sandbox.py` owns the launcher and client:
   - `ContainerSpec` (runtime/image/network/timeout/run_args/dockerfile) and
     `build_argv()`;
   - `SandboxProcess` — the process + JSONL client: lazy start, id-correlated
@@ -90,10 +90,10 @@ out-of-tree interpreter it binds that prefix. Worker stderr is surfaced in the
 failure message (and to the debug stream), so a bad image or missing interpreter
 is diagnosable.
 
-## Project store & selection (`pico_chat/projects.py`)
+## Project store & selection (`moka_chat/projects.py`)
 
 Sandboxes are **per project**, stored in the user config at
-`~/.config/pico-chat/projects/<name>.toml` (`<name>` = workspace directory
+`~/.config/moka/projects/<name>.toml` (`<name>` = workspace directory
 name). `load_project()` parses named `[sandboxes.<id>]` entries + `active`;
 `active_spec()` → `ContainerSpec`; `set_active()` rewrites the `active` line
 without destroying comments; `ensure_project_file()` seeds the commented
@@ -115,7 +115,7 @@ completion come from the framework (see [ui.md](./ui.md)):
 | `/sandbox init <podman\|docker> [base]` | write a starter `Containerfile`/`Dockerfile` (bases: `python`→`python:3.12-slim`, `debian`→`debian:stable-slim`, `ubuntu`) |
 | `/sandbox quit` | deactivate (back to in-process) |
 
-pico **never builds implicitly**: `start` offers, `build` is explicit. A
+moka **never builds implicitly**: `start` offers, `build` is explicit. A
 missing image prints the exact command; `run_args` bind sources must already
 exist on the host.
 
@@ -135,6 +135,6 @@ event keeps the full output for the UI. See [tools-and-permissions.md](./tools-a
 
 ## Key files
 
-`pico_chat/worker.py` · `pico_chat/sandbox.py` · `pico_chat/projects.py` ·
-`pico_chat/harness/tools.py` · `pico_chat/harness/harness.py` ·
-`pico_chat/harness/elision.py` · `pico_chat/ui/commands/sandbox.py`.
+`moka_chat/worker.py` · `moka_chat/sandbox.py` · `moka_chat/projects.py` ·
+`moka_chat/harness/tools.py` · `moka_chat/harness/harness.py` ·
+`moka_chat/harness/elision.py` · `moka_chat/ui/commands/sandbox.py`.

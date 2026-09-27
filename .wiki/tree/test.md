@@ -29,7 +29,7 @@ All tests use pytest. Run with the project virtualenv (see HANDOFF §1):
 | `test_command_surface.py` | `ui/commands/` | Command registry shape, descriptions, model rows |
 | `test_command_import_graph.py` | `ui/commands/` | Domain modules import only `base`; no cycles |
 | `test_core_ui_boundary.py` | `harness/` | R9 guard: harness imports no UI |
-| `test_config_loader.py` | `pico_cfg.py` | Split config files, validation, state |
+| `test_config_loader.py` | `settings.py` | Split config files, validation, state |
 | `test_config_commands.py` | `ui/commands/core.py` | `/config`, `/edit`, `/reload`, external editor |
 | `test_conversation_commands.py` | `ui/commands/conversation.py` | `/import`, `/export`, history rebuild |
 | `test_compaction.py` | `harness.py` | Conversation history summarization (FakeServer) |
@@ -57,7 +57,7 @@ All tests use pytest. Run with the project virtualenv (see HANDOFF §1):
 
 - `test_compaction.py` uses the `FakeServer` fixture; no real backend needed.
 - Tests isolate config by monkeypatching module functions
-  (`pico_cfg.get_config_dir`, `get_state_path`, `roles._ROLES_DIR`).
+  (`settings.get_config_dir`, `get_state_path`, `roles._ROLES_DIR`).
 
 ## Adding Tests
 

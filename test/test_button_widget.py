@@ -1,7 +1,7 @@
-from pico_chat.ui.tui.actions import Actions
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.components.button import Button
-from pico_chat.ui.tui.terminal import MouseEvent
+from moka_chat.ui.tui.actions import Actions
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.components.button import Button
+from moka_chat.ui.tui.terminal import MouseEvent
 
 
 def test_button_activates_from_keyboard_and_mouse():

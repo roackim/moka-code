@@ -9,11 +9,11 @@ import json
 
 import pytest
 
-from pico_chat.harness import events as harness_events
-from pico_chat.harness.harness import Harness
-from pico_chat.harness.llm_status import AgentState
-from pico_chat.harness.permissions import PermissionGate
-from pico_chat.harness.roles import Role
+from moka_chat.harness import events as harness_events
+from moka_chat.harness.harness import Harness
+from moka_chat.harness.llm_status import AgentState
+from moka_chat.harness.permissions import PermissionGate
+from moka_chat.harness.roles import Role
 
 from conftest import NoopDebugStream, StubReadTool, run_harness_tool_call
 
@@ -180,7 +180,7 @@ class TestFileToolLayer:
 
     def test_read_supports_line_ranges_and_line_numbers(self, tmp_path):
         (tmp_path / "test.txt").write_text("one\ntwo\nthree\nfour\n")
-        from pico_chat.harness.tools import MinimalToolset
+        from moka_chat.harness.tools import MinimalToolset
 
         tools = MinimalToolset(tmp_path)
 
@@ -190,7 +190,7 @@ class TestFileToolLayer:
         )
 
     def test_read_rejects_invalid_offset(self, tmp_path):
-        from pico_chat.harness.tools import MinimalToolset, ToolError
+        from moka_chat.harness.tools import MinimalToolset, ToolError
 
         (tmp_path / "test.txt").write_text("content")
         tools = MinimalToolset(tmp_path)
@@ -199,7 +199,7 @@ class TestFileToolLayer:
             tools.read("test.txt", offset=-1)
 
     def test_read_marks_character_truncation(self, tmp_path):
-        from pico_chat.harness.tools import MinimalToolset
+        from moka_chat.harness.tools import MinimalToolset
 
         (tmp_path / "test.txt").write_text("abcdefgh")
         tools = MinimalToolset(tmp_path)
@@ -208,7 +208,7 @@ class TestFileToolLayer:
         assert result.startswith("abc\n[truncated:")
 
     def test_write_and_run_work_without_a_profile(self, tmp_path):
-        from pico_chat.harness.tools import MinimalToolset
+        from moka_chat.harness.tools import MinimalToolset
 
         tools = MinimalToolset(tmp_path)
 

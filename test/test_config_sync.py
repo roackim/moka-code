@@ -2,14 +2,14 @@
 
 import pytest
 
-from pico_chat import pico_cfg
-from pico_chat.pico_cfg import Config
+from moka_chat import settings
+from moka_chat.settings import Config
 
 
 SPEC_TEMPLATES = {
-    "ui": (pico_cfg._UI_SPEC, pico_cfg.DEFAULT_UI_TOML),
-    "context": (pico_cfg._CONTEXT_SPEC, pico_cfg.DEFAULT_CONTEXT_TOML),
-    "debug": (pico_cfg._DEBUG_SPEC, pico_cfg.DEFAULT_DEBUG_TOML),
+    "ui": (settings._UI_SPEC, settings.DEFAULT_UI_TOML),
+    "context": (settings._CONTEXT_SPEC, settings.DEFAULT_CONTEXT_TOML),
+    "debug": (settings._DEBUG_SPEC, settings.DEFAULT_DEBUG_TOML),
 }
 
 
@@ -54,8 +54,8 @@ def test_sync_does_not_duplicate_active_key(tmp_path):
 
 def test_sync_removes_retired_key(tmp_path, monkeypatch):
     monkeypatch.setitem(
-        pico_cfg._FLAT_SECTION_SYNC, "ui",
-        (pico_cfg.DEFAULT_UI_TOML, {"legacy_knob"}),
+        settings._FLAT_SECTION_SYNC, "ui",
+        (settings.DEFAULT_UI_TOML, {"legacy_knob"}),
     )
     (tmp_path / "ui.toml").write_text(
         'theme = "pastel"\nlegacy_knob = 3\n', encoding="utf-8")
@@ -89,12 +89,12 @@ def test_structured_sections_are_not_synced(tmp_path):
 @pytest.mark.parametrize("section", sorted(SPEC_TEMPLATES))
 def test_every_spec_key_has_a_commented_template_line(section):
     spec, template = SPEC_TEMPLATES[section]
-    template_keys = {key for key, _ in pico_cfg._template_key_lines(template)}
+    template_keys = {key for key, _ in settings._template_key_lines(template)}
     assert set(spec) <= template_keys
 
 
 @pytest.mark.parametrize("section", sorted(SPEC_TEMPLATES))
 def test_template_key_lines_are_commented(section):
     _, template = SPEC_TEMPLATES[section]
-    for _, line in pico_cfg._template_key_lines(template):
+    for _, line in settings._template_key_lines(template):
         assert line.lstrip().startswith("#")

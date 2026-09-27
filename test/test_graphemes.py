@@ -1,6 +1,6 @@
 """Tests for grapheme cluster helpers (S2)."""
 
-from pico_chat.ui.tui.graphemes import advance_nonws, count_nonws, split_clusters
+from moka_chat.ui.tui.graphemes import advance_nonws, count_nonws, split_clusters
 
 
 def test_ascii_clusters():

@@ -4,7 +4,7 @@ from collections import deque
 
 import pytest
 
-from pico_chat.ui.stream_revealer import StreamRevealer
+from moka_chat.ui.stream_revealer import StreamRevealer
 
 STEP = 1.0 / 60
 

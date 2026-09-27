@@ -2,8 +2,8 @@
 
 import toml
 
-from pico_chat import pico_cfg
-from pico_chat.pico_cfg import Config
+from moka_chat import settings
+from moka_chat.settings import Config
 
 
 def _write(path, data):
@@ -128,8 +128,8 @@ def test_server_without_type_is_reported_and_skipped(tmp_path):
 
 
 def test_default_templates_are_valid_and_error_free(tmp_path):
-    for section, template in pico_cfg.DEFAULT_CONFIG_TEMPLATES.items():
-        (tmp_path / pico_cfg.CONFIG_FILES[section]).write_text(template, encoding="utf-8")
+    for section, template in settings.DEFAULT_CONFIG_TEMPLATES.items():
+        (tmp_path / settings.CONFIG_FILES[section]).write_text(template, encoding="utf-8")
 
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
@@ -144,7 +144,7 @@ def test_ensure_files_write_templates(tmp_path):
     created = config.ensure_config_files()
     config.ensure_config_files()  # idempotent, does not clobber
 
-    assert {path.name for path in created} == set(pico_cfg.CONFIG_FILES.values())
+    assert {path.name for path in created} == set(settings.CONFIG_FILES.values())
     assert (tmp_path / "ui.toml").exists()
 
 
@@ -235,3 +235,29 @@ def test_openrouter_routing_values_are_validated(tmp_path):
     assert '[servers.or].models."m".providers must be a list of provider slugs' in joined
     assert "[servers.or].models.\"m\" unknown key 'sort'" in joined
     assert '[servers.local].providers is only supported for type = "openrouter"' in joined
+
+
+def test_legacy_config_dir_moves_once(tmp_path, monkeypatch):
+    monkeypatch.delenv("MOKA_CONFIG_DIR", raising=False)
+    monkeypatch.setattr(settings.Path, "home", staticmethod(lambda: tmp_path))
+    old = tmp_path / ".config" / "pico-chat"
+    (old / "roles").mkdir(parents=True)
+    (old / "servers.toml").write_text("# mine\n", encoding="utf-8")
+
+    notice = settings.migrate_legacy_config_dir()
+
+    new = tmp_path / ".config" / "moka"
+    assert "moved your configuration" in notice
+    assert (new / "servers.toml").read_text(encoding="utf-8") == "# mine\n"
+    assert (new / "roles").is_dir() and not old.exists()
+    assert settings.migrate_legacy_config_dir() is None  # only once
+
+
+def test_legacy_config_dir_left_alone_when_moka_dir_exists(tmp_path, monkeypatch):
+    monkeypatch.delenv("MOKA_CONFIG_DIR", raising=False)
+    monkeypatch.setattr(settings.Path, "home", staticmethod(lambda: tmp_path))
+    (tmp_path / ".config" / "pico-chat").mkdir(parents=True)
+    (tmp_path / ".config" / "moka").mkdir(parents=True)
+
+    assert settings.migrate_legacy_config_dir() is None
+    assert (tmp_path / ".config" / "pico-chat").exists()

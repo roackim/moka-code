@@ -994,7 +994,7 @@ packages:
   size: 71550
   timestamp: 1770634638503
 - pypi: ./
-  name: pico-chat
+  name: moka-chat
   requires_dist:
   - toml
   - httpx

@@ -1,7 +1,7 @@
 import pytest
 
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.components.text import Label
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.components.text import Label
 
 
 def row_text(buffer, row):

@@ -1,6 +1,6 @@
 # Architecture
 
-Pico is a terminal-based AI agent that connects to local (llama.cpp) or cloud (OpenRouter, OpenAI) LLMs, exposes file and shell tools to the agent, and presents a custom TUI chat interface.
+Moka is a terminal-based AI agent that connects to local (llama.cpp) or cloud (OpenRouter, OpenAI) LLMs, exposes file and shell tools to the agent, and presents a custom TUI chat interface.
 
 ---
 
@@ -8,14 +8,14 @@ Pico is a terminal-based AI agent that connects to local (llama.cpp) or cloud (O
 
 ```
 ┌─────────────────────────────┐
-│         pico_chat/ui/       │  TUI — user input, chat display, commands
+│         moka_chat/ui/       │  TUI — user input, chat display, commands
 │  app.py  ← commands/        │
 │  chat_history_panel.py      │
 │  chat_action_handlers.py    │
 └────────────┬────────────────┘
              │ async events / callbacks
 ┌────────────▼────────────────┐
-│      pico_chat/harness/     │  Agent core — LLM loop, tools, approval gate
+│      moka_chat/harness/     │  Agent core — LLM loop, tools, approval gate
 │  harness.py (main loop)     │
 │  endpoint.py (+ endpoint_*) │
 │  tools.py (registry +       │
@@ -27,19 +27,19 @@ Pico is a terminal-based AI agent that connects to local (llama.cpp) or cloud (O
 ┌──────▼──────┐  ┌─────▼───────────────────────────┐
 │ LLM Backend │  │ InProcessTransport (bare)       │
 │ llama.cpp / │  │  or SandboxTransport → worker   │
-│ OpenRouter  │  │  (pico_chat/worker.py) in a     │
+│ OpenRouter  │  │  (moka_chat/worker.py) in a     │
 │             │  │  container / bubblewrap         │
 └─────────────┘  └─────────────────────────────────┘
 ```
 
-`pico_chat/worker.py` (stdlib-only) holds the tool bodies + JSONL protocol;
-`pico_chat/sandbox.py` launches and talks to it; `pico_chat/projects.py` stores
+`moka_chat/worker.py` (stdlib-only) holds the tool bodies + JSONL protocol;
+`moka_chat/sandbox.py` launches and talks to it; `moka_chat/projects.py` stores
 per-project sandbox definitions. See [sandbox.md](./sandbox.md).
 
 ## Entry Point
 
-`pico_chat/main.py` — async launcher that:
-1. Loads config via `pico_cfg.py` (and syncs flat section templates)
+`moka_chat/main.py` — async launcher that:
+1. Loads config via `settings.py` (and syncs flat section templates)
 2. Builds the `Harness` via `get_harness()`, which activates the current
    project's sandbox (if any) as its tool transport
 3. Instantiates `chatTUI` and starts the async event loop
@@ -70,10 +70,10 @@ User types → InputComponent
 
 ## Config
 
-`~/.config/pico-chat/` — single-concern files (`ui.toml`, `context.toml`,
+`~/.config/moka/` — single-concern files (`ui.toml`, `context.toml`,
 `debug.toml`, `styles.toml`, `servers.toml`), one role per
 file at `roles/<name>.toml`, per-project sandboxes at `projects/<name>.toml`,
-and a disposable `state.toml`; global config loaded by `pico_cfg.py`, project
+and a disposable `state.toml`; global config loaded by `settings.py`, project
 files by `projects.py`. See [notes/config.md](./config.md).
 
 ## Key Design Decisions
@@ -82,7 +82,7 @@ files by `projects.py`. See [notes/config.md](./config.md).
 - **Streaming-first** — LLM output streams token-by-token to the buffer; no waiting for full response
 - **Approval gate** — every tool call goes through `PermissionGate` (`permissions.py`), which maps the active role's per-tool setting (`no`/`ask`/`yes`) to a decision before execution; the UI can pause to ask the user
 - **Stateless tools, swappable transport** — tool bodies are pure functions in `worker.py`; the harness executes them through a `ToolTransport`, either `InProcessTransport` (bare) or `SandboxTransport` (container/bubblewrap). Same registry/schemas in both
-- **Sandbox is transport, not policy** — pico parses no commands and confines no paths; a container/bwrap mount is the wall, and the user names the backend
+- **Sandbox is transport, not policy** — moka parses no commands and confines no paths; a container/bwrap mount is the wall, and the user names the backend
 - **Endpoints** — server config + transport live in one `Endpoint` type (`harness/endpoint.py`, with `endpoint_*` modules for transport/discovery); UI commands are thin adapters
 - **Model selection is `(server, model)`** — `/model` refreshes discovery live, resolves a model across servers, then switches the harness. Per-server choices persist in `state.toml`; the catalog is a completion cache. OpenRouter models are disabled unless they have a `[servers.<name>.models."<id>"]` table.
 - **Thinking-tag parsing** — the state machine (`harness/thinking_parser.py`) handles `<think>`/`</think>` and `<thinking>`/`</thinking>` across chunk boundaries
@@ -90,10 +90,10 @@ files by `projects.py`. See [notes/config.md](./config.md).
 ## Module Relationships
 
 ```
-pico_chat/
+moka_chat/
   worker.py              ← Stdlib-only tool bodies (read/write/edit/bash) + patch parser + JSONL worker protocol
   sandbox.py             ← Launcher + SandboxProcess/SandboxTransport (container/bwrap argv, preflight, build)
-  projects.py            ← Per-project sandbox store (~/.config/pico-chat/projects/<name>.toml)
+  projects.py            ← Per-project sandbox store (~/.config/moka/projects/<name>.toml)
   main.py                ← Async launcher
   harness/
     harness.py           ← Orchestrator (delegates to modules below); builds/swaps the transport

@@ -5,9 +5,9 @@ inter-message gap. Everything else — the final answer, user turns, notices —
 keeps the configured ``ui_msg_v_margin`` blank lines.
 """
 
-from pico_chat import pico_cfg
-from pico_chat.ui.chat_history_panel import ChatHistoryPanel
-from pico_chat.ui.tui.msg_types import PicoMsg, ThinkingMsg, ToolCallMsg, UserMsg
+from moka_chat import settings
+from moka_chat.ui.chat_history_panel import ChatHistoryPanel
+from moka_chat.ui.tui.msg_types import AssistantMsg, ThinkingMsg, ToolCallMsg, UserMsg
 
 
 def _panel():
@@ -21,10 +21,10 @@ def test_thoughts_and_tools_clamp_but_the_answer_does_not():
     panel.add_message("can you ls ?", msg_type=UserMsg())
     panel.add_message("", msg_type=ThinkingMsg())
     panel.add_message("", msg_type=ToolCallMsg())
-    panel.add_message("answer", msg_type=PicoMsg())
+    panel.add_message("answer", msg_type=AssistantMsg())
 
     starts, ends, _ = panel._row_index()
-    gap = pico_cfg.config.ui_msg_v_margin
+    gap = settings.config.ui_msg_v_margin
 
     # A gap separates the user turn from the assistant block...
     assert starts[1] - ends[0] == gap
@@ -40,7 +40,7 @@ def test_gap_separates_consecutive_user_turns():
     panel.add_message("second", msg_type=UserMsg())
 
     starts, ends, _ = panel._row_index()
-    assert starts[1] - ends[0] == pico_cfg.config.ui_msg_v_margin
+    assert starts[1] - ends[0] == settings.config.ui_msg_v_margin
 
 
 def test_empty_thought_stays_a_summary_when_focused():
@@ -75,12 +75,12 @@ def _gaps(*types):
 
 
 def test_a_thought_sits_on_the_message_it_precedes():
-    gap = pico_cfg.config.ui_msg_v_margin
+    gap = settings.config.ui_msg_v_margin
     # tool, thought, tool: one activity block, no gaps.
     assert _gaps(ToolCallMsg, ThinkingMsg, ToolCallMsg) == [0, 0]
     # tool, thought, prose: the prose needs a gap, so it goes above the thought.
-    assert _gaps(ToolCallMsg, ThinkingMsg, PicoMsg) == [gap, 0]
+    assert _gaps(ToolCallMsg, ThinkingMsg, AssistantMsg) == [gap, 0]
     # user, thought, prose: same; the thought hugs the answer.
-    assert _gaps(UserMsg, ThinkingMsg, PicoMsg) == [gap, 0]
+    assert _gaps(UserMsg, ThinkingMsg, AssistantMsg) == [gap, 0]
     # prose, thought, tool: the tool block needs a gap after prose.
-    assert _gaps(PicoMsg, ThinkingMsg, ToolCallMsg) == [gap, 0]
+    assert _gaps(AssistantMsg, ThinkingMsg, ToolCallMsg) == [gap, 0]

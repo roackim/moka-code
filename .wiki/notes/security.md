@@ -1,10 +1,10 @@
 # Security
 
-Pico runs shell commands and reads/writes files on behalf of an LLM agent.
-There is **no security layer inside pico**: no command parsing, no allowlist,
+Moka runs shell commands and reads/writes files on behalf of an LLM agent.
+There is **no security layer inside moka**: no command parsing, no allowlist,
 no path confinement. The safety model is deliberately minimal and explicit.
 
-Pico can *optionally* launch an external sandbox (a per-project `/sandbox`
+Moka can *optionally* launch an external sandbox (a per-project `/sandbox`
 selection, see below) so the tool bodies run in a container or `bubblewrap`
 instead of in-process. That is transport, not policy: the isolation is the
 runtime's, and the user names the backend explicitly.
@@ -15,7 +15,7 @@ runtime's, and the user names the backend explicitly.
 
 - The LLM may generate tool calls that read, write, or delete anything the
   process can reach, and shell commands with any operators it likes.
-- pico does not try to tell safe commands from dangerous ones. Chained-command
+- moka does not try to tell safe commands from dangerous ones. Chained-command
   splitting cannot be done reliably (command substitution, `bash -c`, `xargs`,
   interpreters, obfuscation), so allowlists are a security illusion and
   deny-lists fail open to obfuscation.
@@ -29,9 +29,9 @@ is `no` / `ask` / `yes`, and the user picks it explicitly — nothing is inferre
 
 | Situation | Boundary | Tool settings |
 |---|---|---|
-| bare pico, in-process tools | none | `ask` on `write` / `edit` / `bash` |
+| bare moka, in-process tools | none | `ask` on `write` / `edit` / `bash` |
 | `/sandbox start <id>` active | the container / `bubblewrap` | `yes` (the mount is the wall) |
-| pico run inside the user's own container | the container | `yes` |
+| moka run inside the user's own container | the container | `yes` |
 
 See `plans/sandbox_worker.md` for the design (supersedes
 `plans/containerization.md`) and [sandbox.md](./sandbox.md) for the subsystem.

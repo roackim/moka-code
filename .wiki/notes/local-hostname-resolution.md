@@ -1,14 +1,14 @@
 # `.local` (mDNS) Hostname Resolution
 
-pico's endpoint layer (`pico_chat/harness/endpoint.py`, with resolution in
-`pico_chat/harness/endpoint_local.py`) has special handling for `*.local`
+moka's endpoint layer (`moka_chat/harness/endpoint.py`, with resolution in
+`moka_chat/harness/endpoint_local.py`) has special handling for `*.local`
 hostnames (mDNS / Bonjour / Avahi), which are common for local servers on a LAN
 (e.g. `http://llm-mini-server.local:8080`).
 
 ## Transport: raw httpx (no OpenAI SDK)
 
 The OpenAI-compatible chat transport is implemented **directly on httpx** — the
-`openai` SDK was removed. pico owns the connection, DNS/IP resolution, timeouts,
+`openai` SDK was removed. moka owns the connection, DNS/IP resolution, timeouts,
 retries and connection pooling, giving full visibility into how requests are
 sent (and why they're slow). Only the three supported server families are
 covered: llama.cpp / Ollama / OpenRouter (+ generic OpenAI-compatible).
@@ -25,13 +25,13 @@ covered: llama.cpp / Ollama / OpenRouter (+ generic OpenAI-compatible).
 httpx connects via `getaddrinfo`. For a `.local` name this can return a
 bare IPv6 link-local address (`fe80::…`) **without an interface scope index**.
 Connecting to `fe80::` with no zone fails ("no route to host"), even though the
-name *lookup* succeeds — so pico could not reach servers that `ping`/`curl` reach
+name *lookup* succeeds — so moka could not reach servers that `ping`/`curl` reach
 fine. This is especially common under **WSL2** (NAT'd multicast) and where DNS
 is otherwise healthy.
 
 ## The fix
 
-For `.local` hosts, pico resolves the name to an IPv4 address and swaps it into
+For `.local` hosts, moka resolves the name to an IPv4 address and swaps it into
 the URL. Resolution is done **in-process via `socket.getaddrinfo`** (the same
 libc resolver the shell uses — nsswitch + mDNS), with a `getent hosts` subprocess
 as a fallback. A bare `getent` subprocess can hang on mDNS when the process
@@ -90,7 +90,7 @@ a failed connection proves the entry stale. Non-`.local` hosts are tried once.
 
 ## Proxy-avoidance for local/LAN targets
 
-Even with the hostname resolved to an IP, pico could still fail while `curl`
+Even with the hostname resolved to an IP, moka could still fail while `curl`
 succeeds — the classic WSL2 gotcha. httpx defaults to `trust_env=True` and
 silently consumes `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`, routing LAN traffic
 through a bogus inherited proxy.

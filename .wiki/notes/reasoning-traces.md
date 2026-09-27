@@ -1,6 +1,6 @@
-# Reasoning Trace Handling in pico-chat
+# Reasoning Trace Handling in moka
 
-*How pico-chat preserves model reasoning/thinking traces across turns, export and import.*
+*How moka preserves model reasoning/thinking traces across turns, export and import.*
 
 > **Status**: Reasoning is **always stored** in history under the assistant entry's
 > `reasoning` field (with the open tag in `reasoning_tag`), so it survives
@@ -98,7 +98,7 @@ messages.extend(self._to_api_message(m) for m in self._get_effective_history())
 def _to_api_message(self, entry):
     msg = {k: v for k, v in entry.items() if k not in ("reasoning", "reasoning_tag")}
     reasoning = entry.get("reasoning")
-    if reasoning and pico_cfg.config.preserve_reasoning_traces:
+    if reasoning and settings.config.preserve_reasoning_traces:
         open_tag, close_tag = self._reasoning_tag_pair(entry.get("reasoning_tag"))
         msg["content"] = f"{open_tag}\n{reasoning}\n{close_tag}\n\n{msg.get('content') or ''}"
     return msg
@@ -111,7 +111,7 @@ it on, each assistant message regains its reasoning inline.
 
 ## Configuration
 
-Enable in `~/.config/pico-chat/context.toml`:
+Enable in `~/.config/moka/context.toml`:
 
 ```toml
 preserve_reasoning_traces = true

@@ -8,19 +8,19 @@ import asyncio
 
 import pytest
 
-from pico_chat import pico_cfg
-from pico_chat.harness import events
-from pico_chat.ui.app import chatTUI
-from pico_chat.ui.tui.msg_types import PicoMsg, ThinkingMsg, ToolCallMsg
+from moka_chat import settings
+from moka_chat.harness import events
+from moka_chat.ui.app import chatTUI
+from moka_chat.ui.tui.msg_types import AssistantMsg, ThinkingMsg, ToolCallMsg
 
 from conftest import StubAgent
 
 STEP = 1.0 / 60.0
 
 
-def _pico(ui):
-    """Assistant content messages only (ThinkingMsg subclasses PicoMsg)."""
-    return [m for m in ui.chat_history_panel.messages if type(m.type) is PicoMsg]
+def _answers(ui):
+    """Assistant content messages only (ThinkingMsg subclasses AssistantMsg)."""
+    return [m for m in ui.chat_history_panel.messages if type(m.type) is AssistantMsg]
 
 
 def _run_script(ui, script, pumps=2):
@@ -77,11 +77,11 @@ def test_reveal_lags_then_converges():
     assert observed["base"] == "hello "
     assert observed["reveal"] < len(observed["base"])
 
-    pico = _pico(ui)
-    assert len(pico) == 1
-    assert pico[0].base_text == "hello world"
-    assert pico[0]._reveal_len == len(pico[0].base_text)
-    assert pico[0].finalized is True
+    moka = _answers(ui)
+    assert len(moka) == 1
+    assert moka[0].base_text == "hello world"
+    assert moka[0]._reveal_len == len(moka[0].base_text)
+    assert moka[0].finalized is True
 
 
 def test_boundary_flush_orders_text_before_tool():
@@ -98,16 +98,16 @@ def test_boundary_flush_orders_text_before_tool():
 
     msgs = _messages(ui)
     types = [type(m.type) for m in msgs]
-    assert PicoMsg in types
+    assert AssistantMsg in types
     assert ToolCallMsg in types
-    pico_idx = types.index(PicoMsg)
+    answer_idx = types.index(AssistantMsg)
     tool_idx = types.index(ToolCallMsg)
-    assert pico_idx < tool_idx
+    assert answer_idx < tool_idx
 
-    pico = msgs[pico_idx]
-    assert pico.base_text == "checking"
-    assert pico._reveal_len == len(pico.base_text)
-    assert pico.finalized is True
+    moka = msgs[answer_idx]
+    assert moka.base_text == "checking"
+    assert moka._reveal_len == len(moka.base_text)
+    assert moka.finalized is True
     # No text landed after the tool block.
     assert all("checking" not in (m.base_text or "") for m in msgs[tool_idx + 1:])
 
@@ -132,15 +132,15 @@ def test_content_resuming_after_tool_draft_stays_one_message():
     ]
     _run_script(ui, script)
 
-    pico = _pico(ui)
-    assert len(pico) == 1
-    assert pico[0].base_text == "I'll ping github.com once for you."
-    assert pico[0].finalized is True
+    moka = _answers(ui)
+    assert len(moka) == 1
+    assert moka[0].base_text == "I'll ping github.com once for you."
+    assert moka[0].finalized is True
 
     msgs = _messages(ui)
     tool = [m for m in msgs if isinstance(m.type, ToolCallMsg)]
     assert len(tool) == 1
-    assert msgs.index(pico[0]) < msgs.index(tool[0])
+    assert msgs.index(moka[0]) < msgs.index(tool[0])
 
 
 def test_tool_draft_finalizes_text_above_it():
@@ -152,9 +152,9 @@ def test_tool_draft_finalizes_text_above_it():
     observed = {}
 
     def capture():
-        pico = _pico(ui)[0]
-        observed["text"] = pico.base_text[:pico._reveal_len]
-        observed["finalized"] = pico.finalized
+        moka = _answers(ui)[0]
+        observed["text"] = moka.base_text[:moka._reveal_len]
+        observed["finalized"] = moka.finalized
 
     args = '{"path": "a.py", "content": "x'
     script = [
@@ -216,8 +216,8 @@ def test_cancel_finalizes_in_flight_tool_draft():
 
 
 def test_reasoning_complete_before_content_appears(monkeypatch):
-    from pico_chat import pico_cfg
-    monkeypatch.setattr(pico_cfg.config, "ui_thought_min_tokens", 0)
+    from moka_chat import settings
+    monkeypatch.setattr(settings.config, "ui_thought_min_tokens", 0)
     ui = chatTUI(StubAgent())
     script = [
         events.Start(message_id="m1", role="assistant"),
@@ -229,9 +229,9 @@ def test_reasoning_complete_before_content_appears(monkeypatch):
 
     msgs = _messages(ui)
     think = [m for m in msgs if isinstance(m.type, ThinkingMsg)]
-    pico = _pico(ui)
-    assert len(think) == 1 and len(pico) == 1
-    assert msgs.index(think[0]) < msgs.index(pico[0])
+    moka = _answers(ui)
+    assert len(think) == 1 and len(moka) == 1
+    assert msgs.index(think[0]) < msgs.index(moka[0])
     assert think[0].base_text == "thinking hard"
     assert think[0]._reveal_len == len(think[0].base_text)
     assert think[0].finalized is True
@@ -270,7 +270,7 @@ def test_waiting_line_removed_when_model_exposes_no_reasoning():
     _run_script(ui, script)
 
     assert not [m for m in _messages(ui) if isinstance(m.type, ThinkingMsg)]
-    assert len(_pico(ui)) == 1
+    assert len(_answers(ui)) == 1
 
 
 def test_waiting_line_removed_before_a_tool_call():
@@ -294,8 +294,8 @@ def test_waiting_line_removed_before_a_tool_call():
     assert kinds.count("ToolCallMsg") == 1
 
 def test_thinking_message_finalizes_to_duration_summary(monkeypatch):
-    from pico_chat import pico_cfg
-    monkeypatch.setattr(pico_cfg.config, "ui_thought_min_tokens", 0)
+    from moka_chat import settings
+    monkeypatch.setattr(settings.config, "ui_thought_min_tokens", 0)
     ui = chatTUI(StubAgent())
     script = [
         events.Start(message_id="m1", role="assistant"),
@@ -320,11 +320,11 @@ def test_error_retains_arrived_text_and_drains():
     ]
     _run_script(ui, script)
 
-    pico = _pico(ui)
-    assert len(pico) == 1
-    assert pico[0].base_text == "partial"
-    assert pico[0]._reveal_len == len(pico[0].base_text)
-    assert pico[0].finalized is True
+    moka = _answers(ui)
+    assert len(moka) == 1
+    assert moka[0].base_text == "partial"
+    assert moka[0]._reveal_len == len(moka[0].base_text)
+    assert moka[0].finalized is True
     assert ui.stream_message is None
     assert any("boom" in line for line in ui.activity_panel.lines)
 
@@ -347,11 +347,11 @@ def test_cancel_retains_text_and_finalizes():
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(ui._process_generation("hello", ui.chat_history_panel.add_message("hello")))
 
-    pico = _pico(ui)
-    assert len(pico) == 1
-    assert pico[0].base_text == "partial"
-    assert pico[0]._reveal_len == len(pico[0].base_text)
-    assert pico[0].finalized is True
+    moka = _answers(ui)
+    assert len(moka) == 1
+    assert moka[0].base_text == "partial"
+    assert moka[0]._reveal_len == len(moka[0].base_text)
+    assert moka[0].finalized is True
 
 
 def test_finalize_deferred_until_revealer_drains():
@@ -399,7 +399,7 @@ def test_frame_callback_idle_when_gated():
     assert ui.stream_revealer is not None
     ui._clock = lambda: 0.0
 
-    msg = ui.chat_history_panel.add_message("", msg_type=PicoMsg())
+    msg = ui.chat_history_panel.add_message("", msg_type=AssistantMsg())
     ui.start_stream_message(msg)
     msg.ingest("hello")
     ui.stream_ingest("hello")
@@ -409,7 +409,7 @@ def test_frame_callback_idle_when_gated():
 
 
 def test_feature_off_uses_direct_append(monkeypatch):
-    monkeypatch.setattr(pico_cfg.config, "ui_stream_smoothing", False)
+    monkeypatch.setattr(settings.config, "ui_stream_smoothing", False)
     ui = chatTUI(StubAgent())
     script = [
         events.Start(message_id="m1", role="assistant"),
@@ -420,11 +420,11 @@ def test_feature_off_uses_direct_append(monkeypatch):
 
     assert ui.stream_revealer is None
     assert ui.stream_message is None
-    pico = _pico(ui)
-    assert len(pico) == 1
-    assert pico[0].base_text == "direct"
-    assert pico[0]._reveal_len == len(pico[0].base_text)
-    assert pico[0].finalized is True
+    moka = _answers(ui)
+    assert len(moka) == 1
+    assert moka[0].base_text == "direct"
+    assert moka[0]._reveal_len == len(moka[0].base_text)
+    assert moka[0].finalized is True
 
 
 def test_tool_call_flushes_pending_text_without_frames():
@@ -439,10 +439,10 @@ def test_tool_call_flushes_pending_text_without_frames():
         yield events.Token(text="hello world")
         # No frame pump: the revealer still holds every cluster.
         yield events.ToolCall(id="t1", name="read", args='{"path":"a"}')
-        pico = [m for m in ui.chat_history_panel.messages if type(m.type) is PicoMsg]
-        seen["base"] = pico[0].base_text
-        seen["reveal"] = pico[0]._reveal_len
-        seen["finalized"] = pico[0].finalized
+        moka = [m for m in ui.chat_history_panel.messages if type(m.type) is AssistantMsg]
+        seen["base"] = moka[0].base_text
+        seen["reveal"] = moka[0]._reveal_len
+        seen["finalized"] = moka[0].finalized
         yield events.Done()
 
     ui.agent.chat = chat
@@ -453,7 +453,7 @@ def test_tool_call_flushes_pending_text_without_frames():
 
 
 def test_short_reasoning_gets_no_line_but_long_reasoning_does(monkeypatch):
-    monkeypatch.setattr(pico_cfg.config, "ui_thought_min_tokens", 10)
+    monkeypatch.setattr(settings.config, "ui_thought_min_tokens", 10)
     ui = chatTUI(StubAgent())
     script = [
         events.Start(message_id="m1", role="assistant"),

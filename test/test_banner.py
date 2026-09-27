@@ -1,11 +1,11 @@
 """The moka banner: shown in an empty transcript, degrading with the width."""
 
-from pico_chat import pico_cfg
-from pico_chat.ui.banner import banner_lines
-from pico_chat.ui.chat_history_panel import ChatHistoryPanel
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.layout_utils import display_width
-from pico_chat.ui.tui.msg_types import UserMsg
+from moka_chat import settings
+from moka_chat.ui.banner import banner_lines
+from moka_chat.ui.chat_history_panel import ChatHistoryPanel
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.layout_utils import display_width
+from moka_chat.ui.tui.msg_types import UserMsg
 
 
 def _width(lines):
@@ -30,7 +30,7 @@ def _screen(panel, width=90, height=16):
 
 
 def test_banner_only_in_an_empty_transcript(monkeypatch):
-    monkeypatch.setattr(pico_cfg.config, "ui_show_banner", True)
+    monkeypatch.setattr(settings.config, "ui_show_banner", True)
     panel = ChatHistoryPanel()
     assert "█" in _screen(panel)
     panel.add_message("hello", msg_type=UserMsg())
@@ -41,5 +41,5 @@ def test_banner_only_in_an_empty_transcript(monkeypatch):
 
 
 def test_banner_can_be_turned_off(monkeypatch):
-    monkeypatch.setattr(pico_cfg.config, "ui_show_banner", False)
+    monkeypatch.setattr(settings.config, "ui_show_banner", False)
     assert "█" not in _screen(ChatHistoryPanel())

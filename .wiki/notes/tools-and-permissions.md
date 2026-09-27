@@ -3,7 +3,7 @@
 The tool system exposes file and shell operations to the LLM agent. Every tool
 call goes through the approval gate before execution.
 
-pico implements **no sandbox policy** — there is no permission engine, no
+moka implements **no sandbox policy** — there is no permission engine, no
 command allowlist, no path confinement, no policy engine. A tool is either
 disabled, asks, or auto-approves. Isolation is the user's choice via a
 per-project sandbox (`/sandbox`, containers/bubblewrap); see

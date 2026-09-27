@@ -1,9 +1,9 @@
 """Argument completion shares the selector look and shows descriptions."""
 
-from pico_chat.ui.commands.base import Command, Param
-from pico_chat.ui.tui.colors import theme
-from pico_chat.ui.tui.components.input.completion import ArgumentCompletion
-from pico_chat.ui.tui.components.menu import SelectionMenu
+from moka_chat.ui.commands.base import Command, Param
+from moka_chat.ui.tui.colors import theme
+from moka_chat.ui.tui.components.input.completion import ArgumentCompletion
+from moka_chat.ui.tui.components.menu import SelectionMenu
 
 
 def _registry():
@@ -32,10 +32,10 @@ def test_argument_completion_passes_descriptions():
 
 
 def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_path):
-    import pico_chat.pico_cfg as pico_cfg
-    from pico_chat.ui.commands.registry import COMMANDS
+    import moka_chat.settings as settings
+    from moka_chat.ui.commands.registry import COMMANDS
 
-    monkeypatch.setattr(pico_cfg, "get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr(settings, "get_config_dir", lambda: tmp_path)
     workspace = tmp_path / "proj"
     workspace.mkdir()
     monkeypatch.chdir(workspace)
@@ -61,7 +61,7 @@ def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_pa
 
 
 def test_config_role_completion_uses_role_descriptions(monkeypatch):
-    import pico_chat.ui.commands.core as core
+    import moka_chat.ui.commands.core as core
 
     monkeypatch.setattr(core, "role_name_completions", lambda: ["agent", "chat"])
     monkeypatch.setattr(core, "role_descriptions", lambda: {"agent": "General agent"})

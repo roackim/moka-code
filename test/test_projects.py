@@ -3,12 +3,12 @@
 import pytest
 import toml
 
-from pico_chat import pico_cfg, projects
+from moka_chat import settings, projects
 
 
 @pytest.fixture
 def config_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr(pico_cfg, "get_config_dir", lambda: tmp_path)
+    monkeypatch.setattr(settings, "get_config_dir", lambda: tmp_path)
     return tmp_path
 
 

@@ -1,6 +1,6 @@
 """Tests for the Message arrived/revealed split (S4)."""
 
-from pico_chat.ui.chat_message import Message
+from moka_chat.ui.chat_message import Message
 
 
 def test_ingest_grows_base_text_without_rendering():

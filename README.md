@@ -1,6 +1,8 @@
-# pico
+# moka
 
 **A terminal AI assistant for local and cloud LLMs** — interactive TUI chat with tool use, file access, and sandboxed command execution.
+
+**English** · [Français](README.fr.md) · [Deutsch](README.de.md)
 
 ---
 
@@ -14,7 +16,7 @@
 ## Installation
 
 ```bash
-pipx install git+https://github.com/yourusername/pico-chat.git
+pipx install git+https://github.com/yourusername/moka.git
 ```
 
 Or from a local clone:
@@ -26,15 +28,15 @@ pipx install .
 Then run:
 
 ```bash
-pico
+moka
 ```
 
 ---
 
 ## Getting Started
 
-On first launch, pico starts with no server configured. Servers live in
-`~/.config/pico-chat/servers.toml`; open it with `/config servers` and add a table:
+On first launch, moka starts with no server configured. Servers live in
+`~/.config/moka/servers.toml`; open it with `/config servers` and add a table:
 
 **Local llama.cpp server:**
 ```toml
@@ -78,6 +80,7 @@ configured servers; selecting one switches to the server that serves it.
 | `/help` | List all available commands |
 | `/config [section]` | Edit a config section (`ui`, `context`, `debug`, `styles`, `servers`, `theme`) and reload |
 | `/edit <file>` | Open a file in `$EDITOR` |
+| `/terminal [host]` | Open a shell where tools run (inside the active sandbox, or the host with `host`); `exit` returns — the conversation keeps running meanwhile |
 | `/reload` | Reload config files and validate `roles/` from disk |
 | `/model` | Open the searchable model picker (type to filter), or select with `/model <id>` |
 | `/role` | List roles or switch the active one (`/role <name>`) |
@@ -118,6 +121,9 @@ Then:
 
 ## Using the Interface
 
+An empty conversation shows the moka banner (hide it with `show_banner = false`
+in `ui.toml`).
+
 ### Sending messages
 
 - **Enter** — send message
@@ -134,7 +140,13 @@ Then:
 
 - **↑ / ↓** arrow keys — select messages in the history; a selected message
   gets a bright `▌` bar in the left margin
-- **Mouse click** — select a message directly
+- Answers with code blocks or tables are split into parts (prose, code block,
+  table) once complete. **→** enters the selected answer (the part gets a wide
+  `█` bar), **↑ / ↓** then move between its parts, **←** / **Esc** go back to
+  the whole answer. `c` copies the selected part — a code block without its
+  ```` ``` ```` fences — or the whole answer when it is selected as a whole.
+- **Mouse click** — select a message; on an answer, the first click selects it
+  whole and a click on the selected answer selects the part under the cursor
 - **Esc** — clear the selection; **Enter** / **`i`** — jump to the input
 - While a message is selected an action line appears just above the input
   (the status bar stays visible), marked with `▌`:
@@ -174,22 +186,24 @@ The active role (`roles/<name>.toml`) is the whole policy. Built-in roles —
 `agent` (every tool `yes`) and `chat` (no tools) — are seeded on first run.
 Switch roles with `/role`, and edit one with `/config role <name>` (creates it
 if missing). Because the container/OS boundary belongs to the environment
-pico runs in, the convention is: run inside a sandbox → `yes` everywhere; run
+moka runs in, the convention is: run inside a sandbox → `yes` everywhere; run
 bare on the host → `ask` on the mutating tools.
 
 ---
 
 ## Live Metrics
 
-During generation, pico displays:
+During generation, moka displays:
 - **Speed** (tokens/s)
 - **Context usage** (tokens used vs. context window size, color-coded by pressure)
+- **Cost** of the current conversation in the status bar, when the provider
+  reports it (OpenRouter); hidden for local servers. `/clear` resets it.
 
 ---
 
 ## Configuration Files
 
-Hand-edited configuration lives in `~/.config/pico-chat/`, split into small
+Hand-edited configuration lives in `~/.config/moka/`, split into small
 single-concern files:
 
 - `ui.toml` — theme, padding, metrics, fps (flat keys).

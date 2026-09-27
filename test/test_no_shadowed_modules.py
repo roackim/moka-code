@@ -3,7 +3,7 @@
 A module and a package with the same dotted name cannot coexist: Python
 silently prefers the package, so the module becomes dead code that still
 looks live to editors, linters, and humans. This happened once with
-``pico_chat/ui/commands.py`` (1641 lines) shadowed by ``pico_chat/ui/commands/``.
+``moka_chat/ui/commands.py`` (1641 lines) shadowed by ``moka_chat/ui/commands/``.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-PACKAGE_ROOT = Path(__file__).resolve().parent.parent / "pico_chat"
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent / "moka_chat"
 
 
 def _iter_python_modules():
@@ -44,7 +44,7 @@ def test_no_module_shadowed_by_package():
 @pytest.mark.parametrize(
     "dotted_name",
     [
-        "pico_chat.ui.commands",
+        "moka_chat.ui.commands",
     ],
 )
 def test_public_module_resolves_to_package(dotted_name):

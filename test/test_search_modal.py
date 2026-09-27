@@ -1,7 +1,7 @@
 """SearchModal: type-to-filter picker built on SelectionMenu."""
 
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.components.search_modal import SearchModal
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.components.search_modal import SearchModal
 
 
 class _Compositor:
@@ -117,7 +117,7 @@ def test_query_is_shown_in_the_title():
 
 
 def test_anchored_modal_sits_directly_above_input():
-    from pico_chat.ui.tui.components.input.input import InputComponent
+    from moka_chat.ui.tui.components.input.input import InputComponent
 
     class Comp(_Compositor):
         width, height = 80, 20
@@ -149,8 +149,8 @@ def test_anchored_modal_sits_directly_above_input():
 
 
 def test_item_footer_is_success_colored():
-    from pico_chat.ui.tui.colors import theme
-    from pico_chat.ui.tui.components.menu import SelectionMenu
+    from moka_chat.ui.tui.colors import theme
+    from moka_chat.ui.tui.components.menu import SelectionMenu
 
     menu = SelectionMenu()
     menu.set_layout(0, 0, 60, 4)

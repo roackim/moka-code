@@ -1,4 +1,4 @@
-# pico_chat/ — Root Package
+# moka_chat/ — Root Package
 
 Entry point, config loading, and public API exports.
 
@@ -13,15 +13,15 @@ Launcher. Seeds role files (`roles.ensure_roles_dir()`), builds the `Harness`
 via `get_harness()` (which activates the current project's sandbox, if any),
 applies the configured theme, and runs `chatTUI`.
 
-### `pico_cfg.py`
+### `settings.py`
 `Config` — plain class instantiating the split, user-level config under
-`~/.config/pico-chat/` (`ui.toml`, `context.toml`,
+`~/.config/moka/` (`ui.toml`, `context.toml`,
 `debug.toml`, `styles.toml`, `servers.toml`, `roles/<name>.toml`, disposable
-`state.toml`). Loaded at import as the module-level singleton `pico_cfg.config`.
+`state.toml`). Loaded at import as the module-level singleton `settings.config`.
 `/reload` mutates it in place. See [notes/config.md](../notes/config.md).
 
 ### `__init__.py`
-Exports `pico_cfg`, `Harness`, `get_harness`, and `__version__`.
+Exports `settings`, `Harness`, `get_harness`, and `__version__`.
 
 ### `worker.py`
 Stdlib-only tool bodies shared with the sandbox worker: `read`, `write`,
@@ -44,7 +44,7 @@ logs go to stderr), serialized one at a time. Requests are
 
 ### `projects.py`
 Per-project settings, stored in the user config (never in the repo) at
-`~/.config/pico-chat/projects/<name>.toml` (name = workspace directory name).
+`~/.config/moka/projects/<name>.toml` (name = workspace directory name).
 - `ensure_project_file()` seeds a thorough commented template (per-type examples
   incl. `run_args`); `load_project()` parses named `[sandboxes.<id>]` entries +
   `active`; `set_active()` persists the selection without destroying comments;
@@ -70,7 +70,7 @@ Host-side sandbox launcher and JSONL client (no `ui/` imports, no policy).
   `build_command()`, `run_build()` (streams output), `containerfile_name()`
   (`Containerfile` for podman / `Dockerfile` for docker) and
   `containerfile_starter()` (a ready-to-edit file; deps as hints; installs
-  `python3` for non-`python:*` bases). pico never builds implicitly —
+  `python3` for non-`python:*` bases). moka never builds implicitly —
   `/sandbox start` offers, `/sandbox build` is explicit.
 - Containers run the worker as `python3 /opt/worker.py` (portable across
   `python:*` and distro bases that install `python3`; bubblewrap uses
