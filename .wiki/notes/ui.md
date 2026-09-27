@@ -45,10 +45,10 @@ order come from `pico_cfg.config.ui_status_bar_fields`; the default is:
 status_bar_fields = ["endpoint_model", "role", "context", "cost", "sandbox"]
 ```
 
-The default display is `endpoint:model  role agent  ctx 12.4k/32k  $0.0123  ⬢ sandbox:none`.
+The default display is `endpoint:model  role agent  ctx 12.4k/32k  $0.12  ⬢ sandbox:none`.
 Available values include `endpoint_model`, `endpoint`, `model`, `context`,
 `cost`, `role`, `state`, `workspace`, and `sandbox`. Empty values are hidden:
-`cost` (`$0.0123`, from `Harness.conversation_cost`) only appears once the
+`cost` (`$0.12`, rounded to the cent, from `Harness.conversation_cost`) only appears once the
 provider reports a cost (`TokenUsage.cost`, e.g. OpenRouter's `usage.cost`;
 `/compact`'s request counts too). It is per conversation: `/clear` and
 `/import` (`Harness.load_history`) start it over.
@@ -803,4 +803,4 @@ Styles are driven by `pico_cfg.config.markdown_styles` (see [config.md](./config
 
 ### Tables
 
-Markdown tables (`| ... | ... |` with a `---` separator row) are detected by `BlockParser`, grouped into `TableLine` runs, and rendered via `AsciiTable` with the `squared` style. Column alignment (`:--`/`--:`/`:-:`) is read from the separator row. Table lines are rendered with `code_block=True` so the wrapper hard-breaks instead of word-wrapping, preserving column alignment. Columns size to their content (`max_width=None`, no per-column cap) and measure/truncate/pad by display width (`layout_utils.display_width`, grapheme-aware). `Buffer`/`SubBuffer.write_str` iterate grapheme clusters (`buffer._text_tokens`) so emoji sequences (variation selectors, ZWJ, keycaps) occupy one cell with the correct width — the previous per-code-point walk split them and broke alignment. `Markdown._hard_break_line`/`_break_segments` are cluster-aware too, so wide emoji count as 2 when wrapping (otherwise a line was left unbroken and clipped at the right edge).
+Markdown tables (`| ... | ... |` with a `---` separator row) are detected by `BlockParser`, grouped into `TableLine` runs, and emitted by `Markdown.parse` as one `TableSegment` placeholder line (cells stripped of inline markers such as `` ` `` and `**`). `MarkdownComponent._wrap_all` renders it via `AsciiTable(..., total_width=<width>)` with the `squared` style, so tables are laid out for the actual width and again on resize: columns keep their natural width when the table fits; otherwise the widest shrink first (`_fit_widths`, floor 6 cells) and their cells word-wrap onto several lines, and rows are then separated by horizontal lines (`├───┼───┤`). No blank line is added before or after a table. Column alignment (`:--`/`--:`/`:-:`) is read from the separator row. Rendered lines use `code_block=True` so they are never re-wrapped. Cells measure/pad by display width (`layout_utils.display_width`, grapheme-aware). `Buffer`/`SubBuffer.write_str` iterate grapheme clusters (`buffer._text_tokens`) so emoji sequences (variation selectors, ZWJ, keycaps) occupy one cell with the correct width — the previous per-code-point walk split them and broke alignment. `Markdown._hard_break_line`/`_break_segments` are cluster-aware too, so wide emoji count as 2 when wrapping (otherwise a line was left unbroken and clipped at the right edge).

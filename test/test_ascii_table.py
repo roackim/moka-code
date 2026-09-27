@@ -72,3 +72,48 @@ def test_max_width_truncates_on_display_cells():
     lines = _lines(table)
     assert len({display_width(line) for line in lines}) == 1
     assert "\u2025" in table.to_string()  # truncation ellipsis
+
+
+def _fitted(headers, rows, width):
+    return AsciiTable(headers=headers, rows=rows, style=TableStyle(),
+                      max_width=None, total_width=width).to_string().split("\n")
+
+
+def test_fits_the_width_by_shrinking_the_widest_columns_and_wrapping():
+    lines = _fitted(["key", "description"],
+                    [["a", "a long description that cannot fit on one line here"]], 30)
+    assert {display_width(line) for line in lines} == {30}
+    assert lines[1].startswith("│ key │")          # the narrow column is kept
+    assert sum(1 for line in lines if "│ a " in line or "│   " in line) >= 2
+
+
+def test_row_separators_only_when_a_row_spans_several_lines():
+    single = _fitted(["a", "b"], [["1", "2"], ["3", "4"]], 40)
+    assert sum(line.startswith("├") for line in single) == 1   # header only
+    multi = _fitted(["a", "b"], [["1", "word " * 12], ["3", "4"]], 30)
+    assert sum(line.startswith("├") for line in multi) == 2    # + between rows
+
+
+def test_no_blank_lines_around_the_table():
+    lines = _fitted(["a", "b"], [["1", "2"]], None)
+    assert lines[0].startswith("┌") and lines[-1].startswith("└")
+
+
+def test_markdown_table_fits_the_component_and_relays_on_resize():
+    from pico_chat.ui.tui.components.markdown import MarkdownComponent
+
+    md = ("| name | notes |\n|---|---|\n"
+          "| `x` | **a** long cell that will need to wrap at narrow widths |\n")
+    comp = MarkdownComponent(md)
+
+    def widest(width):
+        comp.set_layout(0, 0, width, 30)
+        comp.get_preferred_height(width)
+        lines = ["".join(seg.text for seg in line) for line in comp._wrapped_lines]
+        assert not any("`" in line or "**" in line for line in lines)  # markers gone
+        return max(display_width(line) for line in lines), len(lines)
+
+    wide_width, wide_rows = widest(90)
+    narrow_width, narrow_rows = widest(30)
+    assert wide_width <= 90 and narrow_width == 30
+    assert narrow_rows > wide_rows

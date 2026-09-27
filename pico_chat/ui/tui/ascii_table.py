@@ -6,7 +6,11 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Tuple, Any
 
 from pico_chat.ui.tui.graphemes import split_clusters
-from pico_chat.ui.tui.layout_utils import display_width
+from pico_chat.ui.tui.layout_utils import display_width, wrap_text
+
+# A column squeezed to fit ``total_width`` keeps at least this many cells
+# (unless its content is narrower); below that the table overflows instead.
+_MIN_FIT_WIDTH = 6
 
 
 def _truncate_to_width(text: str, width: int) -> str:
@@ -85,7 +89,12 @@ class AsciiTable:
     style : TableStyle
         Border / padding configuration.
     max_width : int or None
-        Per-column maximum display width (``None`` = unlimited).
+        Per-column maximum display width (``None`` = unlimited); longer cells
+        are truncated with an ellipsis.
+    total_width : int or None
+        Fit the whole table (borders included) in this many cells: the widest
+        columns shrink first and their cells wrap onto several lines. When any
+        row spans several lines, rows are separated by horizontal lines.
     align : dict[str, str] or None
         Per-column alignment, e.g. ``{"age": "right"}``.  Accepted values:
         ``"left"`` (default), ``"right"``, ``"center"``.
@@ -98,6 +107,7 @@ class AsciiTable:
         style: TableStyle | None = None,
         max_width: int | None = 35,
         align: Dict[str, str] | None = None,
+        total_width: int | None = None,
     ):
         self.headers = [str(h) for h in headers]
         self.rows = [[str(v) for v in row] for row in rows]
@@ -116,6 +126,11 @@ class AsciiTable:
             if self.max_width is not None and max_len > self.max_width:
                 max_len = self.max_width
             self._col_widths.append(max_len)
+        if total_width is not None and self._col_widths:
+            s = self._style
+            gap = 2 * s.h_padding + 1 if s.inner_vbar else s.h_padding
+            overhead = 2 + 2 * s.h_padding + gap * (num_cols - 1)
+            self._col_widths = _fit_widths(self._col_widths, total_width - overhead)
 
     # ------------------------------------------------------------------
     # Public API
@@ -128,36 +143,50 @@ class AsciiTable:
         hp = s.h_padding
         vp = s.v_padding
         ivb = s.inner_vbar
-        ihb = s.inner_hbar
         widths = self._col_widths
 
-        shp = " " * hp
+        header = self._cell_lines(self.headers, widths)
+        body = [self._cell_lines(row, widths) for row in self.rows]
+        # Multi-line rows are hard to tell apart without row separators.
+        ihb = s.inner_hbar or any(len(row) > 1 for row in body)
 
-        lines.append("")
         lines.append(self._separator("top", widths, ivb, hp))
-
-        # Header row
         for _ in range(vp):
             lines.append(self._blank_line(widths, ivb, hp))
-        lines.append(self._content_line(self.headers, widths, ivb, hp))
+        lines += [self._content_line(values, widths, ivb, hp) for values in header]
         for _ in range(vp):
             lines.append(self._blank_line(widths, ivb, hp))
-
         lines.append(self._separator("mid", widths, ivb, hp))
 
-        for row in self.rows:
+        for index, row in enumerate(body):
             for _ in range(vp):
                 lines.append(self._blank_line(widths, ivb, hp))
-            lines.append(self._content_line(row, widths, ivb, hp))
+            lines += [self._content_line(values, widths, ivb, hp) for values in row]
             for _ in range(vp):
                 lines.append(self._blank_line(widths, ivb, hp))
-            if ihb:
+            if ihb and index < len(body) - 1:
                 lines.append(self._separator("mid", widths, ivb, hp))
 
         lines.append(self._separator("bot", widths, ivb, hp))
-        lines.append("")
-
         return "\n".join(lines)
+
+    def _cell_lines(self, values: List[str], widths: List[int]) -> List[List[str]]:
+        """A row as physical lines: each cell word-wrapped to its column.
+
+        Cells only wrap when the table was fitted (``total_width``); with a
+        ``max_width`` cap alone they are truncated by ``_content_line``.
+        """
+        if self.max_width is not None:
+            return [values]
+        columns = []
+        for i, value in enumerate(values[:len(widths)]):
+            if display_width(value) <= widths[i]:
+                columns.append([value])
+            else:
+                columns.append([line.rstrip() for line in
+                                wrap_text(value, widths[i], 0, False).split("\n")])
+        height = max((len(c) for c in columns), default=1)
+        return [[c[k] if k < len(c) else "" for c in columns] for k in range(height)]
 
     def __str__(self) -> str:
         return self.to_string()
@@ -222,3 +251,30 @@ class AsciiTable:
             mids.append(" " * widths[len(mids)])
 
         return s.v + shp + sep.join(mids) + shp + s.v
+
+
+def _fit_widths(natural: List[int], available: int) -> List[int]:
+    """Column widths summing to ``available``: the widest columns shrink first.
+
+    Columns already narrower than the common cap keep their natural width;
+    leftover space goes back to the columns that were cut the most.
+    """
+    if sum(natural) <= available:
+        return list(natural)
+    low, high = 1, max(natural)
+    while low < high:  # largest cap whose capped widths still fit
+        mid = (low + high + 1) // 2
+        if sum(min(n, mid) for n in natural) <= available:
+            low = mid
+        else:
+            high = mid - 1
+    cap = max(low, _MIN_FIT_WIDTH)
+    widths = [min(n, cap) for n in natural]
+    left = available - sum(widths)
+    for i in sorted(range(len(widths)), key=lambda i: natural[i] - widths[i], reverse=True):
+        if left <= 0:
+            break
+        extra = min(natural[i] - widths[i], left)
+        widths[i] += extra
+        left -= extra
+    return widths

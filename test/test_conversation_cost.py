@@ -31,6 +31,7 @@ def test_costs_add_up_per_conversation_and_reset():
 
 def test_cost_field_is_hidden_until_reported():
     assert _format_cost(None) == ""
-    assert _format_cost(0.000140035) == "$0.0001"
-    assert _format_cost(0.0125) == "$0.0125"
+    assert _format_cost(0.000140035) == "$0.00"
+    assert _format_cost(0.0125) == "$0.01"
+    assert _format_cost(0.126) == "$0.13"
     assert _format_cost(1.5) == "$1.50"

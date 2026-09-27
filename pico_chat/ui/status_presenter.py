@@ -32,12 +32,10 @@ def _resolve_color(value: str, fallback: Any) -> Any:
 
 
 def _format_cost(cost: float | None) -> str:
-    """``$0.0123`` for this conversation; empty when no cost is reported."""
+    """``$0.12`` for this conversation (to the cent); empty when unreported."""
     if cost is None:
         return ""
-    if cost >= 1:
-        return f"${cost:.2f}"
-    return f"${cost:.4f}"
+    return f"${cost:.2f}"
 
 
 def _format_tokens(value: int | None) -> str:

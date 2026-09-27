@@ -65,6 +65,32 @@ class StyledSegment:
         return w if w >= 0 else len(self.text)
 
 
+@dataclass
+class TableSegment(StyledSegment):
+    """A whole table, rendered only once the available width is known.
+
+    ``Markdown.parse`` emits it as a one-segment line; ``MarkdownComponent``
+    renders it when wrapping, so the table fits the width (cells wrap within
+    their column) and is laid out again on resize.
+    """
+    headers: List[str] = field(default_factory=list)
+    rows: List[List[str]] = field(default_factory=list)
+    align: dict = field(default_factory=dict)
+    style: dict = field(default_factory=dict)
+
+    def render(self, width: Optional[int]) -> List[List[StyledSegment]]:
+        from pico_chat.ui.tui.ascii_table import AsciiTable, TableStyle
+
+        table = AsciiTable(
+            headers=self.headers, rows=self.rows,
+            style=TableStyle(style_name="squared", inner_vbar=True, inner_hbar=False, h_padding=1),
+            max_width=None, align=self.align, total_width=width,
+        )
+        # code_block: never re-wrapped (the table is already fitted).
+        return [[StyledSegment(line, code_block=True, **self.style)]
+                for line in table.to_string().split("\n")]
+
+
 # ---------------------------------------------------------------------------
 # Block types
 # ---------------------------------------------------------------------------
@@ -756,8 +782,6 @@ class Markdown:
         Uses the vendored AsciiTable module.  The first non-separator row
         is treated as headers; subsequent non-separator rows are data.
         """
-        from pico_chat.ui.tui.ascii_table import AsciiTable, TableStyle
-
         headers: List[str] = []
         rows: List[List[str]] = []
         separator: Optional[TableLine] = None
@@ -788,33 +812,35 @@ class Markdown:
                 elif marker.startswith(":"):
                     align[headers[i]] = "left"
 
-        style = TableStyle(style_name="squared", inner_vbar=True, inner_hbar=False, h_padding=1)
-        # No per-column cap: size columns to their content so available
-        # horizontal space is used instead of truncating cells.
-        table = AsciiTable(
-            headers=headers, rows=rows, style=style, max_width=None, align=align,
-        )
-        table_str = table.to_string()
+        # Inline markup (`code`, **bold**) would show its markers literally in
+        # a cell: keep the text only.
+        def plain(cell: str) -> str:
+            return "".join(seg.text for seg in self._inline_parser.parse(cell))
 
-        # Convert table string lines into StyledSegment lines.
-        # Use code_block=True so _wrap_line hard-breaks instead of word-wrapping,
-        # preserving the table's carefully aligned spacing.
         style_cfg = _get_style("table") if "table" in pico_cfg.config.markdown_styles else _get_style("paragraph")
-        result: List[List[StyledSegment]] = []
-        # AsciiTable output starts with a newline; markdown's own blank lines
-        # already separate a table from its neighbours.
-        for line in table_str.strip("\n").split("\n"):
-            if line.strip():
-                result.append([StyledSegment(line, code_block=True, **style_cfg)])
-            else:
-                result.append([])
-
-        return result
+        return [[TableSegment(
+            "",
+            headers=[plain(cell) for cell in headers],
+            rows=[[plain(cell) for cell in row] for row in rows],
+            align={plain(k): v for k, v in align.items()},
+            style=style_cfg,
+        )]]
 
 
 # ---------------------------------------------------------------------------
 # MarkdownComponent — TUI component
 # ---------------------------------------------------------------------------
+
+def _expand_tables(lines: List[List[StyledSegment]]) -> List[List[StyledSegment]]:
+    """Render table placeholders without a width limit (no layout yet)."""
+    result: List[List[StyledSegment]] = []
+    for line in lines:
+        if len(line) == 1 and isinstance(line[0], TableSegment):
+            result.extend(line[0].render(None))
+        else:
+            result.append(line)
+    return result
+
 
 class MarkdownComponent(Component):
     """Renders markdown text as styled segments with segment-aware wrapping.
@@ -958,9 +984,10 @@ class MarkdownComponent(Component):
     def _rebuild_wrapped(self, eff: int):
         """Re-wrap committed and open segments for a new width (rare)."""
         if eff <= 0:
-            self._committed_wrapped = self._committed_parsed
-            self._open_wrapped = list(self._open_parsed)
-            self._wrapped_lines = self._parsed_lines
+            # No width yet: tables render at their natural size.
+            self._committed_wrapped = _expand_tables(self._committed_parsed)
+            self._open_wrapped = _expand_tables(self._open_parsed)
+            self._wrapped_lines = self._committed_wrapped + self._open_wrapped
         else:
             self._committed_wrapped = self._wrap_all(self._committed_parsed, eff)
             self._open_wrapped = self._wrap_all(self._open_parsed, eff)
@@ -989,6 +1016,9 @@ class MarkdownComponent(Component):
         """Wrap all lines to max_width, preserving segment styles."""
         result: List[List[StyledSegment]] = []
         for line in lines:
+            if len(line) == 1 and isinstance(line[0], TableSegment):
+                result.extend(line[0].render(max_width))
+                continue
             wrapped = self._wrap_line(line, max_width)
             result.extend(wrapped)
         return result
