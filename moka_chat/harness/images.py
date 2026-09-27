@@ -30,6 +30,13 @@ MARKER_RE = re.compile(r"\[image #(\d+)\]")
 MENTION_RE = re.compile(r"""(?<!\S)@(?:'([^']+)'|"([^"]+)"|((?:\\ |\S)+?)(?=[.,;:!?)]*(?:\s|$)))""")
 
 
+def max_bytes() -> int:
+    """The ``context.max_image_mb`` limit, in bytes."""
+    from moka_chat import settings
+
+    return int(settings.config.context_max_image_mb * 1024 * 1024)
+
+
 class ImageError(ValueError):
     """An image cannot be attached; the message says why."""
 

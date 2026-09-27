@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import inspect
 import json
 import logging
@@ -254,7 +255,7 @@ class Harness:
         from moka_chat import settings
 
         msg = {key: value for key, value in entry.items()
-               if key not in ("reasoning", "reasoning_tag", "images")}
+               if key not in ("reasoning", "reasoning_tag", "images", "source")}
         reasoning = entry.get("reasoning")
         if reasoning and settings.config.preserve_reasoning_traces:
             open_tag, close_tag = self._reasoning_tag_pair(entry.get("reasoning_tag"))
@@ -848,7 +849,11 @@ class Harness:
         so a pending ``ask`` blocks every later tool from appearing.
         """
         self.state = AgentState.THINKING
-        
+        # Images returned by ``read``; attached after the tool results
+        # (providers do not accept images in ``tool`` messages).
+        tool_images: List[Dict[str, Any]] = []
+        tool_image_paths: List[str] = []
+
         for tc in tool_calls_list:
             tool_name = tc["function"]["name"]
             tool_args = tc["function"]["arguments"]
@@ -957,8 +962,13 @@ class Harness:
                 def _on_output(stream: str, data: str) -> None:
                     stream_queue.put_nowait((stream, data))
 
+                # ``read`` may return an image; the limit is the harness's,
+                # never the model's.
+                run_args = ({**args, "max_image_bytes": images.max_bytes()}
+                            if tool_name == "read" else args)
+
                 async def _run_tool():
-                    result = func.execute(on_output=_on_output, **args)
+                    result = func.execute(on_output=_on_output, **run_args)
                     if inspect.isawaitable(result):
                         result = await result
                     return result
@@ -986,6 +996,11 @@ class Harness:
                 self._running_tool = None
                 result = task.result()
 
+                if isinstance(result, dict) and "image" in result:
+                    result, image = self._take_tool_image(result["image"])
+                    if image is not None:
+                        tool_images.append(image)
+                        tool_image_paths.append(str(args.get("path", "")))
                 if not isinstance(result, str):
                     result = str(result)
                 
@@ -1032,6 +1047,32 @@ class Harness:
                     "tool_call_id": tool_call_id,
                     "content": f"Error: {error_msg}"
                 })
+
+        if tool_images:
+            for n, image in enumerate(tool_images, start=1):
+                image["n"] = n
+            self._add_message_to_history(
+                "user", f"[images returned by read: {', '.join(tool_image_paths)}]",
+                images=tool_images, source="tool",
+            )
+            messages.append(self._to_api_message(self.history[-1]))
+
+    def _take_tool_image(self, found: Dict[str, Any]) -> Tuple[str, Optional[Dict[str, Any]]]:
+        """Turn an image returned by ``read`` into ``(tool result, reference)``.
+
+        The bytes go to the image cache; the reference is ``None`` when the
+        image cannot be attached, and the result then says why.
+        """
+        path = str(found.get("path", ""))
+        if self.endpoint.accepts_images() is False:
+            model = self.endpoint.selected_model or "the model"
+            return f"[image: {path} — not attached: {model} can't read images]", None
+        try:
+            data = base64.b64decode(found.get("data") or "", validate=True)
+            image = images.store(data, images.max_bytes(), name=Path(path).name)
+        except (images.ImageError, ValueError) as exc:
+            return f"[image: {path} — not attached: {exc}]", None
+        return f"[image: {path}, {image['width']}×{image['height']} — attached]", image
 
     async def get_status(self) -> Dict[str, Any]:
         """

@@ -121,6 +121,10 @@ def _bash_exit_code(output: Optional[str]) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
+# A ``read`` result for an image (``Harness._take_tool_image``).
+_READ_IMAGE_RE = re.compile(r"\[image: .*?(?:, (\d+×\d+) — attached| — not attached: .*)\]$", re.S)
+
+
 def _tool_target_metric(name: str, args: dict, *, raw: Optional[str],
                         output: Optional[str], drafting: bool) -> tuple[str, str]:
     """``(target, metric)`` for a tool line header.
@@ -137,6 +141,9 @@ def _tool_target_metric(name: str, args: dict, *, raw: Optional[str],
             target += f":{first}-{first + limit - 1}"
         elif target and isinstance(offset, int) and offset:
             target += f":{offset + 1}-"
+        image = _READ_IMAGE_RE.match(output or "")
+        if image:
+            return target, f"image {image.group(1)}" if image.group(1) else "image not attached"
         metric = _line_metric(count=_count_lines(output)) if output is not None else ""
         return target, metric
     if name == "write":

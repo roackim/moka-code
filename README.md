@@ -130,6 +130,19 @@ in `ui.toml`).
 - **Alt+Enter** or **Ctrl+Enter** — insert a newline (multi-line input)
 - **Ctrl+W** / **Ctrl+Backspace** — delete word backward
 - **Ctrl+Left / Right** — move cursor by word
+- **Ctrl+V** — paste the clipboard: text is inserted like a terminal paste, an
+  image is inserted as `[image #N]` and attached when you send (needs
+  `wl-paste` or `xclip`; over SSH this reads the *remote* clipboard, so use
+  `@path` there)
+
+### Images
+
+A message attaches the images it mentions: pasted `[image #N]` markers and
+`@path` mentions of `.png`/`.jpg`/`.jpeg`/`.gif`/`.webp` files (quote paths
+with spaces: `@'my shot.png'`). Each shows as `▣ image #N · name · W×H · size`
+under your message. Images over `context.max_image_mb` (default 5) are
+refused, and so is a message to a model known to be text-only (the text stays
+in the input). `/export` embeds the images, so the file is self-contained.
 
 ### Completions
 
@@ -165,7 +178,9 @@ conversation itself.
 ## Tool Use & Permissions
 
 The agent has access to four tools: `read`, `write`, `edit` (replace an exact
-text block), and `bash` (run a shell command). Each tool is configured **per
+text block), and `bash` (run a shell command). `read` on an image file shows the
+image to the model (inside the sandbox when one is active), with the same size
+limit and text-only refusal as attached images. Each tool is configured **per
 role** with one of three values:
 
 - **`yes`** — runs automatically without asking
@@ -232,6 +247,7 @@ theme = "terminal"
 # context.toml
 format = "tree"
 max_files = 500
+max_image_mb = 5
 
 # servers.toml
 [servers.local]

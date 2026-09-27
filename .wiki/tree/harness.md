@@ -94,6 +94,9 @@ PNG/JPEG/GIF/WebP headers (no Pillow); `store` caches pasted bytes in
 markers and `@path` mentions; `embed`/`restore` carry bytes through
 `/export`/`/import`. `endpoint_ollama.ollama_messages` converts the parts to
 Ollama's `images: [base64]`.
+`read` can return an image (`worker.read` with the harness-set
+`max_image_bytes`); `Harness._take_tool_image` caches it and a `source: "tool"`
+user entry carries it after the tool results.
 
 Image support per model: `Endpoint.accepts_images()` (True/False/None) from
 `_image_input`, seeded from catalog metadata in `get_endpoint` and filled by

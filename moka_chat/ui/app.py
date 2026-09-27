@@ -623,7 +623,7 @@ class chatTUI(ChatActionHandlers):
             return
         if isinstance(content, bytes):
             try:
-                image = images.store(content, self._max_image_bytes())
+                image = images.store(content, images.max_bytes())
             except images.ImageError as exc:
                 self.notify(f"Can't paste the image: {exc}", "warning")
                 return
@@ -632,17 +632,13 @@ class chatTUI(ChatActionHandlers):
             content = f"[image #{n}]"
         self.input_component.handle_input(PasteEvent(content))
 
-    @staticmethod
-    def _max_image_bytes() -> int:
-        return int(settings.config.context_max_image_mb * 1024 * 1024)
-
     def _collect_images(self, text: str):
         """The images *text* attaches, or ``None`` when the message is refused
         (the reason is shown and the text stays in the input)."""
         try:
             attached = images.collect(text, self._pasted_images,
                                       getattr(self.agent, "workspace", "."),
-                                      self._max_image_bytes())
+                                      images.max_bytes())
         except images.ImageError as exc:
             self.chat_history_panel.add_message(f"Can't attach {exc}", msg_type=SysMsgWarning())
             return None

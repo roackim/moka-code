@@ -44,7 +44,8 @@ class FileTools:
         limit: int | None = None,
         max_chars: int | None = None,
         include_line_numbers: bool = False,
-    ) -> str:
+        max_image_bytes: int | None = None,
+    ) -> str | dict:
         """Read file content."""
         return _worker_read(
             path,
@@ -53,6 +54,7 @@ class FileTools:
             limit=limit,
             max_chars=max_chars,
             include_line_numbers=include_line_numbers,
+            max_image_bytes=max_image_bytes,
         )
 
     def write(self, path: str, content: str) -> str:
@@ -138,7 +140,8 @@ class MinimalToolset:
         limit: int | None = None,
         max_chars: int | None = None,
         include_line_numbers: bool = False,
-    ) -> str:
+        max_image_bytes: int | None = None,
+    ) -> str | dict:
         """Read all or part of a file."""
         return self.file_tools.read(
             path,
@@ -146,6 +149,7 @@ class MinimalToolset:
             limit=limit,
             max_chars=max_chars,
             include_line_numbers=include_line_numbers,
+            max_image_bytes=max_image_bytes,
         )
 
     def write(self, path: str, content: str) -> str:
@@ -321,7 +325,8 @@ def create_toolset(
         "Read all or part of a UTF-8 text file from the workspace. "
         "Use offset/limit for large files or targeted inspection. Offset "
         "is zero-based and limit is the number of lines. Use "
-        "include_line_numbers when you need stable references for an edit."
+        "include_line_numbers when you need stable references for an edit. "
+        "An image file (PNG, JPEG, GIF, WebP) is attached so you can see it."
     ),
     parameters={
         "type": "object",
@@ -360,7 +365,8 @@ def _read_tool(
     limit: int | None = None,
     max_chars: int | None = None,
     include_line_numbers: bool = False,
-) -> str:
+    max_image_bytes: int | None = None,
+) -> str | dict:
     try:
         return toolset.read(
             path,
@@ -368,6 +374,7 @@ def _read_tool(
             limit=limit,
             max_chars=max_chars,
             include_line_numbers=include_line_numbers,
+            max_image_bytes=max_image_bytes,
         )
     except ToolError as e:
         return str(e)

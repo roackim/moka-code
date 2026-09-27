@@ -16,6 +16,7 @@ toolset object) and raise :class:`ToolError` on failure.
 from __future__ import annotations
 
 import asyncio
+import base64
 import inspect
 import json
 import os
@@ -264,6 +265,12 @@ MAX_PATCH_REPLACEMENT_CHARS = 100_000
 MAX_PATCH_LINE_DELTA = 500
 
 
+def _is_image(head: bytes) -> bool:
+    """PNG, JPEG, GIF or WebP, by signature (``harness.images`` parses them)."""
+    return (head.startswith((b"\x89PNG\r\n\x1a\n", b"\xff\xd8", b"GIF87a", b"GIF89a"))
+            or (head[:4] == b"RIFF" and head[8:12] == b"WEBP"))
+
+
 def read(
     path: str,
     *,
@@ -272,9 +279,14 @@ def read(
     limit: int | None = None,
     max_chars: int | None = None,
     include_line_numbers: bool = False,
-) -> str:
+    max_image_bytes: int | None = None,
+) -> str | dict:
     """
     Read file content.
+
+    With ``max_image_bytes`` set (by the harness, never the model), an image
+    file is returned as ``{"image": {"path": ..., "data": <base64>}}``;
+    without it an image is refused like any non-text file.
 
     Args:
         path: File path relative to ``cwd`` or absolute
@@ -304,6 +316,22 @@ def read(
 
     if not target.is_file():
         raise ToolError(f"Not a file: {path}")
+
+    if max_image_bytes is not None:
+        try:
+            with open(target, "rb") as stream:
+                head = stream.read(12)
+        except OSError as e:
+            raise ToolError(f"Error reading file: {e}")
+        if _is_image(head):
+            size = target.stat().st_size
+            if size > max_image_bytes:
+                raise ToolError(
+                    f"Image too large: {path} is {size / 1048576:.1f} MB, "
+                    f"over the {max_image_bytes / 1048576:.1f} MB limit"
+                )
+            data = base64.b64encode(target.read_bytes()).decode("ascii")
+            return {"image": {"path": str(target), "data": data}}
 
     try:
         content = target.read_text(encoding='utf-8')

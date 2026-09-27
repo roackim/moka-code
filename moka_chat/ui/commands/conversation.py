@@ -161,6 +161,8 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
         message_id = message.get("id", "")
         ids = [message_id] if message_id else None
 
+        if role == "user" and message.get("source") == "tool":
+            continue  # images returned by read: the read line already shows them
         if role == "user":
             ui.chat_history_panel.add_user_message(content or "", message.get("images") or (),
                                                    harness_message_ids=ids)

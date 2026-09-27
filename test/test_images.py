@@ -335,3 +335,112 @@ def test_references_are_colored_in_input_and_transcript(tmp_path):
     buffer = Buffer(40, 1)
     component.render(buffer)
     assert buffer.cells[0][5].fg == theme.FOCUSED and buffer.cells[0][0].fg != theme.FOCUSED
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: read returns images
+# ---------------------------------------------------------------------------
+
+def test_worker_read_returns_image_only_with_a_limit(tmp_path):
+    from moka_chat import worker
+
+    (tmp_path / "a.png").write_bytes(png())
+    found = worker.read("a.png", cwd=tmp_path, max_image_bytes=5 * MB)
+    assert found == {"image": {"path": str(tmp_path / "a.png"),
+                               "data": base64.b64encode(png()).decode()}}
+    with pytest.raises(worker.ToolError, match="Image too large"):
+        worker.read("a.png", cwd=tmp_path, max_image_bytes=10)
+    with pytest.raises(worker.ToolError, match="not UTF-8"):
+        worker.read("a.png", cwd=tmp_path)
+    (tmp_path / "t.txt").write_text("text")
+    assert worker.read("t.txt", cwd=tmp_path, max_image_bytes=5 * MB) == "text"
+
+
+def test_worker_protocol_carries_the_image(tmp_path):
+    from moka_chat import worker
+
+    (tmp_path / "a.png").write_bytes(png())
+    frame = asyncio.run(worker.handle_request(
+        {"id": 1, "tool": "read", "args": {"path": "a.png", "max_image_bytes": MB}}, tmp_path))
+    assert json.loads(json.dumps(frame))["result"]["image"]["data"] == base64.b64encode(png()).decode()
+
+
+def _read_harness(tmp_path, monkeypatch, accepts=None):
+    from moka_chat.harness.roles import Role
+
+    monkeypatch.setattr(settings.config, "preserve_reasoning_traces", False)
+    (tmp_path / "shot.png").write_bytes(png(10, 20))
+    with patch("moka_chat.harness.harness.get_active_endpoint",
+               return_value=Endpoint(name="test", type="llamacpp", model="m")):
+        harness = Harness(workspace_path=str(tmp_path))
+    harness.set_role(Role(name="t", tools={"read": "yes"}))
+    if accepts is not None:
+        harness.endpoint._image_input["m"] = accepts
+    call = SimpleNamespace(index=0, id="call_1",
+                           function=SimpleNamespace(name="read", arguments='{"path": "shot.png"}'))
+    requests = []
+
+    async def fake_completion(messages, tools=None, stream=True):
+        requests.append([dict(m) for m in messages])
+        if len(requests) == 1:
+            delta = SimpleNamespace(content=None, reasoning_content=None, tool_calls=[call])
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=None)], usage=None)
+        else:
+            yield _chunk(content="a red square")
+        yield _chunk(finish="stop")
+
+    harness.endpoint.create_completion = fake_completion
+
+    async def drain():
+        return [event async for event in harness.chat("look at shot.png")]
+
+    return harness, requests, asyncio.run(drain())
+
+
+def test_read_attaches_the_image_after_the_tool_results(tmp_path, monkeypatch):
+    harness, requests, _ = _read_harness(tmp_path, monkeypatch)
+
+    tool = next(m for m in harness.history if m["role"] == "tool")
+    assert tool["content"] == f"[image: {tmp_path / 'shot.png'}, 10×20 — attached]"
+    attached = harness.history[harness.history.index(tool) + 1]
+    assert attached["role"] == "user" and attached["source"] == "tool"
+    assert [(i["n"], i["name"], i["width"]) for i in attached["images"]] == [(1, "shot.png", 10)]
+
+    follow_up = requests[1]
+    assert [m["role"] for m in follow_up if m["role"] != "system"] == ["user", "assistant", "tool", "user"]
+    last = follow_up[-1]
+    assert "source" not in last
+    assert last["content"][0]["text"] == "[images returned by read: shot.png]"
+    assert last["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_read_on_a_text_only_model_says_why(tmp_path, monkeypatch):
+    harness, requests, _ = _read_harness(tmp_path, monkeypatch, accepts=False)
+
+    tool = next(m for m in harness.history if m["role"] == "tool")
+    assert tool["content"] == f"[image: {tmp_path / 'shot.png'} — not attached: m can't read images]"
+    assert not any(m.get("source") == "tool" for m in harness.history)
+    assert [m["role"] for m in requests[1] if m["role"] != "system"] == ["user", "assistant", "tool"]
+
+
+def test_read_line_shows_the_image():
+    from moka_chat.ui.chat_message import _tool_target_metric
+
+    def metric(output):
+        return _tool_target_metric("read", {"path": "shot.png"}, raw=None,
+                                   output=output, drafting=False)[1]
+
+    assert metric("[image: /w/shot.png, 10×20 — attached]") == "image 10×20"
+    assert metric("[image: /w/shot.png — not attached: m can't read images]") == "image not attached"
+
+
+def test_import_skips_the_tool_image_message(tmp_path):
+    from moka_chat.ui.commands.conversation import _rebuild_ui_from_history
+
+    ui = SimpleNamespace(chat_history_panel=_Panel())
+    _rebuild_ui_from_history(ui, [
+        {"role": "user", "content": "look"},
+        {"role": "user", "content": "[images returned by read: a.png]",
+         "images": [], "source": "tool"},
+    ])
+    assert ui.chat_history_panel.users == [("look", [])]

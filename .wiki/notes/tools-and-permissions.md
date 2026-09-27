@@ -18,7 +18,7 @@ Four tools, declared in `tools.py` (schemas) with bodies in `worker.py`:
 
 | Tool | Operation |
 |------|-----------|
-| `read` | Read all or part of a UTF-8 text file |
+| `read` | Read all or part of a UTF-8 text file; an image file is attached |
 | `write` | Create or overwrite a file |
 | `edit` | Replace one exact text block in a file |
 | `bash` | Run a shell command in the workspace |
@@ -27,6 +27,19 @@ Four tools, declared in `tools.py` (schemas) with bodies in `worker.py`:
 lines) values for targeted reads, `max_chars` for bounded output, and
 `include_line_numbers` for stable source references when preparing an edit.
 The default call remains a complete, unnumbered file read for compatibility.
+
+**Images.** The harness adds `max_image_bytes` (`context.max_image_mb`) to every
+`read` call; the model cannot set it. `worker.read` then sniffs the header and
+returns a PNG/JPEG/GIF/WebP file as `{"image": {"path", "data": base64}}`
+instead of text — inside the sandbox when one is active, through the same
+JSONL protocol. `Harness._take_tool_image` caches the bytes
+(`images.store`) and answers the call with `[image: <path>, W×H — attached]`
+(or `— not attached: <reason>` when the model is known text-only or the image
+is invalid). After the turn's tool results, one user entry
+`{"content": "[images returned by read: …]", "images": [...], "source": "tool"}`
+carries them (providers reject images in `tool` messages); `source` is not
+sent, and the transcript and `/import` skip it (the `read` line shows
+`image W×H`).
 
 `bash` runs through `ShellTool`, whose `run_async` path is cancellable: `/stop`
 terminates the process group (via `Harness._abort_tool_calls` →
