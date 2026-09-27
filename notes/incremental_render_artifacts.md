@@ -5,13 +5,13 @@ repaint; a residual divergence remains between the compositor's *partial*
 dirty-rect repaint and a full repaint. Details, repros and open hypotheses below.
 
 Files in scope:
-- `pico_chat/ui/tui/components/markdown.py` (incremental parse, dirty line)
-- `pico_chat/ui/tui/components/box.py` (tail raster, SubBuffer grow/shrink, clip)
-- `pico_chat/ui/tui/components/text.py` (clip-aware line range)
-- `pico_chat/ui/tui/buffer.py` (`SubBuffer.clear_region`/`shrink`)
-- `pico_chat/ui/chat_message.py` (`reformat(append=True)`)
-- `pico_chat/ui/chat_history_panel.py` (`_row_index`, window render, `mark_changed`)
-- `pico_chat/ui/tui/compositor.py` (partial vs full repaint, dirty-rect dedupe)
+- `moka_chat/ui/tui/components/markdown.py` (incremental parse, dirty line)
+- `moka_chat/ui/tui/components/box.py` (tail raster, SubBuffer grow/shrink, clip)
+- `moka_chat/ui/tui/components/text.py` (clip-aware line range)
+- `moka_chat/ui/tui/buffer.py` (`SubBuffer.clear_region`/`shrink`)
+- `moka_chat/ui/chat_message.py` (`reformat(append=True)`)
+- `moka_chat/ui/chat_history_panel.py` (`_row_index`, window render, `mark_changed`)
+- `moka_chat/ui/tui/compositor.py` (partial vs full repaint, dirty-rect dedupe)
 
 ---
 
@@ -154,8 +154,8 @@ over disabling the fast path.
 ```bash
 .pixi/envs/default/bin/python -m pytest test/test_streaming_incremental.py -q   # parse + full-render equivalence
 .pixi/envs/default/bin/python -m pytest test/ -q                                # 500 passing
-.pixi/envs/default/bin/python -m compileall -q pico_chat
-.pixi/envs/default/bin/python -m vulture pico_chat --min-confidence 80
+.pixi/envs/default/bin/python -m compileall -q moka_chat
+.pixi/envs/default/bin/python -m vulture moka_chat --min-confidence 80
 ```
 
 `test/test_streaming_incremental.py` covers:

@@ -28,7 +28,7 @@ SANDBOX_TYPES = ("podman", "docker", "bubblewrap")
 DEFAULT_PROJECT_TOML = """\
 # Project sandboxes for this directory. Sandboxes are per project and live in
 # your user config, never in the repo. Start one with /sandbox start <id>,
-# stop with /sandbox quit; edit this file with /sandbox config.
+# stop with /sandbox stop; edit this file with /sandbox config.
 #
 # One [sandboxes.<id>] table per sandbox. `type` is required.
 #

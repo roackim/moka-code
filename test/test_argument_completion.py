@@ -50,7 +50,7 @@ def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_pa
     comp = ArgumentCompletion(SelectionMenu(), COMMANDS)
 
     comp.update("/sandbox ", len("/sandbox "))
-    assert set(comp.menu.items) == {"config", "build", "start", "init", "quit"}
+    assert set(comp.menu.items) == {"config", "build", "start", "stop", "terminal", "init"}
 
     comp.update("/sandbox init ", len("/sandbox init "))
     assert set(comp.menu.items) == {"podman", "docker"}

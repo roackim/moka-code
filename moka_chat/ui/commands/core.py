@@ -21,6 +21,7 @@ from .base import (
     Param,
     config_section_completions,
     open_project_sandbox,
+    open_shell,
     reapply_endpoint,
     role_descriptions,
     role_name_completions,
@@ -335,37 +336,18 @@ async def cmd_exit(ui: ChatUIProtocol, args: List[str]):
 
 
 async def cmd_terminal(ui: ChatUIProtocol, args: List[str]):
-    """Open a shell where the tools run; ``exit`` returns to moka.
+    """Open a shell on the host, in the workspace; ``exit`` returns to moka.
 
-    Inside the active sandbox (same mounts and network as the tools), or on the
-    host with ``/terminal host``. The conversation keeps running meanwhile.
+    The sandbox shell is ``/sandbox terminal``.
     """
     import os
 
-    from moka_chat.ui.external_editor import run_in_foreground
-
-    if args and args[0] != "host":
+    if args:
         ui.chat_history_panel.add_message(
-            "Usage: /terminal  |  /terminal host", msg_type=SysMsgError(), title="terminal")
+            "Usage: /terminal (host shell). The sandbox shell is /sandbox terminal.",
+            msg_type=SysMsgError(), title="terminal")
         return
-    agent = getattr(ui, "agent", None)
-    workspace = getattr(agent, "workspace", None) or os.getcwd()
-    spec = getattr(getattr(agent, "transport", None), "spec", None)
-    if spec is not None and not args:
-        from moka_chat.sandbox import shell_argv
-
-        argv, where = shell_argv(spec, workspace), f"{spec.runtime} sandbox"
-    else:
-        argv, where = [os.environ.get("SHELL") or "/bin/sh"], "host"
-    try:
-        # Marks the shell so a moka started in it refuses to nest (main.py).
-        env = {**os.environ, "MOKA_TERMINAL": str(os.getpid())}
-        await run_in_foreground(ui, argv, cwd=workspace, clear_screen=True, env=env)
-    except OSError as exc:
-        ui.chat_history_panel.add_message(
-            f"Could not open a {where} shell: {exc}", msg_type=SysMsgError(), title="terminal")
-        return
-    ui.chat_history_panel.add_message(f"Back from the {where} shell.", msg_type=SysMsg())
+    await open_shell(ui, [os.environ.get("SHELL") or "/bin/sh"], "host")
 
 
 async def cmd_stop(ui: ChatUIProtocol, args: List[str]):

@@ -43,7 +43,8 @@ from .sandbox import (
     sandbox_id_completions,
     sandbox_id_descriptions,
     sandbox_init,
-    sandbox_quit,
+    sandbox_stop,
+    sandbox_terminal,
     sandbox_runtime_completions,
     sandbox_start,
 )
@@ -74,9 +75,8 @@ COMMANDS: Dict[str, Command] = {
                             handler=cmd_compact),
     "exit":         Command("exit", "Close the application", handler=cmd_exit),
     "stop":         Command("stop", "Stop current generation", handler=cmd_stop),
-    "terminal":     Command("terminal", "Open a shell where tools run ('host' for the host); exit returns",
-                            handler=cmd_terminal,
-                            params=[Param("WHERE", completions=["host"])]),
+    "terminal":     Command("terminal", "Open a shell on the host; exit returns",
+                            handler=cmd_terminal),
     "activity":     Command("activity", "Toggle the activity overlay (shell/status output)",
                             handler=cmd_activity),
     "model":        Command("model", "Change the active model (opens a picker)",
@@ -87,7 +87,7 @@ COMMANDS: Dict[str, Command] = {
                             params=[Param("NAME", completions=role_name_completions,
                                           descriptions=role_descriptions)]),
     "sandbox":      Command(
-                        "sandbox", "Project sandbox: config, build, start, init, quit",
+                        "sandbox", "Project sandbox: config, build, start, stop, terminal, init",
                         handler=sandbox_help,
                         subcommands={
                             "config": Command(
@@ -112,9 +112,12 @@ COMMANDS: Dict[str, Command] = {
                                               completions=sandbox_runtime_completions),
                                         Param("BASE", required=False,
                                               completions=sandbox_base_completions)]),
-                            "quit": Command(
-                                "sandbox quit", "Deactivate and run tools in-process",
-                                handler=sandbox_quit),
+                            "stop": Command(
+                                "sandbox stop", "Deactivate and run tools in-process",
+                                handler=sandbox_stop),
+                            "terminal": Command(
+                                "sandbox terminal", "Open a shell inside the active sandbox",
+                                handler=sandbox_terminal),
                         }),
     "theme":        Command("theme", "Select the color theme (opens a picker)",
                             handler=theme_command,

@@ -80,7 +80,7 @@ configured servers; selecting one switches to the server that serves it.
 | `/help` | List all available commands |
 | `/config [section]` | Edit a config section (`ui`, `context`, `debug`, `styles`, `servers`, `theme`) and reload |
 | `/edit <file>` | Open a file in `$EDITOR` |
-| `/terminal [host]` | Open a shell where tools run (inside the active sandbox, or the host with `host`); `exit` returns — the conversation keeps running meanwhile |
+| `/terminal` | Open a shell on the host (`/sandbox terminal` for one inside the active sandbox); `exit` returns — the conversation keeps running meanwhile |
 | `/reload` | Reload config files and validate `roles/` from disk |
 | `/model` | Open the searchable model picker (type to filter), or select with `/model <id>` |
 | `/role` | List roles or switch the active one (`/role <name>`) |

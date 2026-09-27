@@ -1,7 +1,8 @@
-[ ] /terminal should be able to run in (current default) and out of the sandbox
+[x] /terminal should be able to run in (current default) and out of the sandbox
     -> add a param ?
+    /sandbox terminal ?
 
-[ ] add a /sandbox stop ? alternative to quit ?
+[x] add a /sandbox stop ? alternative to quit ?
 
 [x] better UI for tools calls
     [x] when drafting

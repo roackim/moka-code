@@ -120,15 +120,8 @@ def test_sandbox_shell_uses_the_tools_mounts_with_a_tty(tmp_path):
     assert bwrap[-2] == "--" and bwrap[-1] in ("/bin/bash", "/bin/sh")
 
 
-@pytest.mark.parametrize("args, spec, expected", [
-    ([], None, "host"),
-    ([], "bubblewrap", "sandbox"),
-    (["host"], "bubblewrap", "host"),
-])
-def test_terminal_opens_where_tools_run_unless_host(monkeypatch, tmp_path, args, spec, expected):
-    from moka_chat.ui.commands.core import cmd_terminal
-
-    opened = []
+def _shell_ui(tmp_path, spec, monkeypatch):
+    opened, messages = [], []
 
     async def _run(ui, argv, cwd=None, clear_screen=False, env=None):
         opened.append((argv, cwd))
@@ -140,18 +133,37 @@ def test_terminal_opens_where_tools_run_unless_host(monkeypatch, tmp_path, args,
     monkeypatch.setenv("SHELL", "/bin/zsh")
     transport = type("T", (), {"spec": ContainerSpec(runtime=spec) if spec else None})()
     agent = type("A", (), {"workspace": str(tmp_path), "transport": transport})()
-    messages = []
     panel = type("P", (), {"add_message": lambda self, text, **k: messages.append(text)})()
     ui = type("UI", (), {"agent": agent, "chat_history_panel": panel})()
+    return ui, opened, messages
 
-    asyncio.run(cmd_terminal(ui, args))
 
+@pytest.mark.parametrize("spec", [None, "bubblewrap"])
+def test_terminal_is_always_the_host(monkeypatch, tmp_path, spec):
+    from moka_chat.ui.commands.core import cmd_terminal
+
+    ui, opened, _ = _shell_ui(tmp_path, spec, monkeypatch)
+    asyncio.run(cmd_terminal(ui, []))
+    assert opened == [(["/bin/zsh"], str(tmp_path))]
+
+
+def test_sandbox_terminal_opens_in_the_active_sandbox(monkeypatch, tmp_path):
+    from moka_chat.ui.commands.sandbox import sandbox_terminal
+
+    monkeypatch.chdir(tmp_path)
+    ui, opened, _ = _shell_ui(tmp_path, "bubblewrap", monkeypatch)
+    asyncio.run(sandbox_terminal(ui, []))
     argv, cwd = opened[0]
-    assert cwd == str(tmp_path)
-    if expected == "host":
-        assert argv == ["/bin/zsh"]
-    else:
-        assert argv[0] == "bwrap"
+    assert argv[0] == "bwrap" and cwd == str(tmp_path)
+
+
+def test_sandbox_terminal_without_a_sandbox_says_so(monkeypatch, tmp_path):
+    from moka_chat.ui.commands.sandbox import sandbox_terminal
+
+    ui, opened, messages = _shell_ui(tmp_path, None, monkeypatch)
+    asyncio.run(sandbox_terminal(ui, []))
+    assert opened == []
+    assert "No active sandbox" in messages[0] and "/terminal" in messages[0]
 
 
 def test_terminal_rejects_unknown_arguments(monkeypatch):
@@ -160,8 +172,9 @@ def test_terminal_rejects_unknown_arguments(monkeypatch):
     messages = []
     panel = type("P", (), {"add_message": lambda self, text, **k: messages.append(text)})()
     ui = type("UI", (), {"agent": None, "chat_history_panel": panel})()
-    asyncio.run(cmd_terminal(ui, ["nope"]))
+    asyncio.run(cmd_terminal(ui, ["host"]))
     assert messages and messages[0].startswith("Usage: /terminal")
+    assert "/sandbox terminal" in messages[0]
 
 
 def test_moka_refuses_to_start_inside_its_own_terminal(monkeypatch, capsys):

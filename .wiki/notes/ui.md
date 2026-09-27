@@ -204,10 +204,11 @@ HEAD before this change, Ctrl+C in a non-job-control child (`sh -c "sleep 5"`)
 killed moka; now it survives (also Ctrl+C at a shell prompt / on `sleep`,
 Ctrl+Z on a plain child, and an answer streaming throughout).
 
-**`/terminal`** opens `$SHELL` (else `/bin/sh`) in the workspace, or — when a
-project sandbox is active — a shell inside it (`sandbox.shell_argv`: the same
-mounts/network/limits as the worker, bash if present, `-it` for
-podman/docker). `/terminal host` forces the host. The screen is cleared first (`clear_screen=True`; editors draw on their own screen and are left as is). `exit` returns.
+**`/terminal`** always opens `$SHELL` (else `/bin/sh`) on the host, in the
+workspace; **`/sandbox terminal`** opens a shell inside the active sandbox
+(`sandbox.shell_argv`: the same mounts/network/limits as the worker, bash if
+present, `-it` for podman/docker), or says there is none. Both go through
+`commands/base.open_shell`. The screen is cleared first (`clear_screen=True`; editors draw on their own screen and are left as is). `exit` returns.
 The shell gets `MOKA_TERMINAL=<outer pid>`; `main()` refuses to start when it
 is set ("moka is already running (pid N) … Type 'exit' to return to it.",
 exit code 1), so mokas never nest and fight over one terminal
@@ -621,7 +622,8 @@ Verb-first command tree (`COMMANDS["sandbox"].subcommands`):
 - `/sandbox init podman|docker [base]` → write a starter `Containerfile` /
   `Dockerfile`; `params` complete runtime (`podman|docker`) then base
   (`python|debian|ubuntu`).
-- `/sandbox quit` → deactivate.
+- `/sandbox stop` → deactivate.
+- `/sandbox terminal` → shell inside the active sandbox (`open_shell`).
 
 The `start`/`build` `ID` param uses `sandbox_id_completions` +
 `sandbox_id_descriptions`; `init` uses `sandbox_runtime_completions` then

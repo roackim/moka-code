@@ -102,7 +102,7 @@ def test_sandbox_is_a_command_tree():
     cmd = _sandbox_cmd()
 
     assert cmd.has_subcommands()
-    assert set(cmd.get_completions(0)) == {"config", "build", "start", "init", "quit"}
+    assert set(cmd.get_completions(0)) == {"config", "build", "start", "stop", "terminal", "init"}
 
 
 def test_start_completes_sandbox_ids_and_descriptions(monkeypatch, tmp_path):
@@ -133,7 +133,7 @@ def test_subcommand_descriptions_exposed():
 
     descriptions = get_subcommand_descriptions("sandbox")
 
-    assert set(descriptions) == {"config", "build", "start", "init", "quit"}
+    assert set(descriptions) == {"config", "build", "start", "stop", "terminal", "init"}
     assert "sandbox" in descriptions["start"].lower() or descriptions["start"]
 
 
@@ -331,9 +331,9 @@ def test_init_refuses_overwrite(monkeypatch, tmp_path):
     assert "already exists" in ui.chat_history_panel.messages[-1]
 
 
-def test_quit_deactivates(monkeypatch, tmp_path):
+def test_stop_deactivates(monkeypatch, tmp_path):
     workspace = _workdir(tmp_path, monkeypatch, active="dev")
     ui = _UI(workspace)
-    _run(ui, ["quit"])
+    _run(ui, ["stop"])
     assert ui.agent.specs[-1] is None
     assert projects.load_project(workspace).active is None

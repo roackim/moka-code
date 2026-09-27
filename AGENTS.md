@@ -1,4 +1,4 @@
-# Pico-Chat — Agent Entry Point
+# moka — Agent Entry Point
 
 Read in this order before proposing or making changes:
 
@@ -17,7 +17,7 @@ Never commit or `git add` unless asked.
 Flat section files (`ui`, `context`, `debug`) are kept in sync with
 their templates on startup (and when `/config <section>` opens them):
 
-- `pico_cfg.sync_config_files()` runs in `main()`; it inserts the commented
+- `settings.sync_config_files()` runs in `main()`; it inserts the commented
   template line for any key missing from an existing user file and removes lines
   whose key is in that section's `_RETIRED_*` set. Structured files (`styles`,
   `servers`, `theme`) are user-authored tables and are never synced.

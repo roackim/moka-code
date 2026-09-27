@@ -14,17 +14,18 @@ from typing import Dict, List
 
 from moka_chat.ui.tui.msg_types import SysMsg, SysMsgError, SysMsgWarning
 
-from .base import ChatUIProtocol, open_project_sandbox
+from .base import ChatUIProtocol, open_project_sandbox, open_shell
 
 
-SUBCOMMANDS = ("config", "build", "start", "init", "quit")
+SUBCOMMANDS = ("config", "build", "start", "stop", "terminal", "init")
 
 _SUBCOMMAND_DESCRIPTIONS = {
     "config": "Edit this project's sandbox file",
     "build": "Build a sandbox image from its dockerfile",
     "start": "Activate a sandbox (list when no id given)",
+    "stop": "Deactivate and run tools in-process",
+    "terminal": "Open a shell inside the active sandbox",
     "init": "Write a starter Containerfile / Dockerfile",
-    "quit": "Deactivate and run tools in-process",
 }
 
 _BUILD_NOW = "Build now"
@@ -215,8 +216,22 @@ async def sandbox_config(ui: ChatUIProtocol, _args: List[str]) -> None:
     await open_project_sandbox(ui)
 
 
-async def sandbox_quit(ui: ChatUIProtocol, _args: List[str]) -> None:
+async def sandbox_stop(ui: ChatUIProtocol, _args: List[str]) -> None:
     _activate(ui, _workspace(ui), None, "none")
+
+
+async def sandbox_terminal(ui: ChatUIProtocol, _args: List[str]) -> None:
+    """A shell in the active sandbox: same mounts, network and limits as tools."""
+    from moka_chat.sandbox import shell_argv
+
+    spec = getattr(getattr(ui.agent, "transport", None), "spec", None)
+    if spec is None:
+        ui.chat_history_panel.add_message(
+            "No active sandbox. Start one with /sandbox start <id> "
+            "(or use /terminal for a host shell).",
+            msg_type=SysMsgError(), title="sandbox")
+        return
+    await open_shell(ui, shell_argv(spec, _workspace(ui)), f"{spec.runtime} sandbox")
 
 
 async def sandbox_start(ui: ChatUIProtocol, args: List[str]) -> None:
@@ -328,5 +343,6 @@ __all__ = [
     "sandbox_start",
     "sandbox_build",
     "sandbox_init",
-    "sandbox_quit",
+    "sandbox_stop",
+    "sandbox_terminal",
 ]

@@ -113,7 +113,8 @@ completion come from the framework (see [ui.md](./ui.md)):
 | `/sandbox start [id]` | activate; no id lists sandboxes (id/type/description); missing image offers *Build now* / *Cancel* |
 | `/sandbox build <id>` | build the image (streams to activity; does not activate) |
 | `/sandbox init <podman\|docker> [base]` | write a starter `Containerfile`/`Dockerfile` (bases: `python`→`python:3.12-slim`, `debian`→`debian:stable-slim`, `ubuntu`) |
-| `/sandbox quit` | deactivate (back to in-process) |
+| `/sandbox stop` | deactivate (back to in-process) |
+| `/sandbox terminal` | shell inside the active sandbox (same mounts/network/limits as the tools); `exit` returns |
 
 moka **never builds implicitly**: `start` offers, `build` is explicit. A
 missing image prints the exact command; `run_args` bind sources must already

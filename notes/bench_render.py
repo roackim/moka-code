@@ -33,12 +33,12 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pico_chat.ui.chat_history_panel import ChatHistoryPanel
-from pico_chat.ui.tui.buffer import Buffer
-from pico_chat.ui.tui.events import MouseEvent
-from pico_chat.ui.tui.msg_types import PicoMsg, UserMsg
-from pico_chat.ui.tui.components.markdown import MarkdownComponent
-from pico_chat.ui.stream_revealer import StreamRevealer
+from moka_chat.ui.chat_history_panel import ChatHistoryPanel
+from moka_chat.ui.tui.buffer import Buffer
+from moka_chat.ui.tui.events import MouseEvent
+from moka_chat.ui.tui.msg_types import AssistantMsg, UserMsg
+from moka_chat.ui.tui.components.markdown import MarkdownComponent
+from moka_chat.ui.stream_revealer import StreamRevealer
 
 CONVO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "convo.json")
 
@@ -78,7 +78,7 @@ def build_panel(width, height, repeat=1):
         if role == "user":
             msg = panel.add_message(content, msg_type=UserMsg())
         elif role == "assistant":
-            msg = panel.add_message(content, msg_type=PicoMsg())
+            msg = panel.add_message(content, msg_type=AssistantMsg())
         else:
             continue
         msg.finalize()
@@ -105,7 +105,7 @@ def bench(width, height, iterations, scenario, repeat=1):
     revealed = 0
     clock = 0.0
     if scenario in ("stream", "stream_smooth"):
-        stream_msg = panel.add_message("", msg_type=PicoMsg())
+        stream_msg = panel.add_message("", msg_type=AssistantMsg())
         stream_source = _stream_source(repeat)
         panel.set_layout(0, 0, width, height)
     if scenario == "stream_smooth":

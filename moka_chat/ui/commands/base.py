@@ -237,3 +237,25 @@ def reapply_endpoint(ui: ChatUIProtocol) -> None:
     if (fresh.name, fresh.source) == (current.name, getattr(current, "source", None)):
         return
     activate_endpoint(ui, fresh)
+
+
+async def open_shell(ui: ChatUIProtocol, argv: List[str], where: str) -> None:
+    """Hand the terminal to an interactive shell; ``exit`` returns to moka.
+
+    Shared by ``/terminal`` (host) and ``/sandbox terminal``. The shell is
+    marked with ``MOKA_TERMINAL`` so a moka started in it refuses to nest
+    (``main.py``); the conversation keeps running meanwhile.
+    """
+    from moka_chat.ui.external_editor import run_in_foreground
+    from moka_chat.ui.tui.msg_types import SysMsg, SysMsgError
+
+    agent = getattr(ui, "agent", None)
+    workspace = getattr(agent, "workspace", None) or os.getcwd()
+    env = {**os.environ, "MOKA_TERMINAL": str(os.getpid())}
+    try:
+        await run_in_foreground(ui, argv, cwd=workspace, clear_screen=True, env=env)
+    except OSError as exc:
+        ui.chat_history_panel.add_message(
+            f"Could not open a {where} shell: {exc}", msg_type=SysMsgError(), title="terminal")
+        return
+    ui.chat_history_panel.add_message(f"Back from the {where} shell.", msg_type=SysMsg())
