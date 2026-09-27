@@ -63,23 +63,26 @@ class ChatActionHandlers:
                 if text_to_copy and not text_to_copy.endswith("\n"):
                     text_to_copy += "\n"
             
-            # Native helpers first, then OSC 52 (works over SSH).
-            method = copy_to_clipboard(text_to_copy)
-            if method:
-                self._copy_feedback(method)
-            else:
-                logger.warning("No clipboard method succeeded")
-                self.chat_history_panel.add_message(
-                    "Could not copy: no clipboard method found\n"
-                    "Install xclip, xsel or wl-copy, or use a terminal that "
-                    "supports OSC 52",
-                    msg_type=SysMsgError()
-                )
-            
+            self.copy_text(text_to_copy)
         except Exception as e:
             logger.error(f"Error copying to clipboard: {e}")
             self.chat_history_panel.add_message(f"Copy failed: {e}", msg_type=SysMsgError())
-    
+
+    def copy_text(self, text: str) -> None:
+        """Copy *text* (a message, or a mouse selection) and confirm it."""
+        # Native helpers first, then OSC 52 (works over SSH).
+        method = copy_to_clipboard(text)
+        if method:
+            self._copy_feedback(method)
+        else:
+            logging.getLogger("tui").warning("No clipboard method succeeded")
+            self.chat_history_panel.add_message(
+                "Could not copy: no clipboard method found\n"
+                "Install xclip, xsel or wl-copy, or use a terminal that "
+                "supports OSC 52",
+                msg_type=SysMsgError()
+            )
+
     def _copy_feedback(self, method: str | None = None):
         """Confirm a copy without disturbing the action mode line.
 

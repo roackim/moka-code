@@ -355,13 +355,31 @@ When typing a `/command`, the input component shows grey hints for upcoming para
 
 The TUI supports full mouse interaction via ANSI SGR mode (`?1006h`).
 
-### Text Selection
-- **Start**: Click on message content area → `start_selection()` records anchor position
-- **Drag**: Mouse move events → `update_selection()` extends highlight (throttled at 50ms for performance)
-- **End**: Mouse release → `end_selection()` finalizes selection and auto-copies to clipboard
-- **Yank**: Press `y` to copy current selection to clipboard at any time
-- Selection is rendered as a reverse-video overlay via `_render_selection()` using segment-level fast-skip optimization
-- Hit testing uses a cached line map (`_line_map_cache`) invalidated on scroll/message changes
+### Text Selection (`ui/message_selection.py`)
+Terminal-style selection over **rendered cells**. State is two points
+`(transcript row, panel column)`: `anchor` (press) and `head` (pointer).
+Transcript rows are the panel's virtual rows (`_row_index`), so wheel
+scrolling mid-drag keeps the selection; `_selection_point` clamps the
+pointer to the panel.
+- **Press** focuses the message under the pointer (split-answer rules
+  unchanged) and sets the anchor. **Drag** moves the head on every event (no
+  throttle; repaints coalesce in the compositor). **Release** — anywhere, even
+  outside the panel (handled before the bounds check) — ends the drag; the
+  highlight stays. A plain click leaves no selection.
+- **`c`** with a selection copies it instead of the focused message:
+  `MessageSelection.take()` returns the text and clears it, and the panel
+  hands it to `on_copy` (the app's `copy_text`, shared with the `c` action:
+  `copied ✓` / `sent via OSC 52`, or an error).
+- **Moving focus cancels it**: `set_focused_message` clears the selection
+  unless a drag is in progress (arrows, `→`/`←`, a click, `Esc`, focus
+  leaving the panel all go through it); `Esc` also drops a selection made
+  from a gap (no focused message).
+- Text and highlight read the same cells: each message box's sub-buffer
+  holds all its rendered rows. Only the text area counts (`child.x` ..
+  `child.x + child.width`, not the gutter bar or padding); rows past the
+  child (none today) and gaps between messages copy as blank lines. Wide-char
+  continuation cells are skipped, ANSI stripped, trailing spaces trimmed.
+- A selection may cross messages; a width change clears it (rows move).
 
 ### Action Button Clicks
 - Action buttons (e.g. `[c] copy`) in box bottom borders are clickable

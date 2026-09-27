@@ -160,6 +160,9 @@ in the input). `/export` embeds the images, so the file is self-contained.
   ```` ``` ```` fences — or the whole answer when it is selected as a whole.
 - **Mouse click** — select a message; on an answer, the first click selects it
   whole and a click on the selected answer selects the part under the cursor
+- **Mouse drag** — select text, like in a terminal (across messages too);
+  **`c`** copies the selection (instead of the message) and clears it. Moving
+  the focus (arrows, a click, Esc, the input) cancels it
 - **Esc** — clear the selection; **Enter** / **`i`** — jump to the input
 - While a message is selected an action line appears just above the input
   (the status bar stays visible), marked with `▌`:

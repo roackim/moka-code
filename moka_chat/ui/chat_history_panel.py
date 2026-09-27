@@ -10,7 +10,6 @@ from moka_chat.ui.tui.components.box import Box
 from moka_chat.ui.tui.events import MouseEvent, TickEvent
 
 from moka_chat import settings
-from moka_chat.ui.clipboard import copy_to_clipboard
 from moka_chat.ui.message_selection import MessageSelection
 from moka_chat.ui.tui.colors import theme, RGB
 from moka_chat.ui.tui.msg_types import MsgType, MsgAction, ThinkingMsg
@@ -85,6 +84,8 @@ class ChatHistoryPanel(TextComponent):
         self.inside_group = False
         # Brief hint callback (the app flashes it on the action line).
         self.on_hint: Optional[callable] = None
+        # ``on_copy(text)``: copies a mouse selection on ``c`` (the app confirms it).
+        self.on_copy: Optional[callable] = None
         self.has_keyboard_focus = False  # Track if this panel should handle keyboard input
         # Notified (no args) whenever the selected message changes, so the app
         # can refresh its contextual mode line.
@@ -139,6 +140,11 @@ class ChatHistoryPanel(TextComponent):
         ``index`` (``→``, or a click on a segment); it has no effect on a
         message that is not split.
         """
+        # Moving focus (arrows, a click, leaving the panel) cancels a mouse
+        # selection; a press clears it here before starting the next one.
+        if not self.selection.dragging:
+            self.selection.clear()
+
         # Clear previous focus
         if (self.focused_message_index is not None
                 and 0 <= self.focused_message_index < len(self.messages)):
@@ -293,37 +299,34 @@ class ChatHistoryPanel(TextComponent):
         if self.on_action:
             self.on_action(message, action)
 
+    def _view_start(self) -> int:
+        """The transcript row shown on the panel's first line."""
+        _, _, total = self._row_index()
+        max_scroll = max(0, total - self.height)
+        if self.auto_scroll or self.anchored_start_y is None:
+            return max_scroll
+        return max(0, min(max_scroll, self.anchored_start_y))
+
+    def _selection_point(self, event) -> tuple[int, int]:
+        """``(transcript row, panel column)`` under the pointer, clamped to the
+        panel so a drag past its edges keeps going."""
+        y = max(self.y, min(self.y + self.height - 1, event.y))
+        x = max(self.x, min(self.x + self.width - 1, event.x))
+        return y - self.y + self._view_start(), x - self.x
+
     def _cached_hit_test(self, screen_y: int) -> tuple[Optional[int], Optional[int]]:
         """Map a screen y coordinate to (msg_index, local_y) using the row index.
 
         Returns (None, None) if the y is on a gap or outside content.
         """
         starts, ends, total = self._row_index()
-        max_scroll = max(0, total - self.height)
-
-        if self.auto_scroll or self.anchored_start_y is None:
-            start_y = max_scroll
-        else:
-            start_y = self.anchored_start_y
-
-        virtual_y = (screen_y - self.y) + start_y
+        virtual_y = (screen_y - self.y) + self._view_start()
         if virtual_y < 0 or virtual_y >= total:
             return None, None
         index = bisect.bisect_right(starts, virtual_y) - 1
         if index < 0 or virtual_y >= ends[index]:
             return None, None  # inside the gap after a message
         return index, virtual_y - starts[index]
-
-    def _auto_copy_selection(self):
-        """Copy the current selection to clipboard (called on mouse release after drag)."""
-        text = self.selection.get_text()
-        if not text:
-            return
-        method = copy_to_clipboard(text)
-        if method:
-            logging.getLogger("tui").info("Selection copied to clipboard (%s)", method)
-        else:
-            logging.getLogger("tui").warning("No clipboard method for selection copy")
 
     def move_focus_up(self) -> bool:
         """Move focus to the previous message (or segment, inside an answer).
@@ -416,6 +419,7 @@ class ChatHistoryPanel(TextComponent):
                 msg_inner_width = 1
             message.reformat(msg_inner_width)
         self._message_height_cache.clear()
+        self.selection.clear()  # rows moved
         self._request_repaint()
 
     def _get_message_height(self, msg: Message) -> int:
@@ -624,10 +628,8 @@ class ChatHistoryPanel(TextComponent):
                     buffer.write_str(self.x, row_y, marker, fg=theme.FOCUSED,
                                      bg=theme.get_bg(), max_width=1)
 
-            # Render selection highlight if this message has an active selection
-            sel = self.selection.state
-            if sel is not None and sel.msg is msg:
-                self.selection.render(buffer, msg, child, child_y, child_w, child_h)
+
+        self.selection.render(buffer, start_y)
 
         # Clear clipping region
         if hasattr(buffer, 'clear_clip'):
@@ -668,12 +670,15 @@ class ChatHistoryPanel(TextComponent):
 
         # Handle keyboard input only if this panel has keyboard focus
         if isinstance(event, str) and self.has_keyboard_focus:
-            # 'y' yanks (copies) the current mouse selection, if any
-            if event == 'y' and self.selection.has_selection:
-                self._auto_copy_selection()
+            # With a mouse selection, ``c`` copies it (not the message).
+            if event == 'c' and self.selection.has_selection:
+                text = self.selection.take()
+                if text and self.on_copy is not None:
+                    self.on_copy(text)
                 return True
 
-            # ESC clears an active text selection, then the message selection.
+            # ESC drops a mouse selection, leaves a split answer, then clears
+            # the message selection.
             if event == '\x1b':
                 if self.selection.has_selection:
                     self.selection.clear()
@@ -714,84 +719,36 @@ class ChatHistoryPanel(TextComponent):
                         return True
         
         # Handle mouse input
+        if isinstance(event, MouseEvent) and event.button == 0 and self.selection.dragging:
+            if event.pressed and event.drag:
+                self.selection.extend(self._selection_point(event))
+                return True
+            if not event.pressed:
+                self.selection.end()
+                self._request_repaint()
+                return True
+
         if isinstance(event, MouseEvent):
             # Check if mouse is over this panel
             if self.x <= event.x < self.x + self.width and \
                self.y <= event.y < self.y + self.height:
                 
-                # --- Left button: click, drag, release ---
-                if event.button == 0:
-
-                    # Mouse press (not drag): start click
-                    if event.pressed and not event.drag:
-                        # Use cached line map (rebuilt only when needed)
-                        msg_index, local_y = self._cached_hit_test(event.y)
-
-                        if msg_index is not None:
-                            msg = self.messages[msg_index]
-                            box = msg.get_component()
-
-                            # Focus the message and start text selection. On a
-                            # split answer the first click selects it whole; a
-                            # click on the already-selected answer selects the
-                            # segment under the cursor.
-                            start, end = self._group_range(msg_index)
-                            focused = self.focused_message_index
-                            already = focused is not None and start <= focused < end
-                            self.set_focused_message(msg_index, inside=already)
-
-                            content_y = local_y - 1  # subtract top border
-                            if 0 <= content_y < box.height - 2:
-                                display_col = self.selection.screen_to_display_col(msg, box, content_y, event.x)
-                                if display_col is not None:
-                                    self.selection.start(msg_index, content_y, display_col)
-                                else:
-                                    self.selection.dragging = False
-                            else:
-                                self.selection.dragging = False
-                        else:
-                            # Clicked on a gap - clear focus and selection
-                            self.clear_focus()
-                            self.selection.clear()
-                        self._request_repaint()
-                        return True
-
-                    # Mouse drag: extend selection (throttled to ~30ms between repaints)
-                    if event.pressed and event.drag and self.selection.dragging:
-                        msg_index, local_y = self._cached_hit_test(event.y)
-                        if msg_index is not None and self.selection.has_selection and \
-                           self.selection.state.msg is self.messages[msg_index]:
-                            msg = self.messages[msg_index]
-                            box = msg.get_component()
-                            content_y = local_y - 1
-                            if 0 <= content_y < box.height - 2:
-                                display_col = self.selection.screen_to_display_col(msg, box, content_y, event.x)
-                                if display_col is not None:
-                                    self.selection.extend(msg_index, content_y, display_col)
-                        return True
-
-                    # Left button release: finalize selection
-                    if not event.pressed and not event.drag:
-                        was_dragging = self.selection.dragging
-                        self.selection.end()
-
-                        # If we actually dragged a selection (not just a click),
-                        # auto-copy the selection to clipboard.
-                        if was_dragging and self.selection.has_selection:
-                            self._auto_copy_selection()
-
-                        # If we didn't drag (just clicked), clear selection
-                        if self.selection.has_selection and not was_dragging:
-                            self.selection.clear()
-                        return True
-
-                # Handle released drag outside the panel (stop dragging)
-                if event.button == 0 and not event.pressed and self.selection.dragging:
-                    self.selection.end()
-                    if self.selection.has_selection:
-                        self._auto_copy_selection()
+                # --- Left button: click, drag ---
+                if event.button == 0 and event.pressed and not event.drag:
+                    # Focus the message under the pointer. On a split answer
+                    # the first click selects it whole; a click on the
+                    # already-selected answer selects the segment.
+                    msg_index, _ = self._cached_hit_test(event.y)
+                    if msg_index is not None:
+                        start, end = self._group_range(msg_index)
+                        focused = self.focused_message_index
+                        already = focused is not None and start <= focused < end
+                        self.set_focused_message(msg_index, inside=already)
+                    else:
+                        self.clear_focus()
+                    self.selection.start(self._selection_point(event))
                     return True
-                
+
                 # Button 64 is scroll up, 65 is scroll down
                 if event.button == 64: # Scroll Up
                     _, _, total_height = self._row_index()

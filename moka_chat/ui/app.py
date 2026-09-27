@@ -174,6 +174,7 @@ class chatTUI(ChatActionHandlers):
         self._hint_flash_until = 0.0
         self.chat_history_panel.on_selection_changed = self._update_mode_line
         self.chat_history_panel.on_hint = self.flash_hint
+        self.chat_history_panel.on_copy = self.copy_text
         self.input_component.on_change = self._update_action_strip
         self.command_queue = asyncio.Queue()
         self.shutdown_event = asyncio.Event()

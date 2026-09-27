@@ -14,7 +14,7 @@ architecture overview.
 | `chat_history_panel.py` | `ChatHistoryPanel` — scrollable transcript: messages, focus, mouse selection, action hit testing |
 | `chat_message.py` | `Message` — wraps content with a `MsgType`, colors, padding, and action set |
 | `chat_action_handlers.py` | `ChatActionHandlers` mixin for `chatTUI` — copy/delete/edit message actions |
-| `message_selection.py` | `SelectionState` + `MessageSelection` — drag state, column resolution, text extraction, highlight overlay |
+| `message_selection.py` | `MessageSelection` — terminal-style selection over rendered cells (anchor/head in transcript rows), copy text, highlight |
 | `generation_presenter.py` | Maps harness generation events onto transcript messages |
 | `stream_revealer.py` | `StreamRevealer` — paces streamed-text reveal (no TUI imports; time injected) |
 | `status_presenter.py` | Renders agent/endpoint state into the status bar |
