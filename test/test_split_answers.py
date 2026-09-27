@@ -178,3 +178,30 @@ def test_click_selects_the_answer_first_then_the_part(monkeypatch):
     click_on(0)                                  # elsewhere, then back
     click_on(4)
     assert panel.focused_message_index == 1 and not panel.inside_group
+
+
+def test_down_from_a_last_split_answer_focuses_the_input():
+    from conftest import StubAgent
+    from moka_chat.ui.app import chatTUI
+
+    ui = chatTUI(StubAgent())
+    panel = ui.chat_history_panel
+    panel.width = 80
+    panel.add_message("question", msg_type=UserMsg())
+    answer = panel.add_message(ANSWER, msg_type=AssistantMsg())
+    answer.finalize()
+    panel.split_answer(answer)               # the answer is the last message
+
+    ui._set_app_focus("history")
+    panel.set_focused_message(1)             # the whole answer
+    assert ui.handle_global_input("\x1b[B")
+    assert ui._last_focus_id == "input" and panel.focused_message_index is None
+
+    ui._set_app_focus("history")
+    panel.set_focused_message(1)
+    panel.enter_group()                      # inside: ↓ walks the parts first
+    assert not ui.handle_global_input("\x1b[B")
+    assert ui._last_focus_id == "history"
+    panel.set_focused_message(len(panel.messages) - 1, inside=True)
+    assert ui.handle_global_input("\x1b[B")  # the last part → input
+    assert ui._last_focus_id == "input"

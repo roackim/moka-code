@@ -62,11 +62,14 @@ class SubBufferWrapper:
     def cells(self):
         return self._cells_proxy
 
-    def set(self, x, y, char, fg=None, bg=None, bold=False, reverse=False):
-        self.subbuffer.set(x - self.x_offset, y - self.y_offset, char, fg, bg, bold, reverse)
+    def set(self, x, y, char, fg=None, bg=None, bold=False, reverse=False, underline=False, italic=False):
+        self.subbuffer.set(x - self.x_offset, y - self.y_offset, char, fg, bg, bold, reverse,
+                           underline=underline, italic=italic)
 
-    def write_str(self, x, y, s, fg=None, bg=None, bold=False, reverse=False, max_width=None):
-        self.subbuffer.write_str(x - self.x_offset, y - self.y_offset, s, fg, bg, bold, reverse, max_width)
+    def write_str(self, x, y, s, fg=None, bg=None, bold=False, reverse=False, max_width=None,
+                  underline=False, italic=False):
+        self.subbuffer.write_str(x - self.x_offset, y - self.y_offset, s, fg, bg, bold, reverse, max_width,
+                                 underline=underline, italic=italic)
 
     def fill(self, x, y, width, height, char=" ", fg=None, bg=None):
         self.subbuffer.fill(x - self.x_offset, y - self.y_offset, width, height, char, fg, bg)

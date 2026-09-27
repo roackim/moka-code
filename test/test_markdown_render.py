@@ -23,15 +23,38 @@ def test_unordered_list_uses_pastilles():
     assert any("◦" in line for line in lines)
 
 
-def test_emphasis_uses_colors_not_reverse_or_bold():
-    lines = Markdown().parse("plain *it* **bo**")
+def test_emphasis_uses_weight_and_slant_never_reverse():
+    lines = Markdown().parse("# Title\nplain *it* **bo** `co` [li](u)")
     segments = [seg for line in lines for seg in line]
+    by_text = {seg.text: seg for seg in segments}
+    heading = [seg for seg in lines[0] if seg.text.strip()]
 
-    italic = next(seg for seg in segments if seg.text == "it")
-    bold = next(seg for seg in segments if seg.text == "bo")
+    assert all(seg.bold and seg.fg is not None for seg in heading)
+    assert by_text["bo"].bold and by_text["bo"].fg is not None
+    assert by_text["bo"].fg != heading[0].fg            # headings ≠ bold
+    assert by_text["it"].italic and by_text["it"].fg is None
+    assert by_text["co"].fg is not None and not by_text["co"].bold
+    assert by_text["li"].underline
+    assert not any(seg.reverse for seg in segments)
 
-    assert italic.fg is not None and italic.reverse is False
-    assert bold.fg is not None and bold.bold is False
+
+def test_style_colors_accept_theme_names(monkeypatch):
+    from moka_chat import settings
+    from moka_chat.ui.tui.colors import theme
+
+    monkeypatch.setitem(settings.config.markdown_styles, "quote", {"fg": "MUTED"})
+    (line,) = Markdown().parse("> quoted")
+    assert line[0].text == "│ " and line[0].fg is theme.MUTED
+
+
+def test_italic_and_underline_reach_the_terminal():
+    from moka_chat.ui.tui.buffer import Buffer
+
+    buffer = Buffer(10, 1)
+    buffer.write_str(0, 0, "ab", italic=True)
+    buffer.write_str(2, 0, "cd", underline=True)
+    out = buffer.render()
+    assert "\033[3m" in out and "\033[23m" in out and "\033[4m" in out
 
 
 def test_hard_break_counts_emoji_clusters():

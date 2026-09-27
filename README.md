@@ -227,7 +227,9 @@ single-concern files:
 - `ui.toml` — theme, padding, metrics, fps (flat keys).
 - `context.toml` — context building (flat keys).
 - `debug.toml` — debug logging (flat keys).
-- `styles.toml` — `[markdown_styles.*]` / `[syntax_highlight.*]` overrides.
+- `styles.toml` — `[markdown_styles.*]` / `[syntax_highlight.*]` overrides
+  (`fg`/`bg` as hex or a theme color name like `"MUTED"`; `bold`, `italic`,
+  `underline`).
 - `servers.toml` — one `[servers.<name>]` table per server.
 - `themes.toml` — `[themes.<name>]` palette overrides (built-ins always exist).
 - `roles/<name>.toml` — one file per conversation role (prompt + per-tool

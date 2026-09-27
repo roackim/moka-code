@@ -353,6 +353,16 @@ class ChatHistoryPanel(TextComponent):
         self._scroll_to_show_message(self.focused_message_index, prefer_top=True)
         return True
 
+    def at_last_message(self) -> bool:
+        """Whether ↓ has nowhere to go: the focus is on the last message — a
+        split answer counts as one, and inside it the last part."""
+        index = self.focused_message_index
+        if index is None:
+            return False
+        if self.inside_group:
+            return index == len(self.messages) - 1
+        return self._group_range(index)[1] >= len(self.messages)
+
     def move_focus_down(self) -> bool:
         """Move focus to the next message (or segment, inside an answer).
 

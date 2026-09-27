@@ -30,22 +30,22 @@ from typing import Any, Dict, Literal, Optional
 # Each key is an element name; values are dicts with optional:
 #   fg (hex string), bg (hex string), bold (bool), reverse (bool)
 DEFAULT_MARKDOWN_STYLES: Dict[str, Dict[str, Any]] = {
-    "header1":    {"fg": "#CCA700"},
-    "header2":    {"fg": "#CCA700"},
-    "header3":    {"fg": "#CCA700"},
-    "header4":    {"fg": "#CCA700"},
-    "header5":    {"fg": "#CCA700"},
-    "header6":    {"fg": "#CCA700"},
-    # Emphasis uses a color, not terminal bold/reverse (which render as an ugly
-    # inversion in many terminals).
-    "bold":       {"fg": "#CCA700"},
-    "italic":     {"fg": "#9CDCFE"},
-    "code":       {"fg": "#808080"},
-    "code_block": {"fg": "#808080"},
-    "quote":      {"fg": "#808080"},
+    # Color marks structure, weight marks emphasis. ``fg`` is a hex string or
+    # a theme color name (``"MUTED"``), which follows the active theme.
+    "header1":    {"fg": "#FF79C6", "bold": True},
+    "header2":    {"fg": "#FF79C6", "bold": True},
+    "header3":    {"fg": "#FF79C6", "bold": True},
+    "header4":    {"fg": "#FF79C6", "bold": True},
+    "header5":    {"fg": "#FF79C6", "bold": True},
+    "header6":    {"fg": "#FF79C6", "bold": True},
+    "bold":       {"fg": "#FFD700", "bold": True},
+    "italic":     {"italic": True},
+    "code":       {"fg": "#9CDCFE"},
+    "code_block": {},
+    "quote":      {"fg": "MUTED"},
     "list":       {},
-    "link":       {"fg": "#569CD6"},
-    "hr":         {"fg": "#808080"},
+    "link":       {"fg": "#569CD6", "underline": True},
+    "hr":         {"fg": "MUTED"},
     "paragraph":  {},
 }
 
@@ -177,15 +177,18 @@ DEFAULT_DEBUG_TOML = """\
 
 DEFAULT_STYLES_TOML = """\
 # Optional markdown / syntax-highlight overrides. Apply with /reload, or
-# /config styles. Uncomment and edit what you need.
+# /config styles. Uncomment and edit what you need. Keys: fg, bg (a hex
+# color, or a theme color name such as "MUTED"), bold, italic, underline.
 
 # [markdown_styles.header1]
-# fg = "#CCA700"
+# fg = "#FF79C6"
+# bold = true
 
 # [markdown_styles.bold]
-# fg = "#CCA700"
+# fg = "#FFD700"
+# bold = true
 
-# [markdown_styles.italic]
+# [markdown_styles.code]
 # fg = "#9CDCFE"
 
 # [syntax_highlight.keyword]

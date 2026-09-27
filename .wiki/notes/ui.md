@@ -856,7 +856,7 @@ Decouples how fast text *arrives* from how fast it *appears*.
 
 ### Styling
 
-Styles are driven by `settings.config.markdown_styles` (see [config.md](./config.md)). Each element (`header1`–`header6`, `bold`, `italic`, `code`, `code_block`, `quote`, `list`, `hr`, `table`, `link`, `paragraph`) maps to `fg`/`bg`/`bold`/`reverse`. Emphasis (`bold`, `italic`, headers) uses an `fg` color rather than terminal bold/reverse, which render as an ugly inversion in many terminals. Unordered list items use pastilles (`•`/`◦`/`▪` by nesting level).
+Styles are driven by `settings.config.markdown_styles` (see [config.md](./config.md)). Each element (`header1`–`header6`, `bold`, `italic`, `code`, `code_block`, `quote`, `list`, `hr`, `table`, `link`, `paragraph`) maps to `fg`/`bg`/`bold`/`italic`/`underline`/`reverse`; `fg`/`bg` take a hex color or a theme color name (`"MUTED"`, resolved by `_resolve_color` so it follows the active theme, ANSI palettes included). Defaults: color marks structure, weight marks emphasis — headers bold pink `#FF79C6`, `**bold**` bold gold `#FFD700`, `*italic*` italic in the text color, inline code `#9CDCFE`, code blocks in the text color plus syntax highlighting, quotes `MUTED` with a `│ ` bar, links `#569CD6` underlined, rules `MUTED`. Never `reverse` (it reads as an inversion). `Cell`/`SubBuffer`/`Buffer.render` carry italic (SGR 3/23) and underline (4/24). Unordered list items use pastilles (`•`/`◦`/`▪` by nesting level).
 
 ### Tables
 

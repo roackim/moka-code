@@ -7,7 +7,7 @@ Designed for live re-parsing during streaming — full re-parse per update.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List, Optional
 
 from wcwidth import wcswidth
@@ -23,10 +23,13 @@ from moka_chat.ui.tui.components.base import Component
 # Style resolution helpers
 # ---------------------------------------------------------------------------
 
-def _resolve_color(value: Optional[str]) -> Optional[tuple[int, int, int]]:
-    """Convert a hex color string (or None) to an RGB tuple."""
+def _resolve_color(value: Optional[str]):
+    """A style color: ``None``, a theme color name (``"MUTED"`` — follows the
+    active theme, ANSI palettes included) or a hex string (an RGB tuple)."""
     if value is None:
         return None
+    if not value.startswith("#") and hasattr(theme, value):
+        return getattr(theme, value)
     c = RGB(value)
     return (c.r, c.g, c.b)
 
@@ -43,6 +46,8 @@ def _get_style(element: str) -> dict:
         "bg": _resolve_color(cfg.get("bg")),
         "bold": bool(cfg.get("bold", False)),
         "reverse": bool(cfg.get("reverse", False)),
+        "italic": bool(cfg.get("italic", False)),
+        "underline": bool(cfg.get("underline", False)),
     }
 
 
@@ -58,6 +63,8 @@ class StyledSegment:
     bold: bool = False
     reverse: bool = False
     code_block: bool = False  # If True, skip word-wrap and hard-break instead
+    italic: bool = False
+    underline: bool = False
 
     @property
     def display_width(self) -> int:
@@ -696,6 +703,8 @@ class Markdown:
             for seg in inner:
                 seg.bold = seg.bold or style["bold"]
                 seg.reverse = seg.reverse or style["reverse"]
+                seg.italic = seg.italic or style["italic"]
+                seg.underline = seg.underline or style["underline"]
                 if seg.fg is None:
                     seg.fg = style["fg"]
                 if seg.bg is None:
@@ -719,7 +728,7 @@ class Markdown:
 
         if isinstance(block, QuoteLine):
             style = _get_style("quote")
-            segments = [StyledSegment("> ", **style)]
+            segments = [StyledSegment("│ ", **style)]
             inner = [StyledSegment(block.text)] if plain_inline else self._inline_parser.parse(block.text)
             for seg in inner:
                 seg.reverse = seg.reverse or style["reverse"]
@@ -1105,7 +1114,7 @@ class MarkdownComponent(Component):
                     current = []
                     current_width = 0
 
-                current.append(StyledSegment(cluster, seg.fg, seg.bg, seg.bold, seg.reverse, seg.code_block))
+                current.append(replace(seg, text=cluster))
                 current_width += ch_width
 
         if current:
@@ -1140,7 +1149,7 @@ class MarkdownComponent(Component):
                         trailing = 0
                     trailing += 1
                 if part:
-                    current_word.append(StyledSegment(part, seg.fg, seg.bg, seg.bold, seg.reverse))
+                    current_word.append(replace(seg, text=part, code_block=False))
 
         if current_word:
             w = sum(s.display_width for s in current_word)
@@ -1167,7 +1176,7 @@ class MarkdownComponent(Component):
                 w = widths[idx]
                 if not current or current_width + w <= max_width:
                     # Fits
-                    current.append(StyledSegment(clusters[idx], seg.fg, seg.bg, seg.bold, seg.reverse))
+                    current.append(replace(seg, text=clusters[idx], code_block=False))
                     current_width += w
                     idx += 1
                 else:
@@ -1230,5 +1239,7 @@ class MarkdownComponent(Component):
                     bold=seg.bold,
                     reverse=seg.reverse,
                     max_width=self.width - curr_x,
+                    underline=seg.underline,
+                    italic=seg.italic,
                 )
                 curr_x += seg.display_width

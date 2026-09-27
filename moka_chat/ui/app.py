@@ -813,7 +813,7 @@ class chatTUI(ChatActionHandlers):
             elif key == '\x1b[B':  # Down arrow
                 # Only handle focus change when in history (not when in input)
                 if self._last_focus_id == "history" and self.chat_history_panel.focused_message_index is not None:
-                    if self.chat_history_panel.focused_message_index >= len(self.chat_history_panel.messages) - 1:
+                    if self.chat_history_panel.at_last_message():
                         # At the bottom of history, switch to input
                         self.chat_history_panel.clear_focus()
                         self._set_app_focus("input")
