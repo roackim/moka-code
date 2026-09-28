@@ -133,6 +133,37 @@ loop's reasoning goes back. The former `context.preserve_reasoning_traces`
 
 ---
 
+## Verification (2026-09-28)
+
+**Checked against a real provider** — OpenRouter,
+`deepseek/deepseek-v4.1-flash`, harness driven directly, two turns, three
+requests, no errors:
+
+| What | Result |
+|---|---|
+| Tool loop: reasoning sent back with the tool call (`reasoning_details`) | accepted |
+| Next turn: earlier reasoning re-sent (`preserve_reasoning` default) | accepted, coherent answer |
+| API field allow-list (no `id`) | accepted |
+| Streamed `reasoning_details` merge | 39 pieces → 1 `reasoning.text` block, same length as the reasoning text |
+
+Also checked with a fake llama.cpp server recording payloads:
+`reasoning_content` on the right messages, with preserve on and off.
+
+**Open — possible future investigation**
+
+- **Signed / encrypted reasoning blocks.** DeepSeek sends plain
+  `reasoning.text` blocks without a signature, so the case where a wrong merge
+  would be rejected (Claude or Gemini through OpenRouter: signed text,
+  `reasoning.encrypted`) was not exercised. `merge_reasoning_details` joins
+  pieces by `index`, based on OpenRouter's docs ("concatenate chunks in order",
+  send back unmodified). To settle: one tool-call turn with a Claude or Gemini
+  model on OpenRouter; a rejection names the offending block.
+- **Real models never met:** images (content parts, Ollama `images`), the
+  text-only refusal, and Ollama's `thinking` field — all checked with fake
+  servers only.
+
+---
+
 ## Related
 
 - [architecture.md](../notes/architecture.md) — High-level data flow
