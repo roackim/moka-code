@@ -92,10 +92,11 @@ def outgoing_messages(server_type: str, messages: list[Dict[str, Any]]) -> list[
     """Put reasoning sent back to the model in this server's own field.
 
     History-built messages carry it under neutral ``reasoning`` (text) and
-    ``reasoning_details`` (OpenRouter blocks) keys: llama.cpp reads
-    ``reasoning_content``; OpenRouter takes ``reasoning_details`` unmodified
-    when the model produced them, else ``reasoning``; plain OpenAI Chat
-    Completions has no such field.
+    ``reasoning_details`` (OpenRouter blocks) keys: llama.cpp and other
+    OpenAI-compatible servers that show reasoning read ``reasoning_content``;
+    OpenRouter takes ``reasoning_details`` unmodified when the model produced
+    them, else ``reasoning``. Real OpenAI Chat Completions never returns
+    reasoning text, so nothing is sent back there.
     """
     out = []
     for message in messages:
@@ -105,7 +106,7 @@ def outgoing_messages(server_type: str, messages: list[Dict[str, Any]]) -> list[
         message = dict(message)
         text = message.pop("reasoning", None)
         details = message.pop("reasoning_details", None)
-        if server_type == "llamacpp" and text:
+        if server_type in ("llamacpp", "openai") and text:
             message["reasoning_content"] = text
         elif server_type == "openrouter":
             if details:

@@ -211,8 +211,14 @@ class Harness:
         return []
 
     def switch_server(self, new_endpoint: Endpoint) -> None:
-        """Switch to a different LLM endpoint at runtime."""
+        """Switch to a different LLM endpoint at runtime.
+
+        The old endpoint's connections close once its last request is done.
+        """
+        old = self.endpoint
         self.endpoint = new_endpoint
+        if old is not new_endpoint:
+            old.retire()
         self._last_usage = None
         self.debug_stream.log("SWITCH", f"Server switched to: {new_endpoint.name} ({new_endpoint.type}) at {new_endpoint.base_url}")
         logger.info("Switched to server: %s (%s)", new_endpoint.name, new_endpoint.type)

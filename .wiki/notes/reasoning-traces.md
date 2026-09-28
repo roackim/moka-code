@@ -96,7 +96,7 @@ them back **unmodified**.
 | `llamacpp` | `reasoning_content` | llama.cpp `common/chat.cpp` parses it from input messages; `--reasoning-preserve` (default on) + the chat template decide whether earlier turns reach the prompt |
 | `openrouter` | `reasoning_details` unmodified when the model produced them, else `reasoning` | OpenRouter reasoning docs; required across tool calls |
 | `ollama` | `thinking` | Ollama `/api/chat` message fields |
-| `openai` | none | Chat Completions has no such field |
+| `openai` | `reasoning_content` | the de facto field of OpenAI-compatible servers that show reasoning (llama.cpp behind a proxy, e.g. metallama); without it Qwen's template renders an empty `<think></think>` for each earlier step. Real OpenAI Chat Completions returns no reasoning text, so nothing is ever sent there |
 
 (`endpoint_openai.outgoing_messages`, `endpoint_ollama.ollama_messages`.)
 

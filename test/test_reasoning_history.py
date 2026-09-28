@@ -159,7 +159,11 @@ def test_each_server_gets_reasoning_in_its_own_field():
         {"role": "assistant", "content": "a", "reasoning_details": details}]
     assert outgoing_messages("openrouter", [plain]) == [
         {"role": "assistant", "content": "a", "reasoning": "r"}]
-    assert outgoing_messages("openai", [rich]) == [{"role": "assistant", "content": "a"}]
+    assert outgoing_messages("openai", [rich]) == [
+        {"role": "assistant", "content": "a", "reasoning_content": "r"}]
+    # Real OpenAI returns no reasoning text: nothing to send back, no field.
+    assert outgoing_messages("openai", [{"role": "assistant", "content": "a"}]) == [
+        {"role": "assistant", "content": "a"}]
     assert ollama_messages([rich]) == [{"role": "assistant", "content": "a", "thinking": "r"}]
 
 

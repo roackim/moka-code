@@ -233,6 +233,10 @@ class Endpoint:
         if self._hostname and self._hostname.endswith(".local"):
             self.base_url = _resolve_local_hostname_async(base_url)
         self.client = _new_http_client(self)
+        # Connection pools no longer in use, closed once no request is in
+        # flight (a switch can happen while a reply is still streaming).
+        self._in_flight = 0
+        self._stale_clients: list[httpx.AsyncClient] = []
 
         # Runtime caches.
         self._cached_model_name: Optional[str] = None
@@ -318,7 +322,7 @@ class Endpoint:
                 new_url = _resolve_local_hostname_async(self._original_base_url)
                 if new_url != self._original_base_url and new_url != self.base_url:
                     self.base_url = new_url
-                    self.client = _new_http_client(self)
+                    self._replace_client()
             diagnosis = await self.diagnose_connection()
             if not diagnosis.ok:
                 self._connection_state = "error"
@@ -463,7 +467,7 @@ class Endpoint:
             new_url = await _resolve_local_hostname_await(self._original_base_url)
             if new_url != self._original_base_url:
                 self.base_url = new_url
-                self.client = _new_http_client(self)
+                self._replace_client()
                 try:
                     await asyncio.wait_for(self.client.get("/models"), timeout=self.timeout)
                     self._connection_state = "ok"
@@ -495,12 +499,51 @@ class Endpoint:
         adapted to the SDK shape (``choices[0].delta`` / ``finish_reason`` /
         ``usage``, and ``choices[0].message`` for non-streaming).
         """
-        if self.type == "ollama":
-            async for chunk in self._create_ollama_completion(messages, tools, stream):
+        self._in_flight += 1
+        try:
+            if self.type == "ollama":
+                async for chunk in self._create_ollama_completion(messages, tools, stream):
+                    yield chunk
+                return
+            async for chunk in _openai.create_completion(self, messages, tools, stream):
                 yield chunk
-            return
-        async for chunk in _openai.create_completion(self, messages, tools, stream):
-            yield chunk
+        finally:
+            self._in_flight -= 1
+            await self._close_stale_clients()
+
+    # -- connection pool lifecycle -------------------------------------------
+
+    def _replace_client(self) -> None:
+        """Swap in a fresh client (new base URL); the old one is retired."""
+        self._stale_clients.append(self.client)
+        self.client = _new_http_client(self)
+        self._schedule_stale_close()
+
+    def retire(self) -> None:
+        """This endpoint is being replaced: close its connections once idle."""
+        self._stale_clients.append(self.client)
+        self._schedule_stale_close()
+
+    async def aclose(self) -> None:
+        """Close every connection now (a throwaway endpoint, e.g. discovery)."""
+        self._stale_clients.append(self.client)
+        await self._close_stale_clients()
+
+    def _schedule_stale_close(self) -> None:
+        try:
+            asyncio.get_running_loop().create_task(self._close_stale_clients())
+        except RuntimeError:        # no loop (tests, shutdown): nothing to close on
+            pass
+
+    async def _close_stale_clients(self) -> None:
+        if self._in_flight:
+            return                  # the last request in flight closes them
+        stale, self._stale_clients = self._stale_clients, []
+        for client in stale:
+            try:
+                await client.aclose()
+            except Exception as e:
+                logger.debug("closing a retired client failed: %s", e)
 
     async def _create_ollama_completion(
         self,
@@ -684,6 +727,9 @@ async def refresh_catalog(names: Optional[list[str]] = None) -> None:
             logger.debug("discovery failed for %s: %s", name, e)
             settings.config.models_by_server.pop(name, None)
             return
+        finally:
+            if endpoint is not None:
+                await endpoint.aclose()     # a throwaway: never leave its pool open
         settings.config.models_by_server[name] = [m.to_dict() for m in models]
 
     await asyncio.gather(*(one(n) for n in (names or list(settings.config.servers))))
