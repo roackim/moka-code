@@ -226,10 +226,11 @@ class Terminal:
         fcntl.fcntl(self.fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
         
         try:
-            content = ""
-            end_marker = '\x1b[201~'
-            
-            # Read character by character - simple and works for any size.
+            # Collect raw bytes and decode once: a multi-byte UTF-8 character
+            # decoded byte by byte would become one U+FFFD per byte.
+            content = bytearray()
+            end_marker = b'\x1b[201~'
+
             # Use os.read() (blocking here) for consistency with get_input().
             while True:
                 try:
@@ -238,17 +239,14 @@ class Terminal:
                     break
                 if not data:
                     break
-                char = data.decode('utf-8', errors='replace')
-                content += char
-                
-                # Check for end marker (only check last 6 chars for efficiency)
-                if len(content) >= 6 and content[-6:] == end_marker:
-                    return PasteEvent(content[:-6])
-                
+                content += data
+                if content.endswith(end_marker):
+                    del content[-len(end_marker):]
+                    break
                 # Safety limit
-                if len(content) > 1_000_000:
-                    return PasteEvent(content)
-                    
+                if len(content) > 4_000_000:
+                    break
+            return PasteEvent(content.decode('utf-8', errors='replace'))
         finally:
             # Restore non-blocking mode
             fcntl.fcntl(self.fd, fcntl.F_SETFL, flags)
