@@ -226,8 +226,17 @@ def reapply_endpoint(ui: ChatUIProtocol) -> None:
 
     The endpoint is rebuilt only when its server, definition or selected model
     changed, so an unrelated reload keeps the connection and usage display.
+    The model catalog is rediscovered in the background either way.
     """
-    from moka_code.harness.endpoint import get_active_endpoint
+    import asyncio
+    from moka_code.harness.endpoint import get_active_endpoint, refresh_catalog
+
+    async def _refresh():
+        await refresh_catalog()
+        if hasattr(ui, "refresh_status_bar"):
+            ui.refresh_status_bar()
+
+    asyncio.ensure_future(_refresh())
 
     agent = getattr(ui, "agent", None)
     current = getattr(agent, "endpoint", None)

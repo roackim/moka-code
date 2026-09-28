@@ -954,8 +954,14 @@ class chatTUI(ChatActionHandlers):
             prewarm_local_resolution(endpoint._original_base_url)
 
             async def _prewarm_and_refresh():
+                from moka_code.harness.endpoint import refresh_catalog
+
+                # Model facts are discovered live: the active server first.
+                await refresh_catalog([endpoint.name])
                 await endpoint.prewarm_model_name()
                 self.refresh_status_bar()
+                from moka_code import settings
+                await refresh_catalog([n for n in settings.config.servers if n != endpoint.name])
 
             asyncio.ensure_future(_prewarm_and_refresh())
 

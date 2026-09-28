@@ -713,7 +713,7 @@ from a hand-rolled `get_completions`.
 
 - Servers are configured by editing `servers.toml` (`/config servers`); there is
   no `/server` command.
-- `/model` — opens a searchable picker; `/model <model>` selects directly. Refreshes discovery live, resolves a model across servers, switches the harness, and selects it. The picker (`SearchModal`) shows the cached catalog instantly, refreshes in the background, tags the current model with a green `active`, and supports type-to-filter.
+- `/model` — opens a searchable picker; `/model <model>` selects directly. Refreshes discovery live, resolves a model across servers, switches the harness, and selects it. The picker (`SearchModal`) shows the in-memory catalog instantly, refreshes in the background, tags the current model with a green `active`, and supports type-to-filter.
 
 ### Roles
 

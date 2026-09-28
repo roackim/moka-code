@@ -36,6 +36,7 @@ async def list_models(endpoint: "Endpoint") -> list[ModelInfo]:
             id=model.get("id"),
             context_window=model.get("context_length"),
             owned_by=model.get("owned_by"),
+            metadata=model,
         ))
     return result
 
@@ -72,7 +73,7 @@ async def query_context_window(endpoint: "Endpoint", model_name: str) -> int:
     if endpoint.type == "openrouter":
         return await openrouter_context_window(endpoint, model_name)
     if endpoint.type == "openai":
-        return openai_context_window(model_name)
+        return await openai_compatible_context_window(endpoint, model_name)
     return await llamacpp_context_window(endpoint, model_name)
 
 
@@ -162,6 +163,18 @@ async def openrouter_context_window(endpoint: "Endpoint", model_name: str) -> in
     raise RuntimeError("Could not determine context window from OpenRouter")
 
 
+async def openai_compatible_context_window(endpoint: "Endpoint", model_name: str) -> int:
+    """The server's own ``/models`` ``context_length``, else the known OpenAI
+    models' windows."""
+    try:
+        for model in await list_models(endpoint):
+            if model.id == model_name and model.context_window:
+                return model.context_window
+    except Exception as e:
+        logger.debug("Failed to list models for context window: %s", e)
+    return openai_context_window(model_name)
+
+
 def openai_context_window(model_name: str) -> int:
     context_windows = {
         "gpt-4o": 128000,
@@ -206,8 +219,13 @@ EFFORT_WORDS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 
 def efforts_from_metadata(metadata: dict) -> list[str]:
     """Effort levels a model takes as a request parameter, from catalog
-    metadata: OpenRouter ``supported_parameters``; Ollama's ``thinking``
+    metadata: OpenRouter's ``reasoning.supported_efforts`` (exact levels),
+    else ``supported_parameters`` (levels guessed); Ollama's ``thinking``
     capability (only gpt-oss takes levels, others just on/off)."""
+    supported = (metadata.get("reasoning") or {}).get("supported_efforts")
+    if isinstance(supported, list) and supported and all(isinstance(e, str) for e in supported):
+        rank = {w: i for i, w in enumerate(EFFORT_WORDS)}
+        return sorted(supported, key=lambda e: rank.get(e, len(rank)))
     params = metadata.get("supported_parameters") or []
     if "reasoning_effort" in params or "reasoning" in params:
         return ["none", "low", "medium", "high"]

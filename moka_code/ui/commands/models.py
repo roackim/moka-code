@@ -1,8 +1,8 @@
 """Model discovery and selection commands.
 
 The unit of selection is a ``(server, model)`` pair. Discovery is live: the
-cached catalog in ``state.toml`` is only a convenience for completion and
-offline fallback, never the source of truth.
+catalog is in memory only (``endpoint.refresh_catalog``), refreshed at startup,
+on reloads, and whenever ``/model`` or ``/effort`` runs.
 """
 
 from __future__ import annotations
@@ -16,31 +16,12 @@ from moka_code.ui.tui.msg_types import SysMsg, SysMsgError
 
 from .base import ChatUIProtocol, activate_endpoint
 
-# Cap on live discovery so an unreachable server cannot stall the picker.
-_DISCOVERY_TIMEOUT = 8.0
-
-
 async def _discover_all() -> List[Tuple[str, "ModelInfo"]]:
-    """Discover models live from every configured endpoint.
+    """Rediscover every server; ``(server, model)`` pairs of those that answer."""
+    from moka_code.harness.endpoint import refresh_catalog
 
-    Offline servers fall back to their cached catalog. Returns ``(server,
-    model)`` pairs and refreshes the cache.
-    """
-    from moka_code.harness.endpoint import ModelInfo, get_endpoint
-
-    pairs: List[Tuple[str, ModelInfo]] = []
-    for name in list(settings.config.servers):
-        endpoint = get_endpoint(name)
-        if endpoint is None:
-            continue
-        try:
-            models = await endpoint.discover_models()
-        except Exception:
-            models = [ModelInfo.from_dict(m) for m in settings.config.models_by_server.get(name, [])]
-        settings.config.models_by_server[name] = [m.to_dict() for m in models]
-        pairs.extend((name, model) for model in models)
-    settings.config.save_model_catalog()
-    return pairs
+    await refresh_catalog()
+    return _cached_pairs()
 
 
 def _current_selection(ui: ChatUIProtocol) -> Tuple[Optional[str], Optional[str]]:
@@ -63,7 +44,7 @@ def _format_context(tokens: Optional[int]) -> str:
 
 
 def _cached_pairs() -> List[Tuple[str, "ModelInfo"]]:
-    """``(server, model)`` pairs from the cached catalog (no network)."""
+    """``(server, model)`` pairs from the in-memory catalog (no network)."""
     from moka_code.harness.endpoint import ModelInfo
 
     pairs: List[Tuple[str, ModelInfo]] = []
@@ -172,10 +153,10 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
     modal = _show(cached) if cached else None
 
     if modal is None and not cached:
-        # Nothing cached yet — discover once, briefly, so the first open is
-        # not empty (and does not hang on an unreachable server).
+        # Nothing discovered yet: wait for discovery (bounded per server) so
+        # the first open is not empty.
         try:
-            pairs = await asyncio.wait_for(_discover_all(), _DISCOVERY_TIMEOUT)
+            pairs = await _discover_all()
         except Exception:
             pairs = []
         if pairs:
@@ -187,10 +168,10 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
 
     async def _refresh():
         try:
-            pairs = await asyncio.wait_for(_discover_all(), _DISCOVERY_TIMEOUT)
+            pairs = await _discover_all()
         except Exception:
             return
-        if pairs and getattr(modal, "is_visible", False):
+        if getattr(modal, "is_visible", False):
             _show(pairs, modal)
 
     asyncio.ensure_future(_refresh())
@@ -240,7 +221,7 @@ async def model_use(ui: ChatUIProtocol, args: List[str]):
         servers = [server_hint]
     else:
         try:
-            pairs = await asyncio.wait_for(_discover_all(), _DISCOVERY_TIMEOUT)
+            pairs = await _discover_all()
         except Exception:
             pairs = _cached_pairs()
         servers = [server for server, info in pairs if info.id == model]
@@ -317,14 +298,14 @@ def _effort_choices(server: Optional[str], model: Optional[str]):
     (``efforts`` in servers.toml, else detected from the catalog). No
     choices: the model has no effort switch.
     """
+    from moka_code.harness.endpoint import catalog_entry
     from moka_code.harness.endpoint_discovery import effort_levels
 
     variants = _effort_variants(server, model)
     if variants:
         return list(variants), model.rpartition(":")[2], variants
     table = settings.config.servers.get(server) or {}
-    metadata = next((m.get("metadata") or {} for m in settings.config.models_by_server.get(server, [])
-                     if m.get("id") == model), {})
+    metadata = catalog_entry(server, model).get("metadata") or {}
     levels = effort_levels((table.get("models") or {}).get(model), table.get("efforts"), metadata)
     if not levels:
         return [], None, {}
@@ -358,13 +339,19 @@ def _set_effort(ui: ChatUIProtocol, endpoint, effort: Optional[str]) -> None:
 async def effort_command(ui: ChatUIProtocol, args: List[str]):
     """``/effort <level>`` sets the current model's reasoning effort; bare
     ``/effort`` opens a picker. See :func:`_effort_choices`."""
+    from moka_code.harness.endpoint import refresh_catalog
+
     endpoint = getattr(ui.agent, "endpoint", None)
     server = getattr(endpoint, "name", None)
     model = getattr(endpoint, "selected_model", None)
+    if server in settings.config.servers:
+        await refresh_catalog([server])     # levels come from the live server
     choices, current, variants = _effort_choices(server, model)
     if not choices:
+        unreachable = server not in settings.config.models_by_server
         ui.chat_history_panel.add_message(
-            f"No reasoning effort detected for {model or 'this model'}. "
+            (f"Could not reach {server} to detect its effort levels. " if unreachable else "")
+            + f"No reasoning effort detected for {model or 'this model'}. "
             "Declare it with efforts = [\"low\", \"medium\", \"high\"] in its "
             "server (or model) table ('/config servers').",
             msg_type=SysMsgError(), title="effort")

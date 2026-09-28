@@ -1,3 +1,4 @@
+[ ] make preserve_thinking config part of roles ?
 [x] swap roles using TAB ?
 [x] swap sandbox using CTRL + TAB ?
 [x] /model should show ALL THE AVAILABLE MODELS like when /model [ENTER]

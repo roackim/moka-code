@@ -191,4 +191,4 @@ def test_reload_command_success(monkeypatch, tmp_path):
     asyncio.run(cmd_reload(ui, []))
 
     assert any("Config reloaded" in m for m in ui.chat_history_panel.messages)
-    assert ui.refreshed == 1
+    assert ui.refreshed >= 1        # the background catalog refresh may add one

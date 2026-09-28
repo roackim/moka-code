@@ -206,8 +206,9 @@ DEFAULT_SERVERS_TOML = """\
 # always sent. A model table's value overrides the server's.
 #
 # efforts: the reasoning effort levels /effort offers. Absent: detected (model
-# variants like X:low / X:high switch the model; OpenRouter / Ollama metadata
-# gives the levels). The chosen level is sent as-is: reasoning_effort (llamacpp, openai),
+# variants like X:low / X:high switch the model; else the catalog's
+# reasoning.supported_efforts, the OpenRouter format; else Ollama metadata).
+# The chosen level is sent as-is: reasoning_effort (llamacpp, openai),
 # reasoning.effort (openrouter), think (ollama; "none" sends false).
 # A model table's list overrides the server's.
 
@@ -455,8 +456,9 @@ _SERVER_STR_KEYS = {"type", "base_url", "api_key", "api_key_env", "model"}
 _SERVER_INT_KEYS = {"max_context", "retry_attempts"}
 _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
 
-# ``active_model`` is a retired key (the model is per server, ``last_model``);
-# it is accepted and ignored so older state files load without errors.
+# ``active_model`` (the model is per server, ``last_model``) and
+# ``model_catalog`` (discovery is live, in memory) are retired keys, accepted
+# and ignored so older state files load without errors; the next save drops them.
 _STATE_SECTIONS = {"last_server", "active_model", "last_model", "model_catalog",
                    "active_theme", "effort"}
 
@@ -542,6 +544,9 @@ class Config:
         self._config_dir = Path(config_dir) if config_dir else None
         self._state_path = Path(state_path) if state_path else None
         self.load_errors: list[str] = []
+        # Live discovery results per server, in memory only (never persisted,
+        # kept across reloads). Filled by ``endpoint.refresh_catalog``.
+        self.models_by_server: Dict[str, list] = {}
         self._apply_defaults()
         self.reload()
 
@@ -555,7 +560,6 @@ class Config:
         self.model_selection: Dict[str, str] = {}
         # Reasoning effort per server, per model (``/effort``).
         self.efforts: Dict[str, Dict[str, str]] = {}
-        self.models_by_server: Dict[str, list] = {}
 
         # User color theme definitions (intent) and active selection (state).
         self.themes: Dict[str, Dict[str, Any]] = {}
@@ -664,10 +668,6 @@ class Config:
         """Saved effort for a server's model (``""``: a single-model server)."""
         return self.efforts.get(server, {}).get(model or "")
 
-    def save_model_catalog(self) -> None:
-        """Persist the discovery catalog so /model completion works on restart."""
-        self._save_state()
-
     def save_active_theme(self, name: str) -> None:
         """Persist the selected color theme (state, not intent)."""
         self.active_theme = name
@@ -689,11 +689,6 @@ class Config:
             data["active_theme"] = self.active_theme
         if self.efforts:
             data["effort"] = {server: dict(m) for server, m in self.efforts.items()}
-        if self.models_by_server:
-            data["model_catalog"] = {
-                server: [dict(m) for m in models]
-                for server, models in self.models_by_server.items()
-            }
         path.write_text(toml.dumps(data), encoding="utf-8")
 
     def set_active_server(self, name: str) -> None:
@@ -991,17 +986,6 @@ def _load_state_file(path: Path, config: Config, errors: list[str]) -> None:
             config.efforts = {server: dict(m) for server, m in effort.items()}
         else:
             errors.append(f"{path.name}: effort must map servers to model -> level tables")
-
-    catalog = data.get("model_catalog")
-    if catalog is not None:
-        if isinstance(catalog, dict) and all(
-                isinstance(models, list) for models in catalog.values()):
-            config.models_by_server = {
-                server: [dict(m) for m in models]
-                for server, models in catalog.items()
-            }
-        else:
-            errors.append(f"{path.name}: model_catalog must be a table of model lists")
 
 
 # Global config instance, reloadable via reload_config().

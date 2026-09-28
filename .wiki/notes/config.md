@@ -24,7 +24,7 @@ activity panel. Nothing else reads the old location.
 | `themes.toml` | one `[themes.<name>]` palette per theme | tables |
 | `roles/<name>.toml` | one role per file; file name is the role name | role body |
 | `projects/<name>.toml` | per-project sandboxes; `<name>` = workspace directory name | tables |
-| `state.toml` | last server/model, active theme, discovery catalog | machine-written |
+| `state.toml` | last server/model, active theme, effort | machine-written |
 
 `state.toml` is disposable: deleting it only loses cached selections.
 `roles/` mirrors the same one-thing-per-file idea (see
@@ -92,20 +92,23 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   server type; an OpenRouter model table's list overrides) is what `/effort`
   offers. Absent, it is detected: effort-variant ids (`X:low` / `X:high` on
   one server) make `/effort` switch models (`models._effort_variants`); else
-  catalog metadata (`endpoint_discovery.efforts_from_metadata`: OpenRouter
-  `supported_parameters`, Ollama `thinking` capability) gives the levels; the chosen level is saved per server/model in `state.toml`
+  catalog metadata (`endpoint_discovery.efforts_from_metadata`: OpenRouter-format
+  `reasoning.supported_efforts` (exact; any OpenAI-compatible server's `/models`
+  may carry it), else `supported_parameters` (guessed), else Ollama `thinking`
+  capability) gives the levels; `/effort` rediscovers the active server first.
+  While the server is undiscovered, a saved level is sent as-is; the chosen level is saved per server/model in `state.toml`
   (`[effort.<server>]`, `""` for a single-model server) and sent verbatim as
   `reasoning_effort` (llamacpp/openai), `reasoning.effort` (openrouter) or
   `think` (ollama, `"none"` → `false`) — `Endpoint.effort_payload`. Load errors are shown at startup and on `/reload`/`/config`, and
   every reload rebuilds the live endpoint if its server table or selection
   changed.
 - **State** (machine-written, disposable): `state.toml` holds `last_server`,
-  `[last_model]` (per-server selection), `active_theme`, and
-  `[model_catalog]` (discovery cache). Written by `set_active_server` /
-  `save_model_selection` / `save_active_theme` / `save_model_catalog`. A legacy
-  `active_model` key is accepted and ignored (dropped on the next write). The
-  catalog is only a completion/offline cache — model selection is live
-  discovery.
+  `[last_model]` (per-server selection), `active_theme`, and `[effort]`.
+  Written by `set_active_server` / `save_model_selection` / `save_active_theme`
+  / `save_effort`. Legacy `active_model` and `[model_catalog]` keys are
+  accepted and ignored (dropped on the next write). The discovery catalog is
+  in memory only (`Config.models_by_server`, kept across reloads), so a
+  changed server can never be shadowed by a stale copy.
 
 ## Editing
 

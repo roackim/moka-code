@@ -67,6 +67,10 @@ def _config(monkeypatch, servers, catalog=None, efforts=None):
     monkeypatch.setattr(settings.config, "model_selection", {"s": "m"})
     monkeypatch.setattr(settings.config, "_save_state", lambda: None)
 
+    async def no_network(names=None):
+        pass
+    monkeypatch.setattr("moka_code.harness.endpoint.refresh_catalog", no_network)
+
 
 def test_effort_command_sets_and_persists(monkeypatch):
     _config(monkeypatch, {"s": {"type": "ollama", "efforts": ["low", "high"]}})
@@ -114,14 +118,12 @@ def test_efforts_detected_from_catalog_metadata(monkeypatch):
     assert efforts_from_metadata({"capabilities": ["thinking"], "model": "gpt-oss:20b"})[-1] == "high"
     assert efforts_from_metadata({"capabilities": ["completion"]}) == []
 
+    _config(monkeypatch, {"s": {"type": "openrouter"}},
+            catalog={"s": [{"id": "m", "metadata": {"supported_parameters": ["reasoning"]}}]})
     endpoint = _endpoint("openrouter")
-    endpoint._model_metadata["m"] = {"supported_parameters": ["reasoning"]}
     assert endpoint.effort_levels()[0] == "none"
     endpoint.efforts = ["high"]       # explicit servers.toml wins
     assert endpoint.effort_levels() == ["high"]
-
-    _config(monkeypatch, {"s": {"type": "openrouter"}},
-            catalog={"s": [{"id": "m", "metadata": {"supported_parameters": ["reasoning"]}}]})
     assert models.effort_completions() == ["default", "none", "low", "medium", "high"]
 
 
@@ -137,3 +139,82 @@ def test_effort_variants_switch_the_model(monkeypatch):
     ui, _ = _ui(Endpoint(name="s", type="ollama", model="Qwen:low"))
     asyncio.run(models.effort_command(ui, ["high"]))
     assert selected == [("s", "Qwen:high")]
+
+
+def test_exact_efforts_from_reasoning_supported_efforts():
+    from moka_code.harness.endpoint_discovery import efforts_from_metadata
+
+    # OpenRouter lists strongest first; /effort offers weakest first.
+    assert efforts_from_metadata({
+        "supported_parameters": ["reasoning", "reasoning_effort"],
+        "reasoning": {"mandatory": False, "supported_efforts": ["max", "high", "low"]},
+    }) == ["low", "high", "max"]
+    # No level list: fall back to the supported_parameters guess.
+    assert efforts_from_metadata({
+        "supported_parameters": ["reasoning"], "reasoning": {"mandatory": False},
+    })[0] == "none"
+
+
+def test_openai_catalog_keeps_model_metadata():
+    from moka_code.harness import endpoint_discovery
+
+    entry = {"id": "q", "context_length": 128000,
+             "reasoning": {"supported_efforts": ["low", "high"]}}
+
+    class Client:
+        async def get(self, path):
+            return SimpleNamespace(raise_for_status=lambda: None,
+                                   json=lambda: {"data": [entry]})
+
+    endpoint = SimpleNamespace(type="openai", client=Client(), timeout=5)
+    [model] = asyncio.run(endpoint_discovery.list_models(endpoint))
+    assert endpoint_discovery.efforts_from_metadata(model.metadata) == ["low", "high"]
+
+
+def test_endpoint_reads_the_live_catalog_not_a_copy(monkeypatch):
+    """A catalog refreshed after the endpoint was built is what requests use."""
+    _config(monkeypatch, {"s": {"type": "openai"}}, catalog={"s": [{"id": "m"}]})
+    endpoint = _endpoint("openai")
+    endpoint.effort = "low"
+    assert endpoint.effort_payload() == {}        # known: m takes no effort
+
+    settings.config.models_by_server["s"] = [
+        {"id": "m", "metadata": {"reasoning": {"supported_efforts": ["low", "high"]}}}]
+    assert endpoint.effort_payload() == {"reasoning_effort": "low"}
+
+
+def test_effort_is_sent_while_the_server_is_undiscovered(monkeypatch):
+    _config(monkeypatch, {"s": {"type": "openai"}})
+    endpoint = _endpoint("openai")
+    endpoint.effort = "low"
+    assert endpoint.effort_payload() == {"reasoning_effort": "low"}   # the server decides
+
+
+def test_effort_command_rediscovers_the_active_server(monkeypatch):
+    _config(monkeypatch, {"s": {"type": "openai"}})
+    refreshed = []
+
+    async def discover(names=None):
+        refreshed.append(names)
+        settings.config.models_by_server["s"] = [
+            {"id": "m", "metadata": {"reasoning": {"supported_efforts": ["low", "high"]}}}]
+    monkeypatch.setattr("moka_code.harness.endpoint.refresh_catalog", discover)
+
+    endpoint = _endpoint("openai")
+    ui, _ = _ui(endpoint)
+    asyncio.run(models.effort_command(ui, ["high"]))
+    assert refreshed == [["s"]]
+    assert endpoint.effort_payload() == {"reasoning_effort": "high"}
+
+
+def test_refresh_catalog_drops_a_server_it_cannot_list(monkeypatch):
+    from moka_code.harness import endpoint as endpoint_mod
+
+    refresh_catalog = endpoint_mod.refresh_catalog     # before _config stubs it
+    _config(monkeypatch, {"s": {"type": "openai"}}, catalog={"s": [{"id": "stale"}]})
+
+    async def fail(self):
+        raise ConnectionError("down")
+    monkeypatch.setattr(endpoint_mod.Endpoint, "discover_models", fail)
+    asyncio.run(refresh_catalog(["s"]))
+    assert "s" not in settings.config.models_by_server

@@ -238,10 +238,9 @@ class Endpoint:
         self._cached_model_name: Optional[str] = None
         self._cached_context_window: Optional[int] = None
         self._model_context_windows: dict[str, int] = {}
-        # Whether a model reads images, per model; absent = unknown.
+        # Whether a model reads images, per model, from a live probe (the
+        # catalog's metadata wins); absent = unknown.
         self._image_input: dict[str, bool] = {}
-        # Catalog metadata per model (effort detection).
-        self._model_metadata: dict[str, dict] = {}
         self._selected_model: Optional[str] = model
         self._model_name_pending: bool = False
         self._connection_state: str = "unknown"  # unknown|checking|ok|error
@@ -295,7 +294,8 @@ class Endpoint:
             raise ValueError("model name cannot be empty")
         self._selected_model = model_name
         self._cached_model_name = model_name
-        self._cached_context_window = self._model_context_windows.get(model_name)
+        self._cached_context_window = (catalog_entry(self.name, model_name).get("context_window")
+                                       or self._model_context_windows.get(model_name))
         if not self.supports_model_selection:
             self._cached_model_name = None
             self._cached_context_window = None
@@ -355,12 +355,14 @@ class Endpoint:
 
     def accepts_images(self) -> Optional[bool]:
         """Whether the current model reads images; ``None`` when unknown."""
-        return self._image_input.get(self._cached_model_name or self._selected_model or "")
+        model_name = self._cached_model_name or self._selected_model or ""
+        known = _discovery.image_input_from_metadata(self._catalog_metadata(model_name))
+        return known if known is not None else self._image_input.get(model_name)
 
     async def probe_image_input(self) -> None:
         """Learn whether the current model reads images (no-op once known)."""
         model_name = self._cached_model_name or self._selected_model
-        if not model_name or model_name in self._image_input:
+        if not model_name or self.accepts_images() is not None:
             return
         try:
             known = await _discovery.query_image_input(self, model_name)
@@ -411,11 +413,15 @@ class Endpoint:
     async def get_context_window(self) -> int:
         """Get the context window size (cached or queried).
 
-        A queried (or catalog-seeded) value is memoized per model. The fallback
-        is only shown, not memoized, so a later probe can still find the real
-        window after a transient failure.
+        The live catalog's value wins; a queried value is memoized per model.
+        The fallback is only shown, not memoized, so a later probe can still
+        find the real window after a transient failure.
         """
         model_name = await self.get_model_name()
+        ctx = catalog_entry(self.name, model_name).get("context_window")
+        if isinstance(ctx, int) and ctx > 0:
+            self._cached_context_window = ctx
+            return ctx
         if model_name in self._model_context_windows:
             self._cached_context_window = self._model_context_windows[model_name]
             return self._cached_context_window
@@ -565,12 +571,25 @@ class Endpoint:
         means the model takes no effort parameter."""
         model_name = self._selected_model or self._cached_model_name
         return _discovery.effort_levels(
-            self._current_entry(), self.efforts,
-            self._model_metadata.get(model_name or "", {}))
+            self._current_entry(), self.efforts, self._catalog_metadata(model_name))
+
+    def _catalog_metadata(self, model_name: Optional[str]) -> dict:
+        return catalog_entry(self.name, model_name).get("metadata") or {}
+
+    def _catalog_known(self) -> bool:
+        from moka_code import settings
+        return self.name in settings.config.models_by_server
 
     def effort_payload(self) -> dict[str, Any]:
-        """The chosen effort in this server's request field (``{}`` if none)."""
-        if not self.effort or self.effort not in self.effort_levels():
+        """The chosen effort in this server's request field (``{}`` if none).
+
+        Checked against the known levels; while none are known (the server
+        is not discovered yet) it is sent as-is, and the server decides.
+        """
+        if not self.effort:
+            return {}
+        levels = self.effort_levels()
+        if (levels or self._catalog_known()) and self.effort not in levels:
             return {}
         if self.type == "openrouter":
             return {"reasoning": {"effort": self.effort}}
@@ -621,9 +640,8 @@ def get_active_endpoint() -> Endpoint:
 def get_endpoint(name: str) -> Optional[Endpoint]:
     """Build a configured endpoint by name, applying its model selection.
 
-    Context windows (and image support) already known from the discovery
-    catalog are seeded so the status bar is right immediately and no catalog
-    download is repeated on every switch.
+    Model facts (context window, image support, effort levels) are read from
+    the live catalog (:func:`refresh_catalog`) when needed, never copied.
     """
     from moka_code import settings
 
@@ -636,16 +654,45 @@ def get_endpoint(name: str) -> Optional[Endpoint]:
         endpoint._selected_model = selected
     endpoint.source = (dict(data), selected)
     endpoint.effort = settings.config.get_effort(name, selected or "")
-    for model in settings.config.models_by_server.get(name, []):
-        ctx = model.get("context_window")
-        if model.get("id") and isinstance(ctx, int) and ctx > 0:
-            endpoint._model_context_windows[model["id"]] = ctx
-        if model.get("id") and model.get("metadata"):
-            endpoint._model_metadata[model["id"]] = model["metadata"]
-        known = _discovery.image_input_from_metadata(model.get("metadata") or {})
-        if model.get("id") and known is not None:
-            endpoint._image_input[model["id"]] = known
     return endpoint
+
+
+# Cap on one server's discovery so an unreachable one cannot stall a refresh.
+DISCOVERY_TIMEOUT = 8.0
+
+
+def catalog_entry(server: Optional[str], model_name: Optional[str]) -> dict:
+    """The live catalog's entry for a server's model (``{}`` if unknown)."""
+    from moka_code import settings
+
+    for model in settings.config.models_by_server.get(server or "", []):
+        if model.get("id") == model_name:
+            return model
+    return {}
+
+
+async def refresh_catalog(names: Optional[list[str]] = None) -> None:
+    """Rediscover the models of ``names`` (default: every server), in parallel.
+
+    The catalog lives in memory only. A server that cannot be listed is
+    dropped from it rather than kept stale: its models are unknown until it
+    answers again.
+    """
+    from moka_code import settings
+
+    async def one(name: str) -> None:
+        endpoint = get_endpoint(name)
+        try:
+            if endpoint is None:
+                raise LookupError(name)
+            models = await asyncio.wait_for(endpoint.discover_models(), DISCOVERY_TIMEOUT)
+        except Exception as e:
+            logger.debug("discovery failed for %s: %s", name, e)
+            settings.config.models_by_server.pop(name, None)
+            return
+        settings.config.models_by_server[name] = [m.to_dict() for m in models]
+
+    await asyncio.gather(*(one(n) for n in (names or list(settings.config.servers))))
 
 
 __all__ = [

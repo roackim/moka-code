@@ -75,20 +75,30 @@ def test_malformed_toml_reports_error_and_keeps_defaults(tmp_path):
     assert config.ui_theme == "terminal"
 
 
-def test_state_toml_loads_selection_and_catalog(tmp_path):
+def test_state_toml_loads_selection_and_ignores_the_retired_catalog(tmp_path):
     state = _write(tmp_path / "state.toml", {
         "last_server": "local",
         "active_model": "retired-key-is-ignored",
         "last_model": {"local": "qwen"},
-        "model_catalog": {"local": [{"id": "qwen", "context_window": 32768}]},
+        "model_catalog": {"local": [{"id": "qwen:stale", "context_window": 32768}]},
     })
     config = Config(config_dir=tmp_path, state_path=state)
 
     assert config.load_errors == []
     assert config.active_server == "local"
     assert config.model_selection == {"local": "qwen"}
-    assert config.models_by_server == {"local": [{"id": "qwen", "context_window": 32768}]}
+    assert config.models_by_server == {}      # discovered live, never loaded
     assert config.get_model_for_server("local") == "qwen"
+
+    config.save_model_selection("local", "qwen")
+    assert "model_catalog" not in toml.load(state)    # the next save drops it
+
+
+def test_reload_keeps_the_in_memory_catalog(tmp_path):
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+    config.models_by_server = {"local": [{"id": "qwen"}]}
+    config.reload()
+    assert config.models_by_server == {"local": [{"id": "qwen"}]}
 
 
 def test_state_is_written_separately_from_intent(tmp_path):
@@ -98,9 +108,8 @@ def test_state_is_written_separately_from_intent(tmp_path):
     state = tmp_path / "state.toml"
     config = Config(config_dir=tmp_path, state_path=state)
 
-    config.save_model_selection("local", "qwen")
     config.models_by_server = {"local": [{"id": "qwen"}]}
-    config.save_model_catalog()
+    config.save_model_selection("local", "qwen")
 
     intent = toml.load(servers)
     assert "last_model" not in intent.get("servers", {}).get("local", {})
@@ -109,7 +118,7 @@ def test_state_is_written_separately_from_intent(tmp_path):
     persisted = toml.load(state)
     assert persisted["last_model"] == {"local": "qwen"}
     assert "active_model" not in persisted
-    assert persisted["model_catalog"] == {"local": [{"id": "qwen"}]}
+    assert "model_catalog" not in persisted
 
 
 def test_server_without_type_is_reported_and_skipped(tmp_path):

@@ -68,9 +68,15 @@ subclasses; server-family differences are internal branches:
 Also hosts `ModelInfo`, `ConnectionDiagnosis`, and `.local` hostname resolution
 helpers. Factories: `get_active_endpoint()` (= `get_endpoint(active_server)` or
 `default_endpoint()`), `get_endpoint(name)` (applies the server's own
-`last_model`, seeds context windows from the catalog, records `source` so
-`/reload` can tell whether the live endpoint is stale). Model-name and
-context-window fallbacks are shown but not memoized.
+`last_model`, records `source` so `/reload` can tell whether the live endpoint
+is stale). Model facts (context window, image support, effort levels) are read
+from the live in-memory catalog (`catalog_entry`) when needed, never copied
+into the endpoint; `refresh_catalog(names)` rediscovers servers in parallel
+(`DISCOVERY_TIMEOUT` per server) and drops a server it cannot list. It runs at
+startup (active server first), on every reload (`reapply_endpoint`), on
+`/model`, and on `/effort` (active server). Model-name and context-window
+fallbacks are shown but not memoized; `type = "openai"` reads the server's
+`/models` `context_length` before the known-OpenAI-model table.
 `Harness.endpoint` is an `Endpoint`. See [notes/local-hostname-resolution.md](../notes/local-hostname-resolution.md).
 
 This one type replaced the former `LLMServerConfig` + `ServerService` +
@@ -99,7 +105,7 @@ Ollama's `images: [base64]`.
 user entry carries it after the tool results.
 
 Image support per model: `Endpoint.accepts_images()` (True/False/None) from
-`_image_input`, seeded from catalog metadata in `get_endpoint` and filled by
+catalog metadata, else `_image_input` filled by
 `probe_image_input()` during prewarm (`endpoint_discovery.query_image_input`:
 Ollama `/api/show` `capabilities`, llama.cpp `/props` `modalities.vision`,
 OpenRouter `/models/<id>/endpoints` `architecture.input_modalities`).
