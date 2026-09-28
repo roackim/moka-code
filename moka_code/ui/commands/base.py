@@ -262,7 +262,7 @@ async def open_shell(ui: ChatUIProtocol, argv: List[str], where: str) -> None:
     workspace = getattr(agent, "workspace", None) or os.getcwd()
     env = {**os.environ, "MOKA_TERMINAL": str(os.getpid())}
     try:
-        await run_in_foreground(ui, argv, cwd=workspace, clear_screen=True, env=env)
+        await run_in_foreground(ui, argv, cwd=workspace, env=env)
     except OSError as exc:
         ui.chat_history_panel.add_message(
             f"Could not open a {where} shell: {exc}", msg_type=SysMsgError(), title="terminal")

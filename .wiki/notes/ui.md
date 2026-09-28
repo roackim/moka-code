@@ -235,7 +235,7 @@ Ctrl+Z on a plain child, and an answer streaming throughout).
 workspace; **`/sandbox terminal`** opens a shell inside the active sandbox
 (`sandbox.shell_argv`: the same mounts/network/limits as the worker, bash if
 present, `-it` for podman/docker), or says there is none. Both go through
-`commands/base.open_shell`. The screen is cleared first (`clear_screen=True`; editors draw on their own screen and are left as is). `exit` returns.
+`commands/base.open_shell`. moka runs on the terminal's alternate screen (`Terminal`: `?1049h` on enter/resume, `?1049l` on suspend/cleanup), so the shell (or editor) gets the normal screen, quitting moka leaves no frames in the scrollback, and moka repaints fully on return. `exit` returns.
 The shell gets `MOKA_TERMINAL=<outer pid>`; `main()` refuses to start when it
 is set ("moka is already running (pid N) … Type 'exit' to return to it.",
 exit code 1), so mokas never nest and fight over one terminal

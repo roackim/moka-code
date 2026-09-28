@@ -18,8 +18,11 @@ class ANSI:
     # Bracketed paste, plus focus reporting (``\x1b[I`` / ``\x1b[O``).
     ENABLE_BRACKETED_PASTE = "\033[?2004h\033[?1004h"
     DISABLE_BRACKETED_PASTE = "\033[?1004l\033[?2004l"
-    CLEAR_SCREEN = "\033[2J"
     MOVE_HOME = "\033[H"
+    # Alternate screen: moka's frames never reach the scrollback, and leaving
+    # it restores the shell's screen as it was.
+    ENTER_ALT_SCREEN = "\033[?1049h"
+    EXIT_ALT_SCREEN = "\033[?1049l"
     RESET = "\033[0m"
     # Synchronized output (DEC private mode 2026): terminals that support it
     # present the frame atomically, removing tearing and perceived lag.
@@ -42,7 +45,8 @@ class Terminal:
     def __enter__(self):
         self.old_settings = termios.tcgetattr(self.fd)
         tty.setraw(self.fd)
-        sys.stdout.write(ANSI.HIDE_CURSOR + ANSI.ENABLE_MOUSE + ANSI.ENABLE_BRACKETED_PASTE)
+        sys.stdout.write(ANSI.ENTER_ALT_SCREEN + ANSI.HIDE_CURSOR + ANSI.ENABLE_MOUSE
+                         + ANSI.ENABLE_BRACKETED_PASTE)
         sys.stdout.flush()
         signal.signal(signal.SIGWINCH, self._handle_resize)
         return self
@@ -50,16 +54,14 @@ class Terminal:
     def cleanup(self, clear_screen: bool = True):
         """Cleanup terminal state. Safe to call multiple times.
         
-        Args:
-            clear_screen: If False, skip clearing screen (useful for preserving error messages)
+        Leaves the alternate screen, so the shell's screen comes back as it
+        was. ``clear_screen=False`` (a crash) adds a newline so a traceback
+        printed next starts on its own line.
         """
-        # 1. Reset colors, show cursor, disable mouse/paste
-        # But conditionally clear the screen
-        if clear_screen:
-            sys.stdout.write(ANSI.RESET + ANSI.SHOW_CURSOR + ANSI.DISABLE_MOUSE + ANSI.DISABLE_BRACKETED_PASTE + ANSI.MOVE_HOME + ANSI.CLEAR_SCREEN)
-        else:
-            # Don't clear screen - preserve any error messages
-            sys.stdout.write("\n" + ANSI.RESET + ANSI.SHOW_CURSOR + ANSI.DISABLE_MOUSE + ANSI.DISABLE_BRACKETED_PASTE)
+        # 1. Reset colors, show cursor, disable mouse/paste, leave the alt screen
+        restore = (ANSI.RESET + ANSI.SHOW_CURSOR + ANSI.DISABLE_MOUSE
+                   + ANSI.DISABLE_BRACKETED_PASTE + ANSI.EXIT_ALT_SCREEN)
+        sys.stdout.write(restore if clear_screen else restore + "\n")
         sys.stdout.flush()
         
         # 2. Restore signal handlers
@@ -88,20 +90,18 @@ class Terminal:
     def suspend(self):
         """Release the terminal to a child process (e.g. ``$EDITOR``).
 
-        Restores cooked mode and the cursor/mouse/paste state, but keeps
-        ``old_settings`` so :meth:`resume` (and later :meth:`cleanup`) still work.
+        Restores cooked mode, the cursor/mouse/paste state and the normal
+        screen (the child draws there, or on its own alternate screen), but
+        keeps ``old_settings`` so :meth:`resume` (and later :meth:`cleanup`)
+        still work.
         """
         if self.old_settings:
             try:
                 termios.tcsetattr(self.fd, termios.TCSADRAIN, self.old_settings)
             except Exception:
                 pass
-        sys.stdout.write(ANSI.SHOW_CURSOR + ANSI.DISABLE_MOUSE + ANSI.DISABLE_BRACKETED_PASTE + ANSI.RESET)
-        sys.stdout.flush()
-
-    def clear_screen(self):
-        """Blank the screen and home the cursor (e.g. before a shell starts)."""
-        sys.stdout.write(ANSI.MOVE_HOME + ANSI.CLEAR_SCREEN)
+        sys.stdout.write(ANSI.SHOW_CURSOR + ANSI.DISABLE_MOUSE + ANSI.DISABLE_BRACKETED_PASTE
+                         + ANSI.RESET + ANSI.EXIT_ALT_SCREEN)
         sys.stdout.flush()
 
     def resume(self):
@@ -110,7 +110,8 @@ class Terminal:
             tty.setraw(self.fd)
         except Exception:
             pass
-        sys.stdout.write(ANSI.HIDE_CURSOR + ANSI.ENABLE_MOUSE + ANSI.ENABLE_BRACKETED_PASTE)
+        sys.stdout.write(ANSI.ENTER_ALT_SCREEN + ANSI.HIDE_CURSOR + ANSI.ENABLE_MOUSE
+                         + ANSI.ENABLE_BRACKETED_PASTE)
         sys.stdout.flush()
 
     def _handle_resize(self, _signum, _frame):

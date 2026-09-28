@@ -20,7 +20,7 @@ class _Recorder:
         self.calls, self.name = calls, name
 
     def __getattr__(self, attr):
-        if attr not in ("pause", "resume", "suspend", "clear_screen"):
+        if attr not in ("pause", "resume", "suspend"):
             raise AttributeError(attr)
         return lambda *a, **k: self.calls.append(f"{self.name}.{attr}")
 
@@ -42,15 +42,6 @@ def test_handoff_pauses_moka_returns_the_exit_code_and_restores_sigint():
     assert calls == ["compositor.pause", "terminal.suspend",
                      "terminal.resume", "compositor.resume"]
     assert signal.getsignal(signal.SIGINT) is before
-
-
-def test_clear_screen_happens_after_suspend_and_only_on_request():
-    calls = []
-    asyncio.run(run_in_foreground(_ui(calls), ["true"], clear_screen=True))
-    assert calls[:3] == ["compositor.pause", "terminal.suspend", "terminal.clear_screen"]
-    calls = []
-    asyncio.run(run_in_foreground(_ui(calls), ["true"]))
-    assert "terminal.clear_screen" not in calls
 
 
 def test_handoff_keeps_the_event_loop_running():
@@ -123,9 +114,8 @@ def test_sandbox_shell_uses_the_tools_mounts_with_a_tty(tmp_path):
 def _shell_ui(tmp_path, spec, monkeypatch):
     opened, messages = [], []
 
-    async def _run(ui, argv, cwd=None, clear_screen=False, env=None):
+    async def _run(ui, argv, cwd=None, env=None):
         opened.append((argv, cwd))
-        assert clear_screen  # a shell draws in place: start on a blank screen
         assert env["MOKA_TERMINAL"] == str(os.getpid())  # marks the shell: no nesting
         return 0
 

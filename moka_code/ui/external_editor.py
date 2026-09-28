@@ -122,12 +122,11 @@ async def _wait(proc: subprocess.Popen, own_group: bool) -> int:
 
 
 async def run_in_foreground(ui: Any, argv: List[str], cwd: Optional[str] = None,
-                            *, clear_screen: bool = False,
-                            env: Optional[dict] = None) -> int:
+                            *, env: Optional[dict] = None) -> int:
     """Run ``argv`` interactively with the terminal; return its exit code.
 
-    ``clear_screen`` blanks moka's last frame first, for programs that draw
-    in place (a shell) rather than on their own screen (editors).
+    moka leaves its alternate screen meanwhile, so the program draws on the
+    normal screen (or its own alternate screen) and moka repaints on return.
     """
     compositor = getattr(ui, "compositor", None)
     terminal = getattr(compositor, "terminal", None)
@@ -136,8 +135,6 @@ async def run_in_foreground(ui: Any, argv: List[str], cwd: Optional[str] = None,
         compositor.pause()
     if terminal is not None:
         terminal.suspend()
-        if clear_screen:
-            terminal.clear_screen()
     previous_sigint = signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
         proc = subprocess.Popen(argv, cwd=cwd, env=env, preexec_fn=_child_setup(tty_fd))
