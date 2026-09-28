@@ -52,6 +52,10 @@ class Role:
         return self.tools.get(tool_name, "no")
 
 
+# Prompt a newly created role starts with.
+DEFAULT_ROLE_PROMPT = "You are a helpful assistant."
+
+
 def _all_tools_no() -> dict[str, str]:
     from moka_code.harness.tools import registered_tool_names
 
@@ -63,7 +67,7 @@ def agent_role() -> Role:
     return Role(
         name="agent",
         description="General coding agent (all tools auto-approved)",
-        prompt="",
+        prompt="You are a helpful assistant that can interact with a computer.",
         tools={name: "yes" for name in _all_tools_no()},
     )
 
@@ -73,7 +77,7 @@ def chat_role() -> Role:
     return Role(
         name="chat",
         description="Pure chat (no tools)",
-        prompt="",
+        prompt=DEFAULT_ROLE_PROMPT,
         tools=_all_tools_no(),
     )
 
@@ -241,7 +245,7 @@ def create_role(name: str) -> Role:
     name = _validate_name(name)
     if name in list_roles() or _role_file(name).exists():
         raise ValueError(f"Role already exists: {name}")
-    role = Role(name=name, description="", prompt="", tools=_all_tools_no())
+    role = Role(name=name, description="", prompt=DEFAULT_ROLE_PROMPT, tools=_all_tools_no())
     _ROLES_DIR.mkdir(parents=True, exist_ok=True)
     _role_file(name).write_text(_role_template(role), encoding="utf-8")
     return role
@@ -254,7 +258,8 @@ def ensure_role_file(name: str) -> Path:
     if path.exists():
         return path
     _ROLES_DIR.mkdir(parents=True, exist_ok=True)
-    role = builtin_roles().get(name) or Role(name=name, tools=_all_tools_no())
+    role = builtin_roles().get(name) or Role(
+        name=name, prompt=DEFAULT_ROLE_PROMPT, tools=_all_tools_no())
     path.write_text(_role_template(role), encoding="utf-8")
     return path
 
