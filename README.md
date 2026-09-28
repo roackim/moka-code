@@ -78,7 +78,19 @@ the OpenRouter example instead.
 - **Reasoning models.** The model's reasoning is shown above its answers and
   passed back to the model where the server supports it.
 - **Terminal workflow.** `/terminal` opens a shell while the conversation keeps
-  running, and `$ command` runs a one-off shell command.
+  running, and `$ command` runs a one-off shell command. Shells opened by moka
+  have `MOKA_TERMINAL` set; to mark their prompt with a colored `(moka)`, add
+  this to your `~/.bashrc`:
+
+  ```bash
+  [ -n "$MOKA_TERMINAL" ] && PS1="\[\e[38;5;173m\](moka)\[\e[0m\] $PS1"
+  ```
+
+  or to your `~/.zshrc`:
+
+  ```zsh
+  [[ -n $MOKA_TERMINAL ]] && PROMPT="%F{173}(moka)%f $PROMPT"
+  ```
 
 ## Configuration
 
