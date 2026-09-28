@@ -240,6 +240,8 @@ class Endpoint:
         self._model_context_windows: dict[str, int] = {}
         # Whether a model reads images, per model; absent = unknown.
         self._image_input: dict[str, bool] = {}
+        # Catalog metadata per model (effort detection).
+        self._model_metadata: dict[str, dict] = {}
         self._selected_model: Optional[str] = model
         self._model_name_pending: bool = False
         self._connection_state: str = "unknown"  # unknown|checking|ok|error
@@ -559,11 +561,12 @@ class Endpoint:
 
     def effort_levels(self) -> list[str]:
         """Effort levels for the current model: its model table's ``efforts``,
-        else the server's. Empty means the model has no effort switch."""
-        entry = self._current_entry()
-        if entry is not None and "efforts" in entry:
-            return list(entry["efforts"])
-        return list(self.efforts)
+        else the server's, else detected from the catalog metadata. Empty
+        means the model takes no effort parameter."""
+        model_name = self._selected_model or self._cached_model_name
+        return _discovery.effort_levels(
+            self._current_entry(), self.efforts,
+            self._model_metadata.get(model_name or "", {}))
 
     def effort_payload(self) -> dict[str, Any]:
         """The chosen effort in this server's request field (``{}`` if none)."""
@@ -637,6 +640,8 @@ def get_endpoint(name: str) -> Optional[Endpoint]:
         ctx = model.get("context_window")
         if model.get("id") and isinstance(ctx, int) and ctx > 0:
             endpoint._model_context_windows[model["id"]] = ctx
+        if model.get("id") and model.get("metadata"):
+            endpoint._model_metadata[model["id"]] = model["metadata"]
         known = _discovery.image_input_from_metadata(model.get("metadata") or {})
         if model.get("id") and known is not None:
             endpoint._image_input[model["id"]] = known

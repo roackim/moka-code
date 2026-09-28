@@ -90,7 +90,10 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   absent means true (`Endpoint.preserves_reasoning`, see
   [reasoning-traces.md](./reasoning-traces.md)). `efforts` (string list, any
   server type; an OpenRouter model table's list overrides) is what `/effort`
-  offers; the chosen level is saved per server/model in `state.toml`
+  offers. Absent, it is detected: effort-variant ids (`X:low` / `X:high` on
+  one server) make `/effort` switch models (`models._effort_variants`); else
+  catalog metadata (`endpoint_discovery.efforts_from_metadata`: OpenRouter
+  `supported_parameters`, Ollama `thinking` capability) gives the levels; the chosen level is saved per server/model in `state.toml`
   (`[effort.<server>]`, `""` for a single-model server) and sent verbatim as
   `reasoning_effort` (llamacpp/openai), `reasoning.effort` (openrouter) or
   `think` (ollama, `"none"` → `false`) — `Endpoint.effort_payload`. Load errors are shown at startup and on `/reload`/`/config`, and

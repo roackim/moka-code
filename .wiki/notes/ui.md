@@ -314,18 +314,18 @@ The most complex component. Responsibilities are split across sub-modules:
 | `input_handlers.py` | Keyboard, mouse, paste events |
 | `completion.py` | `Completer` base + the four trigger-based providers: `CommandCompletion`, `SubcommandCompletion`, `ArgumentCompletion`, `ContextCompletion` |
 
-Accepting a completion (Tab, or Enter before submit) inserts **no space** and
-closes the menu like ESC (`_accept_completion` → `cancel()`, which suppresses
-the menu for that word); the next menu opens once the user types the space.
-The exception is a folder picked from the `@` menu, which keeps the menu open
-to drill into it.
+Accepting a completion (Tab, or Enter before submit) adds a **space** (or steps
+over an existing one), so the next word's menu — subcommands, the next
+argument — opens right away (`_accept_completion`). The exception is a folder
+picked from the `@` menu: no space, the menu stays open to drill into it.
 
-A `Command(picker=True)` (`/model`, `/theme`, `/effort`) has no inline argument
-menu: typing its name plus a space submits it at once, opening its picker
-(`InputComponent._run_picker_command`). Completion menus sit above the whole
+`/model ` and `/effort ` show their choices inline (the same rows as their
+Enter pickers: `models.model_completions` / `effort_completions`, the current
+one described `active`); bare `/model` / `/effort` + Enter opens the picker.
+Completion menus sit above the whole
 input box (not the trigger's line), so a multiline draft stays visible.
 
-With no completion menu open, **Tab** cycles roles and **Shift+Tab** cycles the
+With an empty input (or from history), **Tab** cycles roles and **Shift+Tab** cycles the
 project's sandboxes then none; both queue the ordinary `/role` / `/sandbox`
 command (`next_role_command`, `next_sandbox_command`). Terminal focus
 reporting (`?1004`) is on: while the window is unfocused, the input / history

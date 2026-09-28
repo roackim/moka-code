@@ -151,7 +151,7 @@ DEFAULT_UI_TOML = """\
 # sandbox_prefix = "sandbox:"         # before the runtime name; empty hides it
 # sandbox_active_color = "SUCCESS"    # palette name or #rrggbb
 # sandbox_inactive_color = "WARNING"
-# thought_min_tokens = 100            # hide shorter reasoning lines (0 = show all)
+# thought_min_tokens = 0              # hide shorter reasoning lines (0 = show all)
 # show_banner = true                  # moka art in an empty transcript
 # stream_smoothing = true             # reveal streamed text smoothly
 # smooth_target_fps = 60              # reveal cadence (independent of render fps)
@@ -205,8 +205,9 @@ DEFAULT_SERVERS_TOML = """\
 # the model (more context, better continuity). The current turn's reasoning is
 # always sent. A model table's value overrides the server's.
 #
-# efforts: the reasoning effort levels /effort offers (absent: no /effort).
-# The chosen level is sent as-is: reasoning_effort (llamacpp, openai),
+# efforts: the reasoning effort levels /effort offers. Absent: detected (model
+# variants like X:low / X:high switch the model; OpenRouter / Ollama metadata
+# gives the levels). The chosen level is sent as-is: reasoning_effort (llamacpp, openai),
 # reasoning.effort (openrouter), think (ollama; "none" sends false).
 # A model table's list overrides the server's.
 
@@ -584,7 +585,7 @@ class Config:
         self.ui_sandbox_prefix: str = "sandbox:"
         self.ui_sandbox_active_color: str = "SUCCESS"
         self.ui_sandbox_inactive_color: str = "WARNING"
-        self.ui_thought_min_tokens: int = 100
+        self.ui_thought_min_tokens: int = 0
         self.ui_show_banner: bool = True
         self.ui_stream_smoothing: bool = True
         self.ui_smooth_target_fps: int = 60

@@ -198,6 +198,36 @@ async def llamacpp_context_window(endpoint: "Endpoint", model_name: str) -> int:
     raise RuntimeError("Could not determine context window from server")
 
 
+# Reasoning effort words, weakest first (OpenAI / OpenRouter vocabulary). A
+# model id suffix ``:<word>`` marks an effort variant (``/effort`` switches
+# between sibling ids).
+EFFORT_WORDS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def efforts_from_metadata(metadata: dict) -> list[str]:
+    """Effort levels a model takes as a request parameter, from catalog
+    metadata: OpenRouter ``supported_parameters``; Ollama's ``thinking``
+    capability (only gpt-oss takes levels, others just on/off)."""
+    params = metadata.get("supported_parameters") or []
+    if "reasoning_effort" in params or "reasoning" in params:
+        return ["none", "low", "medium", "high"]
+    if "thinking" in (metadata.get("capabilities") or []):
+        name = str(metadata.get("model") or metadata.get("name") or "")
+        return ["none", "low", "medium", "high"] if "gpt-oss" in name else ["none"]
+    return []
+
+
+def effort_levels(model_entry: dict | None, server_efforts: list | None,
+                  metadata: dict) -> list[str]:
+    """Effort levels a model takes as a request parameter: its model table's
+    ``efforts``, else the server's, else detected from catalog metadata."""
+    if model_entry and "efforts" in model_entry:
+        return list(model_entry["efforts"])
+    if server_efforts:
+        return list(server_efforts)
+    return efforts_from_metadata(metadata or {})
+
+
 def image_input_from_metadata(metadata: dict) -> bool | None:
     """Image support recorded in catalog metadata; ``None`` when absent.
 

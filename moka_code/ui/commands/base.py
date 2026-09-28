@@ -46,15 +46,12 @@ class Command:
     def __init__(self, name: str, description: str,
                  handler: Optional[CommandHandler] = None,
                  subcommands: Optional[Dict[str, "Command"]] = None,
-                 params: Optional[List[Param]] = None,
-                 picker: bool = False):
+                 params: Optional[List[Param]] = None):
         self.name = name
         self.description = description
         self.handler = handler
         self.subcommands = subcommands or {}
         self.params = params or []
-        # Typing a space after the name runs it at once (it opens a picker).
-        self.picker = picker
 
     async def execute(self, ui: ChatUIProtocol, args: List[str]):
         if self.has_subcommands():

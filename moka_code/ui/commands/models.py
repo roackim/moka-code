@@ -93,7 +93,7 @@ def _build_rows(pairs, active_name: Optional[str], selected: Optional[str]):
     index: dict = {}
     for server, model in pairs:
         # Disambiguate the rare case of one model id on several servers.
-        item = model.id if counts[model.id] == 1 else f"{model.id} [{server}]"
+        item = model.id if counts[model.id] == 1 else f"{server}:{model.id}"
         active = server == active_name and model.id == selected
         descriptions[item] = (
             f"{server:<{server_w}}  {_format_context(model.context_window):>{ctx_w}}"
@@ -275,7 +275,75 @@ async def model_use(ui: ChatUIProtocol, args: List[str]):
             f"Could not select model: {exc}", msg_type=SysMsgError(), title="model")
 
 
+def _active() -> Tuple[Optional[str], Optional[str]]:
+    """``(server, model)`` of the persisted selection (the live one)."""
+    server = settings.config.active_server
+    return server, settings.config.get_model_for_server(server)
+
+
+def model_completions() -> List[str]:
+    """Every cached model, as the ``/model`` picker lists them."""
+    pairs = sorted(_cached_pairs(), key=lambda p: (p[0], p[1].id))
+    return _build_rows(pairs, *_active())[0]
+
+
+def model_descriptions() -> dict:
+    pairs = sorted(_cached_pairs(), key=lambda p: (p[0], p[1].id))
+    items, descriptions, footers, _ = _build_rows(pairs, *_active())
+    return {item: f"{descriptions[item]}  {footers.get(item, '')}".rstrip() for item in items}
+
+
 _DEFAULT_EFFORT = "default"
+
+
+def _effort_variants(server: Optional[str], model_id: Optional[str]) -> dict:
+    """``{level: model id}`` for the effort-variant siblings of ``model_id``
+    (``X:low`` / ``X:high``) in the server's catalog; empty unless several."""
+    from moka_code.harness.endpoint_discovery import EFFORT_WORDS
+
+    base, sep, suffix = (model_id or "").rpartition(":")
+    if not sep or suffix not in EFFORT_WORDS:
+        return {}
+    ids = {m.get("id") for m in settings.config.models_by_server.get(server, [])}
+    variants = {w: f"{base}:{w}" for w in EFFORT_WORDS if f"{base}:{w}" in ids}
+    return variants if len(variants) > 1 else {}
+
+
+def _effort_choices(server: Optional[str], model: Optional[str]):
+    """``(choices, current, variants)`` for a server's model.
+
+    Effort variants (``X:low`` / ``X:high``) are chosen by switching model;
+    otherwise the choices are ``default`` plus the request-parameter levels
+    (``efforts`` in servers.toml, else detected from the catalog). No
+    choices: the model has no effort switch.
+    """
+    from moka_code.harness.endpoint_discovery import effort_levels
+
+    variants = _effort_variants(server, model)
+    if variants:
+        return list(variants), model.rpartition(":")[2], variants
+    table = settings.config.servers.get(server) or {}
+    metadata = next((m.get("metadata") or {} for m in settings.config.models_by_server.get(server, [])
+                     if m.get("id") == model), {})
+    levels = effort_levels((table.get("models") or {}).get(model), table.get("efforts"), metadata)
+    if not levels:
+        return [], None, {}
+    saved = settings.config.get_effort(server, model)
+    return [_DEFAULT_EFFORT, *levels], saved if saved in levels else _DEFAULT_EFFORT, {}
+
+
+def effort_completions() -> List[str]:
+    return _effort_choices(*_active())[0]
+
+
+def effort_descriptions() -> dict:
+    choices, current, variants = _effort_choices(*_active())
+    descriptions = {c: variants.get(c, "") for c in choices}
+    if _DEFAULT_EFFORT in descriptions:
+        descriptions[_DEFAULT_EFFORT] = "server default"
+    if current:
+        descriptions[current] = f"{descriptions[current]}  active".strip()
+    return descriptions
 
 
 def _set_effort(ui: ChatUIProtocol, endpoint, effort: Optional[str]) -> None:
@@ -288,37 +356,41 @@ def _set_effort(ui: ChatUIProtocol, endpoint, effort: Optional[str]) -> None:
 
 
 async def effort_command(ui: ChatUIProtocol, args: List[str]):
-    """``/effort`` picks the current model's reasoning effort (``efforts`` in
-    servers.toml); ``/effort <level>`` sets it directly."""
+    """``/effort <level>`` sets the current model's reasoning effort; bare
+    ``/effort`` opens a picker. See :func:`_effort_choices`."""
     endpoint = getattr(ui.agent, "endpoint", None)
-    levels = endpoint.effort_levels() if hasattr(endpoint, "effort_levels") else []
-    if not levels:
-        model = getattr(endpoint, "selected_model", None) or "this model"
+    server = getattr(endpoint, "name", None)
+    model = getattr(endpoint, "selected_model", None)
+    choices, current, variants = _effort_choices(server, model)
+    if not choices:
         ui.chat_history_panel.add_message(
-            f"No effort levels for {model}. Add efforts = [\"low\", \"medium\", \"high\"] "
-            "to its server (or model) table with '/config servers'.",
+            f"No reasoning effort detected for {model or 'this model'}. "
+            "Declare it with efforts = [\"low\", \"medium\", \"high\"] in its "
+            "server (or model) table ('/config servers').",
             msg_type=SysMsgError(), title="effort")
         return
 
-    choices = [_DEFAULT_EFFORT, *levels]
+    def apply(level):
+        if variants:
+            _select_pair(ui, server, variants[level])
+        else:
+            _set_effort(ui, endpoint, None if level == _DEFAULT_EFFORT else level)
+
     if args:
         if args[0] not in choices:
             ui.chat_history_panel.add_message(
                 f"Unknown effort '{args[0]}'. Levels: {', '.join(choices)}.",
                 msg_type=SysMsgError(), title="effort")
             return
-        _set_effort(ui, endpoint, None if args[0] == _DEFAULT_EFFORT else args[0])
+        apply(args[0])
         return
 
-    current = endpoint.effort if endpoint.effort in levels else _DEFAULT_EFFORT
     show = getattr(ui, "show_search_modal", None)
     if show is None:
         ui.chat_history_panel.add_message(
             f"Effort: {current}. Levels: {', '.join(choices)}.", msg_type=SysMsg(), title="effort")
         return
-    show("Effort", choices, footers={current: "active"},
-         on_accept=lambda item: _set_effort(
-             ui, endpoint, None if item == _DEFAULT_EFFORT else item),
+    show("Effort", choices, footers={current: "active"}, on_accept=apply,
          initial_index=choices.index(current))
 
 
@@ -327,4 +399,7 @@ async def model_command(ui: ChatUIProtocol, args: List[str]):
     await model_use(ui, args)
 
 
-__all__ = ["effort_command", "model_command", "model_use"]
+__all__ = [
+    "effort_command", "effort_completions", "effort_descriptions",
+    "model_command", "model_completions", "model_descriptions", "model_use",
+]

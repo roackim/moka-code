@@ -199,8 +199,6 @@ class InputComponent(Component):
         if hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'mark_changed'):
             self.parent.mark_changed()
         self._notify_changed()
-        if self._run_picker_command():
-            return
 
         providers = self._completion_providers()
         for provider in providers:
@@ -212,22 +210,6 @@ class InputComponent(Component):
                         other.hide()
                 self._position_menu(provider)
                 return
-
-    def _run_picker_command(self) -> bool:
-        """``/model `` (a picker command, then a space) submits ``/model``,
-        opening its picker instead of an inline argument menu."""
-        text = self.buffer.text
-        if not (text.startswith('/') and text.endswith(' ') and self.on_submit):
-            return False
-        command = (self._command_registry or {}).get(text[1:-1])
-        if not getattr(command, "picker", False):
-            return False
-        for provider in self._completion_providers():
-            provider.hide()
-        self.buffer.clear()
-        self.scroll_manager.reset()
-        self.on_submit(text.rstrip())
-        return True
 
     def _completion_providers(self):
         """Return the configured completion providers in priority order."""
@@ -516,12 +498,11 @@ class InputComponent(Component):
         )
 
     def _accept_completion(self, completion) -> bool:
-        """Commit the highlighted candidate, then close the menu like ESC.
+        """Commit the highlighted candidate followed by a space.
 
-        No space is inserted: the cursor sits right after the completed word
-        and the menu stays closed for it (the next word, after a space the
-        user types, opens menus as usual). A directory picked from the ``@``
-        menu is the exception: the menu stays open to keep drilling into it.
+        The space moves on to the next word, so its menu (subcommands, the
+        next argument) opens right away. A directory picked from the ``@``
+        menu gets no space: the menu stays open to keep drilling into it.
         """
         result = completion.accept_selection(self.buffer.text, self.buffer.cursor_pos)
         if not result:
@@ -529,12 +510,13 @@ class InputComponent(Component):
 
         new_text, new_cursor_pos = result
         selected = completion.menu.get_selected() or ""
-        is_dir = selected.endswith('/')
+        if not selected.endswith('/'):
+            if new_text[new_cursor_pos:new_cursor_pos + 1] != ' ':
+                new_text = new_text[:new_cursor_pos] + ' ' + new_text[new_cursor_pos:]
+            new_cursor_pos += 1
 
         self.buffer.text = new_text
         self.buffer.cursor_pos = new_cursor_pos
-        if not is_dir:
-            completion.cancel(self.buffer.text, self.buffer.cursor_pos)
         self._on_text_changed()
         return True
 

@@ -21,9 +21,7 @@ def test_model_is_a_leaf_handler():
     model = COMMANDS["model"]
     assert not model.has_subcommands()
     assert model.handler is not None
-    # No inline argument menu: ``/model `` opens the picker (see input test).
-    assert model.params == []
-    assert model.picker
+    assert [p.name for p in model.params] == ["MODEL"]
 
 
 def test_config_command_completes_role_names():

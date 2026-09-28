@@ -832,12 +832,14 @@ class chatTUI(ChatActionHandlers):
                 if key in ('\x1b', '\x1b[A', '\x1b[B', '\t', '\r', '\n'):
                     return self.input_component.handle_input(event)
 
-            # Tab cycles roles, Shift+Tab sandboxes (through the commands, so
-            # their busy checks and messages apply).
-            if key == '\t':
+            # On an empty input (or from history), Tab cycles roles and
+            # Shift+Tab sandboxes, through the commands so their busy checks
+            # and messages apply. With a draft (e.g. ``/model``) Tab does nothing.
+            idle = self._last_focus_id != "input" or not self.input_component.buffer.text
+            if key == '\t' and idle:
                 self.on_command_submit(next_role_command(self))
                 return True
-            if key == '\x1b[Z':
+            if key == '\x1b[Z' and idle:
                 command = next_sandbox_command(self)
                 if command:
                     self.on_command_submit(command)
