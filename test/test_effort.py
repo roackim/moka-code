@@ -25,12 +25,11 @@ def test_effort_payload_uses_each_servers_field():
         assert endpoint.effort_payload() == expected
 
 
-def test_effort_payload_empty_without_a_declared_level():
+def test_effort_payload_is_never_dropped():
     endpoint = _endpoint("ollama", efforts=["low"])
-    assert endpoint.effort_payload() == {}
-    endpoint.effort = "high"          # not (or no longer) declared
-    assert endpoint.effort_payload() == {}
-    endpoint.efforts = ["none"]
+    assert endpoint.effort_payload() == {}            # nothing chosen
+    endpoint.effort = "high"          # not (or no longer) declared: still sent
+    assert endpoint.effort_payload() == {"think": "high"}
     endpoint.effort = "none"
     assert endpoint.effort_payload() == {"think": False}
 
@@ -172,15 +171,26 @@ def test_openai_catalog_keeps_model_metadata():
 
 
 def test_endpoint_reads_the_live_catalog_not_a_copy(monkeypatch):
-    """A catalog refreshed after the endpoint was built is what requests use."""
+    """A catalog refreshed after the endpoint was built is what it reads."""
     _config(monkeypatch, {"s": {"type": "openai"}}, catalog={"s": [{"id": "m"}]})
     endpoint = _endpoint("openai")
-    endpoint.effort = "low"
-    assert endpoint.effort_payload() == {}        # known: m takes no effort
+    assert endpoint.effort_levels() == []
 
     settings.config.models_by_server["s"] = [
         {"id": "m", "metadata": {"reasoning": {"supported_efforts": ["low", "high"]}}}]
+    assert endpoint.effort_levels() == ["low", "high"]
+
+
+def test_effort_missing_from_the_catalog_is_still_sent_and_shown(monkeypatch):
+    """A catalog without the saved level (stale, or the server answered
+    without its reasoning object) must not drop or hide the effort."""
+    _config(monkeypatch, {"s": {"type": "openai"}}, catalog={"s": [{"id": "m"}]},
+            efforts={"s": {"m": "low"}})
+    endpoint = _endpoint("openai")
+    endpoint.effort = "low"
     assert endpoint.effort_payload() == {"reasoning_effort": "low"}
+    assert models.effort_completions() == ["default", "low"]
+    assert models.effort_descriptions()["low"] == "active"
 
 
 def test_effort_is_sent_while_the_server_is_undiscovered(monkeypatch):

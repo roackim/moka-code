@@ -307,10 +307,12 @@ def _effort_choices(server: Optional[str], model: Optional[str]):
     table = settings.config.servers.get(server) or {}
     metadata = catalog_entry(server, model).get("metadata") or {}
     levels = effort_levels((table.get("models") or {}).get(model), table.get("efforts"), metadata)
+    saved = settings.config.get_effort(server, model)
+    if saved and saved not in levels:
+        levels = [*levels, saved]       # still sent: keep it visible and active
     if not levels:
         return [], None, {}
-    saved = settings.config.get_effort(server, model)
-    return [_DEFAULT_EFFORT, *levels], saved if saved in levels else _DEFAULT_EFFORT, {}
+    return [_DEFAULT_EFFORT, *levels], saved or _DEFAULT_EFFORT, {}
 
 
 def effort_completions() -> List[str]:

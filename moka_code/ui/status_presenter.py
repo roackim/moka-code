@@ -93,7 +93,7 @@ def refresh_status_bar(app) -> None:
                 model = model[: -len(suffix)]
                 break
     effort = getattr(endpoint, "effort", None)
-    if effort and effort in getattr(endpoint, "effort_levels", list)():
+    if effort:      # shown whenever it is sent (always, see effort_payload)
         model = f"{model} · {effort}"
     role = getattr(getattr(agent, "role", None), "name", "agent")
     state = getattr(getattr(agent, "state", None), "name", "IDLE").lower()

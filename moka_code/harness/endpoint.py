@@ -576,20 +576,14 @@ class Endpoint:
     def _catalog_metadata(self, model_name: Optional[str]) -> dict:
         return catalog_entry(self.name, model_name).get("metadata") or {}
 
-    def _catalog_known(self) -> bool:
-        from moka_code import settings
-        return self.name in settings.config.models_by_server
-
     def effort_payload(self) -> dict[str, Any]:
         """The chosen effort in this server's request field (``{}`` if none).
 
-        Checked against the known levels; while none are known (the server
-        is not discovered yet) it is sent as-is, and the server decides.
+        Always sent as chosen, never checked against the discovered levels:
+        a stale or incomplete catalog must not silently drop it. The server
+        decides (metallama rejects an unknown level with a 400).
         """
         if not self.effort:
-            return {}
-        levels = self.effort_levels()
-        if (levels or self._catalog_known()) and self.effort not in levels:
             return {}
         if self.type == "openrouter":
             return {"reasoning": {"effort": self.effort}}
