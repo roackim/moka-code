@@ -77,6 +77,28 @@ The `role` field reflects the active conversation role and is refreshed
 whenever the role changes (via `/role <name>` or a conversation import that
 applies a saved role).
 
+## Sessions (`harness/sessions.py`)
+
+The conversation file format (`{"role", "model", "history"}`, written
+atomically) is shared by `/export`, `/import` and autosave
+(`sessions.write` / `sessions.read`). Sessions are saved per project in
+`$XDG_STATE_HOME/moka/sessions/<dir name>-<path hash>/<timestamp>-<rand>.json`
+(state, not cache — they are user data):
+
+- `chatTUI.session_path` is where the current conversation is saved;
+  `new_session()` picks a fresh path at startup, `/clear` and `/import` (the
+  previous file stays).
+- `save_session()` runs after every generation (worker `finally`) and on exit;
+  it skips an empty history and keeps the `context.sessions` most recent
+  (default 10; `0` = never saved) via `sessions.prune`. Image references are
+  saved as references (`/export` embeds them).
+- `/session` opens the search picker (this project's sessions, newest first,
+  current one excluded; row = first user question, description = age ·
+  messages · model). Enter runs `load_conversation` (shared with `/import`)
+  and sets `session_path` to that file, so a resumed session keeps writing to
+  it. Refused while a response is generating.
+- `moka --resume` / `-r` queues `/session` at startup (`chatTUI(resume=True)`).
+
 ## Conversation import/export
 
 `/export <file>` writes `{"role": ..., "history": [...]}`; image references

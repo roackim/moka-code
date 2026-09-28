@@ -166,6 +166,7 @@ DEFAULT_CONTEXT_TOML = """\
 # max_depth = 4
 # ignore_gitignore = false
 # max_image_mb = 5                    # largest image a message can attach
+# sessions = 10                       # conversations saved per project (/session); 0 = off
 """
 
 DEFAULT_DEBUG_TOML = """\
@@ -330,6 +331,7 @@ _CONTEXT_SPEC: Dict[str, tuple[str, str]] = {
     "max_depth": ("context_max_depth", "int"),
     "ignore_gitignore": ("context_ignore_gitignore", "bool"),
     "max_image_mb": ("context_max_image_mb", "int_or_float"),
+    "sessions": ("context_sessions", "int"),
 }
 
 _DEBUG_SPEC: Dict[str, tuple[str, str]] = {
@@ -586,6 +588,7 @@ class Config:
         self.context_max_depth: int = 4
         self.context_ignore_gitignore: bool = False
         self.context_max_image_mb: float = 5
+        self.context_sessions: int = 10
 
         # Style tables.
         self.markdown_styles: Dict[str, Dict[str, Any]] = {

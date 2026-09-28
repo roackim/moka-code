@@ -105,8 +105,10 @@ def _show_role_change(panel: ChatHistoryPanel, previous_name: str, role_name: st
 class chatTUI(ChatActionHandlers):
     """Terminal UI for the agent."""
 
-    def __init__(self, agent):
+    def __init__(self, agent, resume: bool = False):
         self.agent = agent
+        # ``moka --resume``: open the /session picker once the UI is up.
+        self._resume_on_start = resume
         # Pre-warm .local hostname resolution for the agent so the
         # first message doesn't stall on DNS/mDNS lookup.
         endpoint = getattr(agent, "endpoint", None)
@@ -190,6 +192,10 @@ class chatTUI(ChatActionHandlers):
         self._active_user_msg = None
         # Images pasted into the input draft, by their ``[image #N]`` number.
         self._pasted_images = {}
+        # Where this conversation is saved (``harness.sessions``); a new
+        # session until /session resumes an older one.
+        self.session_path = None
+        self.new_session()
         # Stream smoothing: the revealer owns timing, the message owns the
         # canonical arrived text plus its rendered prefix.
         self.stream_revealer = None
@@ -415,6 +421,7 @@ class chatTUI(ChatActionHandlers):
                 self.current_generation_task = None
                 self._active_user_input = None
                 self._active_user_msg = None
+                self.save_session()
 
     async def command_worker(self):
         """Dispatch queued slash commands independently of generation workers."""
@@ -610,6 +617,31 @@ class chatTUI(ChatActionHandlers):
                    on_accept=on_accept, on_cancel=on_cancel,
                    on_highlight=on_highlight, initial_index=initial_index)
         return modal
+
+    def new_session(self) -> None:
+        """Start a new saved session (at startup, /clear, /import)."""
+        from moka_code.harness import sessions
+
+        self.session_path = sessions.new_path(getattr(self.agent, "workspace", "."))
+
+    def save_session(self) -> None:
+        """Save the conversation to its session file (``context.sessions``
+        most recent kept per project; 0 = never saved). Best effort: a failed
+        save is logged, never raised into the UI."""
+        from moka_code.harness import sessions
+
+        keep = settings.config.context_sessions
+        history = getattr(self.agent, "history", None)
+        if keep <= 0 or not history or self.session_path is None:
+            return
+        workspace = getattr(self.agent, "workspace", ".")
+        try:
+            role = getattr(getattr(self.agent, "role", None), "name", "agent")
+            model = getattr(getattr(self.agent, "endpoint", None), "selected_model", None)
+            sessions.write(self.session_path, role, history, model)
+            sessions.prune(workspace, keep)
+        except Exception:
+            logging.getLogger("tui").warning("Could not save the session", exc_info=True)
 
     def paste_clipboard(self) -> None:
         """Ctrl+V: paste the clipboard into the input.
@@ -931,6 +963,8 @@ class chatTUI(ChatActionHandlers):
         self._update_focus_states()
         self._update_action_strip()
         self.refresh_status_bar()
+        if self._resume_on_start:
+            self.on_command_submit("/session")
 
         # Start background server status check (non-blocking). No status
         # message is added to the conversation — the status bar reflects it.
@@ -985,6 +1019,7 @@ class chatTUI(ChatActionHandlers):
             # Normal exit cleanup (clear screen OK)
             if self.compositor and self.compositor.terminal:
                 self.compositor.terminal.cleanup(clear_screen=True)
+            self.save_session()
             
             # Clean shutdown
             if hasattr(self.agent, 'stop'):

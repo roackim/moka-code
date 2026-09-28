@@ -20,9 +20,20 @@ files.
 
 ## Installation
 
+moka installs as a command-line tool, in its own environment. With
+[uv](https://docs.astral.sh/uv/):
+
+```bash
+uv tool install git+https://github.com/roackim/moka-code.git
+```
+
+or with [pipx](https://pipx.pypa.io):
+
 ```bash
 pipx install git+https://github.com/roackim/moka-code.git
 ```
+
+To update later: `uv tool upgrade moka-code` or `pipx upgrade moka-code`.
 
 Then start it from the project you want to work on:
 
@@ -60,9 +71,10 @@ the OpenRouter example instead.
 - **Images.** Paste an image with Ctrl+V or mention a file with `@image.png`;
   the model can also read image files. Text-only models are detected and the
   message is refused with a clear explanation.
-- **Conversations.** Export a conversation to a single file with `/export`
-  (images included) and restore it with `/import`; `/compact` summarizes long
-  conversations to free context.
+- **Sessions.** Conversations are saved automatically per project: resume one
+  with `/session`, or start with `moka --resume` (`-r`). `/export` and
+  `/import` save and restore a conversation as a single file (images
+  included); `/compact` summarizes long conversations to free context.
 - **Reasoning models.** The model's reasoning is shown above its answers and
   passed back to the model where the server supports it.
 - **Terminal workflow.** `/terminal` opens a shell while the conversation keeps

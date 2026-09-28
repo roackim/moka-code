@@ -3,6 +3,7 @@
 A TUI chat app for self-hosted LLM agents.
 """
 
+import argparse
 import os
 import sys
 import asyncio
@@ -23,6 +24,11 @@ def main():
         print(f"moka is already running (pid {outer}): this shell was opened by its "
               "/terminal.\nType 'exit' to return to it.", file=sys.stderr)
         return 1
+
+    parser = argparse.ArgumentParser(prog="moka", description="A terminal coding assistant.")
+    parser.add_argument("-r", "--resume", action="store_true",
+                        help="pick a saved session of this project to resume")
+    args = parser.parse_args()
 
     # Initialize harness first
     print("Initializing moka...")
@@ -50,7 +56,7 @@ def main():
     from moka_code.ui.tui.colors import set_theme
     set_theme(settings.config.get_active_theme())
 
-    tui = chatTUI(harness)
+    tui = chatTUI(harness, resume=args.resume)
     try:
         asyncio.run(tui.run())
     except KeyboardInterrupt:

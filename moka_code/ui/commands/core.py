@@ -49,6 +49,10 @@ async def cmd_clear(ui: ChatUIProtocol, args: List[str]):
     ui.chat_history_panel.clear()
     if hasattr(ui.agent, "clear_history"):
         ui.agent.clear_history()
+    # The cleared conversation stays saved; what follows is a new session.
+    new_session = getattr(ui, "new_session", None)
+    if callable(new_session):
+        new_session()
     ui.chat_history_panel.add_message("Conversation cleared.", msg_type=SysMsg())
     if hasattr(ui, "refresh_status_bar"):
         ui.refresh_status_bar()

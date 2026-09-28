@@ -20,7 +20,9 @@ from .base import (
     role_descriptions,
     role_name_completions,
 )
-from .conversation import conversation_export, conversation_import, json_file_completions
+from .conversation import (
+    conversation_export, conversation_import, conversation_session, json_file_completions,
+)
 from .core import (
     ConfigCommand,
     cmd_activity,
@@ -71,6 +73,8 @@ COMMANDS: Dict[str, Command] = {
                             handler=conversation_import,
                             params=[Param("FILENAME", required=True,
                                           completions=json_file_completions)]),
+    "session":      Command("session", "Resume a saved session of this project (opens a picker)",
+                            handler=conversation_session),
     "compact":      Command("compact", "Compact context with an LLM summary marker",
                             handler=cmd_compact),
     "exit":         Command("exit", "Close the application", handler=cmd_exit),

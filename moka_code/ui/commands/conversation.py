@@ -1,9 +1,10 @@
-"""Conversation import and export commands."""
+"""Conversation commands: /export, /import and /session (saved sessions)."""
 
 from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any, Dict, List
 
 from .base import ChatUIProtocol
@@ -29,7 +30,17 @@ def json_file_completions() -> List[str]:
         return []
 
 
+def _role_name(ui: ChatUIProtocol) -> str:
+    return getattr(getattr(ui.agent, "role", None), "name", "agent")
+
+
+def _model_name(ui: ChatUIProtocol):
+    return getattr(getattr(ui.agent, "endpoint", None), "selected_model", None)
+
+
 async def conversation_export(ui: ChatUIProtocol, args: List[str]):
+    from moka_code.harness import images, sessions
+
     if not args:
         ui.chat_history_panel.add_message(
             "Usage: /export <filename>", msg_type=SysMsgError())
@@ -39,26 +50,21 @@ async def conversation_export(ui: ChatUIProtocol, args: List[str]):
     if not filename.endswith(".json"):
         filename += ".json"
 
-    try:
-        history = ui.agent.history
-        if not history:
-            ui.chat_history_panel.add_message(
-                "No conversation history to export.", msg_type=SysMsgError())
-            return
-
-        from moka_code.harness import images
-
-        active_role = getattr(getattr(ui.agent, "role", None), "name", "agent")
-        # Images are embedded (base64) so the file is self-contained.
-        with open(filename, "w", encoding="utf-8") as stream:
-            json.dump({"role": active_role, "history": images.embed(history)}, stream,
-                      indent=2, ensure_ascii=False)
+    history = ui.agent.history
+    if not history:
         ui.chat_history_panel.add_message(
-            f"Conversation exported to {filename}\n({len(history)} messages)",
-            msg_type=SysMsg(), title="conversation")
+            "No conversation history to export.", msg_type=SysMsgError())
+        return
+    try:
+        # Images are embedded (base64) so the file is self-contained.
+        sessions.write(filename, _role_name(ui), images.embed(history), _model_name(ui))
     except Exception as exc:
         ui.chat_history_panel.add_message(
             f"Export failed: {exc}", msg_type=SysMsgError(), title="conversation")
+        return
+    ui.chat_history_panel.add_message(
+        f"Conversation exported to {filename}\n({len(history)} messages)",
+        msg_type=SysMsg(), title="conversation")
 
 
 async def conversation_import(ui: ChatUIProtocol, args: List[str]):
@@ -70,76 +76,111 @@ async def conversation_import(ui: ChatUIProtocol, args: List[str]):
     filename = args[0]
     if not filename.endswith(".json"):
         filename += ".json"
+    if load_conversation(ui, filename):
+        # An imported conversation continues as a new session.
+        new_session = getattr(ui, "new_session", None)
+        if callable(new_session):
+            new_session()
+        ui.chat_history_panel.add_message(
+            f"Conversation imported from {filename}\n({len(ui.agent.history)} messages)",
+            msg_type=SysMsg(), title="conversation")
+
+
+def load_conversation(ui: ChatUIProtocol, path) -> bool:
+    """Replace the conversation with the one saved at ``path`` (``/import``,
+    ``/session``). Reports a failure in the transcript and returns False."""
+    from moka_code.harness import images, roles, sessions
 
     try:
-        with open(filename, "r", encoding="utf-8") as stream:
-            data = json.load(stream)
-
-        role_name = data.get("role") if isinstance(data, dict) else None
-        history = data.get("history") if isinstance(data, dict) else data
-        if not isinstance(history, list):
-            ui.chat_history_panel.add_message(
-                "Invalid conversation file: expected a history array or conversation object",
-                msg_type=SysMsgError(), title="conversation")
-            return
-        if role_name is not None and not isinstance(role_name, str):
-            ui.chat_history_panel.add_message(
-                "Invalid conversation file: role must be a string",
-                msg_type=SysMsgError(), title="conversation")
-            return
-        for index, message in enumerate(history):
-            if not isinstance(message, dict):
-                ui.chat_history_panel.add_message(
-                    f"Invalid message at index {index}: expected an object",
-                    msg_type=SysMsgError(), title="conversation")
-                return
-            if "role" not in message:
-                ui.chat_history_panel.add_message(
-                    f"Invalid message at index {index}: missing 'role' field",
-                    msg_type=SysMsgError(), title="conversation")
-                return
-
-        # Embedded images go back to the image cache.
-        from moka_code.harness import images
-        history = images.restore(history)
-
-        # Apply the saved role, warning if it no longer exists.
-        role_warning = None
-        if role_name:
-            from moka_code.harness import roles
-            try:
-                role = roles.load_role(role_name)
-            except KeyError:
-                role = roles.agent_role()
-                role_warning = (
-                    f"Role '{role_name}' no longer exists — defaulted to 'agent'."
-                )
-            ui.switch_role(role)
-
-        load = getattr(ui.agent, "load_history", None)
-        if callable(load):
-            load(history)  # also starts the conversation's cost over
-        else:
-            ui.agent.history = history
-        ui.chat_history_panel.clear()
-        _rebuild_ui_from_history(ui, history)
-        if hasattr(ui, "refresh_status_bar"):
-            ui.refresh_status_bar()
-        if role_warning:
-            ui.chat_history_panel.add_message(
-                role_warning, msg_type=SysMsgWarning(), title="conversation")
-        ui.chat_history_panel.add_message(
-            f"Conversation imported from {filename}\n({len(history)} messages)",
-            msg_type=SysMsg(), title="conversation")
+        role_name, history = sessions.read(path)
     except FileNotFoundError:
         ui.chat_history_panel.add_message(
-            f"File not found: {filename}", msg_type=SysMsgError(), title="conversation")
+            f"File not found: {path}", msg_type=SysMsgError(), title="conversation")
+        return False
     except json.JSONDecodeError as exc:
         ui.chat_history_panel.add_message(
             f"Invalid JSON file: {exc}", msg_type=SysMsgError(), title="conversation")
-    except Exception as exc:
+        return False
+    except (ValueError, OSError) as exc:
         ui.chat_history_panel.add_message(
-            f"Import failed: {exc}", msg_type=SysMsgError(), title="conversation")
+            f"Invalid conversation file: {exc}", msg_type=SysMsgError(), title="conversation")
+        return False
+
+    # Embedded images go back to the image cache.
+    history = images.restore(history)
+
+    # Apply the saved role, warning if it no longer exists.
+    role_warning = None
+    if role_name:
+        try:
+            role = roles.load_role(role_name)
+        except KeyError:
+            role = roles.agent_role()
+            role_warning = f"Role '{role_name}' no longer exists — defaulted to 'agent'."
+        ui.switch_role(role)
+
+    load = getattr(ui.agent, "load_history", None)
+    if callable(load):
+        load(history)  # also starts the conversation's cost over
+    else:
+        ui.agent.history = history
+    ui.chat_history_panel.clear()
+    _rebuild_ui_from_history(ui, history)
+    if hasattr(ui, "refresh_status_bar"):
+        ui.refresh_status_bar()
+    if role_warning:
+        ui.chat_history_panel.add_message(
+            role_warning, msg_type=SysMsgWarning(), title="conversation")
+    return True
+
+
+def _ago(timestamp: float) -> str:
+    seconds = max(0, time.time() - timestamp)
+    for unit, size in (("d", 86400), ("h", 3600), ("min", 60)):
+        if seconds >= size:
+            return f"{int(seconds // size)}{unit} ago"
+    return "just now"
+
+
+async def conversation_session(ui: ChatUIProtocol, args: List[str]):
+    """Pick a saved session of this project; Enter resumes it."""
+    from moka_code.harness import sessions
+
+    if getattr(ui, "is_generating", lambda: False)():
+        ui.chat_history_panel.add_message(
+            "A response is in progress — stop it first (/stop).", msg_type=SysMsgWarning())
+        return
+    workspace = getattr(ui.agent, "workspace", ".")
+    current = getattr(ui, "session_path", None)
+    found = [s for s in sessions.list_sessions(workspace) if s.path != current]
+    if not found:
+        ui.chat_history_panel.add_message(
+            f"No saved sessions for this project yet ({sessions.sessions_dir(workspace)}).",
+            msg_type=SysMsg(), title="session")
+        return
+
+    by_item, descriptions = {}, {}
+    for session in found:
+        item = session.title[:70]
+        while item in by_item:  # the picker needs distinct rows
+            item += " "
+        by_item[item] = session
+        details = [_ago(session.modified), f"{session.messages} messages"]
+        if session.model:
+            details.append(session.model)
+        descriptions[item] = " · ".join(details)
+
+    def _accept(item):
+        session = by_item.get(item)
+        if session is not None and load_conversation(ui, session.path):
+            # Resuming continues that session's file (no duplicate).
+            ui.session_path = session.path
+            ui.chat_history_panel.add_message(
+                f"Resumed session: {session.title[:70]}", msg_type=SysMsg(), title="session")
+
+    show = getattr(ui, "show_search_modal", None)
+    if show is not None:
+        show("Sessions", list(by_item), descriptions=descriptions, on_accept=_accept)
 
 
 def _add_answer(ui: ChatUIProtocol, text: str, ids) -> None:
@@ -245,5 +286,6 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
 
 
 __all__ = [
-    "conversation_export", "conversation_import", "json_file_completions",
+    "conversation_export", "conversation_import", "conversation_session",
+    "json_file_completions", "load_conversation",
 ]
