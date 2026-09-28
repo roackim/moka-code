@@ -44,6 +44,9 @@ _API_FIELDS = ("role", "content", "tool_calls", "tool_call_id")
 _TOOL_DRAFT_INTERVAL = 0.1
 
 class Harness:
+    # Why the last stream ended ("stop", "tool_calls", "length", ...).
+    _last_finish_reason: Optional[str] = None
+
     def __init__(self, workspace_path: str | None = None,
                  transport: Optional[ToolTransport] = None):
         self.debug_stream = get_debug_stream()
@@ -482,16 +485,18 @@ class Harness:
             "role": "user",
             "content": (
                 "Summarize the following conversation for future continuation. "
-                "The summary will replace the conversation history, so it must be COMPREHENSIVE enough "
-                "for the conversation to continue naturally. Include:\n"
+                "The summary will replace the conversation history, so the conversation "
+                "must be able to continue from it alone. Include:\n"
+                "- The user's goal and any instructions or preferences they stated\n"
                 "- Key decisions made and their reasoning\n"
                 "- Technical constraints and requirements\n"
+                "- Current state: what is done, what is in progress\n"
                 "- Open tasks and next steps\n"
-                "- Important file paths, code snippets, and artifacts\n"
-                "- Failed attempts and lessons learned\n"
-                "- Any context the assistant needs to continue helping\n\n"
-                "Be thorough and factual. Preserve all critical technical details. "
-                "Aim for at least 20-30% of the original length to maintain quality.\n\n"
+                "- Exact file paths, names, commands and error messages that still matter\n"
+                "- Failed attempts and why they failed\n\n"
+                "Do not reproduce raw tool output; state what it showed. Keep code only "
+                "where it is needed to continue (an unresolved error, a snippet being "
+                "worked on). Be factual; do not invent details.\n\n"
                 f"Conversation JSON:\n{json.dumps(effective_history, ensure_ascii=False)}"
             ),
         }
@@ -637,6 +642,7 @@ class Harness:
         chunk_count = 0
         empty_chunks = 0
         stream_usage: Optional[TokenUsage] = None
+        self._last_finish_reason = None
         async for chunk in self.endpoint.create_completion(messages, tools=self.tool_schemas, stream=True):
             chunk_count += 1
 
@@ -655,6 +661,7 @@ class Harness:
             finish_reason = chunk.choices[0].finish_reason
 
             if finish_reason:
+                self._last_finish_reason = finish_reason
                 logger.debug(f"Chunk {chunk_count}: finish_reason={finish_reason}")
                 if hasattr(delta, 'content') and delta.content:
                     logger.debug(f"  Final delta content: {delta.content}")
@@ -864,8 +871,18 @@ class Harness:
             try:
                 args = json.loads(tool_args)
             except json.JSONDecodeError:
-                # Invalid JSON - treat as error
-                error_msg = f"Invalid JSON arguments: {tool_args}"
+                # Invalid JSON - treat as error. When the stream hit the output
+                # token limit, the call was cut off: echoing the partial blob
+                # back only invites the same oversized retry.
+                if self._last_finish_reason == "length":
+                    error_msg = (
+                        "Your response hit the output token limit and this tool call "
+                        f"was cut off after {len(tool_args)} characters of arguments. "
+                        "Retry with smaller calls: split large writes or edits into "
+                        "several steps, and keep reasoning brief."
+                    )
+                else:
+                    error_msg = f"Invalid JSON arguments: {tool_args}"
                 yield events.ToolResult(
                     id=tool_call_id,
                     name=tool_name,

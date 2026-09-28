@@ -9,7 +9,8 @@ command.  The worker stays dumb; this is only about what the model sees.
 
 DEFAULT_LIMIT = 10_000
 
-_MARKER = "\n… {n} chars elided; narrow the command (head/tail/grep/sed)\n"
+_MARKER = ("\n… {n} chars elided; narrow the command (head/tail/grep/sed), "
+           "or if it is slow to rerun, redirect it to a file and grep that\n")
 
 
 def elide(text: str, *, limit: int = DEFAULT_LIMIT) -> str:
