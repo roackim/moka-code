@@ -31,16 +31,16 @@ from typing import Any, Dict, Literal, Optional
 #   fg (hex string), bg (hex string), bold (bool), reverse (bool)
 DEFAULT_MARKDOWN_STYLES: Dict[str, Dict[str, Any]] = {
     # Color marks structure, weight marks emphasis. ``fg`` is a hex string or
-    # a theme color name (``"MUTED"``), which follows the active theme.
-    "header1":    {"fg": "#FF79C6", "bold": True},
-    "header2":    {"fg": "#FF79C6", "bold": True},
-    "header3":    {"fg": "#FF79C6", "bold": True},
-    "header4":    {"fg": "#FF79C6", "bold": True},
-    "header5":    {"fg": "#FF79C6", "bold": True},
-    "header6":    {"fg": "#FF79C6", "bold": True},
-    "bold":       {"fg": "#FFD700", "bold": True},
+    # a theme color name (``"HEADING"``), which follows the active theme.
+    "header1":    {"fg": "HEADING", "bold": True},
+    "header2":    {"fg": "HEADING", "bold": True},
+    "header3":    {"fg": "HEADING", "bold": True},
+    "header4":    {"fg": "HEADING", "bold": True},
+    "header5":    {"fg": "HEADING", "bold": True},
+    "header6":    {"fg": "HEADING", "bold": True},
+    "bold":       {"fg": "EMPHASIS", "bold": True},
     "italic":     {"italic": True},
-    "code":       {"fg": "#9CDCFE"},
+    "code":       {"fg": "CODE"},
     "code_block": {},
     "quote":      {"fg": "MUTED"},
     "list":       {},
@@ -199,11 +199,16 @@ DEFAULT_SERVERS_TOML = """\
 # moka servers. One table per server; select a model with /model.
 # Every server needs a type: llamacpp, ollama, openrouter, openai.
 # Common keys: base_url, api_key (or api_key_env), model, max_context, timeout,
-# retry_attempts, retry_delay, preserve_reasoning.
+# retry_attempts, retry_delay, preserve_reasoning, efforts.
 #
 # preserve_reasoning (default true): also re-send earlier turns' reasoning to
 # the model (more context, better continuity). The current turn's reasoning is
 # always sent. A model table's value overrides the server's.
+#
+# efforts: the reasoning effort levels /effort offers (absent: no /effort).
+# The chosen level is sent as-is: reasoning_effort (llamacpp, openai),
+# reasoning.effort (openrouter), think (ollama; "none" sends false).
+# A model table's list overrides the server's.
 
 # llama.cpp -------------------------------------------------------------
 # [servers.local]
@@ -215,6 +220,7 @@ DEFAULT_SERVERS_TOML = """\
 # retry_attempts = 3
 # retry_delay = 2.0
 # preserve_reasoning = true           # llama.cpp also needs --reasoning-preserve
+# efforts = ["low", "medium", "high"]
 
 # Ollama ----------------------------------------------------------------
 # [servers.ollama]
@@ -224,6 +230,7 @@ DEFAULT_SERVERS_TOML = """\
 # model = "llama3.1:8b"               # optional; discover with /model
 # timeout = 30.0
 # preserve_reasoning = true
+# efforts = ["none", "low", "medium", "high"]
 
 # OpenRouter ------------------------------------------------------------
 # [servers.openrouter]
@@ -233,6 +240,7 @@ DEFAULT_SERVERS_TOML = """\
 # providers = ["deepseek"]            # default routing for every model below:
 #                                     # only these, tried in this order
 # preserve_reasoning = true           # earlier reasoning costs input tokens
+# efforts = ["low", "medium", "high"]
 #
 # One table per enabled model (the keys are what /model lists). Provider
 # values are slugs from the model's "Providers" tab on openrouter.ai.
@@ -432,7 +440,7 @@ _STYLE_SECTIONS = {"markdown_styles", "syntax_highlight"}
 _SERVER_KEYS = {
     "type", "base_url", "api_key", "api_key_env", "model", "max_context",
     "timeout", "retry_attempts", "retry_delay", "providers", "models",
-    "preserve_reasoning",
+    "preserve_reasoning", "efforts",
 }
 # Retired OpenRouter keys -> what replaces them. A server still using one is
 # reported and skipped (servers.toml is never rewritten by moka).
@@ -448,7 +456,8 @@ _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
 
 # ``active_model`` is a retired key (the model is per server, ``last_model``);
 # it is accepted and ignored so older state files load without errors.
-_STATE_SECTIONS = {"last_server", "active_model", "last_model", "model_catalog", "active_theme"}
+_STATE_SECTIONS = {"last_server", "active_model", "last_model", "model_catalog",
+                   "active_theme", "effort"}
 
 # Palette keys a ``[themes.<name>]`` table may define.
 _THEME_PALETTE = {
@@ -543,6 +552,8 @@ class Config:
         self.servers: Dict[str, Dict[str, Any]] = {}
         self.active_server: str = "llamacpp_default"
         self.model_selection: Dict[str, str] = {}
+        # Reasoning effort per server, per model (``/effort``).
+        self.efforts: Dict[str, Dict[str, str]] = {}
         self.models_by_server: Dict[str, list] = {}
 
         # User color theme definitions (intent) and active selection (state).
@@ -637,6 +648,21 @@ class Config:
             self.model_selection.pop(server, None)
         self._save_state()
 
+    def save_effort(self, server: str, model: str, effort: Optional[str]) -> None:
+        """Persist the reasoning effort for a server's model (None clears it)."""
+        per_model = self.efforts.setdefault(server, {})
+        if effort:
+            per_model[model] = effort
+        else:
+            per_model.pop(model, None)
+        if not per_model:
+            self.efforts.pop(server, None)
+        self._save_state()
+
+    def get_effort(self, server: str, model: Optional[str]) -> Optional[str]:
+        """Saved effort for a server's model (``""``: a single-model server)."""
+        return self.efforts.get(server, {}).get(model or "")
+
     def save_model_catalog(self) -> None:
         """Persist the discovery catalog so /model completion works on restart."""
         self._save_state()
@@ -660,6 +686,8 @@ class Config:
             data["last_model"] = dict(self.model_selection)
         if self.active_theme:
             data["active_theme"] = self.active_theme
+        if self.efforts:
+            data["effort"] = {server: dict(m) for server, m in self.efforts.items()}
         if self.models_by_server:
             data["model_catalog"] = {
                 server: [dict(m) for m in models]
@@ -820,6 +848,8 @@ def _load_servers(config: Config, data: dict, filename: str,
                 errors.append(f"{where}.{key} must be a number")
         if "preserve_reasoning" in server and not isinstance(server["preserve_reasoning"], bool):
             errors.append(f"{where}.preserve_reasoning must be true or false")
+        if "efforts" in server and not _is_str_list(server["efforts"]):
+            errors.append(f"{where}.efforts must be a list of effort levels")
         _validate_openrouter_routing(server, server_type, where, errors)
         # The type selects the transport and whether a model selection is
         # honored; guessing one silently routed e.g. an Ollama server as
@@ -853,10 +883,12 @@ def _validate_openrouter_routing(server: dict, server_type: Any, where: str,
             errors.append(f"{at} must be a table")
             continue
         for key in entry:
-            if key not in ("providers", "preserve_reasoning"):
+            if key not in ("providers", "preserve_reasoning", "efforts"):
                 errors.append(f"{at} unknown key '{key}'")
         if "preserve_reasoning" in entry and not isinstance(entry["preserve_reasoning"], bool):
             errors.append(f"{at}.preserve_reasoning must be true or false")
+        if "efforts" in entry and not _is_str_list(entry["efforts"]):
+            errors.append(f"{at}.efforts must be a list of effort levels")
         if "providers" in entry and not _is_str_list(entry["providers"]):
             errors.append(f"{at}.providers must be a list of provider slugs")
 
@@ -949,6 +981,15 @@ def _load_state_file(path: Path, config: Config, errors: list[str]) -> None:
             config.model_selection = dict(last_model)
         else:
             errors.append(f"{path.name}: last_model must map server names to model ids")
+
+    effort = data.get("effort")
+    if effort is not None:
+        if isinstance(effort, dict) and all(
+                isinstance(m, dict) and all(isinstance(v, str) for v in m.values())
+                for m in effort.values()):
+            config.efforts = {server: dict(m) for server, m in effort.items()}
+        else:
+            errors.append(f"{path.name}: effort must map servers to model -> level tables")
 
     catalog = data.get("model_catalog")
     if catalog is not None:

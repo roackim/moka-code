@@ -23,6 +23,7 @@ from moka_code.ui.chat_message import Message, reference_spans
 from moka_code.ui.commands import (
     handle_command, get_command_list, get_command_descriptions,
     get_subcommand_list, get_subcommand_descriptions,
+    next_role_command, next_sandbox_command,
 )
 from moka_code.ui.generation_presenter import process_generation
 from moka_code.ui.stream_revealer import StreamRevealer
@@ -811,6 +812,18 @@ class chatTUI(ChatActionHandlers):
         if isinstance(event, (str, KeyEvent)):
             key = event.key if isinstance(event, KeyEvent) else event
 
+            # Terminal window focus reports: drop the visible focus while the
+            # window is in the background, restore it when it comes back.
+            if key in ('\x1b[I', '\x1b[O'):
+                window_focused = key == '\x1b[I'
+                if self._last_focus_id == "input":
+                    self._set_input_focus(window_focused)
+                else:
+                    self._set_history_focus(window_focused)
+                if self.compositor:
+                    self.compositor.request_render()
+                return True
+
             if key == '\x16' and self._last_focus_id == "input":  # Ctrl+V
                 self.paste_clipboard()
                 return True
@@ -818,6 +831,19 @@ class chatTUI(ChatActionHandlers):
             if self._last_focus_id == "input" and self.input_component.has_active_completion():
                 if key in ('\x1b', '\x1b[A', '\x1b[B', '\t', '\r', '\n'):
                     return self.input_component.handle_input(event)
+
+            # Tab cycles roles, Shift+Tab sandboxes (through the commands, so
+            # their busy checks and messages apply).
+            if key == '\t':
+                self.on_command_submit(next_role_command(self))
+                return True
+            if key == '\x1b[Z':
+                command = next_sandbox_command(self)
+                if command:
+                    self.on_command_submit(command)
+                else:
+                    self.flash_hint("no sandbox defined (/sandbox init)")
+                return True
 
             # ESC while the input is focused (and nothing is being completed)
             # unfocuses the input, moving focus to the history panel. The focus

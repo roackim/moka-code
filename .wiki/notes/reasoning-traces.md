@@ -35,7 +35,7 @@ Provider field names differ and are normalized by the transport adapters:
 | DeepSeek / vLLM / llama.cpp | `delta.reasoning_content` |
 | OpenRouter (and others) | `delta.reasoning` |
 | OpenRouter structured | `delta.reasoning_details[].text` |
-| Ollama native | `message.thinking` |
+| Ollama native | `message.thinking` (llama.cpp-backed proxies: `message.reasoning`) |
 
 `endpoint_openai._extract_reasoning()` reads the OpenAI-compatible aliases;
 `endpoint_ollama` maps `thinking`. If a provider's field is not listed here it

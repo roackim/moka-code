@@ -88,7 +88,12 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   `preserve_reasoning` (bool, any server type, and in an OpenRouter model
   table, which overrides the server) re-sends earlier turns' reasoning;
   absent means true (`Endpoint.preserves_reasoning`, see
-  [reasoning-traces.md](./reasoning-traces.md)). Load errors are shown at startup and on `/reload`/`/config`, and
+  [reasoning-traces.md](./reasoning-traces.md)). `efforts` (string list, any
+  server type; an OpenRouter model table's list overrides) is what `/effort`
+  offers; the chosen level is saved per server/model in `state.toml`
+  (`[effort.<server>]`, `""` for a single-model server) and sent verbatim as
+  `reasoning_effort` (llamacpp/openai), `reasoning.effort` (openrouter) or
+  `think` (ollama, `"none"` → `false`) — `Endpoint.effort_payload`. Load errors are shown at startup and on `/reload`/`/config`, and
   every reload rebuilds the live endpoint if its server table or selection
   changed.
 - **State** (machine-written, disposable): `state.toml` holds `last_server`,

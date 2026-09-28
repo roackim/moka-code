@@ -283,3 +283,12 @@ def test_preserve_reasoning_is_validated(tmp_path):
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
     assert any("preserve_reasoning must be true or false" in e for e in config.load_errors)
     assert not any("unknown key" in e for e in config.load_errors)
+
+
+def test_ollama_native_response_reads_thinking_or_reasoning():
+    """Ollama streams ``thinking``; llama.cpp-backed proxies stream ``reasoning``."""
+    from moka_code.harness.endpoint_ollama import native_response
+
+    for field in ("thinking", "reasoning"):
+        chunk = native_response({"message": {"content": "", field: "hmm"}, "done": False})
+        assert chunk.choices[0].delta.reasoning_content == "hmm"

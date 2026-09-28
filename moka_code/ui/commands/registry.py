@@ -35,7 +35,7 @@ from .core import (
     cmd_stop,
     cmd_terminal,
 )
-from .models import known_model_ids, model_command
+from .models import effort_command, model_command
 from .roles import cmd_role
 from .sandbox import (
     sandbox_base_completions,
@@ -84,8 +84,9 @@ COMMANDS: Dict[str, Command] = {
     "activity":     Command("activity", "Toggle the activity overlay (shell/status output)",
                             handler=cmd_activity),
     "model":        Command("model", "Change the active model (opens a picker)",
-                            handler=model_command,
-                            params=[Param("MODEL", completions=known_model_ids)]),
+                            handler=model_command, picker=True),
+    "effort":       Command("effort", "Set the model's reasoning effort (opens a picker)",
+                            handler=effort_command, picker=True),
     "role":         Command("role", "List roles or switch the active one",
                             handler=cmd_role,
                             params=[Param("NAME", completions=role_name_completions,
@@ -124,7 +125,7 @@ COMMANDS: Dict[str, Command] = {
                                 handler=sandbox_terminal),
                         }),
     "theme":        Command("theme", "Select the color theme (opens a picker)",
-                            handler=theme_command,
+                            handler=theme_command, picker=True,
                             params=[Param("THEME", required=False)]),
 }
 

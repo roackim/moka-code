@@ -320,6 +320,17 @@ the menu for that word); the next menu opens once the user types the space.
 The exception is a folder picked from the `@` menu, which keeps the menu open
 to drill into it.
 
+A `Command(picker=True)` (`/model`, `/theme`, `/effort`) has no inline argument
+menu: typing its name plus a space submits it at once, opening its picker
+(`InputComponent._run_picker_command`). Completion menus sit above the whole
+input box (not the trigger's line), so a multiline draft stays visible.
+
+With no completion menu open, **Tab** cycles roles and **Shift+Tab** cycles the
+project's sandboxes then none; both queue the ordinary `/role` / `/sandbox`
+command (`next_role_command`, `next_sandbox_command`). Terminal focus
+reporting (`?1004`) is on: while the window is unfocused, the input / history
+drop their focus styling (`chatTUI.handle_global_input`).
+
 `KeyboardHandler.on_submit` may return `False` to refuse a submission; the text
 then stays in the input (used when an image cannot be attached).
 
@@ -773,6 +784,21 @@ Prefix the registry key with `_`; `cmd_help` / `get_command_descriptions` skip s
 - `tui/colors.py` — `RGB` class, theme dictionary, hex parsing
 - `tui/layout_utils.py` — `wrap_text()`, `display_width()` (wcwidth-aware for Unicode), `strip_ansi()`
 - `tui/container.py` — explicit layout pass; `Vsplit`/`Hsplit` support fixed, percentage, content, and fill policies, with `Padding`, `Align`, `Stack`/`Overlay`, and `ScrollView`
+
+### Built-in themes (`tui/colors.py`)
+
+`terminal` (ANSI slots: follows the terminal's own palette) plus five RGB
+palettes for dark terminals: `moka`, `nord`, `dracula`, `gruvbox`,
+`tokyo-night` (the earlier set was removed on purpose, 2026-09-28). Palette
+keys: `BACKGROUND DEFAULT MUTED ERROR WARNING SUCCESS PERMISSION TOOL USER
+ASSISTANT FOCUSED` and, for answers, `HEADING EMPHASIS CODE` — the markdown
+styles name them (`"fg": "HEADING"`), so a theme recolors answers too
+(`terminal` keeps pink / gold / light blue). Accents are free per theme; the
+semantic keys are not: `test_builtin_palettes_are_legible_and_coherent` checks
+every RGB palette against its background and black — DEFAULT ≥ 7:1; ERROR,
+WARNING, SUCCESS, HEADING, EMPHASIS, CODE ≥ 4.5:1; MUTED ≥ 3:1 and dimmer than
+DEFAULT; bars/markers ≥ 3:1 — and the hues (ERROR red, WARNING amber, SUCCESS
+green).
 
 ### Theme switching
 

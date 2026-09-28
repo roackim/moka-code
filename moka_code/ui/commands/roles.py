@@ -34,4 +34,14 @@ async def cmd_role(ui: ChatUIProtocol, args: List[str]):
         ui.refresh_status_bar()
 
 
-__all__ = ["cmd_role"]
+def next_role_command(ui: ChatUIProtocol) -> str:
+    """``/role`` command selecting the role after the active one (Tab)."""
+    from moka_code.harness import roles
+
+    names = roles.list_roles()
+    current = getattr(getattr(ui, "agent", None), "role", None)
+    index = names.index(current.name) if current and current.name in names else -1
+    return f"/role {names[(index + 1) % len(names)]}"
+
+
+__all__ = ["cmd_role", "next_role_command"]

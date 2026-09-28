@@ -92,6 +92,9 @@ def refresh_status_bar(app) -> None:
             if model.endswith(suffix):
                 model = model[: -len(suffix)]
                 break
+    effort = getattr(endpoint, "effort", None)
+    if effort and effort in getattr(endpoint, "effort_levels", list)():
+        model = f"{model} · {effort}"
     role = getattr(getattr(agent, "role", None), "name", "agent")
     state = getattr(getattr(agent, "state", None), "name", "IDLE").lower()
 

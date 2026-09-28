@@ -15,8 +15,9 @@ class ANSI:
     SHOW_CURSOR = "\033[?25h"
     ENABLE_MOUSE = "\033[?1000h\033[?1002h\033[?1015h\033[?1006h"
     DISABLE_MOUSE = "\033[?1006l\033[?1015l\033[?1002l\033[?1000l"
-    ENABLE_BRACKETED_PASTE = "\033[?2004h"
-    DISABLE_BRACKETED_PASTE = "\033[?2004l"
+    # Bracketed paste, plus focus reporting (``\x1b[I`` / ``\x1b[O``).
+    ENABLE_BRACKETED_PASTE = "\033[?2004h\033[?1004h"
+    DISABLE_BRACKETED_PASTE = "\033[?1004l\033[?2004l"
     CLEAR_SCREEN = "\033[2J"
     MOVE_HOME = "\033[H"
     RESET = "\033[0m"
@@ -185,6 +186,11 @@ class Terminal:
                         return self._read_bracketed_paste()
                     # If we have a complete known sequence, stop reading.
                     if seq.endswith(('m', 'M', 'A', 'B', 'C', 'D', 'H', 'F', '~')):
+                        break
+                    # Any other CSI final byte (Shift+Tab ``\x1b[Z``, focus
+                    # ``\x1b[I``/``\x1b[O``); ``\x1b[[`` is a Linux-console prefix.
+                    if (len(seq) > 2 and seq[1] == '[' and seq != '\x1b[['
+                            and '@' <= seq[-1] <= '~'):
                         break
                     # If we've waited too long, treat what we have as a bare ESC.
                     if time.monotonic() - start_time > 0.05:

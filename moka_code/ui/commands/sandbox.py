@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from moka_code.ui.tui.msg_types import SysMsg, SysMsgError, SysMsgWarning
 
@@ -203,6 +203,20 @@ async def _build_then_start(ui: ChatUIProtocol, workspace: str, sandbox_id: str)
         entry = project.sandboxes.get(sandbox_id)
         if entry is not None:
             _activate(ui, workspace, entry, sandbox_id)
+
+
+def next_sandbox_command(ui: ChatUIProtocol) -> Optional[str]:
+    """``/sandbox`` command selecting the sandbox after the active one, then
+    none (Shift+Tab). ``None`` when the project defines no sandbox."""
+    from moka_code import projects
+
+    project = projects.load_project(_workspace(ui))
+    if not project.sandboxes:
+        return None
+    cycle = [None, *sorted(project.sandboxes)]
+    index = cycle.index(project.active) if project.active in cycle else 0
+    target = cycle[(index + 1) % len(cycle)]
+    return f"/sandbox start {target}" if target else "/sandbox stop"
 
 
 # --- subcommand handlers ---------------------------------------------------

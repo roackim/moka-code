@@ -20,17 +20,6 @@ from .base import ChatUIProtocol, activate_endpoint
 _DISCOVERY_TIMEOUT = 8.0
 
 
-def known_model_ids() -> List[str]:
-    """Model ids for fuzzy completion, from the cache and server defaults."""
-    ids = set()
-    for models in settings.config.models_by_server.values():
-        ids.update(m.get("id") for m in models if m.get("id"))
-    for cfg in settings.config.servers.values():
-        if cfg.get("model"):
-            ids.add(cfg["model"])
-    return sorted(ids)
-
-
 async def _discover_all() -> List[Tuple[str, "ModelInfo"]]:
     """Discover models live from every configured endpoint.
 
@@ -286,9 +275,56 @@ async def model_use(ui: ChatUIProtocol, args: List[str]):
             f"Could not select model: {exc}", msg_type=SysMsgError(), title="model")
 
 
+_DEFAULT_EFFORT = "default"
+
+
+def _set_effort(ui: ChatUIProtocol, endpoint, effort: Optional[str]) -> None:
+    endpoint.effort = effort
+    settings.config.save_effort(endpoint.name, endpoint.selected_model or "", effort)
+    ui.chat_history_panel.add_message(
+        f"Reasoning effort: {effort or 'server default'}.", msg_type=SysMsg(), title="effort")
+    if hasattr(ui, "refresh_status_bar"):
+        ui.refresh_status_bar()
+
+
+async def effort_command(ui: ChatUIProtocol, args: List[str]):
+    """``/effort`` picks the current model's reasoning effort (``efforts`` in
+    servers.toml); ``/effort <level>`` sets it directly."""
+    endpoint = getattr(ui.agent, "endpoint", None)
+    levels = endpoint.effort_levels() if hasattr(endpoint, "effort_levels") else []
+    if not levels:
+        model = getattr(endpoint, "selected_model", None) or "this model"
+        ui.chat_history_panel.add_message(
+            f"No effort levels for {model}. Add efforts = [\"low\", \"medium\", \"high\"] "
+            "to its server (or model) table with '/config servers'.",
+            msg_type=SysMsgError(), title="effort")
+        return
+
+    choices = [_DEFAULT_EFFORT, *levels]
+    if args:
+        if args[0] not in choices:
+            ui.chat_history_panel.add_message(
+                f"Unknown effort '{args[0]}'. Levels: {', '.join(choices)}.",
+                msg_type=SysMsgError(), title="effort")
+            return
+        _set_effort(ui, endpoint, None if args[0] == _DEFAULT_EFFORT else args[0])
+        return
+
+    current = endpoint.effort if endpoint.effort in levels else _DEFAULT_EFFORT
+    show = getattr(ui, "show_search_modal", None)
+    if show is None:
+        ui.chat_history_panel.add_message(
+            f"Effort: {current}. Levels: {', '.join(choices)}.", msg_type=SysMsg(), title="effort")
+        return
+    show("Effort", choices, footers={current: "active"},
+         on_accept=lambda item: _set_effort(
+             ui, endpoint, None if item == _DEFAULT_EFFORT else item),
+         initial_index=choices.index(current))
+
+
 async def model_command(ui: ChatUIProtocol, args: List[str]):
     """``/model`` opens the picker; ``/model <model>`` selects directly."""
     await model_use(ui, args)
 
 
-__all__ = ["known_model_ids", "model_command", "model_use"]
+__all__ = ["effort_command", "model_command", "model_use"]

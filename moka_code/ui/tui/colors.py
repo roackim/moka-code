@@ -84,6 +84,11 @@ class _theme:
     ASSISTANT: RGB
     FOCUSED: RGB
 
+    # Answer markdown (``markdown_styles`` refer to these by name).
+    HEADING: RGB
+    EMPHASIS: RGB    # **bold**
+    CODE: RGB        # `inline code`
+
     def copy(self) -> "_theme":
         return _theme(**self.__dict__)
     
@@ -104,23 +109,6 @@ class _theme:
             return self.BACKGROUND
         return None
     
-pastel = _theme(
-    name="pastel",
-    BACKGROUND  = RGB("#1E1E1E"),   # Dark gray (VS Code dark background)
-    DEFAULT     = RGB("#D4D4D4"),   # Light gray (readable text)
-    
-    MUTED       = RGB("#808080"),   # Medium gray
-    ERROR       = RGB("#F48771"),   # Soft red
-    WARNING     = RGB("#CCA700"),   # Amber/gold
-    SUCCESS     = RGB("#89D185"),   # Soft green
-    PERMISSION  = RGB("#C586C0"),   # Purple/magenta for permission prompts
-    TOOL        = RGB("#4FC1FF"),   # Tool-call blue
-    
-    USER        = RGB("#4EC9B0"),   # Cyan/teal
-    ASSISTANT   = RGB("#569CD6"),   # Blue
-    FOCUSED     = RGB("#DCDCAA"),   # Yellow-beige
-)
-
 # Terminal-native theme — reuses the user's own terminal color palette.
 # No hardcoded RGB: colors are the standard 8/16 ANSI slots so they
 # automatically match whatever the user has configured in their terminal.
@@ -137,207 +125,71 @@ terminal = _theme(
     USER        = ANSIColor(fg=32),         # green
     ASSISTANT   = ANSIColor(fg=36),         # cyan    (maps to user's cyan)
     FOCUSED     = ANSIColor(fg=33),         # bright yellow
+    HEADING     = RGB("#FF79C6"),           # pink
+    EMPHASIS    = RGB("#FFD700"),           # gold
+    CODE        = RGB("#9CDCFE"),           # light blue
 )
 
 # --- Built-in RGB palettes ------------------------------------------------
+# For dark terminals. Every palette keeps the semantic colors coherent: ERROR
+# red, WARNING amber, SUCCESS green, MUTED dimmer than DEFAULT but legible
+# (contrast is checked in test/test_themes.py against the theme background and
+# black). The accents (USER, TOOL, headings...) are each theme's own.
 
-nord = _theme(
-    name="nord",
-    BACKGROUND  = RGB("#2E3440"),
-    DEFAULT     = RGB("#D8DEE9"),
-    MUTED       = RGB("#4C566A"),
-    ERROR       = RGB("#BF616A"),
-    WARNING     = RGB("#EBCB8B"),
-    SUCCESS     = RGB("#A3BE8C"),
-    PERMISSION  = RGB("#B48EAD"),
-    TOOL        = RGB("#5E81AC"),
-    USER        = RGB("#88C0D0"),
-    ASSISTANT   = RGB("#81A1C1"),
-    FOCUSED     = RGB("#EBCB8B"),
+
+def _palette(name: str, **colors: str) -> _theme:
+    return _theme(name=name, **{key: RGB(value) for key, value in colors.items()})
+
+
+moka = _palette(
+    "moka",  # roasted browns, cream text, honey focus, mint user
+    BACKGROUND="#1C1714", DEFAULT="#EADFD3", MUTED="#8C7B6E",
+    ERROR="#E5705F", WARNING="#E8B45A", SUCCESS="#9CC27A",
+    PERMISSION="#C98BB9", TOOL="#8DB4C8", USER="#8FC1B5", ASSISTANT="#B89478",
+    FOCUSED="#F5CB7A", HEADING="#E8956A", EMPHASIS="#F5CB7A", CODE="#8DB4C8",
 )
 
-dracula = _theme(
-    name="dracula",
-    BACKGROUND  = RGB("#282A36"),
-    DEFAULT     = RGB("#F8F8F2"),
-    MUTED       = RGB("#6272A4"),
-    ERROR       = RGB("#FF5555"),
-    WARNING     = RGB("#F1FA8C"),
-    SUCCESS     = RGB("#50FA7B"),
-    PERMISSION  = RGB("#FF79C6"),
-    TOOL        = RGB("#8BE9FD"),
-    USER        = RGB("#8BE9FD"),
-    ASSISTANT   = RGB("#BD93F9"),
-    FOCUSED     = RGB("#F1FA8C"),
+nord = _palette(
+    "nord",
+    BACKGROUND="#2E3440", DEFAULT="#D8DEE9", MUTED="#7B88A1",
+    ERROR="#E0848C", WARNING="#EBCB8B", SUCCESS="#A3BE8C",
+    PERMISSION="#B48EAD", TOOL="#81A1C1", USER="#88C0D0", ASSISTANT="#8FBCBB",
+    FOCUSED="#ECEFF4", HEADING="#88C0D0", EMPHASIS="#EBCB8B", CODE="#8FBCBB",
 )
 
-gruvbox = _theme(
-    name="gruvbox",
-    BACKGROUND  = RGB("#282828"),
-    DEFAULT     = RGB("#EBDBB2"),
-    MUTED       = RGB("#928374"),
-    ERROR       = RGB("#FB4934"),
-    WARNING     = RGB("#FABD2F"),
-    SUCCESS     = RGB("#B8BB26"),
-    PERMISSION  = RGB("#D3869B"),
-    TOOL        = RGB("#458588"),
-    USER        = RGB("#8EC07C"),
-    ASSISTANT   = RGB("#83A598"),
-    FOCUSED     = RGB("#FABD2F"),
+dracula = _palette(
+    "dracula",
+    BACKGROUND="#282A36", DEFAULT="#F8F8F2", MUTED="#7C86B0",
+    ERROR="#FF6E6E", WARNING="#F1FA8C", SUCCESS="#50FA7B",
+    PERMISSION="#FF79C6", TOOL="#8BE9FD", USER="#BD93F9", ASSISTANT="#8BE9FD",
+    FOCUSED="#FFB86C", HEADING="#FF79C6", EMPHASIS="#FFB86C", CODE="#8BE9FD",
 )
 
-solarized = _theme(
-    name="solarized",
-    BACKGROUND  = RGB("#002B36"),
-    DEFAULT     = RGB("#839496"),
-    MUTED       = RGB("#586E75"),
-    ERROR       = RGB("#DC322F"),
-    WARNING     = RGB("#B58900"),
-    SUCCESS     = RGB("#859900"),
-    PERMISSION  = RGB("#D33682"),
-    TOOL        = RGB("#6C71C4"),
-    USER        = RGB("#2AA198"),
-    ASSISTANT   = RGB("#268BD2"),
-    FOCUSED     = RGB("#B58900"),
+gruvbox = _palette(
+    "gruvbox",
+    BACKGROUND="#282828", DEFAULT="#EBDBB2", MUTED="#928374",
+    ERROR="#FC5D48", WARNING="#FABD2F", SUCCESS="#A9C26A",
+    PERMISSION="#D3869B", TOOL="#83A598", USER="#FE8019", ASSISTANT="#8EC07C",
+    FOCUSED="#FABD2F", HEADING="#FE8019", EMPHASIS="#FABD2F", CODE="#8EC07C",
 )
 
-one_dark = _theme(
-    name="one-dark",
-    BACKGROUND  = RGB("#282C34"),
-    DEFAULT     = RGB("#ABB2BF"),
-    MUTED       = RGB("#5C6370"),
-    ERROR       = RGB("#E06C75"),
-    WARNING     = RGB("#E5C07B"),
-    SUCCESS     = RGB("#98C379"),
-    PERMISSION  = RGB("#C678DD"),
-    TOOL        = RGB("#528BFF"),
-    USER        = RGB("#56B6C2"),
-    ASSISTANT   = RGB("#61AFEF"),
-    FOCUSED     = RGB("#E5C07B"),
-)
-
-catppuccin = _theme(
-    name="catppuccin",
-    BACKGROUND  = RGB("#1E1E2E"),
-    DEFAULT     = RGB("#CDD6F4"),
-    MUTED       = RGB("#6C7086"),
-    ERROR       = RGB("#F38BA8"),
-    WARNING     = RGB("#F9E2AF"),
-    SUCCESS     = RGB("#A6E3A1"),
-    PERMISSION  = RGB("#F5C2E7"),
-    TOOL        = RGB("#74C7EC"),
-    USER        = RGB("#94E2D5"),
-    ASSISTANT   = RGB("#89B4FA"),
-    FOCUSED     = RGB("#F9E2AF"),
-)
-
-tokyo_night = _theme(
-    name="tokyo-night",
-    BACKGROUND  = RGB("#1A1B26"),
-    DEFAULT     = RGB("#C0CAF5"),
-    MUTED       = RGB("#565F89"),
-    ERROR       = RGB("#F7768E"),
-    WARNING     = RGB("#E0AF68"),
-    SUCCESS     = RGB("#9ECE6A"),
-    PERMISSION  = RGB("#BB9AF7"),
-    TOOL        = RGB("#2AC3DE"),
-    USER        = RGB("#7DCFFF"),
-    ASSISTANT   = RGB("#7AA2F7"),
-    FOCUSED     = RGB("#E0AF68"),
-)
-
-rose_pine = _theme(
-    name="rose-pine",
-    BACKGROUND  = RGB("#191724"),
-    DEFAULT     = RGB("#E0DEF4"),
-    MUTED       = RGB("#6E6A86"),
-    ERROR       = RGB("#EB6F92"),
-    WARNING     = RGB("#F6C177"),
-    SUCCESS     = RGB("#9CCFD8"),
-    PERMISSION  = RGB("#C4A7E7"),
-    TOOL        = RGB("#908CAA"),
-    USER        = RGB("#EBBCBA"),
-    ASSISTANT   = RGB("#31748F"),
-    FOCUSED     = RGB("#F6C177"),
-)
-
-everforest = _theme(
-    name="everforest",
-    BACKGROUND  = RGB("#2D353B"),
-    DEFAULT     = RGB("#D3C6AA"),
-    MUTED       = RGB("#859289"),
-    ERROR       = RGB("#E67E80"),
-    WARNING     = RGB("#DBBC7F"),
-    SUCCESS     = RGB("#A7C080"),
-    PERMISSION  = RGB("#D699B6"),
-    TOOL        = RGB("#7FBBB3"),
-    USER        = RGB("#83C092"),
-    ASSISTANT   = RGB("#7FBBB3"),
-    FOCUSED     = RGB("#DBBC7F"),
-)
-
-monokai = _theme(
-    name="monokai",
-    BACKGROUND  = RGB("#272822"),
-    DEFAULT     = RGB("#F8F8F2"),
-    MUTED       = RGB("#75715E"),
-    ERROR       = RGB("#F92672"),
-    WARNING     = RGB("#E6DB74"),
-    SUCCESS     = RGB("#A6E22E"),
-    PERMISSION  = RGB("#AE81FF"),
-    TOOL        = RGB("#66D9EF"),
-    USER        = RGB("#66D9EF"),
-    ASSISTANT   = RGB("#FD971F"),
-    FOCUSED     = RGB("#E6DB74"),
-)
-
-ayu_dark = _theme(
-    name="ayu-dark",
-    BACKGROUND  = RGB("#0B0E14"),
-    DEFAULT     = RGB("#BFBDB6"),
-    MUTED       = RGB("#565B66"),
-    ERROR       = RGB("#F07178"),
-    WARNING     = RGB("#FFB454"),
-    SUCCESS     = RGB("#AAD94C"),
-    PERMISSION  = RGB("#D2A6FF"),
-    TOOL        = RGB("#39BAE6"),
-    USER        = RGB("#95E6CB"),
-    ASSISTANT   = RGB("#59C2FF"),
-    FOCUSED     = RGB("#FFB454"),
-)
-
-kanagawa = _theme(
-    name="kanagawa",
-    BACKGROUND  = RGB("#1F1F28"),
-    DEFAULT     = RGB("#DCD7BA"),
-    MUTED       = RGB("#727169"),
-    ERROR       = RGB("#E82424"),
-    WARNING     = RGB("#C0A36E"),
-    SUCCESS     = RGB("#76946A"),
-    PERMISSION  = RGB("#957FB8"),
-    TOOL        = RGB("#7FB4CA"),
-    USER        = RGB("#7AA89F"),
-    ASSISTANT   = RGB("#7E9CD8"),
-    FOCUSED     = RGB("#C0A36E"),
+tokyo_night = _palette(
+    "tokyo-night",
+    BACKGROUND="#1A1B26", DEFAULT="#C0CAF5", MUTED="#737AA2",
+    ERROR="#F7768E", WARNING="#E0AF68", SUCCESS="#9ECE6A",
+    PERMISSION="#BB9AF7", TOOL="#7DCFFF", USER="#7AA2F7", ASSISTANT="#2AC3DE",
+    FOCUSED="#FF9E64", HEADING="#BB9AF7", EMPHASIS="#FF9E64", CODE="#7DCFFF",
 )
 
 
 #: Built-in themes, always available (and overridable via ``themes.toml``).
 BUILTIN_THEMES = {
     "terminal":     terminal,
-    "pastel":       pastel,
+    "moka":         moka,
     "nord":         nord,
     "dracula":      dracula,
     "gruvbox":      gruvbox,
-    "solarized":    solarized,
-    "one-dark":     one_dark,
-    "catppuccin":   catppuccin,
     "tokyo-night":  tokyo_night,
-    "rose-pine":    rose_pine,
-    "everforest":   everforest,
-    "monokai":      monokai,
-    "ayu-dark":     ayu_dark,
-    "kanagawa":     kanagawa,
 }
 
 theme: _theme = terminal.copy()
@@ -392,6 +244,7 @@ def theme_names() -> list:
 PALETTE_FIELDS = (
     "BACKGROUND", "DEFAULT", "MUTED", "ERROR", "WARNING",
     "SUCCESS", "PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED",
+    "HEADING", "EMPHASIS", "CODE",
 )
 
 

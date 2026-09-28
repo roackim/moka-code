@@ -7,6 +7,8 @@ import path.
 """
 
 from .base import ChatUIProtocol, Command, Param
+from .roles import next_role_command
+from .sandbox import next_sandbox_command
 from .registry import (
     COMMANDS,
     get_command_descriptions,
@@ -26,4 +28,6 @@ __all__ = [
     "get_subcommand_descriptions",
     "get_subcommand_list",
     "handle_command",
+    "next_role_command",
+    "next_sandbox_command",
 ]

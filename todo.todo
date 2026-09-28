@@ -1,3 +1,13 @@
+[x] swap roles using TAB ?
+[x] swap sandbox using CTRL + TAB ?
+[x] /model should show ALL THE AVAILABLE MODELS like when /model [ENTER]
+[x] we broke the thinking from llamacpp and qwen 27B. shows 'waiting' instead
+[x] check if window has focus, otherwise, well, unfocus things, at the very least the input fields
+[x] when input field is multiline, i think the selector should be on top of input field, not one line above the trigger
+[x] model reasonning effort switch !important /effort (only for models / servers that supports it)
+[ ] /edit @file -> open $EDITOR ? like for /config servers
+[ ] /diffview @file -? open $EDITOR of a diff ? or just open a moka panel with the diffs ? kinda like
+
 [x] /terminal should be able to run in (current default) and out of the sandbox
     -> add a param ?
     /sandbox terminal ?

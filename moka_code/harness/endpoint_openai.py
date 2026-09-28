@@ -217,6 +217,7 @@ async def create_completion(
             provider_spec = endpoint._provider_spec(model_name)
             if provider_spec:
                 payload["provider"] = provider_spec
+        payload.update(endpoint.effort_payload())
 
         if logger.isEnabledFor(logging.DEBUG):
             msg_summary = []

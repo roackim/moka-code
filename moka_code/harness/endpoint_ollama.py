@@ -84,6 +84,7 @@ async def create_completion(
     }
     if tools:
         payload["tools"] = tools
+    payload.update(endpoint.effort_payload())
 
     async with httpx.AsyncClient() as client:
         async with client.stream(
@@ -107,7 +108,8 @@ def native_response(data: Dict[str, Any]) -> Any:
     """Adapt one native Ollama response to the OpenAI chunk shape."""
     message = data.get("message") or {}
     content = message.get("content")
-    reasoning = message.get("thinking")
+    # Ollama streams ``thinking``; llama.cpp-backed proxies may use ``reasoning``.
+    reasoning = message.get("thinking") or message.get("reasoning")
     tool_calls = []
     for index, call in enumerate(message.get("tool_calls") or []):
         function = call.get("function") or {}

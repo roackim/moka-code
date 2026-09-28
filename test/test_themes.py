@@ -1,3 +1,4 @@
+import pytest
 """Tests for the /theme command and theme completion."""
 
 import asyncio
@@ -35,9 +36,7 @@ class _UI:
 def test_theme_names_include_builtins():
     names = colors.theme_names()
 
-    assert {"terminal", "pastel", "nord", "dracula", "gruvbox", "solarized",
-            "one-dark", "catppuccin", "tokyo-night", "rose-pine", "everforest",
-            "monokai", "ayu-dark", "kanagawa"} <= set(names)
+    assert {"terminal", "moka", "nord", "dracula", "gruvbox", "tokyo-night"} <= set(names)
     assert "default" not in names
 
 
@@ -71,11 +70,11 @@ def test_theme_command_selects_and_persists(monkeypatch, tmp_path):
     original_active = settings.config.active_theme
     try:
         ui = _UI()
-        asyncio.run(theme_command(ui, ["pastel"]))
+        asyncio.run(theme_command(ui, ["moka"]))
 
-        assert colors.theme.name == "pastel"
-        assert settings.config.active_theme == "pastel"
-        assert any("Theme: pastel" in m for m in ui.chat_history_panel.messages)
+        assert colors.theme.name == "moka"
+        assert settings.config.active_theme == "moka"
+        assert any("Theme: moka" in m for m in ui.chat_history_panel.messages)
     finally:
         settings.config.active_theme = original_active
         colors.set_theme(original_theme)
@@ -111,7 +110,7 @@ def test_refresh_theme_recolors_existing_message():
     try:
         colors.set_theme("terminal")
         message = Message("hi", msg_type=AssistantMsg())
-        colors.set_theme("pastel")
+        colors.set_theme("moka")
         message.refresh_theme()
         assert message.frame_color == colors.theme.ASSISTANT
         assert message.box.fg == colors.theme.ASSISTANT
@@ -128,7 +127,7 @@ def test_refresh_theme_forces_full_redraw():
     ui.compositor = type("_C", (), {"request_full_redraw": lambda self: calls.append(True)})()
     original = colors.theme.name
     try:
-        colors.set_theme("pastel")
+        colors.set_theme("moka")
         ui.refresh_theme()
     finally:
         colors.set_theme(original)
@@ -144,7 +143,7 @@ def test_modal_refresh_theme():
     original = colors.theme.name
     try:
         colors.set_theme("terminal")
-        colors.set_theme("pastel")
+        colors.set_theme("moka")
         popup.refresh_theme()
         menu.apply_theme()
         assert popup.frame_color == colors.theme.DEFAULT
@@ -166,7 +165,7 @@ def test_completion_menu_refresh_theme():
     })
     original = colors.theme.name
     try:
-        colors.set_theme("pastel")
+        colors.set_theme("moka")
         comp.refresh_theme()
         assert comp.menu.frame_color == colors.theme.USER
         assert comp.menu.bg == colors.theme.get_bg()
@@ -197,7 +196,7 @@ def test_refresh_theme_recolors_status_server_model():
 
     original = colors.theme.name
     try:
-        colors.set_theme("pastel")
+        colors.set_theme("moka")
         ui.refresh_theme()
         assert ui.status_bar.field_colors["endpoint_model"] == colors.theme.SUCCESS
 
@@ -290,7 +289,7 @@ def test_theme_preview_renders_palette_swatches():
 
     original = colors.theme.name
     try:
-        colors.set_theme("pastel")
+        colors.set_theme("moka")
         preview = ThemePreview()
         preview.is_visible = True
         buffer = Buffer(60, 24)
@@ -304,3 +303,49 @@ def test_theme_preview_renders_palette_swatches():
 
 
 
+
+
+# ---------------------------------------------------------------------------
+# Built-in palettes stay coherent: semantic colors keep their meaning and
+# everything stays legible, whatever the accents.
+# ---------------------------------------------------------------------------
+
+def _luminance(color):
+    def channel(c):
+        c /= 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    return 0.2126 * channel(color.r) + 0.7152 * channel(color.g) + 0.0722 * channel(color.b)
+
+
+def _contrast(a, b):
+    high, low = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _hue(color):
+    import colorsys
+    return colorsys.rgb_to_hls(color.r / 255, color.g / 255, color.b / 255)[0] * 360
+
+
+RGB_THEMES = [t for t in colors.BUILTIN_THEMES.values() if hasattr(t.DEFAULT, "r")]
+
+
+@pytest.mark.parametrize("palette", RGB_THEMES, ids=lambda t: t.name)
+def test_builtin_palettes_are_legible_and_coherent(palette):
+    # Text is drawn on the theme background, or on the terminal's (black).
+    backgrounds = (palette.BACKGROUND, colors.RGB("#000000"))
+
+    def worst(color):
+        return min(_contrast(color, bg) for bg in backgrounds)
+
+    assert worst(palette.DEFAULT) >= 7                       # body text
+    for key in ("ERROR", "WARNING", "SUCCESS", "HEADING", "EMPHASIS", "CODE"):
+        assert worst(getattr(palette, key)) >= 4.5, key      # readable text
+    assert 3 <= worst(palette.MUTED) < worst(palette.DEFAULT)   # muted, not gone
+    for key in ("PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED"):
+        assert worst(getattr(palette, key)) >= 3, key        # bars and markers
+
+    error, warning, success = _hue(palette.ERROR), _hue(palette.WARNING), _hue(palette.SUCCESS)
+    assert error >= 340 or error <= 20                        # red
+    assert 25 <= warning <= 66                                # amber / yellow
+    assert 70 <= success <= 170                               # green

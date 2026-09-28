@@ -203,6 +203,7 @@ class Endpoint:
         providers: Optional[list[str]] = None,
         models: Optional[dict[str, dict[str, Any]]] = None,
         preserve_reasoning: bool = True,
+        efforts: Optional[list[str]] = None,
     ):
         self.name = name
         self.type: ServerType = type
@@ -219,6 +220,10 @@ class Endpoint:
         self.models = {model_id: dict(entry) for model_id, entry in (models or {}).items()}
         # Re-send earlier turns' reasoning (a model table may override it).
         self.preserve_reasoning = preserve_reasoning
+        # Reasoning effort levels /effort offers (a model table may override
+        # them) and the chosen one, sent in this server's own field.
+        self.efforts = list(efforts or [])
+        self.effort: Optional[str] = None
 
         # .local hosts are rewritten to a routable IP. Resolution can block for
         # seconds on an offline mDNS host, so it is kicked off in the background
@@ -264,6 +269,7 @@ class Endpoint:
             providers=data.get("providers"),
             models=data.get("models"),
             preserve_reasoning=data.get("preserve_reasoning", True),
+            efforts=data.get("efforts"),
         )
 
     @property
@@ -538,15 +544,36 @@ class Endpoint:
                 return entry
         return None
 
+    def _current_entry(self) -> Optional[dict]:
+        model_name = self._cached_model_name or self._selected_model
+        return self._model_entry(model_name) if model_name else None
+
     def preserves_reasoning(self) -> bool:
         """Whether earlier turns' reasoning is re-sent to the current model:
         its model table's ``preserve_reasoning``, else the server's (default
         true)."""
-        model_name = self._cached_model_name or self._selected_model
-        entry = self._model_entry(model_name) if model_name else None
+        entry = self._current_entry()
         if entry is not None and "preserve_reasoning" in entry:
             return entry["preserve_reasoning"]
         return self.preserve_reasoning
+
+    def effort_levels(self) -> list[str]:
+        """Effort levels for the current model: its model table's ``efforts``,
+        else the server's. Empty means the model has no effort switch."""
+        entry = self._current_entry()
+        if entry is not None and "efforts" in entry:
+            return list(entry["efforts"])
+        return list(self.efforts)
+
+    def effort_payload(self) -> dict[str, Any]:
+        """The chosen effort in this server's request field (``{}`` if none)."""
+        if not self.effort or self.effort not in self.effort_levels():
+            return {}
+        if self.type == "openrouter":
+            return {"reasoning": {"effort": self.effort}}
+        if self.type == "ollama":
+            return {"think": False if self.effort == "none" else self.effort}
+        return {"reasoning_effort": self.effort}
 
     def _provider_spec(self, model_name: str) -> Optional[dict]:
         """Build the OpenRouter ``provider`` payload for a model.
@@ -605,6 +632,7 @@ def get_endpoint(name: str) -> Optional[Endpoint]:
     if selected is not None:
         endpoint._selected_model = selected
     endpoint.source = (dict(data), selected)
+    endpoint.effort = settings.config.get_effort(name, selected or "")
     for model in settings.config.models_by_server.get(name, []):
         ctx = model.get("context_window")
         if model.get("id") and isinstance(ctx, int) and ctx > 0:

@@ -199,6 +199,8 @@ class InputComponent(Component):
         if hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'mark_changed'):
             self.parent.mark_changed()
         self._notify_changed()
+        if self._run_picker_command():
+            return
 
         providers = self._completion_providers()
         for provider in providers:
@@ -210,6 +212,22 @@ class InputComponent(Component):
                         other.hide()
                 self._position_menu(provider)
                 return
+
+    def _run_picker_command(self) -> bool:
+        """``/model `` (a picker command, then a space) submits ``/model``,
+        opening its picker instead of an inline argument menu."""
+        text = self.buffer.text
+        if not (text.startswith('/') and text.endswith(' ') and self.on_submit):
+            return False
+        command = (self._command_registry or {}).get(text[1:-1])
+        if not getattr(command, "picker", False):
+            return False
+        for provider in self._completion_providers():
+            provider.hide()
+        self.buffer.clear()
+        self.scroll_manager.reset()
+        self.on_submit(text.rstrip())
+        return True
 
     def _completion_providers(self):
         """Return the configured completion providers in priority order."""
@@ -243,18 +261,17 @@ class InputComponent(Component):
     def _position_menu_at(self, menu, trigger_pos: int):
         """Position menu at specific text position (shared logic)."""
         # Calculate screen position
-        trigger_row, trigger_col = self.coord_mapper.get_cursor_coords(
+        _, trigger_col = self.coord_mapper.get_cursor_coords(
             self.buffer.text, trigger_pos
         )
-        
-        scroll_y = self.scroll_manager.scroll_y
-        
-        # Position menu above trigger
+
         visible_count = min(len(menu.items), menu.max_height - 2)
         menu_height = visible_count + 2
 
+        # Horizontally at the trigger; vertically above the whole input box
+        # (not the trigger's line), so a multiline input is never covered.
         trigger_x = self.x + trigger_col - 2
-        trigger_y = self.y + trigger_row - scroll_y
+        trigger_y = self.y
         compositor = getattr(self, "compositor_ref", None)
         screen_width = getattr(compositor, "width", self.x + self.width)
         screen_height = getattr(compositor, "height", self.y + self.height)

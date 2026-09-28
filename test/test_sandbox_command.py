@@ -337,3 +337,34 @@ def test_stop_deactivates(monkeypatch, tmp_path):
     _run(ui, ["stop"])
     assert ui.agent.specs[-1] is None
     assert projects.load_project(workspace).active is None
+
+
+def test_next_sandbox_command_cycles_through_none(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from moka_code.ui.commands import next_sandbox_command
+
+    ui = _UI(tmp_path)
+    project = SimpleNamespace(sandboxes={"b": object(), "a": object()}, active=None)
+    monkeypatch.setattr(projects, "load_project", lambda *_a, **_k: project)
+
+    assert next_sandbox_command(ui) == "/sandbox start a"
+    project.active = "a"
+    assert next_sandbox_command(ui) == "/sandbox start b"
+    project.active = "b"
+    assert next_sandbox_command(ui) == "/sandbox stop"
+
+    project.sandboxes = {}
+    project.active = None
+    assert next_sandbox_command(ui) is None
+
+
+def test_next_role_command_wraps(monkeypatch):
+    from types import SimpleNamespace
+    from moka_code.harness import roles
+    from moka_code.ui.commands import next_role_command
+
+    monkeypatch.setattr(roles, "list_roles", lambda: ["agent", "chat", "review"])
+    ui = SimpleNamespace(agent=SimpleNamespace(role=SimpleNamespace(name="chat")))
+    assert next_role_command(ui) == "/role review"
+    ui.agent.role.name = "review"
+    assert next_role_command(ui) == "/role agent"
