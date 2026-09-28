@@ -2,9 +2,9 @@
 
 from types import SimpleNamespace
 
-from moka_chat.harness.harness import Harness
-from moka_chat.harness.usage import normalize_usage
-from moka_chat.ui.status_presenter import _format_cost
+from moka_code.harness.harness import Harness
+from moka_code.harness.usage import normalize_usage
+from moka_code.ui.status_presenter import _format_cost
 
 
 def test_usage_reads_the_reported_cost():

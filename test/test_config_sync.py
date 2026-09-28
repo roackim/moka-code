@@ -2,8 +2,8 @@
 
 import pytest
 
-from moka_chat import settings
-from moka_chat.settings import Config
+from moka_code import settings
+from moka_code.settings import Config
 
 
 SPEC_TEMPLATES = {

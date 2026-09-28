@@ -4,10 +4,10 @@ A drag leaves a selection; ``c`` copies it; moving focus cancels it."""
 
 import pytest
 
-from moka_chat.ui.chat_history_panel import ChatHistoryPanel
-from moka_chat.ui.tui.buffer import Buffer
-from moka_chat.ui.tui.events import MouseEvent
-from moka_chat.ui.tui.msg_types import AssistantMsg, UserMsg
+from moka_code.ui.chat_history_panel import ChatHistoryPanel
+from moka_code.ui.tui.buffer import Buffer
+from moka_code.ui.tui.events import MouseEvent
+from moka_code.ui.tui.msg_types import AssistantMsg, UserMsg
 
 W, H = 60, 20
 
@@ -144,10 +144,10 @@ def test_wide_characters_copy_as_displayed(copied):
 
 
 def test_release_confirms_the_copy(monkeypatch):
-    from moka_chat.ui.app import chatTUI
+    from moka_code.ui.app import chatTUI
     from conftest import StubAgent
 
-    monkeypatch.setattr("moka_chat.ui.chat_action_handlers.copy_to_clipboard", lambda text: "xclip")
+    monkeypatch.setattr("moka_code.ui.chat_action_handlers.copy_to_clipboard", lambda text: "xclip")
     ui = chatTUI(StubAgent())
     panel = ui.chat_history_panel
     panel.set_layout(0, 0, W, H)

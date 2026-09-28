@@ -8,8 +8,8 @@ Tests live in `test/`. Run with pytest from the project root.
 
 ```bash
 .pixi/envs/default/bin/python -m pytest test/ -q          # full suite
-.pixi/envs/default/bin/python -m compileall -q moka_chat
-.pixi/envs/default/bin/python -m vulture moka_chat --min-confidence 80
+.pixi/envs/default/bin/python -m compileall -q moka_code
+.pixi/envs/default/bin/python -m vulture moka_code --min-confidence 80
 .pixi/envs/default/bin/python -m pytest test/test_core_ui_boundary.py -q      # R9 guard
 .pixi/envs/default/bin/python -m pytest test/test_command_import_graph.py -q  # command graph
 ```

@@ -8,9 +8,9 @@ generation; the worker keeps serving the queue.
 
 import asyncio
 
-from moka_chat import settings
-from moka_chat.harness import events
-from moka_chat.ui.app import chatTUI
+from moka_code import settings
+from moka_code.harness import events
+from moka_code.ui.app import chatTUI
 
 from conftest import StubAgent
 

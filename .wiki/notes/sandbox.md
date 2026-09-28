@@ -22,7 +22,7 @@ The isolation is the runtime's, and the user names the backend explicitly. See
 The harness only knows the `ToolTransport` seam, so the tool registry and
 schemas are identical in all modes.
 
-## The worker (`moka_chat/worker.py`)
+## The worker (`moka_code/worker.py`)
 
 A **stdlib-only** module that is both the host's source of tool bodies and the
 container entrypoint (`python3 /opt/worker.py`, run as a script so the package
@@ -50,7 +50,7 @@ time).
   handler against a `MinimalToolset`; `SandboxTransport` (in `sandbox.py`) sends
   the request over JSONL. `RegisteredTool.execute(on_output=..., **args)`
   delegates to the transport.
-- `moka_chat/sandbox.py` owns the launcher and client:
+- `moka_code/sandbox.py` owns the launcher and client:
   - `ContainerSpec` (runtime/image/network/timeout/run_args/dockerfile) and
     `build_argv()`;
   - `SandboxProcess` — the process + JSONL client: lazy start, id-correlated
@@ -90,7 +90,7 @@ out-of-tree interpreter it binds that prefix. Worker stderr is surfaced in the
 failure message (and to the debug stream), so a bad image or missing interpreter
 is diagnosable.
 
-## Project store & selection (`moka_chat/projects.py`)
+## Project store & selection (`moka_code/projects.py`)
 
 Sandboxes are **per project**, stored in the user config at
 `~/.config/moka/projects/<name>.toml` (`<name>` = workspace directory
@@ -136,6 +136,6 @@ event keeps the full output for the UI. See [tools-and-permissions.md](./tools-a
 
 ## Key files
 
-`moka_chat/worker.py` · `moka_chat/sandbox.py` · `moka_chat/projects.py` ·
-`moka_chat/harness/tools.py` · `moka_chat/harness/harness.py` ·
-`moka_chat/harness/elision.py` · `moka_chat/ui/commands/sandbox.py`.
+`moka_code/worker.py` · `moka_code/sandbox.py` · `moka_code/projects.py` ·
+`moka_code/harness/tools.py` · `moka_code/harness/harness.py` ·
+`moka_code/harness/elision.py` · `moka_code/ui/commands/sandbox.py`.

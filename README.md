@@ -1,274 +1,121 @@
-# moka
+# moka-code
 
-**A terminal AI assistant for local and cloud LLMs** — interactive TUI chat with tool use, file access, and sandboxed command execution.
+A terminal coding assistant for local and cloud models. Chat with a model that
+can read and edit your files and run commands — with your approval, optionally
+inside a sandbox.
 
-**English** · [Français](README.fr.md) · [Deutsch](README.de.md)
-
----
-
-## Requirements
-
-- Python ≥ 3.10
-- A running LLM endpoint: [llama.cpp](https://github.com/ggerganov/llama.cpp), [Ollama](https://ollama.com) locally, or an [OpenRouter](https://openrouter.ai) API key for cloud models
+![moka in a terminal](docs/screenshot.png)
 
 ---
 
-## Installation
+## Install
+
+You need Python 3.10+ and a model: a local [llama.cpp](https://github.com/ggml-org/llama.cpp)
+or [Ollama](https://ollama.com) server, or an [OpenRouter](https://openrouter.ai) API key.
 
 ```bash
-pipx install git+https://github.com/yourusername/moka.git
-```
-
-Or from a local clone:
-
-```bash
-pipx install .
-```
-
-Then run:
-
-```bash
+pipx install git+https://github.com/roackim/moka-code.git
 moka
 ```
 
----
-
-## Getting Started
-
-On first launch, moka starts with no server configured. Servers live in
-`~/.config/moka/servers.toml`; open it with `/config servers` and add a table:
-
-**Local llama.cpp server:**
-```toml
-[servers.local]
-type = "llamacpp"
-base_url = "http://localhost:8080/v1"
-```
-
-**Ollama (local models):**
-```toml
-[servers.ollama]
-type = "ollama"
-base_url = "http://localhost:11434/v1"
-```
-
-**OpenRouter (cloud models):**
-```bash
-export OPENROUTER_API_KEY=sk-or-...
-```
-```toml
-[servers.openrouter]
-type = "openrouter"
-api_key_env = "OPENROUTER_API_KEY"
-providers = ["anthropic"]            # optional: only these hosts, in this order
-
-# One table per enabled model; its own providers replace the default.
-[servers.openrouter.models."anthropic/claude-3.5-sonnet"]
-```
-
-Save the file, and `/config` reloads it automatically. Then open the model
-picker with `/model` (type to filter) or select directly with
-`/model <id>` / `/model <server>:<id>`. Models are discovered live from the
-configured servers; selecting one switches to the server that serves it.
+Run `moka` from the project folder you want to work on.
 
 ---
 
-## Commands
+## First start
 
-| Command | Description |
-|---------|-------------|
-| `/help` | List all available commands |
-| `/config [section]` | Edit a config section (`ui`, `context`, `debug`, `styles`, `servers`, `theme`) and reload |
-| `/edit <file>` | Open a file in `$EDITOR` |
-| `/terminal` | Open a shell on the host (`/sandbox terminal` for one inside the active sandbox); `exit` returns — the conversation keeps running meanwhile |
-| `/reload` | Reload config files and validate `roles/` from disk |
-| `/model` | Open the searchable model picker (type to filter), or select with `/model <id>` |
-| `/role` | List roles or switch the active one (`/role <name>`) |
-| `/theme` | Pick a color theme (opens a picker) |
-| `/compact` | Summarize conversation history to free context space |
-| `/import <file>` | Import conversation history from a JSON file |
-| `/export <file>` | Export conversation history to a JSON file |
-| `/clear` | Clear the conversation history |
-| `/stop` | Stop the current generation |
-| `/activity` | Toggle the activity overlay (shell/status output) |
-| `/exit` | Quit the application |
+moka starts with no model configured. Everything is set up with **`/config`**,
+which opens a config file in your `$EDITOR` and applies it when you close it.
 
-### Server Management
+1. Type **`/config servers`**. The file lists commented examples; uncomment one:
 
-Servers are defined in `servers.toml`; edit them with `/config servers` and the
-config reloads when the editor exits. `/model` lists what each server offers.
+   ```toml
+   # llama.cpp
+   [servers.local]
+   type = "llamacpp"
+   base_url = "http://localhost:8080/v1"
 
-Examples (`servers.toml`):
-```toml
-[servers.local]
-type = "llamacpp"
-base_url = "http://localhost:8080/v1"
+   # Ollama
+   [servers.ollama]
+   type = "ollama"
+   base_url = "http://localhost:11434/v1"
 
-[servers.ds]
-type = "openrouter"
-api_key_env = "OPENROUTER_API_KEY"
+   # OpenRouter — export OPENROUTER_API_KEY=sk-or-... before starting moka
+   [servers.openrouter]
+   type = "openrouter"
+   base_url = "https://openrouter.ai/api/v1"
+   api_key_env = "OPENROUTER_API_KEY"
 
-[servers.ds.models."deepseek/deepseek-v4-flash"]
-providers = ["deepseek", "fireworks"]
-```
-Then:
-```
-/model
-/model llama3.1:8b
-```
+   [servers.openrouter.models."deepseek/deepseek-v4.1-flash"]  # one table per model
+   ```
+
+2. Save and close the editor.
+3. Type **`/model`** and pick a model.
+
+That's it — type a message and press Enter.
 
 ---
 
-## Using the Interface
+## Features
 
-An empty conversation shows the moka banner (hide it with `show_banner = false`
-in `ui.toml`).
-
-### Sending messages
-
-- **Enter** — send message
-- **Alt+Enter** or **Ctrl+Enter** — insert a newline (multi-line input)
-- **Ctrl+W** / **Ctrl+Backspace** — delete word backward
-- **Ctrl+Left / Right** — move cursor by word
-- **Ctrl+V** — paste the clipboard: text is inserted like a terminal paste, an
-  image is inserted as `[image #N]` and attached when you send (needs
-  `wl-paste` or `xclip`; over SSH this reads the *remote* clipboard, so use
-  `@path` there)
-
-### Images
-
-A message attaches the images it mentions: pasted `[image #N]` markers and
-`@path` mentions of `.png`/`.jpg`/`.jpeg`/`.gif`/`.webp` files (quote paths
-with spaces: `@'my shot.png'`). Each shows as `▣ image #N · name · W×H · size`
-under your message. Images over `context.max_image_mb` (default 5) are
-refused, and so is a message to a model known to be text-only (the text stays
-in the input). `/export` embeds the images, so the file is self-contained.
-
-### Completions
-
-- Type `@` to open a fuzzy file picker — inserts a file path into your message
-- Type `/` to autocomplete commands
-
-### Navigating history
-
-- **↑ / ↓** arrow keys — select messages in the history; a selected message
-  gets a bright `▌` bar in the left margin
-- Answers with code blocks or tables are split into parts (prose, code block,
-  table) once complete. **→** enters the selected answer (the part gets a wide
-  `█` bar), **↑ / ↓** then move between its parts, **←** / **Esc** go back to
-  the whole answer. `c` copies the selected part — a code block without its
-  ```` ``` ```` fences — or the whole answer when it is selected as a whole.
-- **Mouse click** — select a message; on an answer, the first click selects it
-  whole and a click on the selected answer selects the part under the cursor
-- **Mouse drag** — select text, like in a terminal (across messages too);
-  **`c`** copies the selection (instead of the message) and clears it. Moving
-  the focus (arrows, a click, Esc, the input) cancels it
-- **Esc** — clear the selection; **Enter** / **`i`** — jump to the input
-- While a message is selected an action line appears just above the input
-  (the status bar stays visible), marked with `▌`:
-  - **`c`** — copy the message content to clipboard
-  - **`o`** — show a tool call's full output
-  - **`a`** / **`x`** — allow / deny a pending permission request
-- When the input is focused, the same line shows a muted right-aligned hint:
-  `[/] command  [@] file  [$] shell  ↑↓ move` (`@` works mid-text)
-
-Non-conversation output (shell commands, command status, notices) appears in the
-activity overlay (`/activity`) as a toast, keeping the transcript to the
-conversation itself.
+- **Tools with approval** — the model can `read`, `write`, `edit` files and run
+  `bash`. Each tool is `yes`, `ask` or `no` per **role**: `agent` (all tools)
+  and `chat` (none) are built in; switch with `/role`, create or edit one with
+  `/config role <name>`.
+- **Sandboxes** — run the tools inside podman, docker or bubblewrap instead of
+  on your machine. `/sandbox config` to define one for the project,
+  `/sandbox start <id>`, `/sandbox stop`, `/sandbox terminal` for a shell inside.
+- **Images** — paste an image with **Ctrl+V** or mention a file with `@shot.png`;
+  the model can also `read` image files. Vision support is detected: a
+  text-only model gets a clear refusal instead of an error.
+- **Conversations** — `/export <file>` saves the whole conversation (images
+  included), `/import <file>` restores it. `/compact` summarizes a long
+  conversation to free context; `/clear` starts over; `/stop` interrupts.
+- **Local and cloud models** — llama.cpp, Ollama, OpenRouter and
+  OpenAI-compatible servers; `/model` switches between them. The status bar
+  shows the model, context use and, on OpenRouter, the cost.
+- **Reasoning models** — the model's thinking is shown collapsed above its
+  answer and sent back to it where the server supports it.
+- **Your terminal, not a web page** — `/terminal` opens a shell (the
+  conversation keeps running), `$ command` runs a quick shell command, `/edit`
+  opens a file in your editor.
+- **Readable answers** — markdown with colored headings, code highlighting and
+  tables that fit the width. Change the look with `/theme` and `/config styles`.
 
 ---
 
-## Tool Use & Permissions
+## Using it
 
-The agent has access to four tools: `read`, `write`, `edit` (replace an exact
-text block), and `bash` (run a shell command). `read` on an image file shows the
-image to the model (inside the sandbox when one is active), with the same size
-limit and text-only refusal as attached images. Each tool is configured **per
-role** with one of three values:
+| Key | Action |
+|---|---|
+| **Enter** / **Alt+Enter** | send / new line |
+| **@** | pick a file to mention |
+| **/** | commands (Tab to complete) |
+| **↑ ↓** | move through the conversation |
+| **→ ←** | step into an answer's parts (code blocks, tables) and back |
+| **c** | copy the selected message, part, or mouse selection |
+| **o** | show a tool call's full output |
+| **a** / **x** | allow / deny a tool call |
+| **Esc** / **i** | from the input to the conversation / back to the input |
 
-- **`yes`** — runs automatically without asking
-- **`ask`** — prompts you before executing
-- **`no`** — never allowed (hidden from the model entirely)
+Drag with the mouse to select text, then press **c**.
 
-When the agent requests a tool set to `ask`, a prompt appears:
-
-```
-> bash
-command: pytest test/
-[allow] [deny]
-```
-
-You can approve or deny with mouse click or keyboard.
-
-The active role (`roles/<name>.toml`) is the whole policy. Built-in roles —
-`agent` (every tool `yes`) and `chat` (no tools) — are seeded on first run.
-Switch roles with `/role`, and edit one with `/config role <name>` (creates it
-if missing). Because the container/OS boundary belongs to the environment
-moka runs in, the convention is: run inside a sandbox → `yes` everywhere; run
-bare on the host → `ask` on the mutating tools.
+Type **`/help`** for every command.
 
 ---
 
-## Live Metrics
+## Configuration
 
-During generation, moka displays:
-- **Speed** (tokens/s)
-- **Context usage** (tokens used vs. context window size, color-coded by pressure)
-- **Cost** of the current conversation in the status bar, when the provider
-  reports it (OpenRouter); hidden for local servers. `/clear` resets it.
+Config files live in `~/.config/moka/` and are created with commented examples
+on first run. Open any of them with `/config <name>`:
 
----
+| `/config …` | What it sets |
+|---|---|
+| `servers` | model servers and models |
+| `ui` | look and behavior (theme, banner, status bar) |
+| `context` | what moka sends about your project (file tree depth, image size limit) |
+| `styles` | markdown and code colors |
+| `role <name>` | a role's system prompt and tool permissions |
 
-## Configuration Files
-
-Hand-edited configuration lives in `~/.config/moka/`, split into small
-single-concern files:
-
-- `ui.toml` — theme, padding, metrics, fps (flat keys).
-- `context.toml` — context building (flat keys).
-- `debug.toml` — debug logging (flat keys).
-- `servers.toml` — `preserve_reasoning = false` on a server (or an OpenRouter
-  model table) stops re-sending earlier turns' reasoning; absent means true.
-- `styles.toml` — `[markdown_styles.*]` / `[syntax_highlight.*]` overrides
-  (`fg`/`bg` as hex or a theme color name like `"MUTED"`; `bold`, `italic`,
-  `underline`).
-- `servers.toml` — one `[servers.<name>]` table per server.
-- `themes.toml` — `[themes.<name>]` palette overrides (built-ins always exist).
-- `roles/<name>.toml` — one file per conversation role (prompt + per-tool
-  settings). The file name is the role name.
-- `state.toml` — disposable runtime state (last server/model, active theme,
-  discovery catalog). Safe to delete.
-
-Missing files are created from fully commented templates (the `servers.toml`
-template includes example `llamacpp`, `ollama`, `openrouter` and `openai`
-blocks). Edit them with `/config <section>` or `/edit <path>`, and roles with
-`/config role <name>`. Configuration is read at startup and only re-applied when
-you run `/reload` or restart. The loader validates each file and reports unknown
-keys, wrong types, and unparsable TOML (`<file>: ...`); invalid entries fall
-back to defaults while the rest of the file still applies.
-
-```toml
-# ui.toml
-theme = "terminal"
-
-# context.toml
-format = "tree"
-max_files = 500
-max_image_mb = 5
-
-# servers.toml
-[servers.local]
-type = "llamacpp"
-base_url = "http://localhost:8080/v1"
-```
-
-```toml
-# roles/reviewer.toml
-description = "Read-only code review"
-prompt = "Review code carefully. Do not modify files."
-
-read = "yes"
-write = "no"
-edit = "no"
-bash = "no"
-```
+Sandboxes are per project and stored in your config, never in the repo
+(`/sandbox config`).

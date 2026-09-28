@@ -1,9 +1,9 @@
 """Argument completion shares the selector look and shows descriptions."""
 
-from moka_chat.ui.commands.base import Command, Param
-from moka_chat.ui.tui.colors import theme
-from moka_chat.ui.tui.components.input.completion import ArgumentCompletion
-from moka_chat.ui.tui.components.menu import SelectionMenu
+from moka_code.ui.commands.base import Command, Param
+from moka_code.ui.tui.colors import theme
+from moka_code.ui.tui.components.input.completion import ArgumentCompletion
+from moka_code.ui.tui.components.menu import SelectionMenu
 
 
 def _registry():
@@ -32,8 +32,8 @@ def test_argument_completion_passes_descriptions():
 
 
 def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_path):
-    import moka_chat.settings as settings
-    from moka_chat.ui.commands.registry import COMMANDS
+    import moka_code.settings as settings
+    from moka_code.ui.commands.registry import COMMANDS
 
     monkeypatch.setattr(settings, "get_config_dir", lambda: tmp_path)
     workspace = tmp_path / "proj"
@@ -61,7 +61,7 @@ def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_pa
 
 
 def test_config_role_completion_uses_role_descriptions(monkeypatch):
-    import moka_chat.ui.commands.core as core
+    import moka_code.ui.commands.core as core
 
     monkeypatch.setattr(core, "role_name_completions", lambda: ["agent", "chat"])
     monkeypatch.setattr(core, "role_descriptions", lambda: {"agent": "General agent"})

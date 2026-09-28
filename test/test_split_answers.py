@@ -2,11 +2,11 @@
 
 import asyncio
 
-from moka_chat import settings
-from moka_chat.harness import events
-from moka_chat.ui.answer_split import split_answer
-from moka_chat.ui.chat_history_panel import ChatHistoryPanel
-from moka_chat.ui.tui.msg_types import AssistantMsg, UserMsg
+from moka_code import settings
+from moka_code.harness import events
+from moka_code.ui.answer_split import split_answer
+from moka_code.ui.chat_history_panel import ChatHistoryPanel
+from moka_code.ui.tui.msg_types import AssistantMsg, UserMsg
 
 ANSWER = """Here is the fix:
 
@@ -123,7 +123,7 @@ def test_right_on_a_plain_message_only_hints():
 
 
 def test_selected_segment_gets_the_wide_marker():
-    from moka_chat.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.buffer import Buffer
 
     panel = _panel_with_answer()
     panel.set_layout(0, 0, 60, 40)
@@ -138,7 +138,7 @@ def test_selected_segment_gets_the_wide_marker():
 
 def test_answers_split_when_the_generation_ends(monkeypatch):
     from conftest import StubAgent
-    from moka_chat.ui.app import chatTUI
+    from moka_code.ui.app import chatTUI
 
     monkeypatch.setattr(settings.config, "ui_stream_smoothing", False)
     ui = chatTUI(StubAgent())
@@ -155,8 +155,8 @@ def test_answers_split_when_the_generation_ends(monkeypatch):
 
 
 def test_click_selects_the_answer_first_then_the_part(monkeypatch):
-    from moka_chat.ui.tui.buffer import Buffer
-    from moka_chat.ui.tui.events import MouseEvent
+    from moka_code.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.events import MouseEvent
 
     panel = _panel_with_answer()
     panel.set_layout(0, 0, 60, 40)
@@ -182,7 +182,7 @@ def test_click_selects_the_answer_first_then_the_part(monkeypatch):
 
 def test_down_from_a_last_split_answer_focuses_the_input():
     from conftest import StubAgent
-    from moka_chat.ui.app import chatTUI
+    from moka_code.ui.app import chatTUI
 
     ui = chatTUI(StubAgent())
     panel = ui.chat_history_panel

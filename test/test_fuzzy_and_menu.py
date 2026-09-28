@@ -1,9 +1,9 @@
 """Tests for the path fuzzy matcher and the selection menu's new behavior."""
 
-from moka_chat.ui.tui.buffer import Buffer
-from moka_chat.ui.tui.colors import theme
-from moka_chat.ui.tui.components.menu import SelectionMenu
-from moka_chat.ui.tui.fuzzy import fuzzy_match
+from moka_code.ui.tui.buffer import Buffer
+from moka_code.ui.tui.colors import theme
+from moka_code.ui.tui.components.menu import SelectionMenu
+from moka_code.ui.tui.fuzzy import fuzzy_match
 
 
 def test_fuzzy_match_returns_indices_in_order():
@@ -62,7 +62,7 @@ def test_menu_fill_width_spans_buffer():
 
 
 def test_action_bar_align_right_flushes_to_right_edge():
-    from moka_chat.ui.tui.components.bars import ActionBar, ActionItem
+    from moka_code.ui.tui.components.bars import ActionBar, ActionItem
 
     bar = ActionBar([ActionItem("c", "copy", None)])
     bar.set_align_right(True)

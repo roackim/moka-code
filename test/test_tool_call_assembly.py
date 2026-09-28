@@ -10,8 +10,8 @@ The assembler must handle two real streaming patterns:
 import asyncio
 from types import SimpleNamespace
 
-from moka_chat.harness import events
-from moka_chat.harness.harness import Harness
+from moka_code.harness import events
+from moka_code.harness.harness import Harness
 
 
 def _delta_with_tool_calls(calls):
@@ -127,7 +127,7 @@ def _stream_drafts(chunks, monkeypatch=None, step=0.0):
 
     clock = [0.0]
     if monkeypatch is not None:
-        import moka_chat.harness.harness as harness_mod
+        import moka_code.harness.harness as harness_mod
         monkeypatch.setattr(harness_mod, "time", SimpleNamespace(perf_counter=lambda: clock[0]))
 
     async def create_completion(messages, tools=None, stream=True):

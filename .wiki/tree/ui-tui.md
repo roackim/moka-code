@@ -1,4 +1,4 @@
-# moka_chat/ui/tui/ — Terminal Rendering Engine
+# moka_code/ui/tui/ — Terminal Rendering Engine
 
 Low-level TUI framework. Custom-built; not a wrapper around curses or any
 third-party library. Documentation style: one row per file.

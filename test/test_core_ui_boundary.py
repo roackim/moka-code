@@ -7,7 +7,7 @@ is the composition root and is allowed to import both.
 import ast
 from pathlib import Path
 
-CORE_ROOT = Path(__file__).resolve().parents[1] / "moka_chat" / "harness"
+CORE_ROOT = Path(__file__).resolve().parents[1] / "moka_code" / "harness"
 
 
 def _imported_modules(tree: ast.AST):
@@ -23,7 +23,7 @@ def _imported_modules(tree: ast.AST):
 
 
 def _is_ui(module: str) -> bool:
-    return module == "moka_chat.ui" or module.startswith("moka_chat.ui.")
+    return module == "moka_code.ui" or module.startswith("moka_code.ui.")
 
 
 def test_harness_does_not_import_ui():

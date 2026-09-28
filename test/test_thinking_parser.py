@@ -4,7 +4,7 @@ Covers the regression where a fixed trailing buffer withheld the last
 characters of a message until end-of-stream (visible when a tool call follows).
 """
 
-from moka_chat.harness.thinking_parser import ThinkingTagParser
+from moka_code.harness.thinking_parser import ThinkingTagParser
 
 
 def _drain(parser, chunks):

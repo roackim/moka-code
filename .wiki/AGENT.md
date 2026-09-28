@@ -22,10 +22,10 @@ This document tells AI agents and humans how to operate and maintain this wiki.
     local-hostname-resolution.md ← `.local` mDNS resolution in the endpoint layer
   tree/
     README.md               ← Root package overview
-    harness.md              ← moka_chat/harness/ — LLM agent core
-    ui.md                   ← moka_chat/ui/ — Chat UI layer
-    ui-tui.md               ← moka_chat/ui/tui/ — Rendering engine
-    ui-tui-components.md    ← moka_chat/ui/tui/components/ — UI widgets
+    harness.md              ← moka_code/harness/ — LLM agent core
+    ui.md                   ← moka_code/ui/ — Chat UI layer
+    ui-tui.md               ← moka_code/ui/tui/ — Rendering engine
+    ui-tui-components.md    ← moka_code/ui/tui/components/ — UI widgets
     test.md                 ← test/ — Test suite
 ```
 

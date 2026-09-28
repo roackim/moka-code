@@ -4,9 +4,9 @@ import base64
 
 import pytest
 
-from moka_chat.ui import clipboard as ui_clipboard
-from moka_chat.ui.chat_action_handlers import ChatActionHandlers
-from moka_chat.ui.tui.msg_types import SysMsgError, UserMsg
+from moka_code.ui import clipboard as ui_clipboard
+from moka_code.ui.chat_action_handlers import ChatActionHandlers
+from moka_code.ui.tui.msg_types import SysMsgError, UserMsg
 
 OSC52_PREFIX = "\x1b]52;c;"
 OSC52_SUFFIX = "\x07"
@@ -22,7 +22,7 @@ def no_native_tools(monkeypatch):
     def _raise(*args, **kwargs):
         raise FileNotFoundError("not installed")
 
-    monkeypatch.setattr("moka_chat.ui.clipboard.subprocess.run", _raise)
+    monkeypatch.setattr("moka_code.ui.clipboard.subprocess.run", _raise)
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ def test_native_tool_takes_priority(monkeypatch, terminal_env, capfd):
     def _run(command, **kwargs):
         calls.append((command, kwargs.get("input")))
 
-    monkeypatch.setattr("moka_chat.ui.clipboard.subprocess.run", _run)
+    monkeypatch.setattr("moka_code.ui.clipboard.subprocess.run", _run)
 
     assert ui_clipboard.copy_to_clipboard("hello") == "xclip"
     assert calls == [(("xclip", "-selection", "clipboard"), b"hello")]
@@ -59,7 +59,7 @@ def test_falls_through_to_wayland_when_x11_missing(monkeypatch, terminal_env):
             raise FileNotFoundError
         return None
 
-    monkeypatch.setattr("moka_chat.ui.clipboard.subprocess.run", _run)
+    monkeypatch.setattr("moka_code.ui.clipboard.subprocess.run", _run)
 
     assert ui_clipboard.copy_to_clipboard("hello") == "wl-copy"
     assert [c[0] for c in calls] == ["xclip", "xsel", "wl-copy"]
@@ -67,7 +67,7 @@ def test_falls_through_to_wayland_when_x11_missing(monkeypatch, terminal_env):
 
 def test_empty_text_copies_nothing(monkeypatch, terminal_env, capfd):
     monkeypatch.setattr(
-        "moka_chat.ui.clipboard.subprocess.run",
+        "moka_code.ui.clipboard.subprocess.run",
         lambda *a, **k: pytest.fail("should not run a clipboard helper"),
     )
 
@@ -81,7 +81,7 @@ def test_no_method_returns_none(monkeypatch, capfd):
     def _raise(*args, **kwargs):
         raise FileNotFoundError
 
-    monkeypatch.setattr("moka_chat.ui.clipboard.subprocess.run", _raise)
+    monkeypatch.setattr("moka_code.ui.clipboard.subprocess.run", _raise)
 
     assert ui_clipboard.copy_to_clipboard("hello") is None
     assert capfd.readouterr().out == ""
@@ -126,7 +126,7 @@ def _fake_helpers(monkeypatch, outputs):
             raise FileNotFoundError
         return _Result(outputs[tuple(command)])
 
-    monkeypatch.setattr("moka_chat.ui.clipboard.subprocess.run", _run)
+    monkeypatch.setattr("moka_code.ui.clipboard.subprocess.run", _run)
     return calls
 
 
@@ -189,7 +189,7 @@ class _UI(ChatActionHandlers):
 
 def test_copy_action_reports_success(monkeypatch):
     monkeypatch.setattr(
-        "moka_chat.ui.chat_action_handlers.copy_to_clipboard",
+        "moka_code.ui.chat_action_handlers.copy_to_clipboard",
         lambda text: "OSC 52",
     )
     ui = _UI()
@@ -204,7 +204,7 @@ def test_copy_action_reports_success(monkeypatch):
 def test_copy_action_reports_failure(monkeypatch):
     seen = []
     monkeypatch.setattr(
-        "moka_chat.ui.chat_action_handlers.copy_to_clipboard",
+        "moka_code.ui.chat_action_handlers.copy_to_clipboard",
         lambda text: seen.append(text) or None,
     )
     ui = _UI()

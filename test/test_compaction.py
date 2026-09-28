@@ -1,7 +1,7 @@
 import asyncio
 
-from moka_chat.harness.harness import Harness, COMPACTION_MARKER_PREFIX
-from moka_chat.harness.llm_status import AgentState
+from moka_code.harness.harness import Harness, COMPACTION_MARKER_PREFIX
+from moka_code.harness.llm_status import AgentState
 
 
 def test_effective_history_starts_from_last_compaction_marker(harness_stub_compaction):
@@ -55,7 +55,7 @@ def test_deleting_compaction_marker_restores_full_history_behavior(harness_stub_
 
 def test_compact_history_summary_call_has_single_system_message_first(harness_stub_compaction):
     harness = harness_stub_compaction
-    from moka_chat.harness.roles import Role
+    from moka_code.harness.roles import Role
 
     harness.role = Role("test", prompt="You are a test agent.")
     harness.history = [

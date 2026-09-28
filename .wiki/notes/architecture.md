@@ -8,14 +8,14 @@ Moka is a terminal-based AI agent that connects to local (llama.cpp) or cloud (O
 
 ```
 ┌─────────────────────────────┐
-│         moka_chat/ui/       │  TUI — user input, chat display, commands
+│         moka_code/ui/       │  TUI — user input, chat display, commands
 │  app.py  ← commands/        │
 │  chat_history_panel.py      │
 │  chat_action_handlers.py    │
 └────────────┬────────────────┘
              │ async events / callbacks
 ┌────────────▼────────────────┐
-│      moka_chat/harness/     │  Agent core — LLM loop, tools, approval gate
+│      moka_code/harness/     │  Agent core — LLM loop, tools, approval gate
 │  harness.py (main loop)     │
 │  endpoint.py (+ endpoint_*) │
 │  tools.py (registry +       │
@@ -27,18 +27,18 @@ Moka is a terminal-based AI agent that connects to local (llama.cpp) or cloud (O
 ┌──────▼──────┐  ┌─────▼───────────────────────────┐
 │ LLM Backend │  │ InProcessTransport (bare)       │
 │ llama.cpp / │  │  or SandboxTransport → worker   │
-│ OpenRouter  │  │  (moka_chat/worker.py) in a     │
+│ OpenRouter  │  │  (moka_code/worker.py) in a     │
 │             │  │  container / bubblewrap         │
 └─────────────┘  └─────────────────────────────────┘
 ```
 
-`moka_chat/worker.py` (stdlib-only) holds the tool bodies + JSONL protocol;
-`moka_chat/sandbox.py` launches and talks to it; `moka_chat/projects.py` stores
+`moka_code/worker.py` (stdlib-only) holds the tool bodies + JSONL protocol;
+`moka_code/sandbox.py` launches and talks to it; `moka_code/projects.py` stores
 per-project sandbox definitions. See [sandbox.md](./sandbox.md).
 
 ## Entry Point
 
-`moka_chat/main.py` — async launcher that:
+`moka_code/main.py` — async launcher that:
 1. Loads config via `settings.py` (and syncs flat section templates)
 2. Builds the `Harness` via `get_harness()`, which activates the current
    project's sandbox (if any) as its tool transport
@@ -90,7 +90,7 @@ files by `projects.py`. See [notes/config.md](./config.md).
 ## Module Relationships
 
 ```
-moka_chat/
+moka_code/
   worker.py              ← Stdlib-only tool bodies (read/write/edit/bash) + patch parser + JSONL worker protocol
   sandbox.py             ← Launcher + SandboxProcess/SandboxTransport (container/bwrap argv, preflight, build)
   projects.py            ← Per-project sandbox store (~/.config/moka/projects/<name>.toml)

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from moka_chat.ui.external_editor import edit_file, resolve_editor
-from moka_chat.ui.commands.core import cmd_config, cmd_edit, cmd_reload
+from moka_code.ui.external_editor import edit_file, resolve_editor
+from moka_code.ui.commands.core import cmd_config, cmd_edit, cmd_reload
 
 
 class _Panel:
@@ -77,8 +77,8 @@ def test_edit_file_invokes_editor(monkeypatch, tmp_path):
 
 
 def test_config_command_opens_section_and_reloads(monkeypatch, tmp_path):
-    import moka_chat.settings as cfg_mod
-    import moka_chat.harness.roles as roles_mod
+    import moka_code.settings as cfg_mod
+    import moka_code.harness.roles as roles_mod
 
     monkeypatch.setattr(cfg_mod, "get_config_dir", lambda: tmp_path)
     monkeypatch.setattr(cfg_mod, "get_state_path", lambda: tmp_path / "state.toml")
@@ -92,7 +92,7 @@ def test_config_command_opens_section_and_reloads(monkeypatch, tmp_path):
         opened.append(Path(path))
         return True
 
-    monkeypatch.setattr("moka_chat.ui.external_editor.open_editor", _fake_open)
+    monkeypatch.setattr("moka_code.ui.external_editor.open_editor", _fake_open)
 
     asyncio.run(cmd_config(ui, ["servers"]))
 
@@ -121,7 +121,7 @@ def test_config_command_unknown_section_reports_error(monkeypatch):
 def test_config_command_without_editor_reports_error(monkeypatch):
     monkeypatch.delenv("VISUAL", raising=False)
     monkeypatch.delenv("EDITOR", raising=False)
-    monkeypatch.setattr("moka_chat.ui.external_editor.shutil.which", lambda _name: None)
+    monkeypatch.setattr("moka_code.ui.external_editor.shutil.which", lambda _name: None)
     ui = _UI()
 
     asyncio.run(cmd_config(ui, ["ui"]))
@@ -130,7 +130,7 @@ def test_config_command_without_editor_reports_error(monkeypatch):
 
 
 def test_config_theme_materializes_section(monkeypatch, tmp_path):
-    import moka_chat.settings as cfg_mod
+    import moka_code.settings as cfg_mod
 
     monkeypatch.setattr(cfg_mod, "get_config_dir", lambda: tmp_path)
     monkeypatch.setattr(cfg_mod, "get_state_path", lambda: tmp_path / "state.toml")
@@ -139,7 +139,7 @@ def test_config_theme_materializes_section(monkeypatch, tmp_path):
     opened = []
 
     monkeypatch.setattr(
-        "moka_chat.ui.external_editor.open_editor",
+        "moka_code.ui.external_editor.open_editor",
         _recording_editor(opened),
     )
 
@@ -151,13 +151,13 @@ def test_config_theme_materializes_section(monkeypatch, tmp_path):
 
 
 def test_config_theme_unknown_reports_error(monkeypatch, tmp_path):
-    import moka_chat.settings as cfg_mod
+    import moka_code.settings as cfg_mod
 
     monkeypatch.setattr(cfg_mod, "get_config_dir", lambda: tmp_path)
     monkeypatch.setattr(cfg_mod, "get_state_path", lambda: tmp_path / "state.toml")
     monkeypatch.setenv("EDITOR", "my-editor")
     ui = _UI()
-    monkeypatch.setattr("moka_chat.ui.external_editor.open_editor", _recording_editor([]))
+    monkeypatch.setattr("moka_code.ui.external_editor.open_editor", _recording_editor([]))
 
     asyncio.run(cmd_config(ui, ["theme", "nope"]))
 
@@ -169,7 +169,7 @@ def test_edit_command_opens_requested_file(monkeypatch, tmp_path):
     ui = _UI()
     opened = []
     monkeypatch.setattr(
-        "moka_chat.ui.external_editor.open_editor",
+        "moka_code.ui.external_editor.open_editor",
         _recording_editor(opened),
     )
 
@@ -180,8 +180,8 @@ def test_edit_command_opens_requested_file(monkeypatch, tmp_path):
 
 
 def test_reload_command_success(monkeypatch, tmp_path):
-    import moka_chat.settings as cfg_mod
-    import moka_chat.harness.roles as roles_mod
+    import moka_code.settings as cfg_mod
+    import moka_code.harness.roles as roles_mod
 
     monkeypatch.setattr(cfg_mod, "get_config_dir", lambda: tmp_path)
     monkeypatch.setattr(cfg_mod, "get_state_path", lambda: tmp_path / "state.toml")

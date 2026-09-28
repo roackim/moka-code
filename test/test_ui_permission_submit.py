@@ -2,11 +2,11 @@
 
 import asyncio
 import pytest
-import moka_chat.ui.app as app_module
-from moka_chat.ui.app import chatTUI
-from moka_chat.ui.tui.events import normalize_key
-from moka_chat.ui.tui.msg_types import SysMsg
-from moka_chat.harness import events
+import moka_code.ui.app as app_module
+from moka_code.ui.app import chatTUI
+from moka_code.ui.tui.events import normalize_key
+from moka_code.ui.tui.msg_types import SysMsg
+from moka_code.harness import events
 
 from conftest import StubAgent, make_chunk_stream
 

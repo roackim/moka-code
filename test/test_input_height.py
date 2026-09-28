@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from moka_chat.ui.tui.components.input.input import InputComponent
+from moka_code.ui.tui.components.input.input import InputComponent
 
 
 def _component(max_height):

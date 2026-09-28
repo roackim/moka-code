@@ -2,9 +2,9 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-from moka_chat.harness.roles import Role
-from moka_chat.ui.commands.conversation import conversation_export, conversation_import
-from moka_chat.ui.tui.msg_types import UserMsg
+from moka_code.harness.roles import Role
+from moka_code.ui.commands.conversation import conversation_export, conversation_import
+from moka_code.ui.tui.msg_types import UserMsg
 
 
 class FakeAgent:
@@ -69,12 +69,12 @@ def test_conversation_import_restores_role_before_history_replay(tmp_path, monke
     history = [{"role": "user", "content": "imported"}]
     filename.write_text(json.dumps({"role": "reviewer", "history": history}))
     monkeypatch.setattr(
-        "moka_chat.harness.roles.load_role",
+        "moka_code.harness.roles.load_role",
         lambda name: Role(name),
     )
 
     monkeypatch.setattr(
-        "moka_chat.ui.commands.conversation._rebuild_ui_from_history",
+        "moka_code.ui.commands.conversation._rebuild_ui_from_history",
         lambda ui, history: setattr(ui, "replayed_role", ui.agent.role.name),
     )
     asyncio.run(conversation_import(ui, [str(filename)]))
@@ -107,7 +107,7 @@ def test_conversation_import_defaults_role_when_missing(tmp_path, monkeypatch):
             raise KeyError(f"Role not found: {name}")
         return Role(name)
 
-    monkeypatch.setattr("moka_chat.harness.roles.load_role", fake_load)
+    monkeypatch.setattr("moka_code.harness.roles.load_role", fake_load)
 
     asyncio.run(conversation_import(ui, [str(filename)]))
 
@@ -146,7 +146,7 @@ def test_conversation_import_keeps_assistant_reply_in_one_message(tmp_path):
     its own message, splitting the reply into a second AssistantMsg (rendered as a
     mid-word break with the inter-message gap in between).
     """
-    from moka_chat.ui.tui.msg_types import AssistantMsg
+    from moka_code.ui.tui.msg_types import AssistantMsg
 
     ui = FakeUI()
     content = "If you tell me what you're looking for, I can narrow it down."
@@ -167,9 +167,9 @@ def test_conversation_import_keeps_assistant_reply_in_one_message(tmp_path):
 
 def test_conversation_import_restores_stored_reasoning(tmp_path, monkeypatch):
     """The explicit ``reasoning`` field survives export/import as a ThinkingMsg."""
-    from moka_chat import settings
+    from moka_code import settings
     monkeypatch.setattr(settings.config, "ui_thought_min_tokens", 0)
-    from moka_chat.ui.tui.msg_types import AssistantMsg, ThinkingMsg
+    from moka_code.ui.tui.msg_types import AssistantMsg, ThinkingMsg
 
     ui = FakeUI()
     history = [
@@ -223,8 +223,8 @@ def test_conversation_import_rejects_invalid_json(tmp_path):
 
 
 def test_import_splits_answers_like_live_ones(tmp_path):
-    from moka_chat.ui.chat_history_panel import ChatHistoryPanel
-    from moka_chat.ui.commands.conversation import _rebuild_ui_from_history
+    from moka_code.ui.chat_history_panel import ChatHistoryPanel
+    from moka_code.ui.commands.conversation import _rebuild_ui_from_history
 
     ui = FakeUI()
     ui.chat_history_panel = ChatHistoryPanel()

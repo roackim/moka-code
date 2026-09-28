@@ -11,8 +11,8 @@ import signal
 
 import pytest
 
-from moka_chat.sandbox import ContainerSpec, build_argv, shell_argv
-from moka_chat.ui.external_editor import run_in_foreground
+from moka_code.sandbox import ContainerSpec, build_argv, shell_argv
+from moka_code.ui.external_editor import run_in_foreground
 
 
 class _Recorder:
@@ -77,7 +77,7 @@ def test_a_stopped_child_is_continued_instead_of_hanging():
 
 
 def test_compositor_pause_stays_off_the_terminal(monkeypatch):
-    import moka_chat.ui.tui.compositor as compositor_mod
+    import moka_code.ui.tui.compositor as compositor_mod
 
     class _Term:
         resized = False
@@ -129,7 +129,7 @@ def _shell_ui(tmp_path, spec, monkeypatch):
         assert env["MOKA_TERMINAL"] == str(os.getpid())  # marks the shell: no nesting
         return 0
 
-    monkeypatch.setattr("moka_chat.ui.external_editor.run_in_foreground", _run)
+    monkeypatch.setattr("moka_code.ui.external_editor.run_in_foreground", _run)
     monkeypatch.setenv("SHELL", "/bin/zsh")
     transport = type("T", (), {"spec": ContainerSpec(runtime=spec) if spec else None})()
     agent = type("A", (), {"workspace": str(tmp_path), "transport": transport})()
@@ -140,7 +140,7 @@ def _shell_ui(tmp_path, spec, monkeypatch):
 
 @pytest.mark.parametrize("spec", [None, "bubblewrap"])
 def test_terminal_is_always_the_host(monkeypatch, tmp_path, spec):
-    from moka_chat.ui.commands.core import cmd_terminal
+    from moka_code.ui.commands.core import cmd_terminal
 
     ui, opened, _ = _shell_ui(tmp_path, spec, monkeypatch)
     asyncio.run(cmd_terminal(ui, []))
@@ -148,7 +148,7 @@ def test_terminal_is_always_the_host(monkeypatch, tmp_path, spec):
 
 
 def test_sandbox_terminal_opens_in_the_active_sandbox(monkeypatch, tmp_path):
-    from moka_chat.ui.commands.sandbox import sandbox_terminal
+    from moka_code.ui.commands.sandbox import sandbox_terminal
 
     monkeypatch.chdir(tmp_path)
     ui, opened, _ = _shell_ui(tmp_path, "bubblewrap", monkeypatch)
@@ -158,7 +158,7 @@ def test_sandbox_terminal_opens_in_the_active_sandbox(monkeypatch, tmp_path):
 
 
 def test_sandbox_terminal_without_a_sandbox_says_so(monkeypatch, tmp_path):
-    from moka_chat.ui.commands.sandbox import sandbox_terminal
+    from moka_code.ui.commands.sandbox import sandbox_terminal
 
     ui, opened, messages = _shell_ui(tmp_path, None, monkeypatch)
     asyncio.run(sandbox_terminal(ui, []))
@@ -167,7 +167,7 @@ def test_sandbox_terminal_without_a_sandbox_says_so(monkeypatch, tmp_path):
 
 
 def test_terminal_rejects_unknown_arguments(monkeypatch):
-    from moka_chat.ui.commands.core import cmd_terminal
+    from moka_code.ui.commands.core import cmd_terminal
 
     messages = []
     panel = type("P", (), {"add_message": lambda self, text, **k: messages.append(text)})()
@@ -178,7 +178,7 @@ def test_terminal_rejects_unknown_arguments(monkeypatch):
 
 
 def test_moka_refuses_to_start_inside_its_own_terminal(monkeypatch, capsys):
-    import moka_chat.main as main_mod
+    import moka_code.main as main_mod
 
     monkeypatch.setenv("MOKA_TERMINAL", "4242")
     monkeypatch.setattr(main_mod, "get_harness",

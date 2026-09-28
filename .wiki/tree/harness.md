@@ -1,4 +1,4 @@
-# moka_chat/harness/ — LLM Agent Core
+# moka_code/harness/ — LLM Agent Core
 
 The agent backbone. Manages the LLM conversation loop, tool execution, approval gating, context construction, and endpoint management.
 
@@ -22,7 +22,7 @@ See [notes/architecture.md](../notes/architecture.md), [notes/tools-and-permissi
   Runs the tool as a task and forwards its `on_output` chunks as `ToolOutput`
   events as they arrive (bash streaming), then `ToolResult`
 - `_build_transport(spec, workspace)` — builds a `SandboxTransport` for a
-  `ContainerSpec` (lazy `moka_chat.sandbox` import); empty/`none` → in-process
+  `ContainerSpec` (lazy `moka_code.sandbox` import); empty/`none` → in-process
 - `set_sandbox(spec)` — swap the transport live (used by `/sandbox`): closes the
   old worker, rebuilds the tool map, records a `[Sandbox: …]` notice
 - `get_harness()` — loads the current project's active sandbox (by directory

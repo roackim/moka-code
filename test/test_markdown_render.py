@@ -1,8 +1,8 @@
 """Markdown presentation: emphasis colors, list pastilles, cluster-aware wrap."""
 
-from moka_chat.ui.tui.components.markdown import Markdown, MarkdownComponent
-from moka_chat.ui.tui.buffer import Buffer
-from moka_chat.ui.tui.layout_utils import display_width
+from moka_code.ui.tui.components.markdown import Markdown, MarkdownComponent
+from moka_code.ui.tui.buffer import Buffer
+from moka_code.ui.tui.layout_utils import display_width
 
 
 def _rendered_lines(md: str, width: int = 60, height: int = 20):
@@ -39,8 +39,8 @@ def test_emphasis_uses_weight_and_slant_never_reverse():
 
 
 def test_style_colors_accept_theme_names(monkeypatch):
-    from moka_chat import settings
-    from moka_chat.ui.tui.colors import theme
+    from moka_code import settings
+    from moka_code.ui.tui.colors import theme
 
     monkeypatch.setitem(settings.config.markdown_styles, "quote", {"fg": "MUTED"})
     (line,) = Markdown().parse("> quoted")
@@ -48,7 +48,7 @@ def test_style_colors_accept_theme_names(monkeypatch):
 
 
 def test_italic_and_underline_reach_the_terminal():
-    from moka_chat.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.buffer import Buffer
 
     buffer = Buffer(10, 1)
     buffer.write_str(0, 0, "ab", italic=True)

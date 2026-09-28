@@ -8,7 +8,7 @@ Verifies that:
 """
 import pytest
 from pathlib import Path
-from moka_chat.harness.context_builder import (
+from moka_code.harness.context_builder import (
     is_git_repo,
     build_harness_context,
     list_files_bounded,

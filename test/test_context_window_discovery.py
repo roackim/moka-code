@@ -7,8 +7,8 @@ fell back to 32k even for 1M-token models.
 
 import asyncio
 
-import moka_chat.harness.endpoint as endpoint_mod
-from moka_chat.harness.endpoint import Endpoint
+import moka_code.harness.endpoint as endpoint_mod
+from moka_code.harness.endpoint import Endpoint
 
 
 class _Response:

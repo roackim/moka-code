@@ -1,11 +1,11 @@
 """Tests for the Popup overlay component."""
 import pytest
-from moka_chat.ui.tui.components.popup import Popup, PopupScreen
-from moka_chat.ui.tui.buffer import Buffer
-from moka_chat.ui.tui.terminal import MouseEvent
-from moka_chat.ui.tui.navigation import ModalHost
-from moka_chat.ui.tui.focus import FocusScope
-from moka_chat.ui.tui.components.button import Button
+from moka_code.ui.tui.components.popup import Popup, PopupScreen
+from moka_code.ui.tui.buffer import Buffer
+from moka_code.ui.tui.terminal import MouseEvent
+from moka_code.ui.tui.navigation import ModalHost
+from moka_code.ui.tui.focus import FocusScope
+from moka_code.ui.tui.components.button import Button
 
 
 class FakeCompositor:
@@ -148,7 +148,7 @@ class TestPopup:
         assert popup._scroll_offset == 0
 
     def test_mouse_scroll(self):
-        from moka_chat.ui.tui.terminal import MouseEvent
+        from moka_code.ui.tui.terminal import MouseEvent
         comp = FakeCompositor(80, 24)
         popup = Popup(compositor=comp)
         lines = "\n".join(f"line {i}" for i in range(30))

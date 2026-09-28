@@ -1,8 +1,8 @@
-from moka_chat.ui.tui.buffer import Buffer
-from moka_chat.ui.tui.events import TickEvent
-from moka_chat.ui.tui.terminal import MouseEvent
-from moka_chat.ui.chat_history_panel import ChatHistoryPanel
-from moka_chat.ui.app import chatTUI
+from moka_code.ui.tui.buffer import Buffer
+from moka_code.ui.tui.events import TickEvent
+from moka_code.ui.tui.terminal import MouseEvent
+from moka_code.ui.chat_history_panel import ChatHistoryPanel
+from moka_code.ui.app import chatTUI
 from conftest import StubAgent
 
 
@@ -47,7 +47,7 @@ def test_chat_history_restores_messages_through_panel_boundary():
 def test_cached_hit_test_rebuilds_after_cache_invalidation():
     """Scrolling invalidates the line-map cache; a subsequent hit test must
     rebuild it rather than crashing on a None cache (regression)."""
-    from moka_chat.ui.tui.msg_types import UserMsg
+    from moka_code.ui.tui.msg_types import UserMsg
 
     panel = ChatHistoryPanel()
     panel.set_layout(0, 0, 40, 10)

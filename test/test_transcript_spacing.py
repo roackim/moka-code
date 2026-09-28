@@ -5,9 +5,9 @@ inter-message gap. Everything else — the final answer, user turns, notices —
 keeps the configured ``ui_msg_v_margin`` blank lines.
 """
 
-from moka_chat import settings
-from moka_chat.ui.chat_history_panel import ChatHistoryPanel
-from moka_chat.ui.tui.msg_types import AssistantMsg, ThinkingMsg, ToolCallMsg, UserMsg
+from moka_code import settings
+from moka_code.ui.chat_history_panel import ChatHistoryPanel
+from moka_code.ui.tui.msg_types import AssistantMsg, ThinkingMsg, ToolCallMsg, UserMsg
 
 
 def _panel():

@@ -11,15 +11,15 @@ from unittest.mock import patch
 
 import pytest
 
-from moka_chat import settings
-from moka_chat.harness import images
-from moka_chat.harness.endpoint import Endpoint
-from moka_chat.harness.endpoint_discovery import image_input_from_metadata
-from moka_chat.harness.endpoint_ollama import ollama_messages
-from moka_chat.harness.harness import Harness
-from moka_chat.ui.app import chatTUI
-from moka_chat.ui.commands.conversation import conversation_export, conversation_import
-from moka_chat.ui.tui.msg_types import UserMsg
+from moka_code import settings
+from moka_code.harness import images
+from moka_code.harness.endpoint import Endpoint
+from moka_code.harness.endpoint_discovery import image_input_from_metadata
+from moka_code.harness.endpoint_ollama import ollama_messages
+from moka_code.harness.harness import Harness
+from moka_code.ui.app import chatTUI
+from moka_code.ui.commands.conversation import conversation_export, conversation_import
+from moka_code.ui.tui.msg_types import UserMsg
 
 from conftest import StubAgent
 
@@ -125,7 +125,7 @@ def _chunk(content=None, finish=None):
 
 
 def test_history_keeps_a_reference_and_the_request_gets_parts(tmp_path, monkeypatch):
-    with patch("moka_chat.harness.harness.get_active_endpoint",
+    with patch("moka_code.harness.harness.get_active_endpoint",
                return_value=Endpoint(name="test", type="llamacpp")):
         harness = Harness(workspace_path=str(tmp_path))
     sent = []
@@ -218,7 +218,7 @@ def test_unknown_capability_sends(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_ctrl_v_pastes_an_image_as_a_marker(tmp_path, monkeypatch):
-    monkeypatch.setattr("moka_chat.ui.app.read_clipboard", lambda: png())
+    monkeypatch.setattr("moka_code.ui.app.read_clipboard", lambda: png())
     ui = _ui_with_endpoint(tmp_path, accepts=True)
 
     ui.handle_global_input("\x16")
@@ -232,7 +232,7 @@ def test_ctrl_v_pastes_an_image_as_a_marker(tmp_path, monkeypatch):
 
 
 def test_ctrl_v_pastes_text_like_a_paste(tmp_path, monkeypatch):
-    monkeypatch.setattr("moka_chat.ui.app.read_clipboard", lambda: "line 1\r\nline 2")
+    monkeypatch.setattr("moka_code.ui.app.read_clipboard", lambda: "line 1\r\nline 2")
     ui = _ui_with_endpoint(tmp_path, accepts=True)
 
     ui.handle_global_input("\x16")
@@ -283,7 +283,7 @@ def test_export_embeds_images_and_import_restores_them(tmp_path, cache):
 
 
 def test_import_without_bytes_marks_the_image_unavailable(tmp_path):
-    from moka_chat.ui.chat_history_panel import ChatHistoryPanel
+    from moka_code.ui.chat_history_panel import ChatHistoryPanel
 
     panel = ChatHistoryPanel()
     image = {"n": 1, "name": "gone.png", "path": "/nonexistent.png",
@@ -300,7 +300,7 @@ def test_endpoint_learns_image_support_once(monkeypatch):
         calls.append(model_name)
         return False
 
-    monkeypatch.setattr("moka_chat.harness.endpoint_discovery.query_image_input", query)
+    monkeypatch.setattr("moka_code.harness.endpoint_discovery.query_image_input", query)
     endpoint = Endpoint(name="local", type="ollama", model="llama3")
     assert endpoint.accepts_images() is None
 
@@ -312,9 +312,9 @@ def test_endpoint_learns_image_support_once(monkeypatch):
 
 
 def test_references_are_colored_in_input_and_transcript(tmp_path):
-    from moka_chat.ui.chat_message import reference_spans
-    from moka_chat.ui.tui.buffer import Buffer
-    from moka_chat.ui.tui.colors import theme
+    from moka_code.ui.chat_message import reference_spans
+    from moka_code.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.colors import theme
 
     line = "see [image #1] and @src/a.png, not a@b.c"
     spans = [(line[s:e], fg) for s, e, fg in reference_spans(line)]
@@ -327,7 +327,7 @@ def test_references_are_colored_in_input_and_transcript(tmp_path):
     ui.input_component.render(buffer)
     assert buffer.cells[0][4].fg == theme.FOCUSED and buffer.cells[0][0].fg != theme.FOCUSED
 
-    from moka_chat.ui.chat_history_panel import ChatHistoryPanel
+    from moka_code.ui.chat_history_panel import ChatHistoryPanel
     msg = ChatHistoryPanel().add_user_message("look @a.png")
     component = msg.component
     component.set_layout(0, 0, 40, 1)
@@ -341,7 +341,7 @@ def test_references_are_colored_in_input_and_transcript(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_worker_read_returns_image_only_with_a_limit(tmp_path):
-    from moka_chat import worker
+    from moka_code import worker
 
     (tmp_path / "a.png").write_bytes(png())
     found = worker.read("a.png", cwd=tmp_path, max_image_bytes=5 * MB)
@@ -356,7 +356,7 @@ def test_worker_read_returns_image_only_with_a_limit(tmp_path):
 
 
 def test_worker_protocol_carries_the_image(tmp_path):
-    from moka_chat import worker
+    from moka_code import worker
 
     (tmp_path / "a.png").write_bytes(png())
     frame = asyncio.run(worker.handle_request(
@@ -365,10 +365,10 @@ def test_worker_protocol_carries_the_image(tmp_path):
 
 
 def _read_harness(tmp_path, monkeypatch, accepts=None):
-    from moka_chat.harness.roles import Role
+    from moka_code.harness.roles import Role
 
     (tmp_path / "shot.png").write_bytes(png(10, 20))
-    with patch("moka_chat.harness.harness.get_active_endpoint",
+    with patch("moka_code.harness.harness.get_active_endpoint",
                return_value=Endpoint(name="test", type="llamacpp", model="m")):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools={"read": "yes"}))
@@ -422,7 +422,7 @@ def test_read_on_a_text_only_model_says_why(tmp_path, monkeypatch):
 
 
 def test_read_line_shows_the_image():
-    from moka_chat.ui.chat_message import _tool_target_metric
+    from moka_code.ui.chat_message import _tool_target_metric
 
     def metric(output):
         return _tool_target_metric("read", {"path": "shot.png"}, raw=None,
@@ -433,7 +433,7 @@ def test_read_line_shows_the_image():
 
 
 def test_import_skips_the_tool_image_message(tmp_path):
-    from moka_chat.ui.commands.conversation import _rebuild_ui_from_history
+    from moka_code.ui.commands.conversation import _rebuild_ui_from_history
 
     ui = SimpleNamespace(chat_history_panel=_Panel())
     _rebuild_ui_from_history(ui, [

@@ -9,8 +9,8 @@ import sys
 
 import pytest
 
-from moka_chat.harness.tools import InProcessTransport, MinimalToolset
-from moka_chat.sandbox import (
+from moka_code.harness.tools import InProcessTransport, MinimalToolset
+from moka_code.sandbox import (
     ContainerSpec,
     SandboxError,
     SandboxProcess,
@@ -338,13 +338,13 @@ def test_containerfile_starter_has_base_and_workdir():
 
 
 def test_starter_bases_are_friendly_names():
-    from moka_chat.sandbox import CONTAINERFILE_BASES
+    from moka_code.sandbox import CONTAINERFILE_BASES
 
     assert CONTAINERFILE_BASES == ("python", "debian", "ubuntu")
 
 
 def test_resolve_base_maps_friendly_names_to_slim_images():
-    from moka_chat.sandbox import resolve_base
+    from moka_code.sandbox import resolve_base
 
     assert resolve_base("python") == "python:3.12-slim"
     assert resolve_base("debian") == "debian:stable-slim"
@@ -376,7 +376,7 @@ def test_runtime_available_none_true():
 
 
 def test_runtime_available_uses_which(monkeypatch):
-    import moka_chat.sandbox as sandbox
+    import moka_code.sandbox as sandbox
 
     monkeypatch.setattr(
         sandbox.shutil, "which", lambda b: "/usr/bin/podman" if b == "podman" else None
@@ -388,7 +388,7 @@ def test_runtime_available_uses_which(monkeypatch):
 
 
 def test_image_present(monkeypatch):
-    import moka_chat.sandbox as sandbox
+    import moka_code.sandbox as sandbox
 
     class _Result:
         returncode = 0
@@ -416,14 +416,14 @@ def test_run_build_streams_and_returns_code(tmp_path):
 # --- selection / wiring -----------------------------------------------------
 
 def test_build_transport_spec_none_is_none():
-    from moka_chat.harness.harness import _build_transport
+    from moka_code.harness.harness import _build_transport
 
     assert _build_transport(None, ".") is None
     assert _build_transport(ContainerSpec("none"), ".") is None
 
 
 def test_build_transport_spec_container(tmp_path):
-    from moka_chat.harness.harness import _build_transport
+    from moka_code.harness.harness import _build_transport
 
     transport = _build_transport(ContainerSpec("bubblewrap"), str(tmp_path))
 

@@ -91,15 +91,15 @@ So this is a **transport and lifecycle change**, not a rewrite.
 
 ---
 
-## 4. The worker (`moka_chat/worker.py`)
+## 4. The worker (`moka_code/worker.py`)
 
 A single, stdlib-only module that is both:
 
 - the container entrypoint (`python3 /opt/worker.py`), and
-- the host's source of tool bodies (`from moka_chat.worker import read, …`).
+- the host's source of tool bodies (`from moka_code.worker import read, …`).
 
 Stdlib-only is what makes the container need no install (see §7). Host import
-runs the heavy `moka_chat/__init__.py` (`Harness`, `httpx`), which is fine; the
+runs the heavy `moka_code/__init__.py` (`Harness`, `httpx`), which is fine; the
 container runs the file **as a script**, so the package `__init__` never runs.
 
 ### 4.1 Functions (mechanism)
@@ -220,7 +220,7 @@ container needs only a Python interpreter plus whatever *the project* needs
 - The host mounts its own installed `worker.py` read-only and runs it as a
   script:
   ```sh
-  PYSRC=$(python -c 'import moka_chat,os;print(os.path.dirname(moka_chat.__file__))')
+  PYSRC=$(python -c 'import moka_code,os;print(os.path.dirname(moka_code.__file__))')
   podman run -i --rm -w /workspace \
     -v "$PWD:/workspace:Z" \
     -v "$PYSRC/worker.py:/opt/worker.py:ro" \
@@ -242,7 +242,7 @@ user's convenience; moka never builds or ships an image (preserves
 
 ## 8. Launcher & lifecycle (host)
 
-`moka_chat/sandbox.py` (host-only; no `ui/` import) owns:
+`moka_code/sandbox.py` (host-only; no `ui/` import) owns:
 
 - **Selection:** the `--container` flag (see §9) chooses the backend.
 - **argv construction:** one place builds the runtime command.
@@ -329,14 +329,14 @@ old role files. Recorded here so the worker verb set stays exactly four
 Each ends green on §14 gates.
 
 - **W1 — Worker extraction (no behavior change).** Move `read`/`write`/`edit`/
-  `bash` bodies into `moka_chat/worker.py`; fold `patch_parser.py`;
+  `bash` bodies into `moka_code/worker.py`; fold `patch_parser.py`;
   `harness/tools.py` imports from `worker` and keeps schemas. `tools.py` tests
   stay green.
 - **W2 — Transport seam.** Introduce `ToolTransport`; `InProcessTransport`;
   `Harness`/`create_toolset` take a transport. Bare mode unchanged.
 - **W3 — Protocol + `__main__`.** JSONL loop in `worker.py` (stdlib, `-i`-safe,
   stdout=protocol); tests for framing, each verb, errors, timeout, shutdown.
-- **W4 — Launcher.** `moka_chat/sandbox.py`: `--container` selection, argv
+- **W4 — Launcher.** `moka_code/sandbox.py`: `--container` selection, argv
   construction, process ownership, lazy start, restart, stop. Unit-test argv;
   integration-test against a trivial fake runtime that echoes protocol.
 - **W5 — SandboxTransport.** Client side of the protocol; map frames; wire into
@@ -354,8 +354,8 @@ Each ends green on §14 gates.
 
 ```bash
 .pixi/envs/default/bin/python -m pytest test/ -q
-.pixi/envs/default/bin/python -m compileall -q moka_chat
-.pixi/envs/default/bin/python -m vulture moka_chat --min-confidence 80
+.pixi/envs/default/bin/python -m compileall -q moka_code
+.pixi/envs/default/bin/python -m vulture moka_code --min-confidence 80
 .pixi/envs/default/bin/python -m pytest test/test_core_ui_boundary.py -q
 .pixi/envs/default/bin/python -m pytest test/test_command_import_graph.py -q
 ```
@@ -411,7 +411,7 @@ Each ends green on §14 gates.
 
 ## 18. Deletions (delete before you design)
 
-- `moka_chat/harness/patch_parser.py` (folded into `worker.py`; `worker.edit`
+- `moka_code/harness/patch_parser.py` (folded into `worker.py`; `worker.edit`
   owns the parse/apply cascade).
 - Tool bodies in `harness/tools.py` (moved to `worker.py`).
 - Subagent machinery — already deleted (§12).

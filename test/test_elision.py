@@ -1,6 +1,6 @@
 """Tests for host-side tool-output elision."""
 
-from moka_chat.harness.elision import DEFAULT_LIMIT, elide
+from moka_code.harness.elision import DEFAULT_LIMIT, elide
 
 
 def test_short_text_is_unchanged():

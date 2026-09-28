@@ -7,10 +7,10 @@ import time
 from types import SimpleNamespace as NS
 from unittest.mock import patch
 
-from moka_chat.harness import events
-from moka_chat.harness.endpoint import Endpoint
-from moka_chat.harness.harness import Harness
-from moka_chat.harness.roles import Role
+from moka_code.harness import events
+from moka_code.harness.endpoint import Endpoint
+from moka_code.harness.harness import Harness
+from moka_code.harness.roles import Role
 
 
 def _tool_chunk(call_id, name, args):
@@ -20,7 +20,7 @@ def _tool_chunk(call_id, name, args):
 
 
 def _harness(tmp_path, tools, first_call):
-    with patch("moka_chat.harness.harness.get_active_endpoint",
+    with patch("moka_code.harness.harness.get_active_endpoint",
                return_value=Endpoint(name="t", type="llamacpp")):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools=tools))
@@ -88,8 +88,8 @@ def test_stop_during_a_permission_prompt_drops_a_late_approval(tmp_path):
 
 def test_presenter_unblocks_input_after_stop_during_permission(monkeypatch):
     from conftest import StubAgent
-    from moka_chat import settings
-    from moka_chat.ui.app import chatTUI
+    from moka_code import settings
+    from moka_code.ui.app import chatTUI
     import pytest
 
     monkeypatch.setattr(settings.config, "ui_stream_smoothing", False)

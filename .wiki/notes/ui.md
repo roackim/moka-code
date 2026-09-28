@@ -545,7 +545,7 @@ overlay only.
 
 ### How to Add a New Message Type
 
-1. **Define the class** in `moka_chat/ui/tui/msg_types.py`:
+1. **Define the class** in `moka_code/ui/tui/msg_types.py`:
    ```python
    class MyMsg(MsgType):
        name = "my_type"
@@ -632,7 +632,7 @@ line (regression test: `test_content_resuming_after_tool_draft_stays_one_message
 ## Commands (`commands/` package)
 
 Slash commands typed by the user (e.g. `/model`, `/theme`, `/help`).
-The package lives in `moka_chat/ui/commands/`:
+The package lives in `moka_code/ui/commands/`:
 
 - `registry.py` — the single `COMMANDS` assembly point and `handle_command()`.
 - `base.py` — `Param`, `Command`, `ChatUIProtocol`, completion helpers.

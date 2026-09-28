@@ -1,8 +1,8 @@
 """Tests for the redesigned message selection and action mode line."""
 
-from moka_chat.ui.app import chatTUI
-from moka_chat.ui.tui.chat_screen import ChatScreen
-from moka_chat.ui.tui.msg_types import SysMsg, ToolCallMsg, UserMsg
+from moka_code.ui.app import chatTUI
+from moka_code.ui.tui.chat_screen import ChatScreen
+from moka_code.ui.tui.msg_types import SysMsg, ToolCallMsg, UserMsg
 
 
 class Stub:

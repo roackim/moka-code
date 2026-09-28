@@ -45,7 +45,7 @@ Baseline suite: **502 passed, 2 pre-existing failures** unrelated to streaming
   prefix; `ingest()` vs `reveal_to(n)`.
 - Displace `set_streaming_active`/`streaming_active` and the per-token
   `request_render()` in the presenter.
-- Vendor `moka_chat/ui/tui/graphemes.py` rather than adding a `regex` dep.
+- Vendor `moka_code/ui/tui/graphemes.py` rather than adding a `regex` dep.
 - Natural `Done`: let the revealer drain, then finalize from the frame callback
   (spinner persists ≤100 ms). Snap only at hard boundaries.
 
@@ -53,26 +53,26 @@ Baseline suite: **502 passed, 2 pre-existing failures** unrelated to streaming
 
 ## 2. Current anchors (verify line numbers; they move)
 
-- **Compositor** `moka_chat/ui/tui/compositor.py`
+- **Compositor** `moka_code/ui/tui/compositor.py`
   - `self.streaming_active` `:32`; `set_streaming_active` `:102`
   - `should_render = self.streaming_active or ...` `:206-207`
   - per-iteration `TickEvent` dispatch `:203` (keep — spinner still uses it)
   - loop body `run()` `:116-237`; render `:244`
-- **App / chatTUI** `moka_chat/ui/app.py`
+- **App / chatTUI** `moka_code/ui/app.py`
   - `Compositor(...)` `:733`; `tg.create_task(self.compositor.run())` `:775`
   - `TickEvent` handling / `_status_spinner_frame` `:580-589`
-- **Presenter** `moka_chat/ui/generation_presenter.py`
+- **Presenter** `moka_code/ui/generation_presenter.py`
   - `set_streaming_active(True)` `:59-60`; per-event `request_render()` `:65-66`
   - message create/append for Reasoning `:78-89`, Token `:91-100`
   - finalize before ToolCall/PermissionRequest `:108,130`; Error `:224`
   - `finally` clears streaming `:255-257`; auto-scroll `:232-238`
-- **Message** `moka_chat/ui/chat_message.py`
+- **Message** `moka_code/ui/chat_message.py`
   - `base_text` `:66`; `append()` `:454-459`; `reformat()` `:416-439`
   - `finalize()` `:137` (already calls `component.set_streaming(False)`)
-- **Panel** `moka_chat/ui/chat_history_panel.py`
+- **Panel** `moka_code/ui/chat_history_panel.py`
   - `auto_scroll` `:37`; `new_message` `:624`; `replace_message` `:739`;
     `add_message` `:771`
-- **Config** `moka_chat/settings.py`
+- **Config** `moka_code/settings.py`
   - `_UI_SPEC` `:256-276`; `DEFAULT_UI_TOML` comments `:120-130`; defaults
     `:413-431`. `target_fps` is a top-level `ui.toml` key (`:276`).
 - **Spinner** unaffected: `ChatHistoryPanel.handle_input(TickEvent)` `:449-453`
@@ -88,12 +88,12 @@ Baseline suite: **502 passed, 2 pre-existing failures** unrelated to streaming
   `:203` with `time.perf_counter()`; if any returns `True`, `request_render()`.
   Iterate over a **copy** so callbacks can unregister. Unit-test invocation,
   render request, and safe mutation during iteration.
-- **S2 — Grapheme helper.** New `moka_chat/ui/tui/graphemes.py`:
+- **S2 — Grapheme helper.** New `moka_code/ui/tui/graphemes.py`:
   `split_clusters(text) -> list[str]`, `count_nonws(text) -> int`,
   `advance_nonws(text, n) -> int`. Honour combining marks, ZWJ, variation
   selectors, skin-tone modifiers, regional-indicator pairs, Hangul jamo.
   Tests for each; whitespace runs.
-- **S3 — `StreamRevealer`.** New `moka_chat/ui/stream_revealer.py`, no TUI
+- **S3 — `StreamRevealer`.** New `moka_code/ui/stream_revealer.py`, no TUI
   imports, all time passed in. API and algorithm exactly as plan §2.1/§3:
   `ingest`, `pending`, `tick`, `drain`, `active`. Constants:
   `max_window = 0.100`, `default_window = 0.100`, `min_cluster_grain = 1`.
@@ -138,8 +138,8 @@ plan §10 integration list are the contract — implement them.
 
 ```bash
 .pixi/envs/default/bin/python -m pytest test/ -q
-.pixi/envs/default/bin/python -m compileall -q moka_chat
-.pixi/envs/default/bin/python -m vulture moka_chat --min-confidence 80
+.pixi/envs/default/bin/python -m compileall -q moka_code
+.pixi/envs/default/bin/python -m vulture moka_code --min-confidence 80
 .pixi/envs/default/bin/python -m pytest test/test_core_ui_boundary.py -q
 .pixi/envs/default/bin/python -m pytest test/test_streaming_incremental.py -q
 .pixi/envs/default/bin/python notes/bench_render.py --load notes/bench_baseline.json

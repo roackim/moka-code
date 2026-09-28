@@ -1,4 +1,4 @@
-# moka_chat/ui/ — Chat UI Layer
+# moka_code/ui/ — Chat UI Layer
 
 Async TUI built from scratch. Handles chat display, user input, message
 actions, and slash commands. See [notes/ui.md](../notes/ui.md) for the full

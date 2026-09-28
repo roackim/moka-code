@@ -13,7 +13,7 @@ import pytest
 
 @pytest.fixture
 def cfg(monkeypatch, tmp_path):
-    import moka_chat.settings as cfg_mod
+    import moka_code.settings as cfg_mod
 
     monkeypatch.setattr(cfg_mod, "get_config_dir", lambda: tmp_path)
     monkeypatch.setattr(cfg_mod, "get_state_path", lambda: tmp_path / "state.toml")
@@ -33,7 +33,7 @@ def test_get_endpoint_applies_per_server_selection(cfg):
     }
     cfg.config.model_selection["srv"] = "selected-model"
 
-    from moka_chat.harness.endpoint import get_endpoint
+    from moka_code.harness.endpoint import get_endpoint
 
     assert get_endpoint("srv").selected_model == "selected-model"
 
@@ -46,13 +46,13 @@ def test_get_endpoint_falls_back_to_legacy_model(cfg):
         "model": "legacy-default",
     }
 
-    from moka_chat.harness.endpoint import get_endpoint
+    from moka_code.harness.endpoint import get_endpoint
 
     assert get_endpoint("srv").selected_model == "legacy-default"
 
 
 def test_llamacpp_reconciles_requested_selection_with_served_model(cfg, monkeypatch):
-    from moka_chat.harness.endpoint import Endpoint
+    from moka_code.harness.endpoint import Endpoint
 
     endpoint = Endpoint(
         name="local", type="llamacpp", base_url="http://localhost:8080/v1",
@@ -84,7 +84,7 @@ def test_active_endpoint_uses_only_its_own_server_selection(cfg):
     cfg.config.model_selection["b"] = "vendor/model-b"
     cfg.config.active_server = "a"
 
-    from moka_chat.harness.endpoint import get_active_endpoint
+    from moka_code.harness.endpoint import get_active_endpoint
 
     endpoint = get_active_endpoint()
     assert endpoint.name == "a"
@@ -96,7 +96,7 @@ def test_get_endpoint_seeds_context_window_from_catalog(cfg):
     cfg.config.model_selection["or"] = "vendor/m"
     cfg.config.models_by_server["or"] = [{"id": "vendor/m", "context_window": 1048576}]
 
-    from moka_chat.harness.endpoint import get_endpoint
+    from moka_code.harness.endpoint import get_endpoint
 
     endpoint = get_endpoint("or")
 
@@ -109,7 +109,7 @@ def test_get_endpoint_seeds_context_window_from_catalog(cfg):
 
 def test_context_window_fallback_is_not_memoized():
     """A transient failure shows the fallback but a later probe can succeed."""
-    from moka_chat.harness.endpoint import Endpoint
+    from moka_code.harness.endpoint import Endpoint
 
     endpoint = Endpoint(name="o", type="ollama", base_url="http://o/v1", model="m")
     answers = [RuntimeError("down"), 65536]
@@ -126,7 +126,7 @@ def test_context_window_fallback_is_not_memoized():
 
 
 def test_model_name_fallback_is_not_memoized():
-    from moka_chat.harness.endpoint import Endpoint
+    from moka_code.harness.endpoint import Endpoint
 
     endpoint = Endpoint(name="o", type="ollama", base_url="http://o/v1")
     answers = [RuntimeError("down"), "llama3"]
@@ -153,7 +153,7 @@ class _ReloadAgent:
 
 
 def _reapply(agent):
-    from moka_chat.ui.commands.base import reapply_endpoint
+    from moka_code.ui.commands.base import reapply_endpoint
 
     async def _run():
         reapply_endpoint(SimpleNamespace(agent=agent))
@@ -162,7 +162,7 @@ def _reapply(agent):
 
 
 def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatch):
-    from moka_chat.harness.endpoint import Endpoint, get_active_endpoint
+    from moka_code.harness.endpoint import Endpoint, get_active_endpoint
 
     async def _no_probe(self):
         return None
@@ -182,7 +182,7 @@ def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatc
 
 def test_openrouter_providers_are_a_strict_ordered_whitelist():
     """``order`` alone falls back to any host; fallbacks must be disabled."""
-    from moka_chat.harness.endpoint import Endpoint
+    from moka_code.harness.endpoint import Endpoint
 
     endpoint = Endpoint(
         name="or", type="openrouter", providers=["deepseek"],
@@ -203,7 +203,7 @@ def test_openrouter_providers_are_a_strict_ordered_whitelist():
 
 
 def test_openrouter_bare_model_table_matches_canonical_id():
-    from moka_chat.harness.endpoint import Endpoint
+    from moka_code.harness.endpoint import Endpoint
 
     endpoint = Endpoint(name="or", type="openrouter",
                         models={"deepseek-v4.1-flash": {"providers": ["deepseek"]}})

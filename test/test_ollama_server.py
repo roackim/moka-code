@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from moka_chat.harness.endpoint import Endpoint
+from moka_code.harness.endpoint import Endpoint
 
 
 def make_client() -> MagicMock:

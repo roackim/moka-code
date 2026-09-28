@@ -11,10 +11,10 @@ A), the reference is built with ``streaming=True`` so it applies the same rule.
 
 import pytest
 
-from moka_chat.ui.chat_history_panel import ChatHistoryPanel
-from moka_chat.ui.tui.buffer import Buffer
-from moka_chat.ui.tui.components.markdown import MarkdownComponent
-from moka_chat.ui.tui.msg_types import AssistantMsg, UserMsg
+from moka_code.ui.chat_history_panel import ChatHistoryPanel
+from moka_code.ui.tui.buffer import Buffer
+from moka_code.ui.tui.components.markdown import MarkdownComponent
+from moka_code.ui.tui.msg_types import AssistantMsg, UserMsg
 
 
 SAMPLES = [

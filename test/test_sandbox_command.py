@@ -2,10 +2,10 @@
 
 import asyncio
 
-import moka_chat.settings as settings
-import moka_chat.sandbox as sandbox
-from moka_chat import projects
-from moka_chat.ui.commands.registry import COMMANDS
+import moka_code.settings as settings
+import moka_code.sandbox as sandbox
+from moka_code import projects
+from moka_code.ui.commands.registry import COMMANDS
 
 
 class _Panel:
@@ -129,7 +129,7 @@ def test_init_completes_runtimes_then_bases(monkeypatch, tmp_path):
 
 
 def test_subcommand_descriptions_exposed():
-    from moka_chat.ui.commands.registry import get_subcommand_descriptions
+    from moka_code.ui.commands.registry import get_subcommand_descriptions
 
     descriptions = get_subcommand_descriptions("sandbox")
 
@@ -156,7 +156,7 @@ def test_config_opens_project_file(tmp_path, monkeypatch):
     async def _open(ui):
         called.append(True)
 
-    monkeypatch.setattr("moka_chat.ui.commands.sandbox.open_project_sandbox", _open)
+    monkeypatch.setattr("moka_code.ui.commands.sandbox.open_project_sandbox", _open)
     ui = _UI(tmp_path)
     _run(ui, ["config"])
     assert called == [True]

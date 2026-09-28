@@ -11,9 +11,9 @@ from typing import Optional
 
 import pytest
 
-from moka_chat.harness.harness import Harness
-from moka_chat.harness.llm_status import AgentState
-from moka_chat.harness.permissions import PermissionGate
+from moka_code.harness.harness import Harness
+from moka_code.harness.llm_status import AgentState
+from moka_code.harness.permissions import PermissionGate
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +115,7 @@ def harness_stub(tmp_path, stub_read_tool):
     harness.history = []
     harness.workspace = str(tmp_path)
     harness.tools_map = {"read": stub_read_tool}
-    from moka_chat.harness.roles import Role
+    from moka_code.harness.roles import Role
 
     harness._permission_gate = PermissionGate(role=Role(name="test", tools={"read": "yes"}))
     return harness

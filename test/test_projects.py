@@ -3,7 +3,7 @@
 import pytest
 import toml
 
-from moka_chat import settings, projects
+from moka_code import settings, projects
 
 
 @pytest.fixture

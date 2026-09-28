@@ -1,7 +1,7 @@
 """AsciiTable width handling: wide/emoji cells align; no hidden truncation."""
 
-from moka_chat.ui.tui.ascii_table import AsciiTable, TableStyle
-from moka_chat.ui.tui.layout_utils import display_width
+from moka_code.ui.tui.ascii_table import AsciiTable, TableStyle
+from moka_code.ui.tui.layout_utils import display_width
 
 
 def _lines(table: AsciiTable):
@@ -38,8 +38,8 @@ def test_no_per_column_cap_when_max_width_is_none():
 
 
 def test_markdown_table_with_emoji_renders_aligned():
-    from moka_chat.ui.tui.components.markdown import MarkdownComponent
-    from moka_chat.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.components.markdown import MarkdownComponent
+    from moka_code.ui.tui.buffer import Buffer
 
     md = (
         "| 🏆 Rank | 👤 Name | 🎯 Score |\n"
@@ -100,7 +100,7 @@ def test_no_blank_lines_around_the_table():
 
 
 def test_markdown_table_fits_the_component_and_relays_on_resize():
-    from moka_chat.ui.tui.components.markdown import MarkdownComponent
+    from moka_code.ui.tui.components.markdown import MarkdownComponent
 
     md = ("| name | notes |\n|---|---|\n"
           "| `x` | **a** long cell that will need to wrap at narrow widths |\n")

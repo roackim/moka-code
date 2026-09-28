@@ -1,10 +1,10 @@
-from moka_chat.ui.tui.actions import Action, ActionMap
-from moka_chat.ui.tui.buffer import Buffer
-from moka_chat.ui.tui.components.base import Component
-from moka_chat.ui.tui.components.text import Label
-from moka_chat.ui.tui.events import KeyEvent, MouseEvent, ResizeEvent
-from moka_chat.ui.tui.focus import FocusScope
-from moka_chat.ui.tui.router import EventRouter
+from moka_code.ui.tui.actions import Action, ActionMap
+from moka_code.ui.tui.buffer import Buffer
+from moka_code.ui.tui.components.base import Component
+from moka_code.ui.tui.components.text import Label
+from moka_code.ui.tui.events import KeyEvent, MouseEvent, ResizeEvent
+from moka_code.ui.tui.focus import FocusScope
+from moka_code.ui.tui.router import EventRouter
 
 
 class RecordingComponent(Component):

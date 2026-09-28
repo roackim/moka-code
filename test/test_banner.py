@@ -1,11 +1,11 @@
 """The moka banner: shown in an empty transcript, degrading with the width."""
 
-from moka_chat import settings
-from moka_chat.ui.banner import banner_lines
-from moka_chat.ui.chat_history_panel import ChatHistoryPanel
-from moka_chat.ui.tui.buffer import Buffer
-from moka_chat.ui.tui.layout_utils import display_width
-from moka_chat.ui.tui.msg_types import UserMsg
+from moka_code import settings
+from moka_code.ui.banner import banner_lines
+from moka_code.ui.chat_history_panel import ChatHistoryPanel
+from moka_code.ui.tui.buffer import Buffer
+from moka_code.ui.tui.layout_utils import display_width
+from moka_code.ui.tui.msg_types import UserMsg
 
 
 def _width(lines):

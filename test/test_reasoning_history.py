@@ -9,9 +9,9 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from moka_chat import settings
-from moka_chat.harness.endpoint import Endpoint
-from moka_chat.harness.harness import Harness
+from moka_code import settings
+from moka_code.harness.endpoint import Endpoint
+from moka_code.harness.harness import Harness
 
 
 def _chunk(content=None, reasoning=None, finish=None):
@@ -29,7 +29,7 @@ def _harness():
 
 def test_chat_stores_reasoning_verbatim_in_history(tmp_path, monkeypatch):
     with patch(
-        "moka_chat.harness.harness.get_active_endpoint",
+        "moka_code.harness.harness.get_active_endpoint",
         return_value=Endpoint(name="test", type="llamacpp"),
     ):
         harness = Harness(workspace_path=str(tmp_path))
@@ -54,7 +54,7 @@ def test_chat_stores_reasoning_verbatim_in_history(tmp_path, monkeypatch):
 
 def test_openai_adapter_reads_openrouter_reasoning_field():
     """OpenRouter streams ``reasoning``; DeepSeek streams ``reasoning_content``."""
-    from moka_chat.harness.endpoint_openai import _adapt_stream_chunk
+    from moka_code.harness.endpoint_openai import _adapt_stream_chunk
 
     def reason(payload):
         chunk = _adapt_stream_chunk(
@@ -69,10 +69,10 @@ def test_openai_adapter_reads_openrouter_reasoning_field():
 
 def test_openrouter_streamed_reasoning_reaches_history(tmp_path, monkeypatch):
     """The whole pipe: adapter → harness → history entry."""
-    from moka_chat.harness.endpoint_openai import _adapt_stream_chunk
+    from moka_code.harness.endpoint_openai import _adapt_stream_chunk
 
     with patch(
-        "moka_chat.harness.harness.get_active_endpoint",
+        "moka_code.harness.harness.get_active_endpoint",
         return_value=Endpoint(name="test", type="openrouter"),
     ):
         harness = Harness(workspace_path=str(tmp_path))
@@ -146,8 +146,8 @@ def test_preserve_sends_every_turns_reasoning():
 
 
 def test_each_server_gets_reasoning_in_its_own_field():
-    from moka_chat.harness.endpoint_ollama import ollama_messages
-    from moka_chat.harness.endpoint_openai import outgoing_messages
+    from moka_code.harness.endpoint_ollama import ollama_messages
+    from moka_code.harness.endpoint_openai import outgoing_messages
 
     details = [{"type": "reasoning.encrypted", "data": "xyz", "index": 0}]
     plain = {"role": "assistant", "content": "a", "reasoning": "r"}
@@ -164,7 +164,7 @@ def test_each_server_gets_reasoning_in_its_own_field():
 
 
 def test_streamed_reasoning_details_are_rebuilt_per_block():
-    from moka_chat.harness.endpoint_openai import merge_reasoning_details
+    from moka_code.harness.endpoint_openai import merge_reasoning_details
 
     blocks = []
     merge_reasoning_details(blocks, [{"type": "reasoning.text", "text": "Let ", "index": 0,
@@ -187,11 +187,11 @@ def test_tool_calls_are_sent_back_with_their_results(tmp_path, monkeypatch):
     A regression stored the assistant turn without ``tool_calls``, so the model
     received orphaned ``tool`` results and never saw its own call.
     """
-    from moka_chat.harness.roles import Role
+    from moka_code.harness.roles import Role
 
     (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
     with patch(
-        "moka_chat.harness.harness.get_active_endpoint",
+        "moka_code.harness.harness.get_active_endpoint",
         return_value=Endpoint(name="test", type="llamacpp"),
     ):
         harness = Harness(workspace_path=str(tmp_path))
@@ -228,10 +228,10 @@ def test_tool_calls_are_sent_back_with_their_results(tmp_path, monkeypatch):
 
 
 def test_tool_loop_request_carries_the_reasoning_behind_the_call(tmp_path, monkeypatch):
-    from moka_chat.harness.roles import Role
+    from moka_code.harness.roles import Role
 
     (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
-    with patch("moka_chat.harness.harness.get_active_endpoint",
+    with patch("moka_code.harness.harness.get_active_endpoint",
                return_value=Endpoint(name="test", type="llamacpp")):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools={"read": "yes"}))
@@ -275,7 +275,7 @@ def test_preserve_reasoning_defaults_true_and_a_model_table_overrides_it():
 
 
 def test_preserve_reasoning_is_validated(tmp_path):
-    from moka_chat.settings import Config
+    from moka_code.settings import Config
 
     (tmp_path / "servers.toml").write_text(
         '[servers.or]\ntype = "openrouter"\npreserve_reasoning = "yes"\n'

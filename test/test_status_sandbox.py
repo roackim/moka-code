@@ -2,8 +2,8 @@
 
 from types import SimpleNamespace
 
-from moka_chat.ui.status_presenter import _resolve_color, refresh_status_bar
-from moka_chat.ui.tui.colors import theme
+from moka_code.ui.status_presenter import _resolve_color, refresh_status_bar
+from moka_code.ui.tui.colors import theme
 
 
 class _Bar:

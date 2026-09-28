@@ -2,8 +2,8 @@
 
 import pytest
 
-from moka_chat.harness.permissions import PermissionGate
-from moka_chat.harness.roles import (
+from moka_code.harness.permissions import PermissionGate
+from moka_code.harness.roles import (
     Role,
     agent_role,
     builtin_roles,
@@ -15,7 +15,7 @@ from moka_chat.harness.roles import (
     list_roles,
     validate_roles,
 )
-import moka_chat.harness.roles as roles_module
+import moka_code.harness.roles as roles_module
 
 
 def test_agent_role_enables_everything():

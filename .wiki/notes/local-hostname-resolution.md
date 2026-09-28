@@ -1,7 +1,7 @@
 # `.local` (mDNS) Hostname Resolution
 
-moka's endpoint layer (`moka_chat/harness/endpoint.py`, with resolution in
-`moka_chat/harness/endpoint_local.py`) has special handling for `*.local`
+moka's endpoint layer (`moka_code/harness/endpoint.py`, with resolution in
+`moka_code/harness/endpoint_local.py`) has special handling for `*.local`
 hostnames (mDNS / Bonjour / Avahi), which are common for local servers on a LAN
 (e.g. `http://llm-mini-server.local:8080`).
 

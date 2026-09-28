@@ -2,9 +2,9 @@
 
 import asyncio
 
-import moka_chat.settings as settings
-from moka_chat.ui.commands.themes import theme_command
-from moka_chat.ui.tui import colors
+import moka_code.settings as settings
+from moka_code.ui.commands.themes import theme_command
+from moka_code.ui.tui import colors
 
 
 class _Panel:
@@ -104,8 +104,8 @@ def test_theme_command_opens_picker(monkeypatch, tmp_path):
 
 
 def test_refresh_theme_recolors_existing_message():
-    from moka_chat.ui.chat_message import Message
-    from moka_chat.ui.tui.msg_types import AssistantMsg
+    from moka_code.ui.chat_message import Message
+    from moka_code.ui.tui.msg_types import AssistantMsg
 
     original = colors.theme.name
     try:
@@ -120,7 +120,7 @@ def test_refresh_theme_recolors_existing_message():
 
 
 def test_refresh_theme_forces_full_redraw():
-    from moka_chat.ui.app import chatTUI
+    from moka_code.ui.app import chatTUI
     from conftest import StubAgent
 
     ui = chatTUI(StubAgent())
@@ -136,8 +136,8 @@ def test_refresh_theme_forces_full_redraw():
 
 
 def test_modal_refresh_theme():
-    from moka_chat.ui.tui.components.popup import Popup
-    from moka_chat.ui.tui.components.menu import SelectionMenu
+    from moka_code.ui.tui.components.popup import Popup
+    from moka_code.ui.tui.components.menu import SelectionMenu
 
     popup = Popup()
     menu = SelectionMenu()
@@ -157,9 +157,9 @@ def test_modal_refresh_theme():
 
 
 def test_completion_menu_refresh_theme():
-    from moka_chat.ui.commands.base import Command, Param
-    from moka_chat.ui.tui.components.input.completion import ArgumentCompletion
-    from moka_chat.ui.tui.components.menu import SelectionMenu
+    from moka_code.ui.commands.base import Command, Param
+    from moka_code.ui.tui.components.input.completion import ArgumentCompletion
+    from moka_code.ui.tui.components.menu import SelectionMenu
 
     comp = ArgumentCompletion(SelectionMenu(), {
         "demo": Command("demo", "d", params=[Param("A", completions=["x"])]),
@@ -177,7 +177,7 @@ def test_completion_menu_refresh_theme():
 
 def test_refresh_theme_recolors_status_server_model():
     from types import SimpleNamespace
-    from moka_chat.ui.app import chatTUI
+    from moka_code.ui.app import chatTUI
 
     endpoint = SimpleNamespace(
         name="local",
@@ -210,7 +210,7 @@ def test_refresh_theme_recolors_status_server_model():
 
 def test_theme_picker_registers_preview_overlay(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "get_state_path", lambda: tmp_path / "state.toml")
-    from moka_chat.ui.tui.components.theme_preview import ThemePreview
+    from moka_code.ui.tui.components.theme_preview import ThemePreview
 
     class _Compositor:
         def __init__(self):
@@ -243,8 +243,8 @@ def test_theme_picker_registers_preview_overlay(monkeypatch, tmp_path):
 
 
 def test_theme_preview_stays_in_top_strip():
-    from moka_chat.ui.tui.buffer import Buffer
-    from moka_chat.ui.tui.components.theme_preview import ThemePreview
+    from moka_code.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.components.theme_preview import ThemePreview
 
     preview = ThemePreview()
     preview.is_visible = True
@@ -257,7 +257,7 @@ def test_theme_preview_stays_in_top_strip():
 
 
 def test_theme_preview_registers_as_overlay():
-    from moka_chat.ui.tui.components.theme_preview import ThemePreview
+    from moka_code.ui.tui.components.theme_preview import ThemePreview
 
     class _Compositor:
         def __init__(self):
@@ -285,8 +285,8 @@ def test_theme_preview_registers_as_overlay():
 
 
 def test_theme_preview_renders_palette_swatches():
-    from moka_chat.ui.tui.buffer import Buffer
-    from moka_chat.ui.tui.components.theme_preview import ThemePreview
+    from moka_code.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.components.theme_preview import ThemePreview
 
     original = colors.theme.name
     try:

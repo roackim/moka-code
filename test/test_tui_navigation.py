@@ -1,12 +1,12 @@
-from moka_chat.ui.tui.actions import ActionMap
-from moka_chat.ui.tui.buffer import Buffer
-from moka_chat.ui.tui.components.base import Component
-from moka_chat.ui.tui.compositor import Compositor
-from moka_chat.ui.tui.focus import FocusScope
-from moka_chat.ui.tui.navigation import ModalHost, Navigator
-from moka_chat.ui.tui.screen import Screen
-from moka_chat.ui.tui.chat_screen import ChatScreen
-from moka_chat.ui.tui.events import KeyEvent
+from moka_code.ui.tui.actions import ActionMap
+from moka_code.ui.tui.buffer import Buffer
+from moka_code.ui.tui.components.base import Component
+from moka_code.ui.tui.compositor import Compositor
+from moka_code.ui.tui.focus import FocusScope
+from moka_code.ui.tui.navigation import ModalHost, Navigator
+from moka_code.ui.tui.screen import Screen
+from moka_code.ui.tui.chat_screen import ChatScreen
+from moka_code.ui.tui.events import KeyEvent
 
 
 class RecordingComponent(Component):

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-COMMANDS_DIR = Path(__file__).resolve().parent.parent / "moka_chat" / "ui" / "commands"
+COMMANDS_DIR = Path(__file__).resolve().parent.parent / "moka_code" / "ui" / "commands"
 
 # Modules that may import sibling domain modules.
 ASSEMBLERS = {"registry.py", "__init__.py"}

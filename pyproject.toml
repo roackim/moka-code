@@ -1,5 +1,5 @@
 [project]
-name = "moka-chat"
+name = "moka-code"
 version = "0.8.0"
 description = "Local llm cli agent"
 requires-python = ">= 3.10"
@@ -20,25 +20,25 @@ test = ["pytest", "pytest-xdist"]
 dev = ["vulture"]
 
 [project.scripts]
-moka = "moka_chat.main:main"
+moka = "moka_code.main:main"
 
 [build-system]
 requires = ["setuptools>=42"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = {find = {include = ["moka_chat*"]}}
+packages = {find = {include = ["moka_code*"]}}
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
 [tool.pixi.pypi-dependencies]
-moka-chat = { path = ".", editable = true, extras = ["git"] }
+moka-code = { path = ".", editable = true, extras = ["git"] }
 
 [tool.pixi.tasks]
 tests = "pytest test/"
-app = "python moka_chat/main.py"
+app = "python moka_code/main.py"
 
 [tool.pixi.dependencies]
 ipykernel = "*"

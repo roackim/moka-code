@@ -1,4 +1,4 @@
-# moka_chat/ — Root Package
+# moka_code/ — Root Package
 
 Entry point, config loading, and public API exports.
 

@@ -8,10 +8,10 @@ import asyncio
 
 import pytest
 
-from moka_chat import settings
-from moka_chat.harness import events
-from moka_chat.ui.app import chatTUI
-from moka_chat.ui.tui.msg_types import AssistantMsg, ThinkingMsg, ToolCallMsg
+from moka_code import settings
+from moka_code.harness import events
+from moka_code.ui.app import chatTUI
+from moka_code.ui.tui.msg_types import AssistantMsg, ThinkingMsg, ToolCallMsg
 
 from conftest import StubAgent
 
@@ -216,7 +216,7 @@ def test_cancel_finalizes_in_flight_tool_draft():
 
 
 def test_reasoning_complete_before_content_appears(monkeypatch):
-    from moka_chat import settings
+    from moka_code import settings
     monkeypatch.setattr(settings.config, "ui_thought_min_tokens", 0)
     ui = chatTUI(StubAgent())
     script = [
@@ -294,7 +294,7 @@ def test_waiting_line_removed_before_a_tool_call():
     assert kinds.count("ToolCallMsg") == 1
 
 def test_thinking_message_finalizes_to_duration_summary(monkeypatch):
-    from moka_chat import settings
+    from moka_code import settings
     monkeypatch.setattr(settings.config, "ui_thought_min_tokens", 0)
     ui = chatTUI(StubAgent())
     script = [
