@@ -6,8 +6,8 @@ scrolling mid-drag keeps it) and ``col`` a column relative to the panel. Each
 message keeps its rendered rows in its box's sub-buffer, so the highlighted
 cells and the copied characters are the same thing — tables, code blocks and
 wide characters come out as displayed. Only a message's text area counts
-(not the gutter bar or padding); a gap between messages copies as a blank
-line. The selection stays after the drag until ``c`` copies it (``take``)
+(not the gutter bar, padding, or a code block's drawn indent); a gap between
+messages copies as a blank line. The selection stays after the drag until ``c`` copies it (``take``)
 or focus moves (the panel clears it).
 """
 from __future__ import annotations
@@ -15,6 +15,7 @@ from __future__ import annotations
 import bisect
 from typing import Optional
 
+from moka_code.ui.tui.components.markdown import CODE_INDENT
 from moka_code.ui.tui.layout_utils import strip_ansi
 
 Point = tuple[int, int]
@@ -82,11 +83,16 @@ class MessageSelection:
         box = msg.get_component()
         child = getattr(box, "child", box)
         local = row - starts[index]
-        if box.subbuffer is None or local >= child.height or local >= len(box.subbuffer.cells):
+        top = child.y - box.y   # blank padding rows above the content
+        if (box.subbuffer is None or not top <= local < top + child.height
+                or local >= len(box.subbuffer.cells)):
             return None
         box_left = msg.left_margin
         first = box_left + (child.x - box.x)
-        return box.subbuffer.cells[local], box_left, first, first + child.width - 1
+        last = first + child.width - 1
+        if getattr(msg, "segment_kind", None) == "code":
+            first += len(CODE_INDENT)   # the drawn indent is not code
+        return box.subbuffer.cells[local], box_left, first, last
 
     def _spans(self):
         """Yield ``(row, cells, box_left, lo, hi)`` per selected row; ``cells``

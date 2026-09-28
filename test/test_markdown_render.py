@@ -1,6 +1,6 @@
 """Markdown presentation: emphasis colors, list pastilles, cluster-aware wrap."""
 
-from moka_code.ui.tui.components.markdown import Markdown, MarkdownComponent
+from moka_code.ui.tui.components.markdown import CODE_INDENT, Markdown, MarkdownComponent
 from moka_code.ui.tui.buffer import Buffer
 from moka_code.ui.tui.layout_utils import display_width
 
@@ -63,7 +63,9 @@ def test_hard_break_counts_emoji_clusters():
     rendered = [line for line in lines if line]
 
     assert all(display_width(line) <= 40 for line in rendered)
-    assert sum(display_width(line) for line in rendered) == 80
+    # Every wrapped row starts with the block's indent.
+    assert all(line.startswith(CODE_INDENT) for line in rendered)
+    assert sum(display_width(line) - len(CODE_INDENT) for line in rendered) == 80
 
 
 def test_header_marker_matches_the_source_level():

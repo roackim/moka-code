@@ -260,6 +260,8 @@ class ChatHistoryPanel(TextComponent):
             part = self.new_message(segment.text, msg_type=AssistantMsg(),
                                     harness_message_ids=list(msg.harness_message_ids))
             part.group, part.segment_kind, part.copy_text = group, segment.kind, segment.copy
+            if segment.kind == "code":
+                part.box.content_pad_y = 1   # a blank row above and below
             part.finalize()
             part.get_component().parent = self
             parts.append(part)

@@ -55,6 +55,10 @@ def _get_style(element: str) -> dict:
 # StyledSegment
 # ---------------------------------------------------------------------------
 
+# Fenced code is drawn indented by this much; mouse selection skips it.
+CODE_INDENT = "  "
+
+
 @dataclass
 class StyledSegment:
     text: str
@@ -63,6 +67,7 @@ class StyledSegment:
     bold: bool = False
     reverse: bool = False
     code_block: bool = False  # If True, skip word-wrap and hard-break instead
+    indent: bool = False      # Code-block indent: repeated on wrapped rows, never copied
     italic: bool = False
     underline: bool = False
 
@@ -718,7 +723,7 @@ class Markdown:
             # Apply syntax highlighting
             from moka_code.ui.tui.syntax_highlight import highlight_line, _get_highlight_color
             hl_segments = [(block.text, "")] if plain_inline else highlight_line(block.text, block.lang)
-            result_segs: List[StyledSegment] = []
+            result_segs = [StyledSegment(CODE_INDENT, code_block=True, indent=True)]
             for text, hl_type in hl_segments:
                 seg_fg = _get_highlight_color(hl_type)
                 if seg_fg is None:
@@ -1044,7 +1049,11 @@ class MarkdownComponent(Component):
         if len(segments) == 1 and segments[0].text == "hr":
             return [segments]
 
-        # Code block lines: hard-break to preserve indentation
+        # Code block lines: hard-break to preserve indentation; the block's
+        # own indent starts every wrapped row.
+        if segments and segments[0].indent:
+            rows = self._hard_break_line(segments[1:], max(1, max_width - len(CODE_INDENT)))
+            return [[segments[0], *row] for row in rows]
         if segments and segments[0].code_block:
             return self._hard_break_line(segments, max_width)
 

@@ -39,6 +39,8 @@ class MessageView(Box):
         self.full_height_gutter = gutter_full_height
         self.content_pad_left = max(0, content_pad_left)
         self.content_pad_right = max(0, content_pad_right)
+        # Blank rows above and below the content (a code block's separation).
+        self.content_pad_y = 0
 
     # -- layout --------------------------------------------------------
 
@@ -53,11 +55,12 @@ class MessageView(Box):
         # A focused message with actions reserves the last row for the action
         # line, so the content is one row shorter.
         has_actions = bool(self._visible_actions())
-        child_h = max(0, height - (1 if has_actions else 0))
+        pad_y = self.content_pad_y
+        child_h = max(0, height - 2 * pad_y - (1 if has_actions else 0))
         child_x = x + 1 + pad_l
         child_w = max(0, self.thread_content_width(width, pad_l, pad_r))
         self._layout_self_and_child(
-            x, y, width, height, child_x, y, child_w, child_h, size_changed)
+            x, y, width, height, child_x, y + pad_y, child_w, child_h, size_changed)
         self._finalize_layout(x, y, width, height, size_changed)
 
     def get_preferred_height(self, width: int) -> int:
@@ -67,7 +70,7 @@ class MessageView(Box):
         # No borders; the child width is reduced by the gutter + padding.
         inner_w = max(1, self.thread_content_width(
             width, self.content_pad_left, self.content_pad_right))
-        base = self.child.get_preferred_height(inner_w)
+        base = self.child.get_preferred_height(inner_w) + 2 * self.content_pad_y
         if self._visible_actions():
             base += 1
         # A message always occupies at least its gutter row, even when its
@@ -107,6 +110,8 @@ class MessageView(Box):
         gutter = self.gutter
 
         collapsed = self.parent_msg is not None and getattr(self.parent_msg, "collapsed", False)
+        if dirty_from is not None:
+            dirty_from += self.content_pad_y   # content line -> box row
         incremental = (
             dirty_from is not None
             and dirty_from > 0

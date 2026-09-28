@@ -56,7 +56,7 @@ DEFAULT_SYNTAX_HIGHLIGHT_STYLES: Dict[str, Dict[str, str]] = {
     "function": {"fg": "#64DC78"},
     "string":   {"fg": "#DCC850"},
     "comment":  {"fg": "#808080"},
-    "plain":    {"fg": "#DCDCDC"},
+    # "plain" (unset): ordinary code uses the normal text color.
 }
 
 CONFIG_DIR_ENV = "MOKA_CONFIG_DIR"

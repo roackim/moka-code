@@ -6,6 +6,7 @@ import pytest
 
 from moka_code.ui.chat_history_panel import ChatHistoryPanel
 from moka_code.ui.tui.buffer import Buffer
+from moka_code.ui.tui.components.markdown import CODE_INDENT
 from moka_code.ui.tui.events import MouseEvent
 from moka_code.ui.tui.msg_types import AssistantMsg, UserMsg
 
@@ -189,3 +190,26 @@ def test_click_elsewhere_replaces_the_selection(copied):
     _drag(panel, (x2, y2), copy=False)                 # a plain click
 
     assert not panel.selection.has_selection
+
+
+def test_code_block_copies_without_its_indent_or_blank_rows(copied):
+    """A split code block is drawn indented between blank rows; neither is copied."""
+    panel = ChatHistoryPanel()
+    panel.on_copy = _copied.append
+    panel.set_keyboard_focus(True)
+    panel.set_layout(0, 0, W, H)
+    msg = panel.add_message("Intro:\n```python\ndef a():\n    return 1\n```\nDone.",
+                            msg_type=AssistantMsg())
+    msg.finalize()
+    panel.split_answer(msg)
+    buffer = _render(panel)
+
+    y_intro, x_intro = _row_of(buffer, "Intro:")
+    y_def, x_def = _row_of(buffer, "def a():")
+    y_ret, _ = _row_of(buffer, "return 1")
+    y_done, _ = _row_of(buffer, "Done.")
+    assert y_def == y_intro + 2 and y_done == y_ret + 2   # blank row around the code
+    assert x_def == x_intro + len(CODE_INDENT)             # drawn indented
+
+    _drag(panel, (0, y_def), (W - 1, y_ret))               # from the gutter across both lines
+    assert copied == ["def a():\n    return 1"]
