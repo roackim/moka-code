@@ -72,7 +72,7 @@ def test_llamacpp_reconciles_requested_selection_with_served_model(cfg, monkeypa
     asyncio.run(endpoint.prewarm_model_name())
 
     assert endpoint.selected_model == "served-model"
-    assert endpoint._cached_model_name == "served-model"
+    assert endpoint._model_resolved
 
 
 

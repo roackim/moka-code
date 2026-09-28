@@ -101,7 +101,8 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   `reasoning_effort` (llamacpp/openai), `reasoning.effort` (openrouter) or
   `think` (ollama, `"none"` → `false`) — `Endpoint.effort_payload`. Load errors are shown at startup and on `/reload`/`/config`, and
   every reload rebuilds the live endpoint if its server table or selection
-  changed.
+  changed. `type = "openrouter"` has no `base_url` (always
+  `https://openrouter.ai/api/v1`); setting one is reported as a load error.
 - **State** (machine-written, disposable): `state.toml` holds `last_server`,
   `[last_model]` (per-server selection), `active_theme`, and `[effort]`.
   Written by `set_active_server` / `save_model_selection` / `save_active_theme`

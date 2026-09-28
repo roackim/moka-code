@@ -77,10 +77,20 @@ this session's last successful discovery, flagged in `Config.stale_servers`
 (`/model` shows `unreachable`), until a refresh succeeds; only the latest-started
 refresh per server applies its result (`_refresh_generation`). The status bar
 reads `Endpoint.context_window()` (catalog first). It runs at
-startup (active server first), on every reload (`reapply_endpoint`), on
-`/model`, and on `/effort` (active server). Model-name and context-window
-fallbacks are shown but not memoized; `type = "openai"` reads the server's
-`/models` `context_length` before the known-OpenAI-model table.
+startup (active server first), on `/reload` and `/config servers`
+(`reapply_endpoint(rediscover=True)`; theme/role/other edits do not), on
+`/model`, and on `/effort` (active server). After startup and rediscovery,
+`warn_if_model_unserved` warns when the selected model is not among the ids a
+fresh (non-stale, non-llama.cpp) listing shows (`unserved_model`). The selected
+model is one field, `_selected_model` (`_model_resolved` once confirmed;
+llama.cpp: replaced by the served model). Facts probed when the catalog lacks
+them (context window, image support) live in `Endpoint._probed(model)` and are
+dropped whenever that server's catalog is refreshed. Model-name and
+context-window fallbacks are shown but not memoized; `type = "openai"` reads
+the server's `/models` `context_length` (no built-in table: set `max_context`
+for servers that report none, e.g. real OpenAI). `type = "openrouter"` always
+uses `endpoint_discovery.OPENROUTER_BASE_URL`; a `base_url` in its table is a
+load error (ignored).
 `Harness.endpoint` is an `Endpoint`. See [notes/local-hostname-resolution.md](../notes/local-hostname-resolution.md).
 
 This one type replaced the former `LLMServerConfig` + `ServerService` +
@@ -109,7 +119,7 @@ Ollama's `images: [base64]`.
 user entry carries it after the tool results.
 
 Image support per model: `Endpoint.accepts_images()` (True/False/None) from
-catalog metadata, else `_image_input` filled by
+catalog metadata, else `_probed(model)["image_input"]` filled by
 `probe_image_input()` during prewarm (`endpoint_discovery.query_image_input`:
 Ollama `/api/show` `capabilities`, llama.cpp `/props` `modalities.vision`,
 OpenRouter `/models/<id>/endpoints` `architecture.input_modalities`).

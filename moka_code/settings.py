@@ -198,7 +198,7 @@ DEFAULT_STYLES_TOML = """\
 DEFAULT_SERVERS_TOML = """\
 # moka servers. One table per server; select a model with /model.
 # Every server needs a type: llamacpp, ollama, openrouter, openai.
-# Common keys: base_url, api_key (or api_key_env), model, max_context, timeout,
+# Common keys: base_url (not openrouter), api_key (or api_key_env), model, max_context, timeout,
 # retry_attempts, retry_delay, preserve_reasoning, efforts.
 #
 # preserve_reasoning (default true): also re-send earlier turns' reasoning to
@@ -236,8 +236,7 @@ DEFAULT_SERVERS_TOML = """\
 
 # OpenRouter ------------------------------------------------------------
 # [servers.openrouter]
-# type = "openrouter"
-# base_url = "https://openrouter.ai/api/v1"
+# type = "openrouter"                 # always https://openrouter.ai/api/v1
 # api_key_env = "OPENROUTER_API_KEY"  # read the key from the environment
 # providers = ["deepseek"]            # default routing for every model below:
 #                                     # only these, tried in this order
@@ -834,6 +833,9 @@ def _load_servers(config: Config, data: dict, filename: str,
                 "server skipped")
         elif server_type not in _SERVER_TYPES:
             errors.append(f"{where}.type unknown server type '{server_type}'; server skipped")
+        if server_type == "openrouter" and "base_url" in server:
+            errors.append(f"{where}.base_url is not used: openrouter servers always use "
+                          "https://openrouter.ai/api/v1 (remove the line)")
         for key in _SERVER_STR_KEYS:
             if key in server and not isinstance(server[key], str):
                 errors.append(f"{where}.{key} must be a string")

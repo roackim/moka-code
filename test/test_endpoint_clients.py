@@ -68,3 +68,13 @@ def test_refresh_catalog_closes_its_throwaway_endpoints(monkeypatch):
     monkeypatch.setattr(Endpoint, "discover_models", discover)
     asyncio.run(endpoint_mod.refresh_catalog(["s"]))
     assert built and all(e.client.is_closed for e in built)
+
+
+def test_probed_facts_expire_when_the_server_is_refreshed(monkeypatch):
+    monkeypatch.setattr(settings.config, "models_by_server", {})
+    endpoint = _endpoint()
+    endpoint._probed("m")["image_input"] = False
+    assert endpoint.accepts_images() is False
+    monkeypatch.setitem(endpoint_mod._refresh_generation, "s",
+                        endpoint_mod._refresh_generation.get("s", 0) + 1)
+    assert endpoint.accepts_images() is None        # re-probed after a refresh

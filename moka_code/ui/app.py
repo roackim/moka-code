@@ -958,6 +958,8 @@ class chatTUI(ChatActionHandlers):
 
                 # Model facts are discovered live: the active server first.
                 await refresh_catalog([endpoint.name])
+                from moka_code.ui.commands.base import warn_if_model_unserved
+                warn_if_model_unserved(self)
                 await endpoint.prewarm_model_name()
                 self.refresh_status_bar()
                 from moka_code import settings

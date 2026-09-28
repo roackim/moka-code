@@ -21,6 +21,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# ``type = "openrouter"`` always talks to OpenRouter itself (no ``base_url``).
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+
 async def list_models(endpoint: "Endpoint") -> list[ModelInfo]:
     """List models exposed by this endpoint."""
     if endpoint.type == "ollama":
@@ -103,7 +107,7 @@ async def discover_openrouter_models(endpoint: "Endpoint") -> list[ModelInfo]:
         return []
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            "https://openrouter.ai/api/v1/models",
+            f"{OPENROUTER_BASE_URL}/models",
             timeout=endpoint.timeout,
         )
         if response.status_code != 200:
@@ -141,7 +145,7 @@ async def discover_openrouter_models(endpoint: "Endpoint") -> list[ModelInfo]:
 async def openrouter_context_window(endpoint: "Endpoint", model_name: str) -> int:
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            "https://openrouter.ai/api/v1/models",
+            f"{OPENROUTER_BASE_URL}/models",
             timeout=endpoint.timeout,
         )
         if response.status_code == 200:
@@ -164,31 +168,12 @@ async def openrouter_context_window(endpoint: "Endpoint", model_name: str) -> in
 
 
 async def openai_compatible_context_window(endpoint: "Endpoint", model_name: str) -> int:
-    """The server's own ``/models`` ``context_length``, else the known OpenAI
-    models' windows."""
-    try:
-        for model in await list_models(endpoint):
-            if model.id == model_name and model.context_window:
-                return model.context_window
-    except Exception as e:
-        logger.debug("Failed to list models for context window: %s", e)
-    return openai_context_window(model_name)
-
-
-def openai_context_window(model_name: str) -> int:
-    context_windows = {
-        "gpt-4o": 128000,
-        "gpt-4o-mini": 128000,
-        "gpt-4-turbo": 128000,
-        "gpt-4": 8192,
-        "gpt-3.5-turbo": 16385,
-        "o1": 200000,
-        "o1-mini": 128000,
-    }
-    for known_model, ctx in context_windows.items():
-        if known_model in model_name:
-            return ctx
-    raise RuntimeError(f"Unknown context window for model: {model_name}")
+    """The server's own ``/models`` ``context_length`` (real OpenAI reports
+    none: set ``max_context`` in ``servers.toml``)."""
+    for model in await list_models(endpoint):
+        if model.id == model_name and model.context_window:
+            return model.context_window
+    raise RuntimeError(f"{endpoint.name} reports no context window for {model_name}")
 
 
 async def llamacpp_context_window(endpoint: "Endpoint", model_name: str) -> int:
@@ -273,7 +258,7 @@ async def query_image_input(endpoint: "Endpoint", model_name: str) -> bool | Non
             return image_input_from_metadata(response.json())
         if endpoint.type == "openrouter":
             response = await client.get(
-                f"https://openrouter.ai/api/v1/models/{model_name}/endpoints",
+                f"{OPENROUTER_BASE_URL}/models/{model_name}/endpoints",
                 timeout=endpoint.timeout,
             )
             response.raise_for_status()

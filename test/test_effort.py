@@ -272,3 +272,41 @@ def test_an_older_refresh_finishing_late_does_not_win(monkeypatch):
     asyncio.run(scenario())
     assert [m["id"] for m in settings.config.models_by_server["s"]] == ["new"]
     assert settings.config.stale_servers == set()
+
+
+def test_unserved_model_is_reported_only_when_the_list_is_reliable(monkeypatch):
+    from moka_code.harness.endpoint import unserved_model
+
+    _config(monkeypatch, {"s": {"type": "ollama"}, "or": {"type": "openrouter"},
+                          "ll": {"type": "llamacpp"}},
+            catalog={"s": [{"id": "qwen:latest"}, {"id": "Qwen3.8-27B"}],
+                     "or": [{"id": "deepseek/deepseek-v4.1-flash"}],
+                     "ll": [{"id": "whatever.gguf"}]})
+    monkeypatch.setattr(settings.config, "stale_servers", set())
+    assert unserved_model("s", "Qwen3.8-27B:high") == ["qwen:latest", "Qwen3.8-27B"]
+    assert unserved_model("s", "qwen") is None                  # implicit :latest
+    assert unserved_model("or", "deepseek-v4.1-flash") is None   # bare OpenRouter id
+    assert unserved_model("ll", "requested") is None             # llama.cpp serves one
+    assert unserved_model("never", "m") is None                  # not discovered
+    settings.config.stale_servers.add("s")
+    assert unserved_model("s", "Qwen3.8-27B:high") is None       # stale: can't tell
+
+
+def test_only_reload_and_servers_edits_rediscover(monkeypatch):
+    from moka_code.ui.commands import base
+
+    refreshed = []
+
+    async def discover(names=None):
+        refreshed.append(names)
+    monkeypatch.setattr("moka_code.harness.endpoint.refresh_catalog", discover)
+    ui = SimpleNamespace(agent=SimpleNamespace(endpoint=None),
+                         chat_history_panel=SimpleNamespace(add_message=lambda *a, **k: None))
+
+    async def scenario(**kw):
+        base.reapply_endpoint(ui, **kw)
+        await asyncio.sleep(0)
+    asyncio.run(scenario())
+    assert refreshed == []
+    asyncio.run(scenario(rediscover=True))
+    assert refreshed == [None]

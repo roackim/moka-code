@@ -198,7 +198,7 @@ async def create_completion(
     logger.info(
         "[llm] model_name resolved in %.0fms (cached=%s)",
         (time.perf_counter() - _t0) * 1000,
-        bool(endpoint._cached_model_name),
+        endpoint._model_resolved,
     )
 
     max_retries = endpoint.retry_attempts

@@ -23,7 +23,6 @@ def _app(sandboxed, runtime="none"):
         name="local",
         model="q",
         selected_model="q",
-        _cached_model_name="q",
         _connection_state="ok",
         _cached_context_window=32768,
         max_context=32768,

@@ -67,7 +67,7 @@ True; the status bar shows an animated spinner next to the model name
 `LLMServer.prewarm_model_name()` discovers and caches the model name (and
 context window) in the background at tab/conversation open, so the status bar
 shows the real model (e.g. for llama.cpp) instead of `?`. `refresh_status_bar`
-falls back to `server._cached_model_name` once populated.
+shows `selected_model` (resolved to the served model for llama.cpp).
 
 It also drives the status-bar connection color. It first runs a real
 `diagnose_connection()` probe so the color reflects true reachability — green
@@ -111,10 +111,9 @@ failing/slow query was re-run (opening a fresh `httpx.AsyncClient` + hitting
 `/props` + `list_models()`) on *every message* — the source of "10s before the
 server receives the request" within one conversation.
 
-Fix: `get_context_window()` now caches the **fallback** value (`max_context` or
-32768) in `_model_context_windows` too, so a failing query is tried exactly once
-and later messages use the cached default. (The message-build path no longer
-fetches the context window at all — the system prompt is the role's `prompt`.)
+Fix: the message-build path no longer fetches the context window at all (the
+system prompt is the role's `prompt`), so a failing query is never re-run per
+message. The fallback (`max_context` or 32768) is shown, not memoized.
 
 ## Connection diagnostics
 

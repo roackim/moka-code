@@ -205,7 +205,7 @@ def test_reload_picks_up_edits(tmp_path):
 
 def test_openrouter_routing_keys_load(tmp_path):
     _write(tmp_path / "servers.toml", {"servers": {"or": {
-        "type": "openrouter", "base_url": "https://openrouter.ai/api/v1",
+        "type": "openrouter",
         "providers": ["deepseek"],
         "models": {"deepseek/deepseek-v4.1-flash": {"providers": ["deepseek", "fireworks"]},
                    "anthropic/claude-sonnet-4": {}},
@@ -215,6 +215,18 @@ def test_openrouter_routing_keys_load(tmp_path):
     assert config.load_errors == []
     assert list(config.servers["or"]["models"]) == [
         "deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-4"]
+
+
+def test_openrouter_base_url_is_reported_and_never_used(tmp_path):
+    from moka_code.harness.endpoint import Endpoint
+
+    _write(tmp_path / "servers.toml", {"servers": {"or": {
+        "type": "openrouter", "base_url": "http://localhost:8010/openrouter/v1"}}})
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+
+    assert any("[servers.or].base_url is not used" in e for e in config.load_errors)
+    endpoint = Endpoint.from_dict("or", config.servers["or"])      # still loaded
+    assert endpoint.base_url == "https://openrouter.ai/api/v1"
 
 
 def test_retired_openrouter_keys_name_their_replacement_and_skip(tmp_path):

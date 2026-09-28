@@ -182,7 +182,6 @@ def test_refresh_theme_recolors_status_server_model():
         name="local",
         model="qwen",
         selected_model="qwen",
-        _cached_model_name="qwen",
         _connection_state="ok",
         _cached_context_window=32768,
         max_context=32768,

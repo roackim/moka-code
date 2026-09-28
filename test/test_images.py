@@ -373,7 +373,7 @@ def _read_harness(tmp_path, monkeypatch, accepts=None):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools={"read": "yes"}))
     if accepts is not None:
-        harness.endpoint._image_input["m"] = accepts
+        harness.endpoint._probed("m")["image_input"] = accepts
     call = SimpleNamespace(index=0, id="call_1",
                            function=SimpleNamespace(name="read", arguments='{"path": "shot.png"}'))
     requests = []

@@ -79,7 +79,7 @@ async def cmd_reload(ui: ChatUIProtocol, args: List[str]):
 
     errors = settings.reload_config() + roles.validate_roles()
     _apply_theme(ui)
-    reapply_endpoint(ui)
+    reapply_endpoint(ui, rediscover=True)
 
     if errors:
         ui.chat_history_panel.add_message(
@@ -132,7 +132,7 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
     await open_editor(ui, path)
     errors = settings.reload_config()
     _apply_theme(ui)
-    reapply_endpoint(ui)
+    reapply_endpoint(ui, rediscover=(section == "servers"))
     if errors:
         ui.chat_history_panel.add_message(
             "Config reloaded with errors:\n" + "\n".join(errors),

@@ -239,12 +239,15 @@ class Endpoint:
         self._stale_clients: list[httpx.AsyncClient] = []
 
         # Runtime caches.
-        self._cached_model_name: Optional[str] = None
+        # ``_selected_model`` is the one model id requests use; resolved once
+        # confirmed (llama.cpp: replaced by the model it actually serves).
+        self._model_resolved: bool = False
         self._cached_context_window: Optional[int] = None
-        self._model_context_windows: dict[str, int] = {}
-        # Whether a model reads images, per model, from a live probe (the
-        # catalog's metadata wins); absent = unknown.
-        self._image_input: dict[str, bool] = {}
+        # Facts probed from the server per model (context window, image
+        # support) when the catalog lacks them; dropped whenever this server's
+        # catalog is refreshed (see :meth:`_probed`).
+        self._probed_facts: dict[str, dict] = {}
+        self._probed_generation = 0
         self._selected_model: Optional[str] = model
         self._model_name_pending: bool = False
         self._connection_state: str = "unknown"  # unknown|checking|ok|error
@@ -261,10 +264,13 @@ class Endpoint:
         api_key_env = data.get("api_key_env")
         if api_key_env:
             api_key = os.getenv(api_key_env, api_key)
+        base_url = data.get("base_url", "http://localhost:8080/v1")
+        if data["type"] == "openrouter":
+            base_url = _discovery.OPENROUTER_BASE_URL
         return cls(
             name=name,
             type=data["type"],
-            base_url=data.get("base_url", "http://localhost:8080/v1"),
+            base_url=base_url,
             api_key=api_key,
             model=data.get("model"),
             max_context=data.get("max_context"),
@@ -297,11 +303,11 @@ class Endpoint:
         if not model_name:
             raise ValueError("model name cannot be empty")
         self._selected_model = model_name
-        self._cached_model_name = model_name
+        self._model_resolved = True
         self._cached_context_window = (catalog_entry(self.name, model_name).get("context_window")
-                                       or self._model_context_windows.get(model_name))
+                                       or self._probed(model_name).get("context_window"))
         if not self.supports_model_selection:
-            self._cached_model_name = None
+            self._model_resolved = False
             self._cached_context_window = None
             self._connection_state = "unknown"
             logger.warning(
@@ -312,7 +318,7 @@ class Endpoint:
 
     async def prewarm_model_name(self) -> None:
         """Probe the connection and cache model name/context in the background."""
-        if self._cached_model_name and self._connection_state == "ok":
+        if self._model_resolved and self._connection_state == "ok":
             await self.probe_image_input()
             return
         self._model_name_pending = True
@@ -337,10 +343,10 @@ class Endpoint:
                         )
                     if actual:
                         self._selected_model = actual
-                        self._cached_model_name = actual
+                        self._model_resolved = True
                 except Exception as e:
                     logger.warning("Could not resolve served model: %s", e)
-            if not self._cached_model_name:
+            if not self._model_resolved:
                 try:
                     await self.get_model_name()
                     self._connection_state = "ok"
@@ -360,19 +366,27 @@ class Endpoint:
     def context_window(self) -> Optional[int]:
         """The current model's context window as known now: the live
         catalog's, else the last one resolved by :meth:`get_context_window`."""
-        ctx = catalog_entry(self.name, self._cached_model_name or self._selected_model).get(
+        ctx = catalog_entry(self.name, self._selected_model).get(
             "context_window")
         return ctx if isinstance(ctx, int) and ctx > 0 else self._cached_context_window
 
+    def _probed(self, model_name: Optional[str]) -> dict:
+        """This model's probed facts, valid until this server's catalog is
+        refreshed again (a refresh may mean the server changed)."""
+        generation = _refresh_generation.get(self.name, 0)
+        if generation != self._probed_generation:
+            self._probed_generation, self._probed_facts = generation, {}
+        return self._probed_facts.setdefault(model_name or "", {})
+
     def accepts_images(self) -> Optional[bool]:
         """Whether the current model reads images; ``None`` when unknown."""
-        model_name = self._cached_model_name or self._selected_model or ""
+        model_name = self._selected_model or ""
         known = _discovery.image_input_from_metadata(self._catalog_metadata(model_name))
-        return known if known is not None else self._image_input.get(model_name)
+        return known if known is not None else self._probed(model_name).get("image_input")
 
     async def probe_image_input(self) -> None:
         """Learn whether the current model reads images (no-op once known)."""
-        model_name = self._cached_model_name or self._selected_model
+        model_name = self._selected_model
         if not model_name or self.accepts_images() is not None:
             return
         try:
@@ -381,7 +395,7 @@ class Endpoint:
             logger.debug("image input probe failed: %s", e)
             return
         if known is not None:
-            self._image_input[model_name] = known
+            self._probed(model_name)["image_input"] = known
 
     # -- model / context discovery (delegates to endpoint_discovery) ---------
 
@@ -405,18 +419,19 @@ class Endpoint:
 
     async def get_model_name(self) -> str:
         """Get the model name (cached or queried)."""
-        if self._cached_model_name:
-            return self._cached_model_name
+        if self._model_resolved and self._selected_model:
+            return self._selected_model
         try:
-            self._cached_model_name = await self.query_model_name()
-            logger.info("Queried model name: %s", self._cached_model_name)
-            return self._cached_model_name
+            self._selected_model = await self.query_model_name()
+            self._model_resolved = True
+            logger.info("Queried model name: %s", self._selected_model)
+            return self._selected_model
         except Exception as e:
             logger.warning("Failed to query model name: %s", e)
         if self._selected_model:
-            self._cached_model_name = self._selected_model
-            logger.info("Using model from config: %s", self._cached_model_name)
-            return self._cached_model_name
+            self._model_resolved = True
+            logger.info("Using model from config: %s", self._selected_model)
+            return self._selected_model
         # Not cached: an offline server must be re-queried once it is back.
         logger.warning("Model name unknown, using 'unknown'")
         return "unknown"
@@ -424,7 +439,8 @@ class Endpoint:
     async def get_context_window(self) -> int:
         """Get the context window size (cached or queried).
 
-        The live catalog's value wins; a queried value is memoized per model.
+        The live catalog's value wins; a queried value is kept per model
+        until this server's catalog is refreshed (:meth:`_probed`).
         The fallback is only shown, not memoized, so a later probe can still
         find the real window after a transient failure.
         """
@@ -433,12 +449,13 @@ class Endpoint:
         if isinstance(ctx, int) and ctx > 0:
             self._cached_context_window = ctx
             return ctx
-        if model_name in self._model_context_windows:
-            self._cached_context_window = self._model_context_windows[model_name]
+        probed = self._probed(model_name)
+        if "context_window" in probed:
+            self._cached_context_window = probed["context_window"]
             return self._cached_context_window
         try:
             self._cached_context_window = await self.query_context_window(model_name)
-            self._model_context_windows[model_name] = self._cached_context_window
+            probed["context_window"] = self._cached_context_window
             logger.info("Queried context window: %s", self._cached_context_window)
             return self._cached_context_window
         except Exception as e:
@@ -603,7 +620,7 @@ class Endpoint:
         return None
 
     def _current_entry(self) -> Optional[dict]:
-        model_name = self._cached_model_name or self._selected_model
+        model_name = self._selected_model
         return self._model_entry(model_name) if model_name else None
 
     def preserves_reasoning(self) -> bool:
@@ -619,7 +636,7 @@ class Endpoint:
         """Effort levels for the current model: its model table's ``efforts``,
         else the server's, else detected from the catalog metadata. Empty
         means the model takes no effort parameter."""
-        model_name = self._selected_model or self._cached_model_name
+        model_name = self._selected_model
         return _discovery.effort_levels(
             self._current_entry(), self.efforts, self._catalog_metadata(model_name))
 
@@ -713,6 +730,23 @@ def catalog_entry(server: Optional[str], model_name: Optional[str]) -> dict:
         if model.get("id") == model_name:
             return model
     return {}
+
+
+def unserved_model(server: Optional[str], model_name: Optional[str]) -> Optional[list[str]]:
+    """The ids ``server`` lists when ``model_name`` is not among them, else
+    ``None`` (served, or nothing reliable to compare: never discovered, stale,
+    or a llama.cpp server, which serves whatever it loaded)."""
+    from moka_code import settings
+
+    listed = [m.get("id") for m in settings.config.models_by_server.get(server or "", [])]
+    data = settings.config.servers.get(server or "") or {}
+    if (not listed or not model_name or server in settings.config.stale_servers
+            or data.get("type") == "llamacpp"):
+        return None
+    for model_id in listed:
+        if model_id in (model_name, f"{model_name}:latest") or model_id.endswith("/" + model_name):
+            return None     # exact, Ollama's implicit tag, OpenRouter's bare id
+    return listed
 
 
 # Per server, the number of the latest refresh started: only its result is

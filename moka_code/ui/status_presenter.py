@@ -72,16 +72,9 @@ def refresh_status_bar(app) -> None:
     if endpoint is None:
         return
 
-    # Prefer the model the endpoint actually resolved (the one sent in the
-    # next request) over a requested selection the endpoint may have
-    # ignored. ``_cached_model_name`` is set by ``set_model`` and by the
-    # connection probe, so this cannot show a model the request won't use.
-    model = (
-        getattr(endpoint, "_cached_model_name", None)
-        or getattr(endpoint, "selected_model", None)
-        or endpoint.model
-        or "?"
-    )
+    # ``selected_model`` is the one id the next request uses (llama.cpp:
+    # replaced by the served model once the connection probe resolves it).
+    model = getattr(endpoint, "selected_model", None) or endpoint.model or "?"
     # Strip a leading path and common file suffix from a model id
     # (e.g. /data/llm/weights/Qwen3.8-27B-Q4_0.gguf -> Qwen3.8-27B-Q4_0)
     # for a compact status bar.
