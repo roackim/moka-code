@@ -72,7 +72,11 @@ helpers. Factories: `get_active_endpoint()` (= `get_endpoint(active_server)` or
 is stale). Model facts (context window, image support, effort levels) are read
 from the live in-memory catalog (`catalog_entry`) when needed, never copied
 into the endpoint; `refresh_catalog(names)` rediscovers servers in parallel
-(`DISCOVERY_TIMEOUT` per server) and drops a server it cannot list. It runs at
+(`DISCOVERY_TIMEOUT` per server); a server it cannot list (busy or down) keeps
+this session's last successful discovery, flagged in `Config.stale_servers`
+(`/model` shows `unreachable`), until a refresh succeeds; only the latest-started
+refresh per server applies its result (`_refresh_generation`). The status bar
+reads `Endpoint.context_window()` (catalog first). It runs at
 startup (active server first), on every reload (`reapply_endpoint`), on
 `/model`, and on `/effort` (active server). Model-name and context-window
 fallbacks are shown but not memoized; `type = "openai"` reads the server's

@@ -547,6 +547,9 @@ class Config:
         # Live discovery results per server, in memory only (never persisted,
         # kept across reloads). Filled by ``endpoint.refresh_catalog``.
         self.models_by_server: Dict[str, list] = {}
+        # Servers whose last refresh failed: their entry is the last
+        # successful discovery of this session, possibly stale.
+        self.stale_servers: set = set()
         self._apply_defaults()
         self.reload()
 

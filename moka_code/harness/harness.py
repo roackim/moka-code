@@ -1126,7 +1126,7 @@ class Harness:
             # Context usage is exact only when the provider reports prompt
             # tokens; otherwise there is nothing to show.
             try:
-                max_tokens = self.endpoint._cached_context_window or 0
+                max_tokens = self.endpoint.context_window() or 0
                 status["context_max"] = max_tokens
                 if self._last_usage and self._last_usage.prompt_tokens is not None:
                     status["context_used"] = self._last_usage.prompt_tokens

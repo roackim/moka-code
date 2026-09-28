@@ -357,6 +357,13 @@ class Endpoint:
         finally:
             self._model_name_pending = False
 
+    def context_window(self) -> Optional[int]:
+        """The current model's context window as known now: the live
+        catalog's, else the last one resolved by :meth:`get_context_window`."""
+        ctx = catalog_entry(self.name, self._cached_model_name or self._selected_model).get(
+            "context_window")
+        return ctx if isinstance(ctx, int) and ctx > 0 else self._cached_context_window
+
     def accepts_images(self) -> Optional[bool]:
         """Whether the current model reads images; ``None`` when unknown."""
         model_name = self._cached_model_name or self._selected_model or ""
@@ -708,16 +715,24 @@ def catalog_entry(server: Optional[str], model_name: Optional[str]) -> dict:
     return {}
 
 
+# Per server, the number of the latest refresh started: only its result is
+# applied, so an older refresh finishing late cannot overwrite a newer one.
+_refresh_generation: dict[str, int] = {}
+
+
 async def refresh_catalog(names: Optional[list[str]] = None) -> None:
     """Rediscover the models of ``names`` (default: every server), in parallel.
 
-    The catalog lives in memory only. A server that cannot be listed is
-    dropped from it rather than kept stale: its models are unknown until it
-    answers again.
+    The catalog lives in memory only (never persisted). A server that cannot
+    be listed (busy or down) keeps this session's last successful discovery,
+    marked stale in ``settings.config.stale_servers``, until a refresh
+    succeeds; a server never discovered stays absent.
     """
     from moka_code import settings
 
     async def one(name: str) -> None:
+        generation = _refresh_generation.get(name, 0) + 1
+        _refresh_generation[name] = generation
         endpoint = get_endpoint(name)
         try:
             if endpoint is None:
@@ -725,12 +740,18 @@ async def refresh_catalog(names: Optional[list[str]] = None) -> None:
             models = await asyncio.wait_for(endpoint.discover_models(), DISCOVERY_TIMEOUT)
         except Exception as e:
             logger.debug("discovery failed for %s: %s", name, e)
-            settings.config.models_by_server.pop(name, None)
-            return
+            models = None
         finally:
             if endpoint is not None:
                 await endpoint.aclose()     # a throwaway: never leave its pool open
+        if _refresh_generation.get(name) != generation:
+            return                          # a newer refresh owns the result
+        if models is None:
+            if name in settings.config.models_by_server:
+                settings.config.stale_servers.add(name)
+            return
         settings.config.models_by_server[name] = [m.to_dict() for m in models]
+        settings.config.stale_servers.discard(name)
 
     await asyncio.gather(*(one(n) for n in (names or list(settings.config.servers))))
 

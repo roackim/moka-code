@@ -119,7 +119,8 @@ def refresh_status_bar(app) -> None:
 
     usage = getattr(agent, "_last_usage", None)
     context_used = getattr(usage, "prompt_tokens", None)
-    context_max = getattr(endpoint, "_cached_context_window", None)
+    context_window = getattr(endpoint, "context_window", None)
+    context_max = context_window() if callable(context_window) else None
     if context_max is None:
         context_max = endpoint.max_context or 32768
     if context_used is None:

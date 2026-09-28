@@ -217,14 +217,58 @@ def test_effort_command_rediscovers_the_active_server(monkeypatch):
     assert endpoint.effort_payload() == {"reasoning_effort": "high"}
 
 
-def test_refresh_catalog_drops_a_server_it_cannot_list(monkeypatch):
+def test_refresh_keeps_the_last_discovery_marked_stale(monkeypatch):
+    """A busy/down server keeps this session's last good entry, flagged."""
     from moka_code.harness import endpoint as endpoint_mod
+    from moka_code.harness.endpoint import ModelInfo
 
     refresh_catalog = endpoint_mod.refresh_catalog     # before _config stubs it
-    _config(monkeypatch, {"s": {"type": "openai"}}, catalog={"s": [{"id": "stale"}]})
+    _config(monkeypatch, {"s": {"type": "openai"}, "never": {"type": "openai"}},
+            catalog={"s": [{"id": "m", "context_window": 128000}]})
+    monkeypatch.setattr(settings.config, "stale_servers", set())
+    up = {"ok": False}
 
-    async def fail(self):
-        raise ConnectionError("down")
-    monkeypatch.setattr(endpoint_mod.Endpoint, "discover_models", fail)
+    async def discover(self):
+        if not up["ok"]:
+            raise ConnectionError("busy")
+        return [ModelInfo(id="m", context_window=64000)]
+    monkeypatch.setattr(endpoint_mod.Endpoint, "discover_models", discover)
+
+    asyncio.run(refresh_catalog(["s", "never"]))
+    assert settings.config.models_by_server["s"] == [{"id": "m", "context_window": 128000}]
+    assert settings.config.stale_servers == {"s"}
+    assert "never" not in settings.config.models_by_server      # nothing to keep
+    assert _endpoint("openai").context_window() == 128000
+    assert models.model_descriptions()["m"] == "s  125k  unreachable  active"
+
+    up["ok"] = True
     asyncio.run(refresh_catalog(["s"]))
-    assert "s" not in settings.config.models_by_server
+    assert settings.config.models_by_server["s"][0]["context_window"] == 64000
+    assert settings.config.stale_servers == set()
+
+
+def test_an_older_refresh_finishing_late_does_not_win(monkeypatch):
+    from moka_code.harness import endpoint as endpoint_mod
+    from moka_code.harness.endpoint import ModelInfo
+
+    refresh_catalog = endpoint_mod.refresh_catalog
+    _config(monkeypatch, {"s": {"type": "openai"}}, catalog={"s": [{"id": "old"}]})
+    monkeypatch.setattr(settings.config, "stale_servers", set())
+    calls = []
+
+    async def discover(self):
+        calls.append(None)
+        if len(calls) == 1:                 # the first refresh is slow, then fails
+            await asyncio.sleep(0.05)
+            raise ConnectionError("busy")
+        return [ModelInfo(id="new")]
+    monkeypatch.setattr(endpoint_mod.Endpoint, "discover_models", discover)
+
+    async def scenario():
+        slow = asyncio.create_task(refresh_catalog(["s"]))
+        await asyncio.sleep(0)
+        await refresh_catalog(["s"])        # e.g. /effort right after /model
+        await slow
+    asyncio.run(scenario())
+    assert [m["id"] for m in settings.config.models_by_server["s"]] == ["new"]
+    assert settings.config.stale_servers == set()

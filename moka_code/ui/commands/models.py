@@ -17,7 +17,8 @@ from moka_code.ui.tui.msg_types import SysMsg, SysMsgError
 from .base import ChatUIProtocol, activate_endpoint
 
 async def _discover_all() -> List[Tuple[str, "ModelInfo"]]:
-    """Rediscover every server; ``(server, model)`` pairs of those that answer."""
+    """Rediscover every server; ``(server, model)`` pairs of the catalog
+    (servers that did not answer keep their last discovery, marked stale)."""
     from moka_code.harness.endpoint import refresh_catalog
 
     await refresh_catalog()
@@ -79,8 +80,12 @@ def _build_rows(pairs, active_name: Optional[str], selected: Optional[str]):
         descriptions[item] = (
             f"{server:<{server_w}}  {_format_context(model.context_window):>{ctx_w}}"
         )
+        # Last refresh failed: this row is the last successful discovery.
+        notes = ["unreachable"] if server in settings.config.stale_servers else []
         if active:
-            footers[item] = "active"
+            notes.append("active")
+        if notes:
+            footers[item] = "  ".join(notes)
         items.append(item)
         index[item] = (server, model.id)
     return items, descriptions, footers, index
@@ -350,7 +355,8 @@ async def effort_command(ui: ChatUIProtocol, args: List[str]):
         await refresh_catalog([server])     # levels come from the live server
     choices, current, variants = _effort_choices(server, model)
     if not choices:
-        unreachable = server not in settings.config.models_by_server
+        unreachable = (server in settings.config.stale_servers
+                       or server not in settings.config.models_by_server)
         ui.chat_history_panel.add_message(
             (f"Could not reach {server} to detect its effort levels. " if unreachable else "")
             + f"No reasoning effort detected for {model or 'this model'}. "
