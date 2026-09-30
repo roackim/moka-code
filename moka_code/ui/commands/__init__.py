@@ -6,7 +6,7 @@ Handler functions live in per-domain modules (``core``, ``models``, ``roles``,
 import path.
 """
 
-from .base import ChatUIProtocol, Command, Param
+from .base import ChatUIProtocol, Command, Param, auto_select
 from .roles import next_role_command
 from .sandbox import next_sandbox_command
 from .registry import (
@@ -21,6 +21,7 @@ from .registry import (
 __all__ = [
     "COMMANDS",
     "ChatUIProtocol",
+    "auto_select",
     "Command",
     "Param",
     "get_command_descriptions",

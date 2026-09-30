@@ -86,7 +86,7 @@ def notices(agent) -> list[tuple[str, str]]:
         errors.append("no server configured → /config servers")
     elif endpoint is None:
         if selected and selected not in settings.config.servers:
-            errors.append(f"server '{selected}' is not in servers.toml → /model")
+            errors.append(f"server '{selected}' is not in servers.toml → /config servers or /model")
         else:
             errors.append("no model selected → /model")
     else:
@@ -101,7 +101,7 @@ def notices(agent) -> list[tuple[str, str]]:
               and name not in settings.config.stale_servers):
             errors.append(f"{name} lists no models → /config servers")
         elif unserved_model(name, getattr(endpoint, "selected_model", None)) is not None:
-            warnings.append(f"{endpoint.selected_model} is no longer served by {name} → /model")
+            errors.append(f"{endpoint.selected_model} is no longer served by {name} → /model")
     sandbox_required = getattr(agent, "sandbox_required", None)
     if callable(sandbox_required) and sandbox_required():
         role = getattr(getattr(agent, "role", None), "name", "this role")
@@ -141,14 +141,21 @@ def refresh_status_bar(app) -> None:
     role = getattr(getattr(agent, "role", None), "name", "agent")
     state = getattr(getattr(agent, "state", None), "name", "IDLE").lower()
     if endpoint is None:
-        # Nothing selected: say which (the notice band says how to fix it).
+        # A last used server removed from servers.toml stays shown, red;
+        # otherwise nothing is selected. The notice band says how to fix it.
+        selected = settings.config.active_server
+        if selected:
+            model = settings.config.get_model_for_server(selected) or "?"
+            label = f"{selected}:{model}"
+            _set_fields(app, agent, label, selected, model, theme.ERROR, role, state, None)
+            return
         label = "no server" if not settings.config.servers else "no model"
         _set_fields(app, agent, label, label, "", theme.ERROR, role, state, None)
         return
 
     # ``selected_model`` is the one id the next request uses (llama.cpp:
     # replaced by the served model once the connection probe resolves it).
-    model = getattr(endpoint, "selected_model", None) or endpoint.model or "?"
+    model = getattr(endpoint, "selected_model", None) or "?"
     # Strip a leading path and common file suffix from a model id
     # (e.g. /data/llm/weights/Qwen3.8-27B-Q4_0.gguf -> Qwen3.8-27B-Q4_0)
     # for a compact status bar.
@@ -165,7 +172,7 @@ def refresh_status_bar(app) -> None:
 
     # Show an animated spinner while .local hostname resolution or model
     # name discovery is pending.
-    from moka_code.harness.endpoint import is_local_resolution_pending
+    from moka_code.harness.endpoint import is_local_resolution_pending, unserved_model
     if is_local_resolution_pending(endpoint._original_base_url) or getattr(endpoint, "_model_name_pending", False):
         frame = SPINNER_FRAMES[app._status_spinner_frame % len(SPINNER_FRAMES)]
         model = f"{frame} {model}"
@@ -173,7 +180,12 @@ def refresh_status_bar(app) -> None:
     # Color the server/model field by connection state:
     #   checking -> orange, error -> red, ok -> green.
     conn = getattr(endpoint, "_connection_state", "unknown")
-    if conn == "checking":
+    lists_nothing = (settings.config.models_by_server.get(endpoint.name) == []
+                     and endpoint.name not in settings.config.stale_servers)
+    if lists_nothing or unserved_model(endpoint.name,
+                                       getattr(endpoint, "selected_model", None)) is not None:
+        server_color = theme.ERROR      # kept, but not joinable: never replaced
+    elif conn == "checking":
         server_color = theme.WARNING
     elif conn == "error":
         server_color = theme.ERROR

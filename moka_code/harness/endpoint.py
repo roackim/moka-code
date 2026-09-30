@@ -207,7 +207,6 @@ class Endpoint:
         self.type: ServerType = type
         self.base_url = base_url
         self.api_key = api_key
-        self.model = model
         self.max_context = max_context
         self.timeout = timeout
         self.retry_attempts = retry_attempts
@@ -270,7 +269,6 @@ class Endpoint:
             type=data["type"],
             base_url=base_url,
             api_key=api_key,
-            model=data.get("model"),
             max_context=data.get("max_context"),
             timeout=data.get("timeout", 30.0),
             retry_attempts=data.get("retry_attempts", 3),
@@ -594,13 +592,9 @@ class Endpoint:
         """Return the explicitly-enabled model ids.
 
         All OpenRouter models are disabled unless they have a
-        ``[models."<id>"]`` table, falling back to the single ``model``.
+        ``[models."<id>"]`` table.
         """
-        if self.models:
-            return list(self.models)
-        if self.model:
-            return [self.model]
-        return []
+        return list(self.models)
 
     def _model_entry(self, model_name: str) -> Optional[dict]:
         """The ``[models."<id>"]`` table for a model.

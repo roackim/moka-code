@@ -29,7 +29,6 @@ def test_get_endpoint_applies_per_server_selection(cfg):
         "type": "ollama",
         "base_url": "http://localhost:11434/v1",
         "api_key": "ollama",
-        "model": "legacy-default",
     }
     cfg.config.model_selection["srv"] = "selected-model"
 
@@ -38,17 +37,26 @@ def test_get_endpoint_applies_per_server_selection(cfg):
     assert get_endpoint("srv").selected_model == "selected-model"
 
 
-def test_get_endpoint_falls_back_to_legacy_model(cfg):
+def test_get_endpoint_without_selection_has_no_model(cfg):
+    """Decided 2026-09-30: no ``model`` key in servers.toml; models come
+    from discovery (OpenRouter: its model tables) and the selection."""
     cfg.config.servers["srv"] = {
         "type": "ollama",
         "base_url": "http://localhost:11434/v1",
-        "api_key": "ollama",
-        "model": "legacy-default",
     }
 
     from moka_code.harness.endpoint import get_endpoint
 
-    assert get_endpoint("srv").selected_model == "legacy-default"
+    assert get_endpoint("srv").selected_model is None
+
+
+def test_model_key_in_servers_toml_is_reported(tmp_path):
+    from moka_code.settings import Config
+
+    (tmp_path / "servers.toml").write_text(
+        '[servers.ollama]\nbase_url = "http://h:11434/v1"\nmodel = "m"\n')
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+    assert any("unknown key 'model'" in e for e in config.load_errors)
 
 
 def test_llamacpp_reconciles_requested_selection_with_served_model(cfg, monkeypatch):

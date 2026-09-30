@@ -158,7 +158,10 @@ stored one file per role under `roles/<name>.toml`. `PermissionGate`
 
 **Servers:** `config.servers`, `config.active_server`,
 `config.model_selection` (`server -> model`), `config.models_by_server`
-(catalog), `config.get_model_for_server(server)`.
+(catalog), `config.get_model_for_server(server)` (the last selection only;
+servers.toml has no `model` key). On a fresh state (`active_server` is None)
+`commands.base.auto_select` picks the top of `/model` after discovery; a last
+used selection is never replaced and is shown red when it cannot be reached.
 
 **Context / ui:** `context_format`, `context_max_files`,
 `context_max_depth`, `context_ignore_gitignore`,

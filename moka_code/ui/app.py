@@ -23,7 +23,7 @@ from moka_code.ui.chat_message import Message, reference_spans, unmention
 from moka_code.ui.commands import (
     handle_command, get_command_list, get_command_descriptions,
     get_subcommand_list, get_subcommand_descriptions,
-    next_role_command, next_sandbox_command,
+    next_role_command, next_sandbox_command, auto_select,
 )
 from moka_code.ui.generation_presenter import process_generation
 from moka_code.ui.stream_revealer import StreamRevealer
@@ -976,6 +976,7 @@ class chatTUI(ChatActionHandlers):
                 await endpoint.prewarm_model_name()
             await refresh_catalog([n for n in settings.config.servers
                                    if endpoint is None or n != endpoint.name])
+            auto_select(self)
             self.refresh_status_bar()
 
         asyncio.ensure_future(_prewarm_and_refresh())

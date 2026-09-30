@@ -203,14 +203,14 @@ DEFAULT_SERVERS_TOML = """\
 ## A table named after its type needs no type key: [servers.llamacpp],
 ## [servers.ollama], [servers.openrouter], [servers.openai]. Any other name
 ## sets one: type = "llamacpp" | "ollama" | "openrouter" | "openai".
-## Server keys: base_url (not openrouter), api_key (or api_key_env), model,
+## Server keys: base_url (not openrouter), api_key (or api_key_env),
 ## max_context, timeout, retry_attempts, retry_delay; openrouter: providers.
+## Models are discovered from the server (openrouter: the model tables).
 
 ## llama.cpp -------------------------------------------------------------
 # [servers.llamacpp]
 # base_url = "http://localhost:8080/v1"  # optional (default)
 # api_key = "EMPTY"                      # optional
-# model = "qwen"                         # optional; llama.cpp serves one model
 # timeout = 30.0                         # optional (default)
 # retry_attempts = 3                     # optional (default)
 # retry_delay = 2.0                      # optional (default)
@@ -219,7 +219,6 @@ DEFAULT_SERVERS_TOML = """\
 # [servers.ollama]
 # base_url = "http://localhost:11434/v1"
 # api_key = "ollama"                     # optional
-# model = "llama3.1:8b"                  # optional; discover with /model
 # timeout = 30.0                         # optional (default)
 
 ## OpenRouter (always https://openrouter.ai/api/v1) ----------------------
@@ -242,7 +241,6 @@ DEFAULT_SERVERS_TOML = """\
 # [servers.openai]
 # base_url = "https://api.openai.com/v1"
 # api_key_env = "OPENAI_API_KEY"
-# model = "gpt-4o"                       # optional; discover with /model
 """
 
 DEFAULT_THEMES_TOML = """\
@@ -422,7 +420,7 @@ def _sync_flat_file(path: Path, template: str, retired: "set[str]") -> bool:
 _STYLE_SECTIONS = {"markdown_styles", "syntax_highlight"}
 
 _SERVER_KEYS = {
-    "type", "base_url", "api_key", "api_key_env", "model", "max_context",
+    "type", "base_url", "api_key", "api_key_env", "max_context",
     "timeout", "retry_attempts", "retry_delay", "providers", "models",
 }
 # Retired OpenRouter keys -> what replaces them. A server still using one is
@@ -433,7 +431,7 @@ _RETIRED_SERVER_KEYS = {
     "model_providers": "'providers = [...]' inside [servers.<name>.models.\"<id>\"]",
 }
 _SERVER_TYPES = {"llamacpp", "ollama", "openrouter", "openai"}
-_SERVER_STR_KEYS = {"type", "base_url", "api_key", "api_key_env", "model"}
+_SERVER_STR_KEYS = {"type", "base_url", "api_key", "api_key_env"}
 _SERVER_INT_KEYS = {"max_context", "retry_attempts"}
 _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
 
@@ -540,7 +538,9 @@ class Config:
         """Reset every runtime attribute to its built-in default."""
         # LLM servers (intent) and selection (state).
         self.servers: Dict[str, Dict[str, Any]] = {}
-        self.active_server: Optional[str] = None     # nothing until /model
+        # None until a first model is selected (auto-selected once one is
+        # discovered, see ``commands.base.auto_select``).
+        self.active_server: Optional[str] = None
         self.model_selection: Dict[str, str] = {}
         # Reasoning effort per server, per model (``/effort``).
         self.efforts: Dict[str, Dict[str, str]] = {}
@@ -720,13 +720,8 @@ class Config:
     # -- read helpers --------------------------------------------------------
 
     def get_model_for_server(self, server: str) -> Optional[str]:
-        """Effective model for a server: per-server selection, then its default."""
-        if server in self.model_selection:
-            return self.model_selection[server]
-        server_cfg = self.servers.get(server)
-        if server_cfg:
-            return server_cfg.get("model")
-        return None
+        """The model last selected on a server (``None`` if never)."""
+        return self.model_selection.get(server)
 
 
 

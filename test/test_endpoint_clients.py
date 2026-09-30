@@ -52,7 +52,7 @@ def test_retired_endpoint_waits_for_the_reply_in_flight(monkeypatch):
 
 
 def test_refresh_catalog_closes_its_throwaway_endpoints(monkeypatch):
-    monkeypatch.setattr(settings.config, "servers", {"s": {"type": "openai", "model": "m"}})
+    monkeypatch.setattr(settings.config, "servers", {"s": {"type": "openai", "base_url": "http://h/v1"}})
     monkeypatch.setattr(settings.config, "models_by_server", {})
     built = []
     real_get = endpoint_mod.get_endpoint

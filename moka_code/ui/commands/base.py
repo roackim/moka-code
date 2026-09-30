@@ -221,6 +221,33 @@ def activate_endpoint(ui: ChatUIProtocol, endpoint) -> None:
         ui.refresh_status_bar()
 
 
+def auto_select(ui: ChatUIProtocol) -> None:
+    """On a fresh state (no model ever selected), select the top entry of
+    ``/model``: the first discovered model of the first server, in
+    servers.toml order. A last used selection is never replaced, even when
+    it cannot be reached (the status bar shows it red)."""
+    from moka_code.harness.endpoint import get_endpoint
+    from moka_code.ui.tui.msg_types import SysMsg
+
+    if settings.config.active_server is not None:
+        return
+    for server in settings.config.servers:
+        models = settings.config.models_by_server.get(server) or []
+        if models:
+            model = models[0]["id"]
+            break
+    else:
+        return
+    settings.config.save_model_selection(server, model)
+    settings.config.set_active_server(server)
+    endpoint = get_endpoint(server)
+    if endpoint is not None:
+        activate_endpoint(ui, endpoint)
+    ui.chat_history_panel.add_message(
+        f"Selected {model} on {server} (first available; /model to change).",
+        msg_type=SysMsg(), title="model")
+
+
 def reapply_endpoint(ui: ChatUIProtocol) -> None:
     """Apply a reloaded ``servers.toml``/state to the live endpoint, and
     rediscover every server's models in the background (every reload:
@@ -234,6 +261,7 @@ def reapply_endpoint(ui: ChatUIProtocol) -> None:
 
     async def _refresh():
         await refresh_catalog()
+        auto_select(ui)
         if hasattr(ui, "refresh_status_bar"):
             ui.refresh_status_bar()
 
