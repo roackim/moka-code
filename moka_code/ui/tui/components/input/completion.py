@@ -81,10 +81,12 @@ class Completer:
             self.menu.action_down()
 
     def _show(self, items: List[str], search_term: str,
-              display_prefix: str = "", descriptions: Optional[dict] = None) -> None:
-        """Push candidates to the menu and sync the active flag."""
+              display_prefix: str = "", descriptions: Optional[dict] = None,
+              ordered: bool = False) -> None:
+        """Push candidates to the menu and sync the active flag (sorted by
+        the menu unless ``ordered``)."""
         self.menu.update(items, search_term, display_prefix=display_prefix,
-                         descriptions=descriptions)
+                         descriptions=descriptions, ordered=ordered)
         self.is_active = self.menu.is_visible
 
     # -- interface -----------------------------------------------------
@@ -419,7 +421,8 @@ class ArgumentCompletion(Completer):
             return
 
         # Fuzzy filter and show
-        self._show(items, current_text, descriptions=descriptions or None)
+        self._show(items, current_text, descriptions=descriptions or None,
+                   ordered=cmd.completions_ordered(arg_index))
 
     def accept_selection(self, text: str, cursor_pos: int) -> Optional[tuple[str, int]]:
         """Accept current selection, return (completed_text, cursor_pos)."""

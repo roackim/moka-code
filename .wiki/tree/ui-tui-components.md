@@ -19,15 +19,13 @@ See [notes/ui.md](../notes/ui.md) for the component model overview.
 | `choice.py` | `Checkbox`, `RadioGroup` — focusable boolean/single-select controls |
 | `layout.py` | `EmptyLine`, `SeparatorLine` — spacing primitives |
 | `bars.py` | `BarStyle`, `StatusBar` (fields), `ActionBar` (actions, `set_hint(text, color)`, `set_expanded`), `NoticeBand` (colored notice lines, `+N more`) |
-| `menu.py` | `SelectionMenu` — floating dropdown with fuzzy filtering, item descriptions/footers, `measure_width()`, `title`/`status_text` |
-| `search_modal.py` | `SearchModal(SelectionMenu)` — type-to-filter picker (used by `/model`, `/theme`), anchored above the input; fires `on_highlight` as the selection moves |
+| `menu.py` | `SelectionMenu` — floating dropdown with fuzzy filtering, item descriptions/footers, `measure_width()`, `title`/`status_text`. With nothing typed it sorts items (`sort_items`, case-insensitive) unless the source passes `ordered=True` (effort levels, sessions, `/model` grouped by server); click accepts (`on_click`), wheel scrolls |
+| `search_modal.py` | `SearchModal(SelectionMenu)` — type-to-filter picker (every picker: `/model`, `/effort`, `/theme`, `/session`, `/sandbox`, bare `/config`), anchored above the input; sorted like the menu unless `ordered`; a click accepts a row; fires `on_highlight` as the selection moves |
 | `theme_preview.py` | `ThemePreview` — top-center overlay showing the live palette as swatches while picking a theme |
 | `popup.py` | `Popup` + `PopupScreen` — centered overlay popup on `Box` + `TextComponent` |
 | `debug_panel.py` | `DebugLogPanel` — capped, auto-scrolling log display |
 | `debug_popup.py` | `DebugPopup` — compositor overlay for the debug console and activity surface |
 | `table_view.py` | `TableView` — sized/measured columns, scrolling, clipping, row selection |
-| `list_view.py` | `SelectionModel`, `ListView`, `Select` — generic list widgets (currently only referenced by tests) |
-| `list_modal.py` | `ListModal` + `ListModalScreen` — centered modal list (currently only referenced by tests) |
 | `markdown.py` | `Markdown` parser + `MarkdownComponent`; block/inline parsers; `StyledSegment`; table rendering via `AsciiTable`; append-only commit path (`find_commit_line`, `_committed_*`) and open-tail plain rendering for streaming |
 
 ---

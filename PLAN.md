@@ -35,15 +35,16 @@ against the provider's current docs before they are built on.
 ## Step 0: answered leftovers
 
 1. Remove `efforts` model tables from the code; effort levels come only from
-   detection. Model tables keep `providers` (OpenRouter).
-2. Always auto-select a model: the last used one if still available, else the
-   first available. `no model selected` only when nothing is available.
+   detection. Model tables keep `providers` (OpenRouter). ✅
+2. Model selection: on a fresh state, auto-select the top of `/model`. A last
+   used model is never replaced: it stays, red, with the notice saying why.
+   No `model` key in servers.toml (OpenRouter keeps its model tables). ✅
 3. Menus are shared components:
    - with nothing typed, every suggestion list is sorted; a source with a
      meaningful order declares it (e.g. effort levels);
    - every picker built on `SelectionMenu` is clickable (completions,
      `/model`, `/session`, `/theme`, ...);
-   - the `/config` popup uses the same sorted list.
+   - the `/config` popup uses the same sorted list. ✅
 4. Remove the `$` shell prefix handling.
 5. `##` for help lines in the `ui`, `context` and `debug` templates (after
    checking the template sync and its guard test).

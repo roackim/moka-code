@@ -50,8 +50,9 @@ class _UI:
 
     def _show_search_modal(self, title, items, descriptions=None, footers=None,
                            on_accept=None, on_cancel=None, on_highlight=None,
-                           initial_index=0):
-        self.modal = {"title": title, "items": items, "on_accept": on_accept}
+                           initial_index=0, ordered=False):
+        self.modal = {"title": title, "items": items, "on_accept": on_accept,
+                      "ordered": ordered}
         return None
 
 

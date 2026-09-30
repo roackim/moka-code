@@ -42,8 +42,9 @@ def _select(ui: ChatUIProtocol, name: str) -> None:
 
 async def _open_picker(ui: ChatUIProtocol) -> None:
     from moka_code.ui.tui.colors import set_theme, theme
+    from moka_code.ui.tui.components.menu import sort_items
 
-    names = sorted(_valid_names())
+    names = list(_valid_names())
     descriptions = {name: _description(name) for name in names}
     previous = settings.config.get_active_theme()
     footers = {previous: "active"} if previous in names else {}
@@ -101,7 +102,7 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
     show = getattr(ui, "show_search_modal", None)
     if show is None:
         _close_preview()
-        lines = [f"{name.ljust(12)} {descriptions[name]}" for name in names]
+        lines = [f"{name.ljust(12)} {descriptions[name]}" for name in sort_items(names)]
         ui.chat_history_panel.add_message("\n".join(lines), msg_type=SysMsg(), title="theme")
         return
     modal = show("Themes", names, descriptions=descriptions, footers=footers,

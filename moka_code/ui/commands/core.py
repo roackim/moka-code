@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from typing import List
 
+from moka_code.ui.tui.components.menu import sort_items
 from moka_code.ui.tui.msg_types import SysMsg, SysMsgError, SysMsgWarning
 
 from .base import (
@@ -103,11 +104,23 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
     from moka_code.ui.external_editor import open_editor, resolve_editor
 
     if not args:
-        lines = [f"{section.ljust(10)} {settings.CONFIG_FILES[section]}"
-                 for section in settings.CONFIG_FILES]
-        lines.append(f"{'sandbox'.ljust(10)} projects/<name>.toml  (per-project sandboxes)")
-        lines.append(f"{'role'.ljust(10)} roles/<name>.toml  (create/edit a role)")
-        ui.show_popup("config", "Sections:\n" + "\n".join(lines))
+        # The same list as ``/config <section>`` completion; picking one
+        # opens it.
+        import asyncio
+
+        descriptions = {
+            **settings.CONFIG_FILES,
+            "sandbox": "projects/<name>.toml  (per-project sandboxes)",
+            "role": "roles/<name>.toml  (create/edit a role)",
+        }
+        sections = config_section_completions()
+        show = getattr(ui, "show_search_modal", None)
+        if show is None:
+            lines = [f"{s.ljust(10)} {descriptions[s]}" for s in sort_items(sections)]
+            ui.chat_history_panel.add_message("\n".join(lines), msg_type=SysMsg(), title="config")
+            return
+        show("Config", sections, descriptions=descriptions,
+             on_accept=lambda section: asyncio.ensure_future(cmd_config(ui, [section])))
         return
 
     section = args[0].lower()

@@ -101,13 +101,29 @@ def test_config_command_opens_section_and_reloads(monkeypatch, tmp_path):
     assert any("Config reloaded" in m for m in ui.chat_history_panel.messages)
 
 
-def test_config_command_no_args_lists_sections(monkeypatch):
+def test_config_command_no_args_opens_the_section_picker(monkeypatch, tmp_path):
+    """Decided 2026-09-30 (PLAN.md step 0.3): bare /config is the same
+    sorted, clickable picker as the other lists; picking opens the section."""
     ui = _UI()
+    captured = {}
+    ui.show_search_modal = lambda title, items, **k: captured.update(title=title, items=items, **k)
 
     asyncio.run(cmd_config(ui, []))
 
-    assert ui.popups and ui.popups[0][0] == "config"
-    assert "ui.toml" in ui.popups[0][1]
+    assert captured["title"] == "Config"
+    assert {"ui", "servers", "sandbox", "role"} <= set(captured["items"])
+    assert not captured.get("ordered")                  # the menu sorts it
+    assert captured["descriptions"]["ui"] == "ui.toml"
+
+    opened = []
+    monkeypatch.setattr("moka_code.ui.commands.core.cmd_config",
+                        lambda ui, args: opened.append(args) or asyncio.sleep(0))
+
+    async def accept():
+        captured["on_accept"]("ui")
+        await asyncio.sleep(0)
+    asyncio.run(accept())
+    assert opened == [["ui"]]
 
 
 def test_config_command_unknown_section_reports_error(monkeypatch):

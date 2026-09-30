@@ -22,10 +22,8 @@ from moka_code.ui.tui.msg_types import (
 def json_file_completions() -> List[str]:
     """List ``.json`` files in the current directory for fuzzy autocomplete."""
     try:
-        return sorted(
-            entry.name for entry in os.scandir(".")
-            if entry.is_file() and entry.name.endswith(".json")
-        )
+        return [entry.name for entry in os.scandir(".")
+                if entry.is_file() and entry.name.endswith(".json")]
     except OSError:
         return []
 
@@ -180,7 +178,9 @@ async def conversation_session(ui: ChatUIProtocol, args: List[str]):
 
     show = getattr(ui, "show_search_modal", None)
     if show is not None:
-        show("Sessions", list(by_item), descriptions=descriptions, on_accept=_accept)
+        # Newest first (list_sessions' order).
+        show("Sessions", list(by_item), descriptions=descriptions, on_accept=_accept,
+             ordered=True)
 
 
 def _add_answer(ui: ChatUIProtocol, text: str, ids) -> None:

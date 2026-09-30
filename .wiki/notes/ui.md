@@ -15,7 +15,7 @@ chatTUI (app.py)
        │    └─ DebugLogPanel (optional)   ← dev logging
        └─ Overlays (floating, on top)
             ├─ SelectionMenu              ← autocomplete dropdowns
-            └─ Popup                      ← centered text popups (/help, /config)
+            └─ Popup                      ← centered text popups (/help)
 ```
 
 Typed event dataclasses are defined in `tui/events.py`. Shared focus ownership

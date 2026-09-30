@@ -627,11 +627,11 @@ class chatTUI(ChatActionHandlers):
 
     def show_search_modal(self, title, items, descriptions=None, footers=None,
                           on_accept=None, on_cancel=None, on_highlight=None,
-                          initial_index=0):
+                          initial_index=0, ordered=False):
         """Present a centered, type-to-filter selection overlay.
 
         ``on_highlight`` fires with the selected item whenever the highlight
-        moves (preview hook). Returns the modal (so callers can ``refresh`` it)
+        moves (preview hook). Items are sorted unless ``ordered``. Returns the modal (so callers can ``refresh`` it)
         or None when there is no compositor (headless).
         """
         from moka_code.ui.tui.components.search_modal import SearchModal
@@ -645,7 +645,8 @@ class chatTUI(ChatActionHandlers):
         modal.anchor = lambda: self.input_component.place_menu_above_input(modal)
         modal.open(items, descriptions=descriptions, footers=footers,
                    on_accept=on_accept, on_cancel=on_cancel,
-                   on_highlight=on_highlight, initial_index=initial_index)
+                   on_highlight=on_highlight, initial_index=initial_index,
+                   ordered=ordered)
         return modal
 
     def new_session(self) -> None:

@@ -23,6 +23,9 @@ class Param:
     descriptions: Optional[DescriptionSource] = None
     path: bool = False
     required: bool = False
+    # The completions' order is meaningful (e.g. effort levels); otherwise
+    # the menu sorts them.
+    ordered: bool = False
 
 
 class ChatUIProtocol(Protocol):
@@ -81,7 +84,7 @@ class Command:
 
     def get_completions(self, arg_index: int, prior_args: tuple[str, ...] = ()) -> List[str]:
         if self.has_subcommands():
-            return sorted(self.subcommands.keys()) if arg_index == 0 else []
+            return list(self.subcommands) if arg_index == 0 else []
         if arg_index < 0 or arg_index >= len(self.params):
             return []
         parameter = self.params[arg_index]
@@ -91,6 +94,11 @@ class Command:
             return []
         return (parameter.completions() if callable(parameter.completions)
                 else list(parameter.completions))
+
+    def completions_ordered(self, arg_index: int) -> bool:
+        """Whether an argument's completions keep their own order."""
+        return (not self.has_subcommands() and 0 <= arg_index < len(self.params)
+                and self.params[arg_index].ordered)
 
     def get_descriptions(self, arg_index: int, prior_args: tuple[str, ...] = ()) -> Dict[str, str]:
         """Return value -> one-line description for an argument position."""
@@ -107,7 +115,7 @@ class Command:
         try:
             entries = []
             with os.scandir(base or ".") as directory:
-                for entry in sorted(directory, key=lambda item: item.name.lower()):
+                for entry in directory:
                     if entry.name.startswith("."):
                         continue
                     try:
@@ -121,8 +129,8 @@ class Command:
 
 
 def config_section_completions() -> List[str]:
-    """Return the editable config targets (for ``/config <section>``), sorted."""
-    return sorted([*settings.CONFIG_FILES, "sandbox", "role"])
+    """Return the editable config targets (for ``/config <section>``)."""
+    return [*settings.CONFIG_FILES, "sandbox", "role"]
 
 
 def role_name_completions() -> List[str]:
@@ -223,21 +231,19 @@ def activate_endpoint(ui: ChatUIProtocol, endpoint) -> None:
 
 def auto_select(ui: ChatUIProtocol) -> None:
     """On a fresh state (no model ever selected), select the top entry of
-    ``/model``: the first discovered model of the first server, in
-    servers.toml order. A last used selection is never replaced, even when
+    ``/model``. A last used selection is never replaced, even when
     it cannot be reached (the status bar shows it red)."""
     from moka_code.harness.endpoint import get_endpoint
     from moka_code.ui.tui.msg_types import SysMsg
 
     if settings.config.active_server is not None:
         return
-    for server in settings.config.servers:
-        models = settings.config.models_by_server.get(server) or []
-        if models:
-            model = models[0]["id"]
-            break
-    else:
+    # /model's order: by server, then model id.
+    pairs = [(server, model["id"]) for server in settings.config.servers
+             for model in settings.config.models_by_server.get(server) or []]
+    if not pairs:
         return
+    server, model = min(pairs)
     settings.config.save_model_selection(server, model)
     settings.config.set_active_server(server)
     endpoint = get_endpoint(server)

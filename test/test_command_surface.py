@@ -123,7 +123,7 @@ def test_open_picker_shows_cached_catalog_without_network(monkeypatch):
     captured = {}
 
     def show_search_modal(title, items, descriptions=None, footers=None,
-                          on_accept=None, on_cancel=None, initial_index=0):
+                          on_accept=None, on_cancel=None, initial_index=0, ordered=False):
         captured.update(title=title, items=items, descriptions=descriptions,
                         footers=footers, on_accept=on_accept,
                         initial_index=initial_index)

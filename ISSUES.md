@@ -63,11 +63,6 @@ and full tool output. → `PLAN.md` step 3.
 `endpoint.py`, `endpoint_discovery.py`, `endpoint_openai.py`, `settings.py`.
 → `PLAN.md` step 1.
 
-**P3. No model auto-selected** · confirmed
-After the first server is added, nothing is selected until `/model`.
-Decided: auto-select the last used model if available, else the first
-available. → `PLAN.md` step 0.
-
 **P4. Context window guessed as 32768 when unknown** · confirmed
 `ui/status_presenter.py`: `endpoint.max_context or 32768`. The status bar
 shows a made-up size. The user's todo already records "shows 32k for
@@ -77,10 +72,6 @@ deepseek despite being like 1M".
 `harness/endpoint_discovery.py` (`_match`, `openrouter_context_window`):
 `deepseek-v4-flash` resolves to any `…/deepseek-v4-flash`; `~`-prefixed alias
 entries used as fallback. Could pick the wrong model silently.
-
-**P6. `model` fallback in selection** · to audit
-`settings.py` `get_model_for_server`: falls back to the server table's
-`model` key. Check whether this is explicit config or a hidden default.
 
 **P7. Guessed effort levels** · to audit
 `harness/endpoint_discovery.py` `efforts_from_metadata`: without
@@ -92,11 +83,6 @@ model accepts.
 ---
 
 ## UI
-
-**U1. Menus: sorting and mouse per caller** · confirmed
-Sorting done for `/config` only; mouse only for input completion menus.
-`/model`, `/session`, `/theme` pickers and the `/config` popup are not
-covered. → `PLAN.md` step 0.
 
 **U2. `$` shell prefix still handled** · confirmed
 Hint removed; `app.py` `on_user_submit` still runs `$…` as a shell command.
@@ -118,7 +104,7 @@ only fires when none of them exists.
 `ui/status_presenter.py` `_resolve_color` (sandbox colors in `ui.toml`).
 
 **U7. `?` shown for an unknown model** · to audit
-`ui/status_presenter.py`: `selected_model or endpoint.model or "?"`. With a
+`ui/status_presenter.py`: `selected_model or "?"`. With a
 real server whose model is not known yet (llama.cpp before its probe), the
 status bar shows `name:?`.
 

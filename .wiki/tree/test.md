@@ -52,7 +52,7 @@ All tests use pytest. Run with the pixi env:
 | `test_usage.py` | `usage.py` | Token usage normalization |
 | `test_streaming_incremental.py` | UI rendering | Incremental streaming render artifacts |
 | `test_no_shadowed_modules.py` | package layout | No shadowed/duplicate module names |
-| TUI widget tests | `ui/tui/` | `buffer`, `bars`, `button`, `choice`, `table_view`, `list_view`, `list_modal`, `popup`, `text`, `layout`, `fuzzy`/`menu`, `search_modal`, `colors`, `tui_*` (navigation/router/actions/foundations/interactions/integration), `message_focus`, `chat_message`, `input_height`, `debug_popup`, `clipboard` |
+| TUI widget tests | `ui/tui/` | `buffer`, `bars`, `button`, `choice`, `table_view`, `popup`, `text`, `layout`, `fuzzy`/`menu`, `search_modal`, `colors`, `tui_*` (navigation/router/actions/foundations/interactions/integration), `message_focus`, `chat_message`, `input_height`, `debug_popup`, `clipboard` |
 
 ## Notes
 

@@ -42,7 +42,7 @@ def _project():
 
 def sandbox_id_completions() -> List[str]:
     """Sandbox ids defined in the current project."""
-    return sorted(_project().sandboxes)
+    return list(_project().sandboxes)
 
 
 def sandbox_id_descriptions() -> Dict[str, str]:
@@ -179,6 +179,7 @@ def _offer_build(ui: ChatUIProtocol, project, workspace: str, sandbox_id: str, e
             f"Image '{spec.image}' not built",
             [_BUILD_NOW, _CANCEL],
             on_accept=_on_accept,
+            ordered=True,
         )
         return
 

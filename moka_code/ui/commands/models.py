@@ -58,6 +58,12 @@ def _cached_pairs() -> List[Tuple[str, "ModelInfo"]]:
     return pairs
 
 
+def _by_server(pairs):
+    """/model's declared order: grouped by server, then by model id
+    (``commands.base.auto_select`` picks the first)."""
+    return sorted(pairs, key=lambda p: (p[0], p[1].id))
+
+
 def _build_rows(pairs, active_name: Optional[str], selected: Optional[str]):
     """Aligned picker rows.
 
@@ -111,8 +117,7 @@ def _list_models_text(ui: ChatUIProtocol, pairs) -> None:
             msg_type=SysMsg(), title="model")
         return
     active_name, selected = _current_selection(ui)
-    ordered = sorted(pairs, key=lambda p: (p[0], p[1].id))
-    items, descriptions, footers, _ = _build_rows(ordered, active_name, selected)
+    items, descriptions, footers, _ = _build_rows(_by_server(pairs), active_name, selected)
     lines = [f"{item}  {descriptions.get(item, '')}  {footers.get(item, '')}".rstrip()
              for item in items]
     lines += ["", "Use '/model <model>' to select."]
@@ -130,7 +135,7 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
 
     def _show(pairs, modal=None):
         active_name, selected = _current_selection(ui)
-        ordered = sorted(pairs, key=lambda p: (p[0], p[1].id))
+        ordered = _by_server(pairs)
         items, descriptions, footers, index = _build_rows(ordered, active_name, selected)
         state["index"] = index
         initial = next(
@@ -152,7 +157,7 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
         if show is None:
             return None
         return show("Models", items, descriptions=descriptions, footers=footers,
-                    on_accept=_accept, initial_index=initial)
+                    on_accept=_accept, initial_index=initial, ordered=True)
 
     cached = _cached_pairs()
     modal = _show(cached) if cached else None
@@ -269,12 +274,12 @@ def _active() -> Tuple[Optional[str], Optional[str]]:
 
 def model_completions() -> List[str]:
     """Every cached model, as the ``/model`` picker lists them."""
-    pairs = sorted(_cached_pairs(), key=lambda p: (p[0], p[1].id))
+    pairs = _by_server(_cached_pairs())
     return _build_rows(pairs, *_active())[0]
 
 
 def model_descriptions() -> dict:
-    pairs = sorted(_cached_pairs(), key=lambda p: (p[0], p[1].id))
+    pairs = _by_server(_cached_pairs())
     items, descriptions, footers, _ = _build_rows(pairs, *_active())
     return {item: f"{descriptions[item]}  {footers.get(item, '')}".rstrip() for item in items}
 
@@ -382,7 +387,7 @@ async def effort_command(ui: ChatUIProtocol, args: List[str]):
             f"Effort: {current}. Levels: {', '.join(choices)}.", msg_type=SysMsg(), title="effort")
         return
     show("Effort", choices, footers={current: "active"}, on_accept=apply,
-         initial_index=choices.index(current))
+         initial_index=choices.index(current), ordered=True)
 
 
 async def model_command(ui: ChatUIProtocol, args: List[str]):

@@ -26,6 +26,7 @@ class SearchModal(SelectionMenu):
         self._base_items: List[str] = []
         self._footers: dict = {}
         self._search = ""
+        self._ordered = False
         self._on_accept: Optional[Callable[[str], None]] = None
         self._on_cancel: Optional[Callable[[], None]] = None
         self._on_highlight: Optional[Callable[[str], None]] = None
@@ -48,8 +49,12 @@ class SearchModal(SelectionMenu):
              on_accept: Optional[Callable[[str], None]] = None,
              on_cancel: Optional[Callable[[], None]] = None,
              on_highlight: Optional[Callable[[str], None]] = None,
-             initial_index: int = 0) -> None:
+             initial_index: int = 0, ordered: bool = False) -> None:
+        """``initial_index`` indexes ``items`` as given (before sorting);
+        ``ordered`` keeps their order (see :meth:`SelectionMenu.update`)."""
+        initial = items[initial_index] if 0 <= initial_index < len(items) else None
         self._base_items = list(items)
+        self._ordered = ordered
         self._on_accept = on_accept
         self._on_cancel = on_cancel
         self._on_highlight = on_highlight
@@ -58,8 +63,7 @@ class SearchModal(SelectionMenu):
             self.item_descriptions = dict(descriptions)
         self._footers = dict(footers or {})
         self._apply_filter()
-        if self.items:
-            self.selected_index = max(0, min(initial_index, len(self.items) - 1))
+        self.selected_index = self.items.index(initial) if initial in self.items else 0
         self.is_visible = True
         self._update_compositor_registration()
         self._notify_highlight()
@@ -68,17 +72,18 @@ class SearchModal(SelectionMenu):
     def refresh(self, items: List[str], descriptions: Optional[dict] = None,
                 footers: Optional[dict] = None,
                 initial_index: Optional[int] = None) -> None:
-        """Replace the candidate list, preserving the current search/selection."""
+        """Replace the candidate list, preserving the current search/selection.
+        ``initial_index`` indexes ``items`` as given."""
         current = self.get_selected()
+        if initial_index is not None and 0 <= initial_index < len(items):
+            current = items[initial_index]
         self._base_items = list(items)
         if descriptions is not None:
             self.item_descriptions = dict(descriptions)
         if footers is not None:
             self._footers = dict(footers)
         self._apply_filter()
-        if initial_index is not None and 0 <= initial_index < len(self.items):
-            self.selected_index = initial_index
-        elif current in self.items:
+        if current in self.items:
             self.selected_index = self.items.index(current)
         self.is_visible = True
         self._update_compositor_registration()
@@ -89,6 +94,13 @@ class SearchModal(SelectionMenu):
         self._on_cancel = None
         self._on_highlight = None
         self.hide()
+
+    def _accept(self) -> None:
+        selected = self.get_selected()
+        accept = self._on_accept
+        self.close()
+        if accept and selected is not None:
+            accept(selected)
 
     def _notify_highlight(self) -> None:
         """Fire the highlight callback for the currently selected item."""
@@ -110,7 +122,7 @@ class SearchModal(SelectionMenu):
     def _apply_filter(self) -> None:
         self.update(self._base_items, self._search,
                     descriptions=self.item_descriptions,
-                    footers=self._footers)
+                    footers=self._footers, ordered=self._ordered)
         # The query lives in the title: "Models: qwe " while typing (trailing
         # space so it reads like a caret), "Models" when empty.
         self.title = (f"{self._base_title}: {self._search} "
@@ -157,11 +169,7 @@ class SearchModal(SelectionMenu):
                 self._request_render()
                 return True
             if key in ('\r', '\n'):
-                selected = self.get_selected()
-                accept = self._on_accept
-                self.close()
-                if accept and selected is not None:
-                    accept(selected)
+                self._accept()
                 return True
             if key in ('\x7f', '\b'):
                 if self._search:
@@ -175,7 +183,11 @@ class SearchModal(SelectionMenu):
             return True
 
         if isinstance(event, MouseEvent):
-            # Modal traps mouse input; clicks are ignored.
+            # A click accepts the clicked row, the wheel moves the selection
+            # (SelectionMenu); the modal traps every other mouse event.
+            self.on_click = self._accept
+            super().handle_input(event)
+            self._request_render()
             return True
 
         # Let ticks/resizes/actions propagate (cursor blink, spinners).

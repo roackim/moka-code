@@ -13,6 +13,11 @@ def _tail_len(description: str, footer: str) -> int:
     return len(description) + (2 + len(footer) if footer else 0)
 
 
+def sort_items(items: List[str]) -> List[str]:
+    """The default menu order: case-insensitive alphabetical."""
+    return sorted(items, key=lambda item: (item.lower(), item))
+
+
 class SelectionMenu(Component):
     """A floating menu component for autocomplete/suggestions.
     
@@ -102,7 +107,7 @@ class SelectionMenu(Component):
     
     def update(self, all_items: List[str], search_term: str = "",
                display_prefix: str = "", descriptions: Optional[dict] = None,
-               footers: Optional[dict] = None):
+               footers: Optional[dict] = None, ordered: bool = False):
         """Update menu with new items and optional search filter.
 
         Args:
@@ -110,6 +115,9 @@ class SelectionMenu(Component):
             search_term: Optional search term to fuzzy filter items
             display_prefix: Prefix to show when rendering (e.g., "/" for commands)
             descriptions: Optional item -> one-line description mapping
+            ordered: The source's order is meaningful (e.g. effort levels);
+                otherwise items are sorted (case-insensitive) while nothing
+                is typed. A search ranks by match either way.
         """
         if descriptions is not None:
             self.item_descriptions = dict(descriptions)
@@ -117,7 +125,7 @@ class SelectionMenu(Component):
             self.item_footers = dict(footers)
         self.display_prefix = display_prefix
         if not search_term:
-            self.items = all_items
+            self.items = list(all_items) if ordered else sort_items(all_items)
         else:
             # Fuzzy search
             results = fuzzy_search(search_term, all_items, threshold=0.01)
@@ -138,7 +146,7 @@ class SelectionMenu(Component):
                   footers: Optional[dict] = None):
         """Replace items with an already-filtered/ranked list.
 
-        Unlike :meth:`update`, no fuzzy filtering is applied.
+        Unlike :meth:`update`, no fuzzy filtering or sorting is applied.
         """
         if descriptions is not None:
             self.item_descriptions = dict(descriptions)
