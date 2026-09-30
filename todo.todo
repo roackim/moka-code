@@ -1,3 +1,4 @@
+[ ] in the expanded display of thoughts, show an empty line at last for better visibility and separation (DO NOT MODIFY HISTORY OF MESSAGE CONTENT)
 [ ] make preserve_thinking config part of roles ?
 [x] swap roles using TAB ?
 [x] swap sandbox using CTRL + TAB ?
