@@ -32,7 +32,9 @@ activity panel. Nothing else reads the old location.
 
 Missing files are created from fully commented templates
 (`settings.DEFAULT_CONFIG_TEMPLATES`) by `Config.ensure_section_file()` /
-`ensure_config_files()`. The built-in role files (`agent.toml`, `chat.toml`)
+`ensure_config_files()`. In every template a single `#` marks a setting to
+uncomment (a bare `#` spaces a block of settings) and `##` marks help
+(guarded by `test_template_help_lines_use_double_hash`). The built-in role files (`agent.toml`, `chat.toml`)
 are seeded by `roles.ensure_roles_dir()` on startup.
 
 Existing **flat** files (`ui`, `context`, `debug`) are kept in sync

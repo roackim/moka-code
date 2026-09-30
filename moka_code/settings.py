@@ -125,8 +125,9 @@ def get_state_path() -> Path:
 # Per-section templates written on first use. Everything is commented out so
 # the built-in defaults apply until the user uncomments what they need.
 DEFAULT_UI_TOML = """\
-# moka UI settings (flat keys). Apply with /reload, or /config ui
-# (which reloads when the editor exits).
+## moka UI settings (flat keys). Apply with /reload, or /config ui
+## (which reloads when the editor exits).
+## Lines starting with a single # are settings to uncomment; ## is help.
 
 # theme = "terminal"                  # "terminal" | "pastel"
 # use_bg_color = false                # paint the theme background
@@ -160,7 +161,8 @@ DEFAULT_UI_TOML = """\
 """
 
 DEFAULT_CONTEXT_TOML = """\
-# Context building (flat keys). Apply with /reload, or /config context.
+## Context building (flat keys). Apply with /reload, or /config context.
+## Lines starting with a single # are settings to uncomment; ## is help.
 
 # format = "tree"                     # "tree" (token-saving) | "flat"
 # max_files = 500
@@ -171,15 +173,17 @@ DEFAULT_CONTEXT_TOML = """\
 """
 
 DEFAULT_DEBUG_TOML = """\
-# Debug (flat keys). Apply with /reload, or /config debug.
+## Debug (flat keys). Apply with /reload, or /config debug.
+## Lines starting with a single # are settings to uncomment; ## is help.
 
 # log_enabled = false                 # write debug_stream.log
 """
 
 DEFAULT_STYLES_TOML = """\
-# Optional markdown / syntax-highlight overrides. Apply with /reload, or
-# /config styles. Uncomment and edit what you need. Keys: fg, bg (a hex
-# color, or a theme color name such as "MUTED"), bold, italic, underline.
+## Optional markdown / syntax-highlight overrides. Apply with /reload, or
+## /config styles. Uncomment and edit what you need. Keys: fg, bg (a hex
+## color, or a theme color name such as "MUTED"), bold, italic, underline.
+## Lines starting with a single # are settings to uncomment; ## is help.
 
 # [markdown_styles.header1]
 # fg = "#FF79C6"
@@ -225,7 +229,7 @@ DEFAULT_SERVERS_TOML = """\
 # [servers.openrouter]
 # api_key_env = "OPENROUTER_API_KEY"     # read the key from the environment
 # providers = ["deepseek"]               # optional; default routing for every model
-#                                        # below: only these, tried in this order
+##                                       # below: only these, tried in this order
 #
 ## One table per enabled model (the keys are what /model lists). Provider
 ## values are slugs from the model's "Providers" tab on openrouter.ai.
@@ -233,7 +237,7 @@ DEFAULT_SERVERS_TOML = """\
 # providers = ["deepseek", "fireworks"]  # optional; replaces the server default
 #
 # [servers.openrouter.models."anthropic/claude-sonnet-4"]
-#                                        # no providers: uses the server default
+##                                       # no providers: uses the server default
 # [servers.openrouter.models."qwen/qwen3-coder"]
 # providers = []                         # OpenRouter's own routing
 
@@ -244,17 +248,18 @@ DEFAULT_SERVERS_TOML = """\
 """
 
 DEFAULT_THEMES_TOML = """\
-# Color themes. One [themes.<name>] table per theme; select with /theme.
-# Each palette entry is either a hex RGB string or an ANSI slot table:
-#   USER       = "#4EC9B0"
-#   MUTED      = { ansi = 90 }            # standard ANSI fg code
-#   BACKGROUND = { ansi = 39, bg = 49 }   # fg and/or bg codes
-# Missing entries inherit from the built-in base of the same name (or terminal).
-# Several built-ins ship (terminal is the default; run /theme to list them);
-# they are always available and can be overridden here.
-#
-# Palette keys: BACKGROUND, DEFAULT, MUTED, ERROR, WARNING, SUCCESS,
-#               PERMISSION, USER, ASSISTANT, FOCUSED
+## Color themes. One [themes.<name>] table per theme; select with /theme.
+## Each palette entry is either a hex RGB string or an ANSI slot table:
+##   USER       = "#4EC9B0"
+##   MUTED      = { ansi = 90 }            # standard ANSI fg code
+##   BACKGROUND = { ansi = 39, bg = 49 }   # fg and/or bg codes
+## Missing entries inherit from the built-in base of the same name (or terminal).
+## Several built-ins ship (terminal is the default; run /theme to list them);
+## they are always available and can be overridden here.
+##
+## Palette keys: BACKGROUND, DEFAULT, MUTED, ERROR, WARNING, SUCCESS,
+##               PERMISSION, USER, ASSISTANT, FOCUSED
+## Lines starting with a single # are settings to uncomment; ## is help.
 
 # [themes.pastel]
 # BACKGROUND = "#1E1E1E"

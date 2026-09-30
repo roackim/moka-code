@@ -84,10 +84,6 @@ model accepts.
 
 ## UI
 
-**U3. Flat templates use `#` for help lines** · confirmed
-`ui`, `context`, `debug` templates. Decided: `##` for help lines.
-→ `PLAN.md` step 0.
-
 **U4. Editor silently chosen** · to audit
 `ui/external_editor.py` `resolve_editor`: without `$VISUAL`/`$EDITOR`,
 picks `nano`, `vim` or `vi`. Implicit choice; the setup note "no $EDITOR"

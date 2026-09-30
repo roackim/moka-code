@@ -1,5 +1,7 @@
 """Tests for flat-section config sync (insert new keys, drop retired keys)."""
 
+import re
+
 import pytest
 
 from moka_code import settings
@@ -98,3 +100,17 @@ def test_template_key_lines_are_commented(section):
     _, template = SPEC_TEMPLATES[section]
     for _, line in settings._template_key_lines(template):
         assert line.lstrip().startswith("#")
+
+
+_SETTING_LINE = re.compile(r"^# (\[|[A-Za-z_][A-Za-z0-9_]*\s*=)")
+
+
+@pytest.mark.parametrize("section", ["ui", "context", "debug", "styles", "theme", "servers"])
+def test_template_help_lines_use_double_hash(section):
+    """Decided 2026-09-30 (PLAN.md step 0.5): a whole-line comment is either
+    a setting to uncomment (single ``#``; a bare ``#`` spaces a block of
+    settings) or help (``##``)."""
+    template = settings.DEFAULT_CONFIG_TEMPLATES[section]
+    for line in template.splitlines():
+        if line.startswith("#") and not line.startswith("##") and line != "#":
+            assert _SETTING_LINE.match(line), f"{section}: help line needs ##: {line!r}"

@@ -47,7 +47,7 @@ against the provider's current docs before they are built on.
    - the `/config` popup uses the same sorted list. ✅
 4. Remove the `$` shell prefix handling. ✅
 5. `##` for help lines in the `ui`, `context` and `debug` templates (after
-   checking the template sync and its guard test).
+   checking the template sync and its guard test). Also `styles`, `theme`. ✅
 
 ## Step 1: provider contract (restructure, no behaviour change)
 
