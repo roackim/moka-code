@@ -1,9 +1,5 @@
-"""Reasoning is persisted in history and only re-sent when configured.
-
-``preserve_reasoning`` (servers.toml, per server or model) controls only whether earlier turns' reasoning is re-sent;
-it now controls only whether stored reasoning is folded back into the request
-so the model sees its prior chain-of-thought.
-"""
+"""Reasoning is persisted in history and re-sent with every assistant message,
+so the model sees its prior chain-of-thought."""
 
 import asyncio
 from types import SimpleNamespace
@@ -113,9 +109,9 @@ def test_api_message_sends_only_api_fields():
     }
 
 
-def _history_with_two_turns(preserve):
+def _history_with_two_turns():
     harness = _harness()
-    harness.endpoint = Endpoint(name="t", type="llamacpp", preserve_reasoning=preserve)
+    harness.endpoint = Endpoint(name="t", type="llamacpp")
     harness.history = [
         {"id": "u1", "role": "user", "content": "first"},
         {"id": "a1", "role": "assistant", "content": "old answer", "reasoning": "old thought"},
@@ -130,19 +126,12 @@ def _history_with_two_turns(preserve):
     return harness
 
 
-def test_current_turn_reasoning_is_always_sent_back():
-    api = _history_with_two_turns(preserve=False)._api_history()
+def test_every_turns_reasoning_is_sent_back():
+    api = _history_with_two_turns()._api_history()
 
-    assert "reasoning" not in api[1]                  # an earlier turn
+    assert api[1]["reasoning"] == "old thought"       # an earlier turn
     assert api[3]["reasoning"] == "why I call"        # the tool loop in progress
     assert all("id" not in m and "source" not in m for m in api)
-
-
-def test_preserve_sends_every_turns_reasoning():
-    api = _history_with_two_turns(preserve=True)._api_history()
-
-    assert api[1]["reasoning"] == "old thought"
-    assert api[3]["reasoning"] == "why I call"
 
 
 def test_each_server_gets_reasoning_in_its_own_field():
@@ -266,27 +255,6 @@ def test_tool_loop_request_carries_the_reasoning_behind_the_call(tmp_path, monke
     assert caller["reasoning_details"] == details
     stored = next(m for m in harness.history if m.get("tool_calls"))
     assert stored["reasoning_details"] == details
-
-
-def test_preserve_reasoning_defaults_true_and_a_model_table_overrides_it():
-    server = Endpoint(name="or", type="openrouter", model="a/one",
-                      models={"a/one": {}, "a/two": {"preserve_reasoning": False}})
-    assert server.preserves_reasoning() is True           # absent → true
-    server.set_model("a/two")
-    assert server.preserves_reasoning() is False          # model override
-    off = Endpoint.from_dict("local", {"type": "llamacpp", "preserve_reasoning": False})
-    assert off.preserves_reasoning() is False
-
-
-def test_preserve_reasoning_is_validated(tmp_path):
-    from moka_code.settings import Config
-
-    (tmp_path / "servers.toml").write_text(
-        '[servers.or]\ntype = "openrouter"\npreserve_reasoning = "yes"\n'
-        '[servers.or.models."a/b"]\npreserve_reasoning = false\n')
-    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
-    assert any("preserve_reasoning must be true or false" in e for e in config.load_errors)
-    assert not any("unknown key" in e for e in config.load_errors)
 
 
 def test_ollama_native_response_reads_thinking_or_reasoning():

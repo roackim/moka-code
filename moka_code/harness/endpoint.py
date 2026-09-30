@@ -202,8 +202,6 @@ class Endpoint:
         retry_delay: float = 2.0,
         providers: Optional[list[str]] = None,
         models: Optional[dict[str, dict[str, Any]]] = None,
-        preserve_reasoning: bool = True,
-        efforts: Optional[list[str]] = None,
     ):
         self.name = name
         self.type: ServerType = type
@@ -214,15 +212,13 @@ class Endpoint:
         self.timeout = timeout
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
-        # OpenRouter routing: the server-default provider whitelist (in
-        # order) and one entry per enabled model, which may override it.
+        # Per-model tables (``efforts``; OpenRouter: ``providers``, and the
+        # tables are the enabled models) and OpenRouter's default provider
+        # whitelist, in order.
         self.providers = list(providers) if providers is not None else None
         self.models = {model_id: dict(entry) for model_id, entry in (models or {}).items()}
-        # Re-send earlier turns' reasoning (a model table may override it).
-        self.preserve_reasoning = preserve_reasoning
-        # Reasoning effort levels /effort offers (a model table may override
-        # them) and the chosen one, sent in this server's own field.
-        self.efforts = list(efforts or [])
+        # The chosen reasoning effort (levels: ``effort_levels``), sent in this
+        # server's own field.
         self.effort: Optional[str] = None
 
         # .local hosts are rewritten to a routable IP. Resolution can block for
@@ -264,6 +260,8 @@ class Endpoint:
         api_key_env = data.get("api_key_env")
         if api_key_env:
             api_key = os.getenv(api_key_env, api_key)
+        # Only llama.cpp has a default address (its own); the loader requires
+        # base_url for ollama/openai, and openrouter has a fixed one.
         base_url = data.get("base_url", "http://localhost:8080/v1")
         if data["type"] == "openrouter":
             base_url = _discovery.OPENROUTER_BASE_URL
@@ -279,8 +277,6 @@ class Endpoint:
             retry_delay=data.get("retry_delay", 2.0),
             providers=data.get("providers"),
             models=data.get("models"),
-            preserve_reasoning=data.get("preserve_reasoning", True),
-            efforts=data.get("efforts"),
         )
 
     @property
@@ -623,22 +619,12 @@ class Endpoint:
         model_name = self._selected_model
         return self._model_entry(model_name) if model_name else None
 
-    def preserves_reasoning(self) -> bool:
-        """Whether earlier turns' reasoning is re-sent to the current model:
-        its model table's ``preserve_reasoning``, else the server's (default
-        true)."""
-        entry = self._current_entry()
-        if entry is not None and "preserve_reasoning" in entry:
-            return entry["preserve_reasoning"]
-        return self.preserve_reasoning
-
     def effort_levels(self) -> list[str]:
         """Effort levels for the current model: its model table's ``efforts``,
-        else the server's, else detected from the catalog metadata. Empty
-        means the model takes no effort parameter."""
-        model_name = self._selected_model
+        else detected from the catalog metadata. Empty means the model takes
+        no effort parameter."""
         return _discovery.effort_levels(
-            self._current_entry(), self.efforts, self._catalog_metadata(model_name))
+            self._current_entry(), self._catalog_metadata(self._selected_model))
 
     def _catalog_metadata(self, model_name: Optional[str]) -> dict:
         return catalog_entry(self.name, model_name).get("metadata") or {}
@@ -675,27 +661,14 @@ class Endpoint:
         return {"order": list(providers), "allow_fallbacks": False}
 
 
-def default_endpoint() -> Endpoint:
-    """Fallback endpoint used when no server is configured."""
-    return Endpoint(
-        name="llamacpp_default",
-        type="llamacpp",
-        base_url="http://localhost:8080/v1",
-        api_key="EMPTY",
-        timeout=2.0,
-        retry_attempts=5,
-        retry_delay=2.0,
-    )
-
-
-def get_active_endpoint() -> Endpoint:
-    """Build the endpoint currently selected in ``settings``.
-
-    Falls back to the local llama.cpp default when nothing is configured.
-    """
+def get_active_endpoint() -> Optional[Endpoint]:
+    """Build the endpoint currently selected in ``settings``; ``None`` when
+    nothing is selected or the selected server is not configured (never a
+    guessed fallback)."""
     from moka_code import settings
 
-    return get_endpoint(settings.config.active_server) or default_endpoint()
+    name = settings.config.active_server
+    return get_endpoint(name) if name else None
 
 
 def get_endpoint(name: str) -> Optional[Endpoint]:
@@ -795,7 +768,6 @@ __all__ = [
     "ModelInfo",
     "ServerType",
     "ConnectionDiagnosis",
-    "default_endpoint",
     "get_active_endpoint",
     "get_endpoint",
     "_is_local_target",

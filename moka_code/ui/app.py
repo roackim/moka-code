@@ -958,25 +958,27 @@ class chatTUI(ChatActionHandlers):
             self.agent.start()
             logger.info("Agent started")
         
-        # Pre-warm resolution and discover the model name in the background so
-        # the status bar shows it instead of "?".
+        # Discover every configured server's models in the background (the
+        # active one first, then its served model name), whether or not a
+        # model is selected yet.
         endpoint = getattr(self.agent, "endpoint", None)
         if endpoint is not None:
             from moka_code.harness.endpoint import prewarm_local_resolution
             prewarm_local_resolution(endpoint._original_base_url)
 
-            async def _prewarm_and_refresh():
-                from moka_code.harness.endpoint import refresh_catalog
+        async def _prewarm_and_refresh():
+            from moka_code import settings
+            from moka_code.harness.endpoint import refresh_catalog
 
-                # Model facts are discovered live: the active server first.
+            if endpoint is not None:
                 await refresh_catalog([endpoint.name])
                 self.refresh_status_bar()
                 await endpoint.prewarm_model_name()
-                self.refresh_status_bar()
-                from moka_code import settings
-                await refresh_catalog([n for n in settings.config.servers if n != endpoint.name])
+            await refresh_catalog([n for n in settings.config.servers
+                                   if endpoint is None or n != endpoint.name])
+            self.refresh_status_bar()
 
-            asyncio.ensure_future(_prewarm_and_refresh())
+        asyncio.ensure_future(_prewarm_and_refresh())
 
         chat_screen = ChatScreen(
             self.chat_history_panel,

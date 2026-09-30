@@ -122,53 +122,41 @@ class InputComponent(Component):
         """Store the COMMANDS registry for generic argument hints and completion."""
         self._command_registry = registry
     
+    def _new_completion(self, make):
+        """Build a completion on a fresh menu; clicking one of its items
+        accepts it like Tab."""
+        menu = SelectionMenu(
+            compositor=getattr(self, 'compositor_ref', None),
+            frame_color=self.content_color,
+            content_color=self.content_color
+        )
+        completion = make(menu)
+        menu.on_click = lambda: self._accept_completion(completion)
+        return completion
+
     def _ensure_command_menu(self):
         """Lazy-create command menu and completion system on first use."""
         if self.command_completion is None and self.command_list:
-            compositor = self.compositor_ref if hasattr(self, 'compositor_ref') else None
-            menu = SelectionMenu(
-                compositor=compositor,
-                frame_color=self.content_color,
-                content_color=self.content_color
-            )
-            self.command_completion = CommandCompletion(
-                menu, self.command_list, self.command_descriptions)
-    
+            self.command_completion = self._new_completion(lambda menu: CommandCompletion(
+                menu, self.command_list, self.command_descriptions))
+
     def _ensure_subcommand_menu(self):
         """Lazy-create subcommand menu and completion system on first use."""
         if self.subcommand_completion is None and self.subcommand_callback:
-            compositor = self.compositor_ref if hasattr(self, 'compositor_ref') else None
-            menu = SelectionMenu(
-                compositor=compositor,
-                frame_color=self.content_color,
-                content_color=self.content_color
-            )
-            self.subcommand_completion = SubcommandCompletion(
-                menu, self.subcommand_callback,
-                self.subcommand_descriptions_callback)
-    
+            self.subcommand_completion = self._new_completion(lambda menu: SubcommandCompletion(
+                menu, self.subcommand_callback, self.subcommand_descriptions_callback))
+
     def _ensure_context_menu(self):
         """Lazy-create context menu and completion system on first use."""
         if self.context_completion is None and self.context_items_callback:
-            compositor = self.compositor_ref if hasattr(self, 'compositor_ref') else None
-            menu = SelectionMenu(
-                compositor=compositor,
-                frame_color=self.content_color,
-                content_color=self.content_color
-            )
-            self.context_completion = ContextCompletion(
-                menu, self.context_items_callback, trigger="@")
-    
+            self.context_completion = self._new_completion(lambda menu: ContextCompletion(
+                menu, self.context_items_callback, trigger="@"))
+
     def _ensure_argument_menu(self):
         """Lazy-create argument completion menu for generic Param-driven completion."""
         if self.argument_completion is None and self._command_registry:
-            compositor = self.compositor_ref if hasattr(self, 'compositor_ref') else None
-            menu = SelectionMenu(
-                compositor=compositor,
-                frame_color=self.content_color,
-                content_color=self.content_color
-            )
-            self.argument_completion = ArgumentCompletion(menu, self._command_registry)
+            self.argument_completion = self._new_completion(
+                lambda menu: ArgumentCompletion(menu, self._command_registry))
 
     # def setup_menus(self, commands: List[str], get_context_items: Optional[Callable[[], List[str]]] = None,
                     # get_subcommands: Optional[Callable[[str], List[str]]] = None):

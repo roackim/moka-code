@@ -85,11 +85,11 @@ class Harness:
         self._file_list_cache: list[str] = []
         self._file_list_cache_key: tuple = ()
 
-        # Select LLM endpoint at construction time. Resolving here (rather than
-        # from a module-level snapshot) avoids stale server settings.
-        self.endpoint: Endpoint = get_active_endpoint()
+        # The selected server's endpoint, or ``None`` until a model is picked
+        # (/model); nothing is guessed. Resolved here, not from a module-level
+        # snapshot, so server settings are never stale.
+        self.endpoint: Optional[Endpoint] = get_active_endpoint()
         self._last_usage: Optional[TokenUsage] = None
-        self.debug_stream.log("INIT", f"Server initialized: {self.endpoint.name} ({self.endpoint.type}) at {self.endpoint.base_url}")
 
         # Reasoning of the response being streamed: text, and OpenRouter's
         # structured blocks (sent back unmodified, see ``_to_api_message``).
@@ -211,17 +211,18 @@ class Harness:
         # No git-repo warning: the file tree is built regardless of git status.
         return []
 
-    def switch_server(self, new_endpoint: Endpoint) -> None:
-        """Switch to a different LLM endpoint at runtime.
+    def switch_server(self, new_endpoint: Optional[Endpoint]) -> None:
+        """Switch to a different LLM endpoint at runtime (``None``: none).
 
         The old endpoint's connections close once its last request is done.
         """
         old = self.endpoint
         self.endpoint = new_endpoint
-        if old is not new_endpoint:
+        if old is not None and old is not new_endpoint:
             old.retire()
         self._last_usage = None
-        self.debug_stream.log("SWITCH", f"Server switched to: {new_endpoint.name} ({new_endpoint.type}) at {new_endpoint.base_url}")
+        if new_endpoint is not None:
+            self.debug_stream.log("SWITCH", f"Server switched to: {new_endpoint.name} ({new_endpoint.type}) at {new_endpoint.base_url}")
         logger.info("Switched to server: %s (%s)", new_endpoint.name, new_endpoint.type)
 
     def _is_compaction_message(self, msg: Dict[str, Any]) -> bool:
@@ -266,20 +267,10 @@ class Harness:
         return msg
 
     def _api_history(self) -> List[Dict[str, Any]]:
-        """The effective history as API messages.
-
-        Reasoning goes back for the current turn — every assistant message
-        since the last user message, i.e. the tool loop in progress, which
-        continues from it — and for earlier turns when the server/model has
-        ``preserve_reasoning`` (default true; more context, better continuity
-        where the server keeps it, e.g. llama.cpp ``--reasoning-preserve``).
-        """
-        history = self._get_effective_history()
-        last_user = max((i for i, m in enumerate(history)
-                         if m.get("role") == "user" and m.get("source") != "tool"), default=-1)
-        keep_all = self.endpoint.preserves_reasoning()
-        return [self._to_api_message(m, keep_reasoning=keep_all or i > last_user)
-                for i, m in enumerate(history)]
+        """The effective history as API messages, every assistant message
+        with its reasoning."""
+        return [self._to_api_message(m, keep_reasoning=True)
+                for m in self._get_effective_history()]
 
     def _get_tool_output(self, ref: str) -> Optional[str]:
         """
@@ -472,6 +463,8 @@ class Harness:
         Returns:
             Summary stats describing the compaction operation.
         """
+        if self.endpoint is None:
+            raise RuntimeError("no model selected (/model)")
         effective_history = list(self._get_effective_history())
         if not effective_history:
             return {
@@ -544,14 +537,14 @@ class Harness:
 
     async def check_connection(self) -> bool:
         """Check if the LLM server is reachable."""
-        return await self.endpoint.check_connection()
+        return self.endpoint is not None and await self.endpoint.check_connection()
 
     async def get_model_name(self) -> str:
         """
         Get the active model name from the server.
         Returns cached value if already queried.
         """
-        return await self.endpoint.get_model_name()
+        return await self.endpoint.get_model_name() if self.endpoint is not None else ""
 
     def _system_messages(self) -> List[Dict[str, Any]]:
         """The system prompt comes solely from the active role's ``prompt``."""
@@ -1096,6 +1089,8 @@ class Harness:
         Returns:
             Dictionary with status information
         """
+        if self.endpoint is None:
+            return {"online": False}
         status = {
             "online": False,
             "server_name": self.endpoint.name,
@@ -1162,6 +1157,10 @@ class Harness:
                     "Select one with /sandbox <id>, or switch role."
                 )
             )
+            yield events.Done()
+            return
+        if self.endpoint is None:
+            yield events.Error(message="No model selected. Pick one with /model.")
             yield events.Done()
             return
 

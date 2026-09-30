@@ -64,10 +64,13 @@ subclasses; server-family differences are internal branches:
 - `openrouter` — one `[models."<id>"]` table per enabled model; `providers` (server default, per-model override) is a strict ordered whitelist sent as `{"order": [...], "allow_fallbacks": false}` (`_provider_spec`); `providers = []` or none → OpenRouter's own routing
 - `openai` — configured model + known context-window table
 `Endpoint.from_dict(name, data)` reads a `[servers.<name>]` table and resolves
-`api_key_env` (`type` is required; the loader skips a server without one).
+`api_key_env` (`type` is required unless the table is named after one;
+`base_url` is required for ollama/openai; the loader skips a server otherwise).
 Also hosts `ModelInfo`, `ConnectionDiagnosis`, and `.local` hostname resolution
-helpers. Factories: `get_active_endpoint()` (= `get_endpoint(active_server)` or
-`default_endpoint()`), `get_endpoint(name)` (applies the server's own
+helpers. Factories: `get_active_endpoint()` (= `get_endpoint(active_server)`,
+`None` when nothing is selected or the server is gone — there is no fallback
+endpoint; `Harness.endpoint` is then `None` and `chat()` refuses with "No model
+selected"), `get_endpoint(name)` (applies the server's own
 `last_model`, records `source` so `/reload` can tell whether the live endpoint
 is stale). Model facts (context window, image support, effort levels) are read
 from the live in-memory catalog (`catalog_entry`) when needed, never copied

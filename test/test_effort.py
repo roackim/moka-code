@@ -1,4 +1,5 @@
-"""Reasoning effort: ``efforts`` in servers.toml, ``/effort``, request fields."""
+"""Reasoning effort: ``efforts`` in servers.toml model tables, ``/effort``,
+request fields."""
 
 import asyncio
 from types import SimpleNamespace
@@ -20,13 +21,13 @@ def test_effort_payload_uses_each_servers_field():
         ("openrouter", {"reasoning": {"effort": "high"}}),
         ("ollama", {"think": "high"}),
     ]:
-        endpoint = _endpoint(type_, efforts=["low", "high"])
+        endpoint = _endpoint(type_, models={"m": {"efforts": ["low", "high"]}})
         endpoint.effort = "high"
         assert endpoint.effort_payload() == expected
 
 
 def test_effort_payload_is_never_dropped():
-    endpoint = _endpoint("ollama", efforts=["low"])
+    endpoint = _endpoint("ollama", models={"m": {"efforts": ["low"]}})
     assert endpoint.effort_payload() == {}            # nothing chosen
     endpoint.effort = "high"          # not (or no longer) declared: still sent
     assert endpoint.effort_payload() == {"think": "high"}
@@ -34,8 +35,8 @@ def test_effort_payload_is_never_dropped():
     assert endpoint.effort_payload() == {"think": False}
 
 
-def test_model_table_efforts_override_the_server():
-    endpoint = _endpoint("openrouter", efforts=["low"], models={"m": {"efforts": ["max"]}})
+def test_model_table_sets_the_efforts():
+    endpoint = _endpoint("openrouter", models={"m": {"efforts": ["max"]}})
     assert endpoint.effort_levels() == ["max"]
 
 
@@ -72,8 +73,8 @@ def _config(monkeypatch, servers, catalog=None, efforts=None):
 
 
 def test_effort_command_sets_and_persists(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "ollama", "efforts": ["low", "high"]}})
-    endpoint = _endpoint("ollama", efforts=["low", "high"])
+    _config(monkeypatch, {"s": {"type": "ollama", "models": {"m": {"efforts": ["low", "high"]}}}})
+    endpoint = _endpoint("ollama", models={"m": {"efforts": ["low", "high"]}})
     ui, messages = _ui(endpoint)
 
     asyncio.run(models.effort_command(ui, ["high"]))
@@ -95,12 +96,12 @@ def test_effort_command_without_levels_explains(monkeypatch):
 
 
 def test_effort_inline_menu_and_picker_mark_the_active_level(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "ollama", "efforts": ["low", "high"]}},
+    _config(monkeypatch, {"s": {"type": "ollama", "models": {"m": {"efforts": ["low", "high"]}}}},
             efforts={"s": {"m": "high"}})
     assert models.effort_completions() == ["default", "low", "high"]
     assert models.effort_descriptions()["high"] == "active"
 
-    ui, _ = _ui(_endpoint("ollama", efforts=["low", "high"]))
+    ui, _ = _ui(_endpoint("ollama", models={"m": {"efforts": ["low", "high"]}}))
     captured = {}
     ui.show_search_modal = lambda title, items, **k: captured.update(items=items, **k)
     asyncio.run(models.effort_command(ui, []))
@@ -121,7 +122,7 @@ def test_efforts_detected_from_catalog_metadata(monkeypatch):
             catalog={"s": [{"id": "m", "metadata": {"supported_parameters": ["reasoning"]}}]})
     endpoint = _endpoint("openrouter")
     assert endpoint.effort_levels()[0] == "none"
-    endpoint.efforts = ["high"]       # explicit servers.toml wins
+    endpoint.models = {"m": {"efforts": ["high"]}}    # an explicit model table wins
     assert endpoint.effort_levels() == ["high"]
     assert models.effort_completions() == ["default", "none", "low", "medium", "high"]
 
@@ -292,7 +293,7 @@ def test_unserved_model_is_reported_only_when_the_list_is_reliable(monkeypatch):
     assert unserved_model("s", "Qwen3.8-27B:high") is None       # stale: can't tell
 
 
-def test_only_reload_and_servers_edits_rediscover(monkeypatch):
+def test_every_reload_rediscovers_every_server(monkeypatch):
     from moka_code.ui.commands import base
 
     refreshed = []
@@ -303,10 +304,8 @@ def test_only_reload_and_servers_edits_rediscover(monkeypatch):
     ui = SimpleNamespace(agent=SimpleNamespace(endpoint=None),
                          chat_history_panel=SimpleNamespace(add_message=lambda *a, **k: None))
 
-    async def scenario(**kw):
-        base.reapply_endpoint(ui, **kw)
+    async def scenario():
+        base.reapply_endpoint(ui)
         await asyncio.sleep(0)
     asyncio.run(scenario())
-    assert refreshed == []
-    asyncio.run(scenario(rediscover=True))
     assert refreshed == [None]

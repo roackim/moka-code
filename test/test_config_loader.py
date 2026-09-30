@@ -121,18 +121,21 @@ def test_state_is_written_separately_from_intent(tmp_path):
     assert "model_catalog" not in persisted
 
 
-def test_server_without_type_is_reported_and_skipped(tmp_path):
-    """A missing type must not silently become llama.cpp (single-model)."""
+def test_server_type_defaults_to_the_table_name_only(tmp_path):
+    """A missing type must not silently become llama.cpp (single-model); a
+    table named after a type ([servers.ollama]) is that type."""
     _write(tmp_path / "servers.toml", {
         "servers": {
             "ollama": {"base_url": "http://localhost:11434/v1"},
+            "mine": {"base_url": "http://localhost:11434/v1"},
             "ok": {"type": "ollama", "base_url": "http://localhost:11434/v1"},
         },
     })
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
-    assert "[servers.ollama].type is required" in "\n".join(config.load_errors)
-    assert "ollama" not in config.servers
+    assert "[servers.mine].type is required" in "\n".join(config.load_errors)
+    assert "mine" not in config.servers
+    assert config.servers["ollama"]["type"] == "ollama"
     assert "ok" in config.servers
 
 
@@ -255,7 +258,7 @@ def test_openrouter_routing_values_are_validated(tmp_path):
     assert "[servers.or].providers must be a list of provider slugs" in joined
     assert '[servers.or].models."m".providers must be a list of provider slugs' in joined
     assert "[servers.or].models.\"m\" unknown key 'sort'" in joined
-    assert '[servers.local].providers is only supported for type = "openrouter"' in joined
+    assert "[servers.local].providers is only supported for openrouter servers" in joined
 
 
 def test_legacy_config_dir_moves_once(tmp_path, monkeypatch):

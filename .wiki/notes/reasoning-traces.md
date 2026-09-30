@@ -4,11 +4,9 @@
 
 > **Status**: Reasoning is **always stored** in history (the assistant entry's
 > `reasoning` text, plus OpenRouter's structured `reasoning_details` as
-> produced). What goes back to the model follows one rule (`_api_history`):
-> the **current turn's** reasoning (every assistant message since the last user
-> message — the tool loop in progress) is always sent; **earlier turns'** when
-> the server/model has `preserve_reasoning` (servers.toml, default true). It is
-> sent in each server's own reasoning field, never folded into `content`.
+> produced). Every assistant message goes back with its reasoning
+> (`_api_history`), in each server's own reasoning field, never folded into
+> `content`. Not configurable (pending an audit).
 
 ---
 
@@ -100,11 +98,8 @@ them back **unmodified**.
 
 (`endpoint_openai.outgoing_messages`, `endpoint_ollama.ollama_messages`.)
 
-Which messages keep it (`Harness._api_history`): assistant messages after the
-last *user* message (a `source: "tool"` image entry does not count) always —
-the model continues that turn from its reasoning; the rest only when
-`Endpoint.preserves_reasoning()` is true. Inside `chat()` each new assistant turn is
-appended with `keep_reasoning=True` (it is by definition in the current turn).
+`Harness._api_history` keeps it on every assistant message; inside `chat()`
+each new assistant turn is appended with `keep_reasoning=True` too.
 
 Removed (2026-09-28): folding reasoning into `content` as `<think>…</think>`
 (the model saw its old thoughts as answer text and servers could not treat them
@@ -114,22 +109,11 @@ as reasoning), `reasoning_tag`, and the uncalled thinking-prefill injection.
 
 ## Configuration
 
-`servers.toml`, per server and per OpenRouter model table (the model's value
-wins; absent means `true`; the template ships it commented):
-
-```toml
-[servers.local]
-type = "llamacpp"
-# preserve_reasoning = true           # llama.cpp also needs --reasoning-preserve
-
-[servers.openrouter.models."anthropic/claude-sonnet-4"]
-preserve_reasoning = false            # this model: current turn only
-```
-
-On: more context per request (paid input tokens on OpenRouter), better
-continuity where the server/template keeps it. Off: only the current tool
-loop's reasoning goes back. The former `context.preserve_reasoning_traces`
-(global, default off) is retired and removed from `context.toml` on startup.
+None. The servers.toml `preserve_reasoning` key (per server / model table) was
+removed (2026-09-30); it is now an unknown key. The former
+`context.preserve_reasoning_traces` is retired and removed from `context.toml`
+on startup. llama.cpp still needs `--reasoning-preserve` (default on) for
+earlier turns to reach the prompt.
 
 ---
 

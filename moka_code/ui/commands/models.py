@@ -311,7 +311,7 @@ def _effort_choices(server: Optional[str], model: Optional[str]):
         return list(variants), model.rpartition(":")[2], variants
     table = settings.config.servers.get(server) or {}
     metadata = catalog_entry(server, model).get("metadata") or {}
-    levels = effort_levels((table.get("models") or {}).get(model), table.get("efforts"), metadata)
+    levels = effort_levels((table.get("models") or {}).get(model), metadata)
     saved = settings.config.get_effort(server, model)
     if saved and saved not in levels:
         levels = [*levels, saved]       # still sent: keep it visible and active

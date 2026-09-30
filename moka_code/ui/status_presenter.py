@@ -81,10 +81,15 @@ def notices(agent) -> list[tuple[str, str]]:
     name = getattr(endpoint, "name", "")
     conn = getattr(endpoint, "_connection_state", "unknown")
     errors, warnings = [], []
+    selected = settings.config.active_server
     if not settings.config.servers:
-        if conn != "ok":    # the localhost fallback did not answer
-            errors.append("no server configured → /config servers")
-    elif endpoint is not None:
+        errors.append("no server configured → /config servers")
+    elif endpoint is None:
+        if selected and selected not in settings.config.servers:
+            errors.append(f"server '{selected}' is not in servers.toml → /model")
+        else:
+            errors.append("no model selected → /model")
+    else:
         server = settings.config.servers.get(name) or {}
         key_env = server.get("api_key_env")
         if key_env and not os.getenv(key_env):
@@ -133,7 +138,12 @@ def refresh_status_bar(app) -> None:
     agent = app.agent
     _refresh_notices(app)
     endpoint = getattr(agent, "endpoint", None)
+    role = getattr(getattr(agent, "role", None), "name", "agent")
+    state = getattr(getattr(agent, "state", None), "name", "IDLE").lower()
     if endpoint is None:
+        # Nothing selected: say which (the notice band says how to fix it).
+        label = "no server" if not settings.config.servers else "no model"
+        _set_fields(app, agent, label, label, "", theme.ERROR, role, state, None)
         return
 
     # ``selected_model`` is the one id the next request uses (llama.cpp:
@@ -152,8 +162,6 @@ def refresh_status_bar(app) -> None:
     effort = getattr(endpoint, "effort", None)
     if effort:      # shown whenever it is sent (always, see effort_payload)
         model = f"{model} · {effort}"
-    role = getattr(getattr(agent, "role", None), "name", "agent")
-    state = getattr(getattr(agent, "state", None), "name", "IDLE").lower()
 
     # Show an animated spinner while .local hostname resolution or model
     # name discovery is pending.
@@ -173,22 +181,22 @@ def refresh_status_bar(app) -> None:
         server_color = theme.SUCCESS
     else:
         server_color = theme.DEFAULT
-    endpoint_model = f"{endpoint.name}:{model}"
+    _set_fields(app, agent, f"{endpoint.name}:{model}", endpoint.name, model,
+                server_color, role, state, endpoint)
 
-    # No server configured: the built-in localhost fallback is in use. Say so
-    # plainly unless it actually answered.
-    if not settings.config.servers and conn != "ok":
-        endpoint_model = "no server"
-        server_color = theme.ERROR
 
+def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
+                server_color: Any, role: str, state: str, endpoint) -> None:
+    """Push the status fields; ``endpoint`` is ``None`` when nothing is
+    selected (no context field then)."""
     usage = getattr(agent, "_last_usage", None)
-    context_used = getattr(usage, "prompt_tokens", None)
-    context_window = getattr(endpoint, "context_window", None)
-    context_max = context_window() if callable(context_window) else None
-    if context_max is None:
-        context_max = endpoint.max_context or 32768
-    if context_used is None:
-        context_used = 0
+    context_used = getattr(usage, "prompt_tokens", None) or 0
+    context_max = None
+    if endpoint is not None:
+        context_window = getattr(endpoint, "context_window", None)
+        context_max = context_window() if callable(context_window) else None
+        if context_max is None:
+            context_max = endpoint.max_context or 32768
 
     # Sandbox field: [glyph][prefix]runtime, colored green when active and
     # orange when tools run unsandboxed. Always present so it stays visible.
@@ -209,10 +217,11 @@ def refresh_status_bar(app) -> None:
 
     app.status_bar.set_values({
         "endpoint_model": endpoint_model,
-        "context": f"ctx {_format_tokens(context_used)}/{_format_tokens(context_max)}",
+        "context": (f"ctx {_format_tokens(context_used)}/{_format_tokens(context_max)}"
+                    if context_max else ""),
         "role": f"role {role}",
         "state": state,
-        "endpoint": endpoint.name,
+        "endpoint": server,
         "model": model,
         "workspace": getattr(agent, "workspace", ""),
         "sandbox": sandbox_text,

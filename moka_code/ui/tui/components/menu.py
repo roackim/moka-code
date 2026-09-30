@@ -1,10 +1,11 @@
 import time
-from typing import List, Optional, Any
+from typing import Any, Callable, List, Optional
 from enum import Enum
 from moka_code.ui.tui.components.base import Component
 from moka_code.ui.tui.buffer import Buffer
 from moka_code.ui.tui.fuzzy import fuzzy_search
 from moka_code.ui.tui.colors import RGB, theme
+from moka_code.ui.tui.events import MouseEvent
 
 
 def _tail_len(description: str, footer: str) -> int:
@@ -57,6 +58,11 @@ class SelectionMenu(Component):
         # longest item (used by the @ file picker for long paths).
         self.fill_width = False
         
+        # Called after a click selects an item (e.g. to accept it).
+        self.on_click: Optional[Callable[[], Any]] = None
+        # First item row drawn (the scroll window), for mapping clicks.
+        self._first = 0
+
         # Compositor integration for auto-registration
         self.compositor = compositor
         self._registered_with_compositor = False
@@ -210,6 +216,7 @@ class SelectionMenu(Component):
         if self.selected_index >= visible_count:
             first = self.selected_index - visible_count + 1
         first = max(0, min(first, len(self.items) - visible_count))
+        self._first = first
 
         menu_height = visible_count + 2  # +2 for top and bottom borders
 
@@ -300,6 +307,27 @@ class SelectionMenu(Component):
                 buffer.write_str(self.x + 1, self.y + menu_height - 1, self.status_text,
                                  fg=theme.MUTED, bg=self.bg, max_width=avail)
 
+
+    def handle_input(self, event: Any) -> bool:
+        """A click on an item selects it and calls ``on_click``; the wheel
+        moves the selection. Any mouse event inside the menu is consumed."""
+        if not (isinstance(event, MouseEvent) and self.is_visible and self.items):
+            return False
+        if not (self.x <= event.x < self.x + self.width
+                and self.y <= event.y < self.y + self.height):
+            return False
+        if event.button == 64:
+            self.action_up()
+        elif event.button == 65:
+            self.action_down()
+        elif event.button == 0 and event.pressed and not event.drag:
+            index = self._first + event.y - self.y - 1
+            if self.y < event.y < self.y + self.height - 1 and 0 <= index < len(self.items):
+                self.selected_index = index
+                if self.on_click is not None:
+                    self.on_click()
+        self.mark_changed()
+        return True
 
     def action_up(self):
         """Move selection up."""

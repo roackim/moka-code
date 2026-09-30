@@ -197,70 +197,52 @@ DEFAULT_STYLES_TOML = """\
 """
 
 DEFAULT_SERVERS_TOML = """\
-# moka servers. One table per server; select a model with /model.
-# Every server needs a type: llamacpp, ollama, openrouter, openai.
-# Common keys: base_url (not openrouter), api_key (or api_key_env), model, max_context, timeout,
-# retry_attempts, retry_delay, preserve_reasoning, efforts.
-#
-# preserve_reasoning (default true): also re-send earlier turns' reasoning to
-# the model (more context, better continuity). The current turn's reasoning is
-# always sent. A model table's value overrides the server's.
-#
-# efforts: the reasoning effort levels /effort offers. Absent: detected (model
-# variants like X:low / X:high switch the model; else the catalog's
-# reasoning.supported_efforts, the OpenRouter format; else Ollama metadata).
-# The chosen level is sent as-is: reasoning_effort (llamacpp, openai),
-# reasoning.effort (openrouter), think (ollama; "none" sends false).
-# A model table's list overrides the server's.
+## moka servers. One table per server; select a model with /model.
+## Lines starting with a single # are settings to uncomment; ## is help.
+##
+## A table named after its type needs no type key: [servers.llamacpp],
+## [servers.ollama], [servers.openrouter], [servers.openai]. Any other name
+## sets one: type = "llamacpp" | "ollama" | "openrouter" | "openai".
+## Server keys: base_url (not openrouter), api_key (or api_key_env), model,
+## max_context, timeout, retry_attempts, retry_delay; openrouter: providers.
 
-# llama.cpp -------------------------------------------------------------
-# [servers.local]
-# type = "llamacpp"
-# base_url = "http://localhost:8080/v1"
-# api_key = "EMPTY"
-# model = "qwen"                      # optional; llama.cpp serves one model
-# timeout = 30.0
-# retry_attempts = 3
-# retry_delay = 2.0
-# preserve_reasoning = true           # llama.cpp also needs --reasoning-preserve
-# efforts = ["low", "medium", "high"]
+## llama.cpp -------------------------------------------------------------
+# [servers.llamacpp]
+# base_url = "http://localhost:8080/v1"  # optional (default)
+# api_key = "EMPTY"                      # optional
+# model = "qwen"                         # optional; llama.cpp serves one model
+# timeout = 30.0                         # optional (default)
+# retry_attempts = 3                     # optional (default)
+# retry_delay = 2.0                      # optional (default)
 
-# Ollama ----------------------------------------------------------------
+## Ollama ----------------------------------------------------------------
 # [servers.ollama]
-# type = "ollama"
 # base_url = "http://localhost:11434/v1"
-# api_key = "ollama"
-# model = "llama3.1:8b"               # optional; discover with /model
-# timeout = 30.0
-# preserve_reasoning = true
-# efforts = ["none", "low", "medium", "high"]
+# api_key = "ollama"                     # optional
+# model = "llama3.1:8b"                  # optional; discover with /model
+# timeout = 30.0                         # optional (default)
 
-# OpenRouter ------------------------------------------------------------
+## OpenRouter (always https://openrouter.ai/api/v1) ----------------------
 # [servers.openrouter]
-# type = "openrouter"                 # always https://openrouter.ai/api/v1
-# api_key_env = "OPENROUTER_API_KEY"  # read the key from the environment
-# providers = ["deepseek"]            # default routing for every model below:
-#                                     # only these, tried in this order
-# preserve_reasoning = true           # earlier reasoning costs input tokens
-# efforts = ["low", "medium", "high"]
+# api_key_env = "OPENROUTER_API_KEY"     # read the key from the environment
+# providers = ["deepseek"]               # optional; default routing for every model
+#                                        # below: only these, tried in this order
 #
-# One table per enabled model (the keys are what /model lists). Provider
-# values are slugs from the model's "Providers" tab on openrouter.ai.
+## One table per enabled model (the keys are what /model lists). Provider
+## values are slugs from the model's "Providers" tab on openrouter.ai.
 # [servers.openrouter.models."deepseek/deepseek-v4.1-flash"]
-# providers = ["deepseek", "fireworks"]   # replaces the server default
+# providers = ["deepseek", "fireworks"]  # optional; replaces the server default
 #
 # [servers.openrouter.models."anthropic/claude-sonnet-4"]
-#                                     # no providers: uses the server default
-# preserve_reasoning = false          # this model: current turn only
+#                                        # no providers: uses the server default
 # [servers.openrouter.models."qwen/qwen3-coder"]
-# providers = []                      # OpenRouter's own routing
+# providers = []                         # OpenRouter's own routing
 
-# OpenAI-compatible -----------------------------------------------------
+## OpenAI-compatible -----------------------------------------------------
 # [servers.openai]
-# type = "openai"
 # base_url = "https://api.openai.com/v1"
 # api_key_env = "OPENAI_API_KEY"
-# model = "gpt-4o"
+# model = "gpt-4o"                       # optional; discover with /model
 """
 
 DEFAULT_THEMES_TOML = """\
@@ -443,7 +425,6 @@ _STYLE_SECTIONS = {"markdown_styles", "syntax_highlight"}
 _SERVER_KEYS = {
     "type", "base_url", "api_key", "api_key_env", "model", "max_context",
     "timeout", "retry_attempts", "retry_delay", "providers", "models",
-    "preserve_reasoning", "efforts",
 }
 # Retired OpenRouter keys -> what replaces them. A server still using one is
 # reported and skipped (servers.toml is never rewritten by moka).
@@ -560,7 +541,7 @@ class Config:
         """Reset every runtime attribute to its built-in default."""
         # LLM servers (intent) and selection (state).
         self.servers: Dict[str, Dict[str, Any]] = {}
-        self.active_server: str = "llamacpp_default"
+        self.active_server: Optional[str] = None     # nothing until /model
         self.model_selection: Dict[str, str] = {}
         # Reasoning effort per server, per model (``/effort``).
         self.efforts: Dict[str, Dict[str, str]] = {}
@@ -822,20 +803,26 @@ def _load_servers(config: Config, data: dict, filename: str,
         if not isinstance(server, dict):
             errors.append(f"{where} must be a table")
             continue
-        retired = [key for key in server if key in _RETIRED_SERVER_KEYS]
+        skip = any(key in _RETIRED_SERVER_KEYS for key in server)
         for key in server:
             if key in _RETIRED_SERVER_KEYS:
                 errors.append(
                     f"{where}.{key} was replaced by {_RETIRED_SERVER_KEYS[key]}; server skipped")
             elif key not in _SERVER_KEYS:
                 errors.append(f"{where} unknown key '{key}'")
-        server_type = server.get("type")
+        # A table named after a type ([servers.ollama]) needs no type key.
+        server_type = server.get("type", name if name in _SERVER_TYPES else None)
         if server_type is None:
             errors.append(
-                f"{where}.type is required ({', '.join(sorted(_SERVER_TYPES))}); "
-                "server skipped")
+                f"{where}.type is required ({', '.join(sorted(_SERVER_TYPES))}), "
+                "or name the table after its type; server skipped")
         elif server_type not in _SERVER_TYPES:
             errors.append(f"{where}.type unknown server type '{server_type}'; server skipped")
+        # No guessed address: only llama.cpp has a default (its own port).
+        if server_type in ("ollama", "openai") and "base_url" not in server:
+            errors.append(f"{where}.base_url is required for {server_type} servers; "
+                          "server skipped")
+            skip = True
         if server_type == "openrouter" and "base_url" in server:
             errors.append(f"{where}.base_url is not used: openrouter servers always use "
                           "https://openrouter.ai/api/v1 (remove the line)")
@@ -850,29 +837,24 @@ def _load_servers(config: Config, data: dict, filename: str,
             if key in server and (isinstance(server[key], bool)
                                   or not isinstance(server[key], (int, float))):
                 errors.append(f"{where}.{key} must be a number")
-        if "preserve_reasoning" in server and not isinstance(server["preserve_reasoning"], bool):
-            errors.append(f"{where}.preserve_reasoning must be true or false")
-        if "efforts" in server and not _is_str_list(server["efforts"]):
-            errors.append(f"{where}.efforts must be a list of effort levels")
-        _validate_openrouter_routing(server, server_type, where, errors)
+        _validate_models(server, server_type, where, errors)
         # The type selects the transport and whether a model selection is
         # honored; guessing one silently routed e.g. an Ollama server as
         # single-model llama.cpp, ignoring the selected model.
-        if server_type not in _SERVER_TYPES or retired:
+        if server_type not in _SERVER_TYPES or skip:
             continue
-        config.servers[name] = dict(server)
+        config.servers[name] = {**server, "type": server_type}
 
 
 def _is_str_list(value: Any) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
-def _validate_openrouter_routing(server: dict, server_type: Any, where: str,
-                                 errors: list[str]) -> None:
-    """Check ``providers`` and ``[models."<id>"]`` (OpenRouter only)."""
-    for key in ("providers", "models"):
-        if key in server and server_type != "openrouter":
-            errors.append(f"{where}.{key} is only supported for type = \"openrouter\"")
+def _validate_models(server: dict, server_type: Any, where: str,
+                     errors: list[str]) -> None:
+    """Check ``providers`` (OpenRouter only) and the ``[models."<id>"]`` tables."""
+    if "providers" in server and server_type != "openrouter":
+        errors.append(f"{where}.providers is only supported for openrouter servers")
     if "providers" in server and not _is_str_list(server["providers"]):
         errors.append(f"{where}.providers must be a list of provider slugs")
     models = server.get("models")
@@ -887,10 +869,10 @@ def _validate_openrouter_routing(server: dict, server_type: Any, where: str,
             errors.append(f"{at} must be a table")
             continue
         for key in entry:
-            if key not in ("providers", "preserve_reasoning", "efforts"):
+            if key not in ("providers", "efforts"):
                 errors.append(f"{at} unknown key '{key}'")
-        if "preserve_reasoning" in entry and not isinstance(entry["preserve_reasoning"], bool):
-            errors.append(f"{at}.preserve_reasoning must be true or false")
+            elif key == "providers" and server_type != "openrouter":
+                errors.append(f"{at}.providers is only supported for openrouter servers")
         if "efforts" in entry and not _is_str_list(entry["efforts"]):
             errors.append(f"{at}.efforts must be a list of effort levels")
         if "providers" in entry and not _is_str_list(entry["providers"]):

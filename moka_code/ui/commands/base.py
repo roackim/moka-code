@@ -121,8 +121,8 @@ class Command:
 
 
 def config_section_completions() -> List[str]:
-    """Return the editable config targets (for ``/config <section>``)."""
-    return [*settings.CONFIG_FILES, "sandbox", "role"]
+    """Return the editable config targets (for ``/config <section>``), sorted."""
+    return sorted([*settings.CONFIG_FILES, "sandbox", "role"])
 
 
 def role_name_completions() -> List[str]:
@@ -221,14 +221,13 @@ def activate_endpoint(ui: ChatUIProtocol, endpoint) -> None:
         ui.refresh_status_bar()
 
 
-def reapply_endpoint(ui: ChatUIProtocol, rediscover: bool = False) -> None:
-    """Apply a reloaded ``servers.toml``/state to the live endpoint.
+def reapply_endpoint(ui: ChatUIProtocol) -> None:
+    """Apply a reloaded ``servers.toml``/state to the live endpoint, and
+    rediscover every server's models in the background (every reload:
+    ``/reload`` and each ``/config`` edit).
 
     The endpoint is rebuilt only when its server, definition or selected model
     changed, so an unrelated reload keeps the connection and usage display.
-    With ``rediscover`` (``/reload``, ``/config servers``) every server's
-    models are rediscovered in the background; other edits (theme, role, ...)
-    leave the servers alone.
     """
     import asyncio
     from moka_code.harness.endpoint import get_active_endpoint, refresh_catalog
@@ -238,15 +237,22 @@ def reapply_endpoint(ui: ChatUIProtocol, rediscover: bool = False) -> None:
         if hasattr(ui, "refresh_status_bar"):
             ui.refresh_status_bar()
 
-    if rediscover:
-        asyncio.ensure_future(_refresh())
+    asyncio.ensure_future(_refresh())
 
     agent = getattr(ui, "agent", None)
-    current = getattr(agent, "endpoint", None)
-    if current is None or not hasattr(agent, "switch_server"):
+    if not hasattr(agent, "switch_server"):
         return
+    current = getattr(agent, "endpoint", None)
     fresh = get_active_endpoint()
-    if (fresh.name, fresh.source) == (current.name, getattr(current, "source", None)):
+    if fresh is None:
+        # The selected server is gone (or none is selected): no endpoint.
+        if current is not None:
+            agent.switch_server(None)
+        if hasattr(ui, "refresh_status_bar"):
+            ui.refresh_status_bar()
+        return
+    if current is not None and (fresh.name, fresh.source) == (
+            current.name, getattr(current, "source", None)):
         return
     activate_endpoint(ui, fresh)
 

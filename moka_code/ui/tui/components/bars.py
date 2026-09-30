@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional, Sequence
 
 from moka_code.ui.tui.buffer import Buffer
-from moka_code.ui.tui.colors import RGB, on_color, theme
+from moka_code.ui.tui.colors import RGB, theme
 from moka_code.ui.tui.components.base import Component
 from moka_code.ui.tui.events import KeyEvent, MouseEvent
 
@@ -241,6 +241,9 @@ class ActionBar(Component):
 class NoticeBand(Component):
     """Lines on a solid color, one per notice, above everything else.
 
+    Solid color is drawn as the color in the foreground, reversed: the text
+    then takes the terminal's own background, whatever the theme.
+
     ``set_notices`` takes ``(text, color)`` pairs; the band is as tall as the
     notices, up to ``max_lines`` (the last line then says how many are hidden
     and where they are). No notices: zero rows.
@@ -271,7 +274,6 @@ class NoticeBand(Component):
 
     def render(self, buffer: Buffer):
         for row, (text, color) in enumerate(self._lines()[:self.height]):
-            fg, bg = on_color(color)
-            buffer.fill(self.x, self.y + row, self.width, 1, " ", bg=bg)
-            buffer.write_str(self.x + 1, self.y + row, text, fg=fg, bg=bg,
-                             max_width=max(0, self.width - 2))
+            line = f" {text}".ljust(self.width)
+            buffer.write_str(self.x, self.y + row, line, fg=color, reverse=True,
+                             max_width=self.width)

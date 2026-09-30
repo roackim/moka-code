@@ -287,6 +287,10 @@ via `debug.toml` (`log_enabled`).
 - Grid of `Cell` objects (character + foreground RGB + background RGB)
 - `SubBuffer` — a viewport into a parent buffer, enables clipping
 - Components write to their allocated `SubBuffer`; compositor merges and flushes to terminal
+- **Solid-colored text (rare; e.g. the notice band)**: draw the color as the
+  *foreground* with `reverse=True`, never as a background. The text then takes
+  the terminal's own background color, so it stays consistent with the user's
+  terminal whatever the theme (ANSI palette slots included).
 
 ## Components (`tui/components/`)
 
@@ -586,7 +590,8 @@ Two places say what needs fixing, each line as `problem → fix`:
   listed, role requires a sandbox, sandbox runtime/image missing
   (`Harness.sandbox_problem`), selected model no longer served.
   `status_presenter.notices(agent)` recomputes it on every status refresh, so
-  a line disappears once fixed. Error/warning background; at most
+  a line disappears once fixed. Error/warning solid color (see Buffer:
+  foreground color + reverse); at most
   `ui.notice_lines` rows, the last then reads `+N more · /activity`. Each notice
   is logged to the activity overlay when it appears and when it is fixed.
 - **Setup notes** (`chatTUI.refresh_setup_notes`, drawn with the banner in an

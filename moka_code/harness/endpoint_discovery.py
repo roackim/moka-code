@@ -220,14 +220,11 @@ def efforts_from_metadata(metadata: dict) -> list[str]:
     return []
 
 
-def effort_levels(model_entry: dict | None, server_efforts: list | None,
-                  metadata: dict) -> list[str]:
+def effort_levels(model_entry: dict | None, metadata: dict) -> list[str]:
     """Effort levels a model takes as a request parameter: its model table's
-    ``efforts``, else the server's, else detected from catalog metadata."""
+    ``efforts``, else detected from catalog metadata."""
     if model_entry and "efforts" in model_entry:
         return list(model_entry["efforts"])
-    if server_efforts:
-        return list(server_efforts)
     return efforts_from_metadata(metadata or {})
 
 
