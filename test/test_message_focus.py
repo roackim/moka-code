@@ -8,7 +8,6 @@ from moka_code.ui.tui.msg_types import SysMsg, ToolCallMsg, UserMsg
 class Stub:
     endpoint = None
     workspace = "."
-    startup_warnings = []
     role = None
 
     def list_files_and_folders(self):
@@ -29,7 +28,7 @@ def test_sysmsg_is_routed_to_activity_not_transcript():
 
     assert ui.chat_history_panel.messages == []
     assert any("Config reloaded." in line for line in ui.activity_panel.lines)
-    assert ui.status_bar.toast_active()
+    assert ui.action_bar.hint == "Config reloaded."
 
 
 def test_action_line_expands_only_when_selected():
@@ -115,10 +114,3 @@ def test_action_line_has_hint():
     assert "esc back" in ui.action_bar.hint
 
 
-def test_toast_can_be_cleared():
-    ui, _ = _ui_with_screen()
-    ui.status_bar.set_toast("copied", duration=10)
-    assert ui.status_bar.toast_active()
-
-    ui.status_bar.clear_toast()
-    assert not ui.status_bar.toast_active()

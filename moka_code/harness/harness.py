@@ -72,8 +72,8 @@ class Harness:
         self._rebuild_tools()
         self.debug_stream.log("TOOL_SCHEMAS", self.tool_schemas)
 
-        # Build initial project context
-        self.startup_warnings: list[str] = []
+        # Why the active sandbox is not ready (shown on the UI's notice band).
+        self.sandbox_problem: str | None = None
         # (tool name, task) while a tool runs; see _abort_tool_calls.
         self._running_tool = None
         # USD spent on this conversation, when the provider reports costs
@@ -125,6 +125,7 @@ class Harness:
         )
         self._wire_sandbox_stderr()
         self._rebuild_tools()
+        self.sandbox_problem = _sandbox_problem(spec)
         runtime = getattr(spec, "runtime", "none")
         self.debug_stream.log("SANDBOX", runtime)
         if getattr(self, "_sandbox_runtime", "none") != runtime:
@@ -1288,24 +1289,19 @@ def get_harness(config_path: str | None = None) -> Harness:
         transport = _build_transport(spec, workspace)
         _harness = Harness(workspace, transport=transport)
         _harness._sandbox_runtime = getattr(spec, "runtime", "none")
-        _sandbox_warning(_harness, spec, workspace)
+        _harness.sandbox_problem = _sandbox_problem(spec, getattr(project, "active", None))
     return _harness
 
 
-def _sandbox_warning(harness: Harness, spec, workspace: str) -> None:
-    """Append a startup warning when the active sandbox is not ready."""
+def _sandbox_problem(spec, sandbox_id: str | None = None) -> str | None:
+    """Why the active sandbox is not ready (``problem → fix``), else ``None``."""
     if spec is None or not spec.enabled:
-        return
-    from moka_code.sandbox import build_command, image_present, runtime_available
+        return None
+    from moka_code.sandbox import image_present, runtime_available
 
     if not runtime_available(spec):
-        harness.startup_warnings.append(
-            f"Sandbox runtime '{spec.runtime}' not found on PATH; tools will "
-            "fail until it is installed (or run /sandbox none)."
-        )
-    elif not image_present(spec):
-        command = build_command(spec, workspace)
-        hint = f" Build it with: {' '.join(command)}" if command else ""
-        harness.startup_warnings.append(
-            f"Sandbox image '{spec.image or spec.runtime}' not found.{hint}"
-        )
+        return f"sandbox runtime '{spec.runtime}' not found on PATH → install it, or /sandbox config"
+    if not image_present(spec):
+        return (f"sandbox image '{spec.image or spec.runtime}' not found "
+                f"→ /sandbox build {sandbox_id or '<id>'}")
+    return None

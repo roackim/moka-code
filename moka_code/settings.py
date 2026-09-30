@@ -147,6 +147,7 @@ DEFAULT_UI_TOML = """\
 # metrics_show_ttft = false
 # metrics_refresh_interval = 0.1
 # status_bar_fields = ["endpoint_model", "role", "context", "cost", "sandbox"]
+# notice_lines = 2                   # top band height; past it, "+N more · /activity"
 # sandbox_glyph = "⬢"                 # before the sandbox field; empty hides it (emoji ok)
 # sandbox_prefix = "sandbox:"         # before the runtime name; empty hides it
 # sandbox_active_color = "SUCCESS"    # palette name or #rrggbb
@@ -323,6 +324,7 @@ _UI_SPEC: Dict[str, tuple[str, str]] = {
     "metrics_show_ttft": ("ui_metrics_show_ttft", "bool"),
     "metrics_refresh_interval": ("ui_metrics_refresh_interval", "float"),
     "status_bar_fields": ("ui_status_bar_fields", "str_list"),
+    "notice_lines": ("ui_notice_lines", "int"),
     "sandbox_glyph": ("ui_sandbox_glyph", "str"),
     "sandbox_prefix": ("ui_sandbox_prefix", "str"),
     "sandbox_active_color": ("ui_sandbox_active_color", "str"),
@@ -587,6 +589,7 @@ class Config:
         self.ui_metrics_show_ttft: bool = False
         self.ui_metrics_refresh_interval: float = 0.1
         self.ui_status_bar_fields: list[str] = ["endpoint_model", "role", "context", "cost", "sandbox"]
+        self.ui_notice_lines: int = 2
         self.ui_sandbox_glyph: str = "⬢"
         self.ui_sandbox_prefix: str = "sandbox:"
         self.ui_sandbox_active_color: str = "SUCCESS"

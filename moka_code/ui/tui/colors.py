@@ -271,6 +271,14 @@ def theme_toml_section(name: str) -> "str | None":
     return "\n".join(lines) + "\n"
 
 
+def on_color(color):
+    """``(fg, bg)`` for text drawn on a solid ``color`` background: the
+    theme's background as text, or black for a terminal palette color."""
+    if isinstance(color, ANSIColor):
+        return ANSIColor(fg=30), ANSIColor(bg=color.fg + 10)
+    return theme.BACKGROUND, color
+
+
 def set_theme(name: str):
     """Switch the active theme by name. Unknown names fall back to terminal."""
     selected = available_themes().get(name) or terminal

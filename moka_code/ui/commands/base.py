@@ -221,24 +221,6 @@ def activate_endpoint(ui: ChatUIProtocol, endpoint) -> None:
         ui.refresh_status_bar()
 
 
-def warn_if_model_unserved(ui: ChatUIProtocol) -> None:
-    """Say so when the selected model is not among those its server lists
-    (e.g. a remembered id the server dropped); requests would fail with it."""
-    from moka_code.harness.endpoint import unserved_model
-    from moka_code.ui.tui.msg_types import SysMsgWarning
-
-    endpoint = getattr(getattr(ui, "agent", None), "endpoint", None)
-    if endpoint is None:
-        return
-    listed = unserved_model(endpoint.name, endpoint.selected_model)
-    if listed is None:
-        return
-    shown = ", ".join(listed[:5]) + (", ..." if len(listed) > 5 else "")
-    ui.chat_history_panel.add_message(
-        f"{endpoint.selected_model} is not served by {endpoint.name} (it lists: {shown}). "
-        "Pick another with /model.", msg_type=SysMsgWarning(), title="model")
-
-
 def reapply_endpoint(ui: ChatUIProtocol, rediscover: bool = False) -> None:
     """Apply a reloaded ``servers.toml``/state to the live endpoint.
 
@@ -253,7 +235,6 @@ def reapply_endpoint(ui: ChatUIProtocol, rediscover: bool = False) -> None:
 
     async def _refresh():
         await refresh_catalog()
-        warn_if_model_unserved(ui)
         if hasattr(ui, "refresh_status_bar"):
             ui.refresh_status_bar()
 

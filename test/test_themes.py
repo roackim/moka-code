@@ -124,7 +124,8 @@ def test_refresh_theme_forces_full_redraw():
 
     ui = chatTUI(StubAgent())
     calls = []
-    ui.compositor = type("_C", (), {"request_full_redraw": lambda self: calls.append(True)})()
+    ui.compositor = type("_C", (), {"request_full_redraw": lambda self: calls.append(True),
+                                  "request_render": lambda self: None})()
     original = colors.theme.name
     try:
         colors.set_theme("moka")

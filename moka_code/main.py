@@ -41,22 +41,16 @@ def main():
     # Insert commented lines for newly added config keys (and drop retired ones)
     # in existing files, then reload so the fresh file is what the app sees.
     settings.sync_config_files()
-    config_errors = settings.reload_config()
+    # Load errors stay on the banner (``chatTUI.setup_notes``) until fixed.
+    settings.reload_config()
     harness = get_harness()
-    # Shown in the transcript at startup, like /reload does, so a broken
-    # config file is never silently ignored.
-    if migration_notice:
-        harness.startup_warnings.append(migration_notice)
-    if config_errors:
-        harness.startup_warnings.append(
-            "Config loaded with errors:\n" + "\n".join(config_errors))
-    print() 
+    print()
 
     # Apply theme from config
     from moka_code.ui.tui.colors import set_theme
     set_theme(settings.config.get_active_theme())
 
-    tui = chatTUI(harness, resume=args.resume)
+    tui = chatTUI(harness, resume=args.resume, migration_notice=migration_notice)
     try:
         asyncio.run(tui.run())
     except KeyboardInterrupt:

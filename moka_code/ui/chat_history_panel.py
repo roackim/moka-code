@@ -94,6 +94,9 @@ class ChatHistoryPanel(TextComponent):
         # (SysMsg/SysMsgError/SysMsgWarning). When set, those messages are
         # routed out of the transcript into the activity surface.
         self.activity_sink = None
+        # ``(level, text)`` setup problems drawn with the banner (see
+        # ``chatTUI.refresh_setup_notes``).
+        self.setup_notes: list[tuple[str, str]] = []
         self._message_height_cache: dict[tuple[int, int, int], int] = {}
 
         # Text selection (drag state, coordinate math, highlight overlay).
@@ -574,7 +577,7 @@ class ChatHistoryPanel(TextComponent):
         # Clear background first (to prevent artifacts from previous frames/scrolls)
         buffer.fill(self.x, self.y, self.width, self.height, " ", bg=theme.get_bg())
 
-        if not self.messages and settings.config.ui_show_banner:
+        if not self.messages and (settings.config.ui_show_banner or self.setup_notes):
             self._render_banner(buffer)
 
         # Virtual layout: (starts, ends, total). O(messages), no per-row map.
@@ -648,22 +651,61 @@ class ChatHistoryPanel(TextComponent):
             buffer.clear_clip()
 
     def _render_banner(self, buffer: Buffer) -> None:
-        """The moka art, centered in the empty transcript (see ``ui/banner.py``)."""
-        from moka_code.ui.banner import banner_lines
+        """The moka art and the setup notes, centered in the empty transcript
+        (see ``ui/banner.py``).
+
+        Notes go under the art when there is room, else in place of the
+        letters (next to the cup), else alone.
+        """
+        from moka_code.ui.banner import banner_lines, cup_lines
         from moka_code.ui.tui.layout_utils import display_width
 
-        lines = banner_lines(self.width)
-        if not lines or len(lines) > self.height:
-            return
-        art_width = max(display_width(line) for line in lines)
-        left = self.x + (self.width - art_width) // 2
-        top = self.y + (self.height - len(lines)) // 2
-        # Plain text color, like the transcript's own text.
-        fg, bg = theme.DEFAULT, theme.get_bg()
-        for row, line in enumerate(lines):
+        mark = {"error": ("✗", theme.ERROR), "warning": ("!", theme.WARNING)}
+        notes = [(f"{mark.get(level, ('·', theme.MUTED))[0]} {text}",
+                  mark.get(level, ('·', theme.MUTED))[1]) for level, text in self.setup_notes]
+        art = banner_lines(self.width) if settings.config.ui_show_banner else []
+        notes_width = max((display_width(text) for text, _ in notes), default=0)
+
+        # (art rows, note rows, whether the notes sit left of the art)
+        if not notes or len(art) + 1 + len(notes) <= self.height:
+            art, beside = art, False
+        else:
+            cup = cup_lines() if settings.config.ui_show_banner else []
+            cup_width = max((display_width(line) for line in cup), default=0)
+            if (cup and len(cup) <= self.height
+                    and notes_width + 4 + cup_width <= self.width):
+                art, beside = cup, True
+            else:
+                art, beside = [], False
+        if len(art) > self.height:
+            art = []
+        art_width = max((display_width(line) for line in art), default=0)
+
+        if beside:
+            block_width = notes_width + 4 + art_width
+            block_height = max(len(art), len(notes))
+        else:
+            block_width = max(art_width, min(notes_width, self.width))
+            block_height = len(art) + (1 if art and notes else 0) + len(notes)
+        left = self.x + max(0, (self.width - block_width) // 2)
+        top = self.y + max(0, (self.height - block_height) // 2)
+        bg = theme.get_bg()
+
+        art_x = left + block_width - art_width if beside else left + (block_width - art_width) // 2
+        art_y = top + (block_height - len(art)) // 2 if beside else top
+        for row, line in enumerate(art):
             for col, char in enumerate(line):
                 if char != " ":
-                    buffer.write_str(left + col, top + row, char, fg=fg, bg=bg, max_width=1)
+                    # Plain text color, like the transcript's own text.
+                    buffer.write_str(art_x + col, art_y + row, char, fg=theme.DEFAULT,
+                                     bg=bg, max_width=1)
+
+        notes_y = top + (block_height - len(notes)) // 2 if beside else top + block_height - len(notes)
+        for row, (text, color) in enumerate(notes):
+            if notes_y + row >= self.y + self.height:
+                break
+            buffer.write_str(left, notes_y + row, text, fg=color, bg=bg,
+                             max_width=max(0, self.x + self.width - left))
 
     def handle_input(self, event: Any) -> bool:
         """Handle mouse wheel for scrolling and keyboard navigation."""

@@ -1,9 +1,8 @@
-import time
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Sequence
 
 from moka_code.ui.tui.buffer import Buffer
-from moka_code.ui.tui.colors import RGB, theme
+from moka_code.ui.tui.colors import RGB, on_color, theme
 from moka_code.ui.tui.components.base import Component
 from moka_code.ui.tui.events import KeyEvent, MouseEvent
 
@@ -41,24 +40,6 @@ class StatusBar(Component):
         self.separator = separator
         self.values: dict[str, str] = {}
         self.field_colors: dict[str, Any] = {}
-        self._toast_text: Optional[str] = None
-        self._toast_color: Any = None
-        self._toast_until: float = 0.0
-
-    def set_toast(self, text: str, duration: float = 4.0, color: Any = None):
-        """Show a transient one-line message in place of the status fields."""
-        self._toast_text = text
-        self._toast_color = color if color is not None else theme.WARNING
-        self._toast_until = time.monotonic() + duration
-        self.mark_changed()
-
-    def clear_toast(self):
-        self._toast_text = None
-        self._toast_until = 0.0
-        self.mark_changed()
-
-    def toast_active(self) -> bool:
-        return bool(self._toast_text) and time.monotonic() < self._toast_until
 
     def set_field_colors(self, colors: dict[str, Any]):
         """Set per-field foreground colors (field name -> RGB/ANSIColor)."""
@@ -90,14 +71,6 @@ class StatusBar(Component):
         if self.width <= 0 or self.height <= 0:
             return
         buffer.fill(self.x, self.y, self.width, 1, " ", bg=self.style.bg)
-
-        # A transient toast temporarily takes over the bar.
-        if self.toast_active():
-            avail = max(0, self.width - self.style.padding * 2)
-            buffer.write_str(self.x + self.style.padding, self.y,
-                             (self._toast_text or "")[:avail],
-                             fg=self._toast_color, bg=self.style.bg, max_width=avail)
-            return
 
         right = self.right[:max(0, self.width - self.style.padding * 2)]
         if right:
@@ -146,6 +119,7 @@ class ActionBar(Component):
         self.enabled = True
         self.focused = False
         self.hint = ""
+        self.hint_color: Any = None     # None: muted
         # Leading marker drawn before the actions (e.g. "▌ " for the selected
         # message) and the start of the action hit regions.
         self.prefix = ""
@@ -165,10 +139,12 @@ class ActionBar(Component):
             self.top_pad = top_pad
             self.mark_changed()
 
-    def set_hint(self, hint: str):
-        """Right-aligned muted hint text (e.g. "↑↓ move · esc back")."""
-        if self.hint != hint:
+    def set_hint(self, hint: str, color: Any = None):
+        """Right-aligned hint text (e.g. "↑↓ move · esc back"); muted unless
+        ``color`` is given."""
+        if (self.hint, self.hint_color) != (hint, color):
             self.hint = hint
+            self.hint_color = color
             self.mark_changed()
 
     def set_prefix(self, prefix: str):
@@ -255,8 +231,47 @@ class ActionBar(Component):
             if x >= self.x + self.width:
                 break
             end = min(self.x + self.width, x + len(text))
-            color = theme.MUTED if kind == "hint" else action_fg
+            color = (self.hint_color or theme.MUTED) if kind == "hint" else action_fg
             if kind == "action" and item is not None:
                 self._hit_regions.append((x, end, item))
             buffer.write_str(x, row, text, fg=color, bg=self.style.bg, max_width=end - x)
             x = end
+
+
+class NoticeBand(Component):
+    """Lines on a solid color, one per notice, above everything else.
+
+    ``set_notices`` takes ``(text, color)`` pairs; the band is as tall as the
+    notices, up to ``max_lines`` (the last line then says how many are hidden
+    and where they are). No notices: zero rows.
+    """
+
+    def __init__(self, max_lines: int = 2, more: str = "+{n} more", id: Optional[str] = None):
+        super().__init__(id)
+        self.notices: list[tuple[str, Any]] = []
+        self.max_lines = max_lines
+        self.more = more
+
+    def set_notices(self, notices: Sequence[tuple[str, Any]]):
+        notices = list(notices)
+        if notices != self.notices:
+            self.notices = notices
+            self.mark_changed()
+
+    def _lines(self) -> list[tuple[str, Any]]:
+        limit = max(1, self.max_lines)
+        if len(self.notices) <= limit:
+            return self.notices
+        shown = self.notices[:limit - 1]
+        hidden = len(self.notices) - len(shown)
+        return shown + [(self.more.format(n=hidden), self.notices[limit - 1][1])]
+
+    def get_preferred_height(self, width: int) -> int:
+        return len(self._lines())
+
+    def render(self, buffer: Buffer):
+        for row, (text, color) in enumerate(self._lines()[:self.height]):
+            fg, bg = on_color(color)
+            buffer.fill(self.x, self.y + row, self.width, 1, " ", bg=bg)
+            buffer.write_str(self.x + 1, self.y + row, text, fg=fg, bg=bg,
+                             max_width=max(0, self.width - 2))

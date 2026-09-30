@@ -3,7 +3,8 @@
 It is drawn by the history panel (not a message), so it never enters history
 or exports, disappears with the first message and returns after ``/clear``.
 It degrades with the width: letters + cup, then letters only, then the plain
-name. Disable it with ``show_banner = false`` in ``ui.toml``.
+name. Disable it with ``show_banner = false`` in ``ui.toml``. Setup notes
+(config errors, ...) are drawn with it: under the art, or next to the cup.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ def _block(lines: list[str]) -> list[str]:
 
 _FULL = _block(_ART.split("\n"))
 _LETTERS = _block([line[:_LOGO_COLUMN] for line in _ART.split("\n")])
+_CUP = _block([line[_LOGO_COLUMN:] for line in _ART.split("\n")])
 
 
 def banner_lines(width: int) -> list[str]:
@@ -49,4 +51,9 @@ def banner_lines(width: int) -> list[str]:
     return ["moka"] if width >= 4 else []
 
 
-__all__ = ["banner_lines"]
+def cup_lines() -> list[str]:
+    """The cup alone: the setup notes take the letters' place."""
+    return _CUP
+
+
+__all__ = ["banner_lines", "cup_lines"]

@@ -558,7 +558,7 @@ two modes:
   `ChatHistoryPanel.handle_input` → `on_action`. `ChatHistoryPanel` notifies the
   app via `on_selection_changed`.
 - **Input focused** — shows a single muted, right-aligned hint:
-  `[/] command [@] file [$] shell    ↑↓ move`. `@` works mid-text, so the line
+  `[/] command  [@] file  [↑↓] move`. `@` works mid-text, so the line
   stays visible while typing. `InputComponent.on_change` (fired on every text
   change) refreshes it.
 
@@ -571,10 +571,29 @@ Non-conversation output (shell commands/results, command status, errors, role
 changes, generation-stopped notices) must not live in the transcript.
 `ChatHistoryPanel.add_message` routes `SysMsg`/`SysMsgError`/`SysMsgWarning` to
 `activity_sink` when set; the app's sink appends to the **activity overlay**
-(a `DebugPopup`-style overlay toggled by `/activity`) and shows a transient
-**toast** in the status bar (`StatusBar.set_toast`, auto-expiring). The returned
+(a `DebugPopup`-style overlay toggled by `/activity`) and flashes its first
+line, colored by level, on the hint row above the input (`chatTUI.notify` →
+`flash_hint`, auto-expiring; the status bar keeps its fields). The returned
 message is detached (not appended). Explicit `ui.activity(text)` writes to the
 overlay only.
+
+### Notice Band and Setup Notes
+
+Two places say what needs fixing, each line as `problem → fix`:
+
+- **Notice band** (`NoticeBand`, the scaffold's top slot): what is wrong
+  *right now* — no server, server unreachable, `api_key_env` unset, no models
+  listed, role requires a sandbox, sandbox runtime/image missing
+  (`Harness.sandbox_problem`), selected model no longer served.
+  `status_presenter.notices(agent)` recomputes it on every status refresh, so
+  a line disappears once fixed. Error/warning background; at most
+  `ui.notice_lines` rows, the last then reads `+N more · /activity`. Each notice
+  is logged to the activity overlay when it appears and when it is fixed.
+- **Setup notes** (`chatTUI.refresh_setup_notes`, drawn with the banner in an
+  empty transcript): config and role file errors, no `$VISUAL`/`$EDITOR`, the
+  one-time config-folder migration. Recomputed at startup and after every
+  reload (`commands.core._report_reload`). Under the art when there is room,
+  else next to the cup, else alone.
 
 ### How to Add a New Message Type
 

@@ -18,7 +18,7 @@ See [notes/ui.md](../notes/ui.md) for the component model overview.
 | `button.py` | `Button` — focusable control (`activate` semantic action) |
 | `choice.py` | `Checkbox`, `RadioGroup` — focusable boolean/single-select controls |
 | `layout.py` | `EmptyLine`, `SeparatorLine` — spacing primitives |
-| `bars.py` | `BarStyle`, `StatusBar` (fields + transient `set_toast()`), `ActionBar` (actions, `set_hint`, `set_expanded`) |
+| `bars.py` | `BarStyle`, `StatusBar` (fields), `ActionBar` (actions, `set_hint(text, color)`, `set_expanded`), `NoticeBand` (colored notice lines, `+N more`) |
 | `menu.py` | `SelectionMenu` — floating dropdown with fuzzy filtering, item descriptions/footers, `measure_width()`, `title`/`status_text` |
 | `search_modal.py` | `SearchModal(SelectionMenu)` — type-to-filter picker (used by `/model`, `/theme`), anchored above the input; fires `on_highlight` as the selection moves |
 | `theme_preview.py` | `ThemePreview` — top-center overlay showing the live palette as swatches while picking a theme |

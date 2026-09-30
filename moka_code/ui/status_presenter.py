@@ -1,10 +1,13 @@
-"""Renders agent/endpoint state into the status bar.
+"""Renders agent/endpoint state into the status bar and the notice band.
 
 Split out of ``app.py``; reads live agent + endpoint state and pushes formatted
-values/colors onto the app's status bar.
+values/colors onto the app's status bar, and what currently needs fixing onto
+the notice band (see :func:`notices`).
 """
 from __future__ import annotations
 
+import os
+import time
 from typing import Any
 
 from moka_code import settings
@@ -65,9 +68,70 @@ def _context_color(used: int | None, maximum: int | None) -> Any:
     return theme.ERROR
 
 
+def notices(agent) -> list[tuple[str, str]]:
+    """What is wrong right now, as ``(level, "problem → fix")``, errors first.
+
+    Read from live state on every refresh, so a notice disappears as soon as
+    its cause is fixed. Setup problems (config and role files) are the
+    banner's (``app.setup_notes``), not these.
+    """
+    from moka_code.harness.endpoint import unserved_model
+
+    endpoint = getattr(agent, "endpoint", None)
+    name = getattr(endpoint, "name", "")
+    conn = getattr(endpoint, "_connection_state", "unknown")
+    errors, warnings = [], []
+    if not settings.config.servers:
+        if conn != "ok":    # the localhost fallback did not answer
+            errors.append("no server configured → /config servers")
+    elif endpoint is not None:
+        server = settings.config.servers.get(name) or {}
+        key_env = server.get("api_key_env")
+        if key_env and not os.getenv(key_env):
+            errors.append(f"${key_env} is not set ({name} API key) → export {key_env}=…")
+        if conn == "error":
+            url = getattr(endpoint, "_original_base_url", "") or endpoint.base_url
+            errors.append(f"{name} unreachable ({url}) → start it, or /config servers")
+        elif (settings.config.models_by_server.get(name) == []
+              and name not in settings.config.stale_servers):
+            errors.append(f"{name} lists no models → /config servers")
+        elif unserved_model(name, getattr(endpoint, "selected_model", None)) is not None:
+            warnings.append(f"{endpoint.selected_model} is no longer served by {name} → /model")
+    sandbox_required = getattr(agent, "sandbox_required", None)
+    if callable(sandbox_required) and sandbox_required():
+        role = getattr(getattr(agent, "role", None), "name", "this role")
+        errors.append(f"role {role} requires a sandbox → /sandbox start <id>")
+    problem = getattr(agent, "sandbox_problem", None)
+    if problem:
+        warnings.append(problem)
+    return [("error", text) for text in errors] + [("warning", text) for text in warnings]
+
+
+def _refresh_notices(app) -> None:
+    """Show the current notices on the band; log each one to the activity
+    overlay when it appears and when it clears (``/activity`` lists them all)."""
+    band = getattr(app, "notice_band", None)
+    if band is None:
+        return
+    current = notices(app.agent)
+    previous = getattr(app, "_notices", [])
+    stamp = time.strftime("%H:%M:%S")
+    for level, text in current:
+        if (level, text) not in previous:
+            app.activity(f"{stamp} {text}", level)
+    for level, text in previous:
+        if (level, text) not in current:
+            app.activity(f"{stamp} fixed: {text}")
+    app._notices = current
+    band.max_lines = settings.config.ui_notice_lines
+    band.set_notices([(text, theme.ERROR if level == "error" else theme.WARNING)
+                      for level, text in current])
+
+
 def refresh_status_bar(app) -> None:
     """Refresh local status fields without performing network I/O."""
     agent = app.agent
+    _refresh_notices(app)
     endpoint = getattr(agent, "endpoint", None)
     if endpoint is None:
         return

@@ -10,13 +10,14 @@ from moka_code.ui.tui.screen import Screen
 class ChatScreen(Screen):
     """Own the chat workspace layout while the application owns its state.
 
-    Uses the shared ``AppScaffold``: history + input as the body, status bar
-    pinned to the bottom.
+    Uses the shared ``AppScaffold``: an optional notice band on top, history +
+    input as the body, status bar pinned to the bottom.
     """
 
     def __init__(self, history: Component, input_box: Component,
                  focus_scope: FocusScope, status_bar: StatusBar | None = None,
-                 action_bar: Component | None = None):
+                 action_bar: Component | None = None,
+                 notice_band: Component | None = None):
         self.status_bar = status_bar or StatusBar()
         self.status_bar.parent = self
         self.action_bar = action_bar
@@ -27,7 +28,7 @@ class ChatScreen(Screen):
             body = Hsplit([history, action_bar, input_box], [Fill(), Content(), Content()])
         else:
             body = Hsplit([history, input_box], [Fill(), Content()])
-        self.scaffold = AppScaffold(body, bottom=self.status_bar)
+        self.scaffold = AppScaffold(body, top=notice_band, bottom=self.status_bar)
         super().__init__(self.scaffold, focus_scope=focus_scope)
 
     @property

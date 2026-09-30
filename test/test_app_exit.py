@@ -11,7 +11,6 @@ from conftest import StubAgent
 class _SlowServerAgent(StubAgent):
     """A server that never answers the startup status probe."""
 
-    startup_warnings = []
 
     async def get_status(self):
         await asyncio.sleep(3600)

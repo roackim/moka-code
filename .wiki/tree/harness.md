@@ -79,9 +79,9 @@ refresh per server applies its result (`_refresh_generation`). The status bar
 reads `Endpoint.context_window()` (catalog first). It runs at
 startup (active server first), on `/reload` and `/config servers`
 (`reapply_endpoint(rediscover=True)`; theme/role/other edits do not), on
-`/model`, and on `/effort` (active server). After startup and rediscovery,
-`warn_if_model_unserved` warns when the selected model is not among the ids a
-fresh (non-stale, non-llama.cpp) listing shows (`unserved_model`). The selected
+`/model`, and on `/effort` (active server). The UI's notice band
+flags a selected model that is not among the ids a fresh (non-stale,
+non-llama.cpp) listing shows (`unserved_model`). The selected
 model is one field, `_selected_model` (`_model_resolved` once confirmed;
 llama.cpp: replaced by the served model). Facts probed when the catalog lacks
 them (context window, image support) live in `Endpoint._probed(model)` and are

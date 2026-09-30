@@ -13,7 +13,7 @@ from moka_code.ui.tui.events import KeyEvent, MouseEvent, PasteEvent, TickEvent
 from moka_code.ui.tui.components import (
     Box, InputComponent,
 )
-from moka_code.ui.tui.components.bars import ActionBar, ActionItem, BarStyle
+from moka_code.ui.tui.components.bars import ActionBar, ActionItem, BarStyle, NoticeBand
 from moka_code.ui.tui.components.debug_panel import DebugLogPanel
 from moka_code.ui.tui.components.popup import Popup, PopupScreen
 from moka_code.ui.tui.components.debug_popup import DebugPopup
@@ -106,8 +106,10 @@ def _show_role_change(panel: ChatHistoryPanel, previous_name: str, role_name: st
 class chatTUI(ChatActionHandlers):
     """Terminal UI for the agent."""
 
-    def __init__(self, agent, resume: bool = False):
+    def __init__(self, agent, resume: bool = False, migration_notice: str | None = None):
         self.agent = agent
+        # One-time note on the banner (the pre-rename config folder was moved).
+        self._migration_notice = migration_notice
         # ``moka --resume``: open the /session picker once the UI is up.
         self._resume_on_start = resume
         # Pre-warm .local hostname resolution for the agent so the
@@ -164,6 +166,10 @@ class chatTUI(ChatActionHandlers):
             style=BarStyle(theme.DEFAULT, theme.get_bg(), theme.FOCUSED, padding=1),
         )
         self._status_spinner_frame = 0
+        # Top band: what needs fixing right now (``status_presenter.notices``).
+        self.notice_band = NoticeBand(max_lines=settings.config.ui_notice_lines,
+                                      more="+{n} more · /activity")
+        self._notices = []
         # Bottom mode line: shows the selected message's actions while a message
         # is selected, otherwise the status bar is mounted there.
         self.action_bar = ActionBar(
@@ -175,6 +181,8 @@ class chatTUI(ChatActionHandlers):
         self.action_bar.set_top_pad(True)
         self.action_bar.set_align_right(True)
         self._hint_flash_until = 0.0
+        self._hint_flash = ("", None)
+        self.refresh_setup_notes()
         self.chat_history_panel.on_selection_changed = self._update_mode_line
         self.chat_history_panel.on_hint = self.flash_hint
         self.chat_history_panel.on_copy = self.copy_text
@@ -310,6 +318,25 @@ class chatTUI(ChatActionHandlers):
     def refresh_status_bar(self) -> None:
         """Refresh local status fields (see ``ui/status_presenter.py``)."""
         refresh_status_bar(self)
+
+    def refresh_setup_notes(self) -> None:
+        """Recompute the setup problems shown with the banner: config and role
+        file errors, a missing editor, the one-time migration note. Called at
+        startup and after every reload."""
+        from moka_code.harness import roles
+        from moka_code.ui.external_editor import resolve_editor
+
+        sections = {name: section for section, name in settings.CONFIG_FILES.items()}
+        notes = []
+        for error in settings.config.load_errors:
+            section = sections.get(error.split(":", 1)[0])
+            notes.append(("error", f"{error} → /config {section}" if section else error))
+        notes += [("error", f"{error} → /config role") for error in roles.validate_roles()]
+        if not resolve_editor():
+            notes.append(("warning", "no $VISUAL or $EDITOR (config files open in it) → export EDITOR=…"))
+        if self._migration_notice:
+            notes.append(("info", self._migration_notice))
+        self.chat_history_panel.setup_notes = notes
 
     def refresh_theme(self) -> None:
         """Re-apply the active theme everywhere and force a full repaint.
@@ -501,24 +528,23 @@ class chatTUI(ChatActionHandlers):
             self.compositor.request_render()
 
     def notify(self, text: str, level: str = "info", duration: float = 4.0):
-        """Show a transient toast in the status bar."""
+        """Show a transient notice on the hint row, above the input (the status
+        bar keeps its fields)."""
         color = {"error": theme.ERROR, "warning": theme.WARNING}.get(level, theme.DEFAULT)
         first_line = str(text).splitlines()[0] if str(text).splitlines() else ""
-        self.status_bar.set_toast(first_line, duration=duration, color=color)
-        if self.compositor:
-            self.compositor.request_render()
+        self.flash_hint(first_line, duration, color)
 
     def _on_activity(self, text: str, level: str = "info"):
-        """Sink for routed SysMsg-family notices: activity + toast."""
+        """Sink for routed SysMsg-family notices: activity + a hint-row flash."""
         self.activity(text, level)
         self.notify(text, level)
 
-    def flash_hint(self, text: str, duration: float = 1.5):
-        """Temporarily replace the mode-line hint (e.g. "copied ✓")."""
-        self.action_bar.set_hint(text)
+    def flash_hint(self, text: str, duration: float = 1.5, color=None):
+        """Temporarily replace the mode-line hint (e.g. "copied ✓"); the row
+        shows even when it is otherwise collapsed."""
+        self._hint_flash = (text, color)
         self._hint_flash_until = time.monotonic() + duration
-        if self.compositor:
-            self.compositor.request_render()
+        self._update_action_strip()
 
     def _handle_message_action(self, message, action: MsgAction):
         handlers = {
@@ -563,7 +589,6 @@ class chatTUI(ChatActionHandlers):
             else:
                 hint = self._mode_hint_default
             self.action_bar.set_hint(hint)
-            self._hint_flash_until = 0.0
             self.action_bar.set_focused(False)
             self.action_bar.set_expanded(True)
         elif self._last_focus_id == "input":
@@ -572,12 +597,16 @@ class chatTUI(ChatActionHandlers):
             # line-start prefixes.
             self.action_bar.set_actions([])
             self.action_bar.set_prefix("")
-            self.action_bar.set_hint("[/] command [@] file [$] shell    ↑↓ move")
+            self.action_bar.set_hint("[/] command  [@] file  [↑↓] move")
             self.action_bar.set_focused(False)
             self.action_bar.set_expanded(True)
         else:
             self.action_bar.set_focused(False)
             self.action_bar.set_expanded(False)
+
+        if self._hint_flash_until:
+            self.action_bar.set_hint(*self._hint_flash)
+            self.action_bar.set_expanded(True)
 
         if self.compositor:
             self.compositor._full_redraw = True
@@ -706,13 +735,9 @@ class chatTUI(ChatActionHandlers):
             return
 
         if getattr(self.agent, "sandbox_required", lambda: False)():
-            role_name = getattr(getattr(self.agent, "role", None), "name", "role")
-            self.chat_history_panel.add_message(
-                f"Role '{role_name}' requires an active sandbox. "
-                "Run /sandbox <id> (or /role) to continue. Slash commands are still available.",
-                msg_type=SysMsgWarning(),
-            )
-            return
+            # The notice band says why and how to fix it.
+            self.flash_hint("can't send: this role requires a sandbox", 3.0, theme.ERROR)
+            return False
 
         self._ensure_worker()
 
@@ -789,17 +814,10 @@ class chatTUI(ChatActionHandlers):
             ):
                 self._status_spinner_frame += 1
                 self.refresh_status_bar()
-            # Expire a transient toast once its time is up.
-            if self.status_bar._toast_text is not None and not self.status_bar.toast_active():
-                self.status_bar.clear_toast()
-                if self.compositor:
-                    self.compositor.request_render()
-            # Restore the mode-line hint after a transient flash (e.g. "copied").
+            # Restore the mode line after a transient flash (e.g. "copied").
             if self._hint_flash_until and time.monotonic() >= self._hint_flash_until:
                 self._hint_flash_until = 0.0
-                self.action_bar.set_hint(self._mode_hint_default)
-                if self.compositor:
-                    self.compositor.request_render()
+                self._update_action_strip()
             return False
 
         # Handle keyboard navigation between input and history
@@ -952,8 +970,7 @@ class chatTUI(ChatActionHandlers):
 
                 # Model facts are discovered live: the active server first.
                 await refresh_catalog([endpoint.name])
-                from moka_code.ui.commands.base import warn_if_model_unserved
-                warn_if_model_unserved(self)
+                self.refresh_status_bar()
                 await endpoint.prewarm_model_name()
                 self.refresh_status_bar()
                 from moka_code import settings
@@ -967,6 +984,7 @@ class chatTUI(ChatActionHandlers):
             self._focus_scope,
             self.status_bar,
             self.action_bar,
+            self.notice_band,
         )
         self.root = chat_screen.root  # Store root for global handler
         # Read fps at construction time (not import time) so config changes apply.
@@ -1002,13 +1020,6 @@ class chatTUI(ChatActionHandlers):
             status = await self.agent.get_status()
             self.refresh_status_bar()
             logger.info(f"Server status online: {status['online']}")
-
-            # Show any startup warnings (e.g. not a git repository)
-            for warning in self.agent.startup_warnings:
-                self.chat_history_panel.add_message(
-                    warning,
-                    msg_type=SysMsgWarning(),
-                )
 
         async def shutdown_watcher():
             """Cancel an in-flight generation once Ctrl+C requests shutdown."""

@@ -80,17 +80,21 @@ async def cmd_reload(ui: ChatUIProtocol, args: List[str]):
     errors = settings.reload_config() + roles.validate_roles()
     _apply_theme(ui)
     reapply_endpoint(ui, rediscover=True)
+    _report_reload(ui, errors)
 
+
+def _report_reload(ui: ChatUIProtocol, errors: List[str], title: str | None = None) -> None:
+    """Say how a reload went, then refresh the banner's setup notes and the
+    status bar (both read the reloaded config)."""
     if errors:
         ui.chat_history_panel.add_message(
             "Config reloaded with errors:\n" + "\n".join(errors),
-            msg_type=SysMsgError(),
-        )
+            msg_type=SysMsgError(), title=title)
     else:
-        ui.chat_history_panel.add_message("Config reloaded.", msg_type=SysMsg())
-
-    if hasattr(ui, "refresh_status_bar"):
-        ui.refresh_status_bar()
+        ui.chat_history_panel.add_message("Config reloaded.", msg_type=SysMsg(), title=title)
+    for refresh in ("refresh_setup_notes", "refresh_status_bar"):
+        if hasattr(ui, refresh):
+            getattr(ui, refresh)()
 
 
 async def cmd_config(ui: ChatUIProtocol, args: List[str]):
@@ -133,14 +137,7 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
     errors = settings.reload_config()
     _apply_theme(ui)
     reapply_endpoint(ui, rediscover=(section == "servers"))
-    if errors:
-        ui.chat_history_panel.add_message(
-            "Config reloaded with errors:\n" + "\n".join(errors),
-            msg_type=SysMsgError(), title="config")
-    else:
-        ui.chat_history_panel.add_message("Config reloaded.", msg_type=SysMsg(), title="config")
-    if hasattr(ui, "refresh_status_bar"):
-        ui.refresh_status_bar()
+    _report_reload(ui, errors, "config")
 
 
 async def _config_sandbox(ui: ChatUIProtocol):
@@ -229,14 +226,7 @@ async def _config_role(ui: ChatUIProtocol, args: List[str]):
     await open_editor(ui, path)
     errors = settings.reload_config() + roles.validate_roles()
     reapply_endpoint(ui)
-    if errors:
-        ui.chat_history_panel.add_message(
-            "Config reloaded with errors:\n" + "\n".join(errors),
-            msg_type=SysMsgError(), title="config")
-    else:
-        ui.chat_history_panel.add_message("Config reloaded.", msg_type=SysMsg(), title="config")
-    if hasattr(ui, "refresh_status_bar"):
-        ui.refresh_status_bar()
+    _report_reload(ui, errors, "config")
 
 
 async def _config_theme(ui: ChatUIProtocol, args: List[str]):
@@ -271,14 +261,7 @@ async def _config_theme(ui: ChatUIProtocol, args: List[str]):
     errors = settings.reload_config()
     _apply_theme(ui)
     reapply_endpoint(ui)
-    if errors:
-        ui.chat_history_panel.add_message(
-            "Config reloaded with errors:\n" + "\n".join(errors),
-            msg_type=SysMsgError(), title="config")
-    else:
-        ui.chat_history_panel.add_message("Config reloaded.", msg_type=SysMsg(), title="config")
-    if hasattr(ui, "refresh_status_bar"):
-        ui.refresh_status_bar()
+    _report_reload(ui, errors, "config")
 
 
 async def cmd_edit(ui: ChatUIProtocol, args: List[str]):
