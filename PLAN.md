@@ -10,10 +10,22 @@ against the provider's current docs before they are built on.
 
 - **Providers.** An `Endpoint` *is* an instance of its provider's class:
   base `Endpoint` (the contract + per-server config and state) →
-  `OpenAICompatible` → `LlamaCpp`, `OpenAI`, `OpenRouter`; `Ollama` on its
-  own. A registry `{type: class}` drives config validation and the servers
-  template. Per-server state (selected model, connection, effort) lives in
-  the instance.
+  `OpenAICompatible` (type `openai-compatible`) → `LlamaCpp`, `OpenRouter`;
+  `Ollama` on its own. A registry `{type: class}` drives config validation
+  and the servers template. Per-server state (selected model, connection,
+  effort) lives in the instance. Contract: `.wiki/notes/providers.md`.
+- **Servers config (2026-10-01).** `type` is always written (no table-name
+  shortcut); `openai` is renamed `openai-compatible`; `llamacpp` no longer
+  assumes one served model (it can serve several): the selected id is always
+  sent; OpenRouter uses a `models` list plus `providers` and
+  `providers_by_model` instead of per-model tables; templates show only the
+  keys a server needs; old shapes are reported with their replacement, never
+  aliased.
+- **Effort levels are read only where a server states them.** No guessing:
+  OpenRouter `reasoning.supported_efforts`; Ollama `/api/show`
+  `thinking.values`; others only if the server advertises
+  `reasoning.supported_efforts`. A server that states none gets no `/effort`
+  menu. A chosen level is always sent as chosen.
 - **Reasoning is kept as the model produced it and sent back the same way.**
   moka never parses, moves or rewrites it.
 - **Mode A (inline `<think>` in `content`) is off.** No tag parsing anywhere;
@@ -53,23 +65,27 @@ against the provider's current docs before they are built on.
 
 1. Write `.wiki/notes/providers.md` first, for review:
    - config spec: keys, required/forbidden (e.g. OpenRouter: no `base_url`;
-     Ollama/OpenAI: `base_url` required);
+     Ollama/openai-compatible: `base_url` required);
    - `stream(messages, tools, model, effort)` → neutral chunks: text,
      reasoning text, `reasoning_native`, tool-call pieces, usage, finish
      reason;
    - `replay(entry, target_model)` → reasoning fields for an outgoing message;
    - `list_models()` → `ModelInfo` (id, context window, images, effort
-     levels); `served_model()` for single-model servers;
+     levels);
    - `effort_payload(level)`;
-   - capabilities: `selects_model`, `fixed_url`;
+   - class attributes: `fixed_url`, `default_url`, `extra_keys`, `template`;
    - what the harness guarantees in return;
    - checklist: adding a provider.
+   Drafted and approved 2026-10-01. Sub-step 1.0 (before any code moves):
+   golden wire tests recording today's request bodies per provider. ✅
+   (`test/test_wire_requests.py`, `test/wire_fake.py`)
 2. Move the four providers behind it; delete the ~20 `type ==` branches
    (`endpoint.py`, `endpoint_discovery.py`, `endpoint_openai.py`,
    `settings.py`).
 3. One request path per provider: compaction collects from the stream (the
    non-streaming path goes).
-4. Server types and the servers template come from the registry.
+4. Server types and the servers template come from the registry; the new
+   servers.toml shape (`providers.md` §2.1).
 5. Tests rewritten against the contract.
 
 ## Step 2: reasoning

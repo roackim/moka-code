@@ -1,0 +1,267 @@
+"""In-process fake servers for wire-level provider tests.
+
+Every request a provider makes, through its own pooled client or a throwaway
+``httpx.AsyncClient()``, goes to one recording ``httpx.MockTransport``. Tests
+assert on what was *sent* (method, URL, headers, JSON body), not on the UI.
+
+Samples below are copied from the real APIs, never invented (PROCESS.md, rule
+6); each notes its source and the date it was read. A field a provider does
+not read may be trimmed, but no value is made up.
+"""
+
+import json
+from dataclasses import dataclass
+from typing import Any, Callable
+
+import httpx
+
+_REAL_CLIENT = httpx.AsyncClient
+
+
+@dataclass
+class Recorded:
+    method: str
+    url: str
+    headers: dict
+    body: Any                       # parsed JSON, or None
+
+    @property
+    def path(self) -> str:
+        return httpx.URL(self.url).path
+
+
+def json_response(obj: Any, status: int = 200) -> Callable[[httpx.Request], httpx.Response]:
+    return lambda request: httpx.Response(status, json=obj)
+
+
+def text_response(text: str, status: int, content_type: str) -> Callable[[httpx.Request], httpx.Response]:
+    return lambda request: httpx.Response(
+        status, headers={"content-type": content_type}, content=text.encode())
+
+
+class FakeServer:
+    """Records every request; answers from the routes registered with ``on``."""
+
+    def __init__(self) -> None:
+        self.requests: list[Recorded] = []
+        self._routes: list[tuple[str, str, list]] = []
+
+    def on(self, method: str, path_suffix: str, *responders: Callable) -> "FakeServer":
+        """Answer ``method`` requests whose path ends with ``path_suffix``.
+        Several responders are used in order, the last one repeating."""
+        self._routes.append((method, path_suffix, list(responders)))
+        return self
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        content = request.content
+        self.requests.append(Recorded(
+            method=request.method, url=str(request.url),
+            headers={k.lower(): v for k, v in request.headers.items()},
+            body=json.loads(content) if content else None))
+        for method, suffix, responders in self._routes:
+            if request.method == method and request.url.path.endswith(suffix):
+                responder = responders.pop(0) if len(responders) > 1 else responders[0]
+                return responder(request)
+        return httpx.Response(404, json={"error": "no fake route for " + request.url.path})
+
+    def sent(self, method: str | None = None, path_suffix: str = "") -> list[Recorded]:
+        return [r for r in self.requests
+                if (method is None or r.method == method) and r.path.endswith(path_suffix)]
+
+    def calls(self) -> list[tuple[str, str]]:
+        """``[(method, path)]`` in order: the request sequence."""
+        return [(r.method, r.path) for r in self.requests]
+
+
+def install(monkeypatch, server: FakeServer) -> None:
+    """Route every ``httpx.AsyncClient`` created from now on to ``server``."""
+    transport = httpx.MockTransport(server)
+
+    class _FakeClient(_REAL_CLIENT):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = transport
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+
+
+# -- OpenAI-compatible chat (streaming) ---------------------------------------
+
+# A ``chat.completion.chunk``: developers.openai.com/api/reference/resources/
+# chat/subresources/completions/streaming-events, read 2026-10-01.
+OPENAI_FIRST_CHUNK = json.loads(
+    '{"id":"chatcmpl-123","object":"chat.completion.chunk","created":1694268190,'
+    '"model":"gpt-6-astra", "system_fingerprint": "fp_44709d6fcb", "choices":[{"index":0,'
+    '"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}],'
+    '"obfuscation":"r4N7vQ2m"}')
+
+
+def openai_stream(text: str = "Hi") -> Callable[[httpx.Request], httpx.Response]:
+    """A chat stream: the documented first chunk, one content chunk, the finish
+    chunk, then the usage chunk the docs describe for ``include_usage`` (empty
+    ``choices`` plus a ``usage`` object; the docs give no concrete example)."""
+    def chunk(delta, finish=None):
+        return {**OPENAI_FIRST_CHUNK,
+                "choices": [{"index": 0, "delta": delta, "logprobs": None, "finish_reason": finish}]}
+    usage = {**OPENAI_FIRST_CHUNK, "choices": [],
+             "usage": {"prompt_tokens": 9, "completion_tokens": 2, "total_tokens": 11}}
+    frames = [OPENAI_FIRST_CHUNK, chunk({"content": text}), chunk({}, "stop"), usage]
+    body = "".join("data: " + json.dumps(f) + "\n\n" for f in frames) + "data: [DONE]\n\n"
+    return text_response(body, 200, "text/event-stream")
+
+
+# -- llama.cpp ------------------------------------------------------------------
+
+# GET /models and GET /props: github.com/ggml-org/llama.cpp, tools/server/
+# README.md (master), read 2026-10-01. /props trimmed to the fields below.
+LLAMACPP_MODELS = json.loads("""
+{"object": "list", "data": [{"id": "../models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+ "object": "model", "created": 1735142223, "owned_by": "llamacpp",
+ "meta": {"vocab_type": 2, "n_vocab": 128256, "n_ctx_train": 131072, "n_embd": 4096,
+          "n_params": 8030261312, "size": 4912898304}}]}
+""")
+LLAMACPP_PROPS = json.loads("""
+{"default_generation_settings": {"id": 0, "id_task": -1, "n_ctx": 1024, "speculative": false,
+ "is_processing": false},
+ "total_slots": 1,
+ "model_path": "../models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+ "modalities": {"vision": false}}
+""")
+
+
+# -- OpenRouter -----------------------------------------------------------------
+
+# Two entries of GET https://openrouter.ai/api/v1/models (the public list), read
+# 2026-10-01, trimmed to the keys moka reads.
+OPENROUTER_MODELS = {"data": json.loads("""
+[
+  {
+    "id": "deepseek/deepseek-v4.1-flash",
+    "canonical_slug": "deepseek/deepseek-v4.1-flash-20260910",
+    "name": "DeepSeek: DeepSeek V4.1 Flash",
+    "context_length": 1048576,
+    "architecture": {
+      "modality": "text+image->text",
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "tokenizer": "DeepSeek",
+      "instruct_type": null
+    },
+    "supported_parameters": [
+      "frequency_penalty",
+      "include_reasoning",
+      "logit_bias",
+      "logprobs",
+      "max_tokens",
+      "min_p",
+      "presence_penalty",
+      "reasoning",
+      "reasoning_effort",
+      "repetition_penalty",
+      "response_format",
+      "seed",
+      "stop",
+      "structured_outputs",
+      "temperature",
+      "tool_choice",
+      "tools",
+      "top_k",
+      "top_logprobs",
+      "top_p"
+    ],
+    "reasoning": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supported_efforts": [
+        "max",
+        "high",
+        "low"
+      ],
+      "default_effort": "high"
+    }
+  },
+  {
+    "id": "qwen/qwen3.8-omni-flash",
+    "canonical_slug": "qwen/qwen3.8-omni-flash-20260918",
+    "name": "Qwen: Qwen3.8 Omni Flash",
+    "context_length": 1000000,
+    "architecture": {
+      "modality": "text+image+audio+video->text",
+      "input_modalities": [
+        "text",
+        "image",
+        "audio",
+        "video"
+      ],
+      "output_modalities": [
+        "text"
+      ],
+      "tokenizer": "Qwen",
+      "instruct_type": null
+    },
+    "supported_parameters": [
+      "frequency_penalty",
+      "include_reasoning",
+      "logprobs",
+      "max_tokens",
+      "presence_penalty",
+      "reasoning",
+      "response_format",
+      "seed",
+      "stop",
+      "structured_outputs",
+      "temperature",
+      "tool_choice",
+      "tools",
+      "top_k",
+      "top_logprobs",
+      "top_p"
+    ],
+    "reasoning": {
+      "mandatory": false,
+      "default_enabled": true,
+      "supports_max_tokens": true
+    }
+  }
+]
+""")}
+
+
+# -- Ollama -----------------------------------------------------------------------
+
+# GET /api/tags: docs.ollama.com/api/tags, read 2026-10-01.
+OLLAMA_TAGS = json.loads("""
+{"models": [{"name": "gemma4", "model": "gemma4",
+ "modified_at": "2025-10-03T23:34:03.409490317-07:00", "size": 9608350245,
+ "digest": "c6eb396dbd5992bbe3f5cdb947e8bbc0ee413d7c17e2beaae69f5d569cf982eb",
+ "details": {"format": "gguf", "family": "gemma4", "families": ["gemma4"],
+             "parameter_size": "8.0B", "quantization_level": "Q4_K_M"}}]}
+""")
+# POST /api/show: github.com/ollama/ollama docs/api.md ("Show Model
+# Information", llava example), read 2026-10-01, trimmed.
+OLLAMA_SHOW = json.loads("""
+{"details": {"parent_model": "", "format": "gguf", "family": "llama", "families": ["llama"],
+             "parameter_size": "8.0B", "quantization_level": "Q4_0"},
+ "model_info": {"general.architecture": "llama", "general.parameter_count": 8030261248,
+                "llama.context_length": 8192, "llama.vocab_size": 128256},
+ "capabilities": ["completion", "vision"]}
+""")
+
+
+def ollama_stream(text: str = "Hi") -> Callable[[httpx.Request], httpx.Response]:
+    """POST /api/chat stream: a content object and the final object, both from
+    the API reference ("Generate a chat completion"), read 2026-10-01."""
+    first = {"model": "llama3.2", "created_at": "2023-08-04T08:52:19.385406455-07:00",
+             "message": {"role": "assistant", "content": text, "images": None}, "done": False}
+    final = {"model": "llama3.2", "created_at": "2023-08-04T19:22:45.499127Z",
+             "message": {"role": "assistant", "content": ""}, "done": True,
+             "total_duration": 4883583458, "load_duration": 1334875,
+             "prompt_eval_count": 26, "prompt_eval_duration": 342546000,
+             "eval_count": 282, "eval_duration": 4535599000}
+    body = "".join(json.dumps(o) + "\n" for o in (first, final))
+    return text_response(body, 200, "application/x-ndjson")
