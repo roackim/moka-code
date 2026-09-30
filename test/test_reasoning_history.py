@@ -238,3 +238,42 @@ def test_ollama_native_response_reads_thinking_or_reasoning():
     for field in ("thinking", "reasoning"):
         chunk = native_response({"message": {"content": "", field: "hmm"}, "done": False})
         assert chunk.choices[0].delta.reasoning_content == "hmm"
+
+
+def _stream(tmp_path, chunks):
+    from moka_code.harness import events
+
+    with patch("moka_code.harness.harness.get_active_endpoint",
+               return_value=Endpoint(name="test", type="llamacpp")):
+        harness = Harness(workspace_path=str(tmp_path))
+
+    async def fake_completion(messages, tools=None, stream=True):
+        for chunk in chunks:
+            yield chunk
+        yield _chunk(finish="stop")
+
+    harness.endpoint.create_completion = fake_completion
+
+    async def drain():
+        return [event async for event in harness.chat("hi")]
+
+    got = asyncio.run(drain())
+    tokens = "".join(e.text for e in got if isinstance(e, events.Token))
+    reasoning = "".join(e.text for e in got if isinstance(e, events.Reasoning))
+    assistant = [m for m in harness.history if m.get("role") == "assistant"][0]
+    return tokens, reasoning, assistant
+
+
+def test_inline_think_tags_stay_in_the_answer_verbatim(tmp_path):
+    """Decided 2026-09-30 (PLAN.md mode A off): content is never parsed."""
+    for pieces in (["a <thi", "nk>b</think> c"], ["<think>unclosed ", "tail"]):
+        tokens, reasoning, stored = _stream(tmp_path, [_chunk(content=p) for p in pieces])
+        assert tokens == stored["content"] == "".join(pieces)
+        assert reasoning == "" and "reasoning" not in stored
+
+
+def test_reasoning_field_still_shows_as_reasoning(tmp_path):
+    tokens, reasoning, stored = _stream(
+        tmp_path, [_chunk(reasoning="why"), _chunk(content="answer")])
+    assert (reasoning, tokens) == ("why", "answer")
+    assert (stored["reasoning"], stored["content"]) == ("why", "answer")

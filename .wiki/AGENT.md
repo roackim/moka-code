@@ -13,7 +13,7 @@ This document tells AI agents and humans how to operate and maintain this wiki.
     principles.md           ← Canonical design principles (direction; read first)
     architecture.md         ← High-level system design and data flow
     config.md               ← Configuration reference (split files under ~/.config/moka/)
-    reasoning-traces.md     ← Reasoning trace handling (thinking tags, reasoning_content)
+    reasoning-traces.md     ← Reasoning trace handling (reasoning fields; content never parsed)
     security.md             ← Approval model and trust boundary
     sandbox.md              ← Sandboxed tool execution: worker, transport, project store
     testing.md              ← Test suite overview and how to run tests

@@ -2,7 +2,7 @@
 
 The agent backbone. Manages the LLM conversation loop, tool execution, approval gating, context construction, and endpoint management.
 
-Key internal modules: `permissions.py` (the single approval decision point), `roles.py` (role model), `thinking_parser.py` (thinking-tag state machine), `endpoint.py` (one type for endpoint config + transport), `events.py` (the one harness→UI event protocol). The `Harness` class in `harness.py` delegates to these.
+Key internal modules: `permissions.py` (the single approval decision point), `roles.py` (role model), `endpoint.py` (one type for endpoint config + transport), `events.py` (the one harness→UI event protocol). The `Harness` class in `harness.py` delegates to these.
 
 See [notes/architecture.md](../notes/architecture.md), [notes/tools-and-permissions.md](../notes/tools-and-permissions.md), and [notes/reasoning-traces.md](../notes/reasoning-traces.md) for conceptual details.
 
@@ -13,8 +13,8 @@ See [notes/architecture.md](../notes/architecture.md), [notes/tools-and-permissi
 ### `harness.py`
 `Harness` — main class. Owns the agent state machine and conversation history.
 - `chat(user_input)` — async generator; full agent turn (stream → handle tool calls)
-- `_stream_llm_response()` — delegates thinking-tag parsing to `ThinkingTagParser`;
-  buffers tool-call deltas and emits a live `ToolCallDraft` as arguments arrive
+- `_stream_llm_response()` — content deltas become `Token`s verbatim (no tag
+  parsing), reasoning fields become `Reasoning`; buffers tool-call deltas and emits a live `ToolCallDraft` as arguments arrive
   (first named chunk, then a stride that backs off with argument size), so the UI
   is never blank while the model writes a call
 - `_execute_tool_calls()` — emits the complete `ToolCall` then `PermissionRequest`
@@ -39,12 +39,6 @@ The single "may I run this?" decision point, and nothing more.
   user's choice via a project sandbox (`/sandbox`; see `plans/sandbox_worker.md`).
 See [notes/security.md](../notes/security.md) and
 [notes/tools-and-permissions.md](../notes/tools-and-permissions.md).
-
-### `thinking_parser.py`
-`ThinkingTagParser` — extracted from `Harness._stream_llm_response`. Handles two input paths:
-- `reasoning_content` API field (DeepSeek/R1 style) — yielded directly as `events.Reasoning`
-- Inline `<thinking>`/`</thinking>` and `<think>`/`</think>` tags — state machine splits content into `events.Reasoning`/`events.Token` segments across chunk boundaries
-`MetricsState` — periodic `events.Usage` emission helper.
 
 ### `events.py`
 The one harness→UI event protocol. A single union yielded by `Harness.chat()`:

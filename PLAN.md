@@ -81,7 +81,7 @@ against the provider's current docs before they are built on.
      `reasoning_details`; later Anthropic thinking blocks, OpenAI encrypted
      items);
    - `origin`: `{type, model}` of the producing server/model.
-2. Remove the tag parser from the stream and from import.
+2. Remove the tag parser from the stream and from import. ✅ (2026-10-01)
 3. `replay` per provider:
    - llama.cpp / OpenAI-compatible: `reasoning` → `reasoning_content`;
    - Ollama: `reasoning` → `thinking`;
@@ -93,9 +93,8 @@ against the provider's current docs before they are built on.
    are withheld: one line in `/activity` + a hint-row flash.
 5. Old sessions: `reasoning_details` read as `reasoning_native`; an entry
    without `origin` has its native blocks withheld.
-6. Cleanup: dead parser state (`full_reasoning`, `detected_open_tag`),
-   misleading docstrings, duplicate checks in the stream loop, `MetricsState`
-   out of `thinking_parser.py`, `.wiki/notes/reasoning-traces.md` rewritten.
+6. Cleanup: `.wiki/notes/reasoning-traces.md` rewritten. (Dead parser state,
+   duplicate stream-loop checks and `MetricsState` done with item 2.)
 7. Verify the ⚠ replay rules against each provider's docs.
 
 ## Step 3: compaction
@@ -113,7 +112,8 @@ against the provider's current docs before they are built on.
 ## Future polish
 
 - Hint when raw `<think>` shows up in an answer (server not extracting
-  reasoning, e.g. llama.cpp `--reasoning-format`).
+  reasoning, e.g. llama.cpp `--reasoning-format none` / `deepseek-legacy`
+  while streaming; its default extracts into `reasoning_content`).
 - New providers: native Anthropic, DeepSeek, OpenAI Responses API.
 
 ## Open questions

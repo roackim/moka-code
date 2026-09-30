@@ -2,11 +2,11 @@
 
 *How moka preserves model reasoning/thinking traces across turns, export and import.*
 
-> **Status**: Reasoning is **always stored** in history (the assistant entry's
-> `reasoning` text, plus OpenRouter's structured `reasoning_details` as
-> produced). Every assistant message goes back with its reasoning
-> (`_api_history`), in each server's own reasoning field, never folded into
-> `content`. Not configurable (pending an audit).
+> **Status** (2026-10-01): Reasoning is **always stored** in history (the
+> assistant entry's `reasoning` text, plus OpenRouter's structured
+> `reasoning_details` as produced) and **never sent back** to the model:
+> replay was removed until `PLAN.md` step 2. `content` is never parsed: inline
+> `<think>` tags stay in the answer. This page is rewritten in step 2.
 
 ---
 
@@ -40,24 +40,13 @@ Provider field names differ and are normalized by the transport adapters:
 will be silently dropped before the harness sees it — a missing reasoning field
 in an export usually means the adapter, not the harness.
 
-### 2. Inline thinking tags in `content` field
+### 2. `content` is never parsed
 
-The code parses content for embedded thinking tags:
-
-```python
-THINKING_TAGS = [
-    ("  thinking", "  response"),
-    ("<thinking>", "</thinking>"),
-]
-```
-
-When an opening tag is found in the content stream, content before the tag goes to `events.Token` (and is accumulated into `full_content`), while content *between* the tags goes to `events.Reasoning` **and** is accumulated into `full_reasoning`. The tag delimiters themselves are consumed and discarded.
-
-Across chunk boundaries the parser withholds only the tail that could still be
-a partial tag (`_partial_tag_len`), not a fixed-size suffix. Withholding a fixed
-tail delayed the last characters of a message until `flush()` at end-of-stream —
-very visible when a tool call followed the content (the tail appeared only after
-the call). Ordinary text is now emitted immediately.
+`content` deltas are answer tokens, stored and shown exactly as sent. A server
+that does not split reasoning out (llama.cpp `--reasoning-format none` or
+`deepseek-legacy` while streaming, or a chat template it does not recognize)
+shows raw `<think>` tags in the answer. The former tag parser
+(`thinking_parser.py`) was removed on 2026-10-01.
 
 ---
 

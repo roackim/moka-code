@@ -111,9 +111,9 @@ self-contained.
 - Writes embedded images back to the image cache and repoints the references
   (`harness.images.restore`); an image with neither bytes nor file is listed
   as `unavailable` and sent as an `[image #N unavailable]` text part.
-- Rebuilds visible messages, splitting assistant thinking/content with the
-  same `ThinkingTagParser` the harness uses (so imported reasoning renders as
-  a `ThinkingMsg`).
+- Rebuilds visible messages: a stored `reasoning` field renders as a
+  `ThinkingMsg`; `content` is shown verbatim (inline `<think>` tags of older
+  exports included).
 
 ## Library Contracts
 

@@ -21,25 +21,6 @@ a run "with preserve on and off" (the setting no longer exists).
 
 ## Reasoning
 
-**R1. `<think>` parsing swallows answer text** · confirmed
-`harness.py` stream loop + `thinking_parser.py`: runs on every provider's
-content; any answer containing `<think>` loses the rest of its text into
-hidden reasoning; an unclosed tag swallows the whole answer (`flush()`).
-→ `PLAN.md` step 2 (mode A off).
-
-**R4. Inline-tag reasoning stored differently live and on import** · confirmed
-Live: tags moved out of `content` into `reasoning`. Import of old exports
-(`ui/commands/conversation.py` `_rebuild_ui_from_history`): split for display
-only, tags stay in `content` and are replayed as answer text.
-→ `PLAN.md` step 2.
-
-**R7. Dead parser state and misplaced code** · confirmed
-`thinking_parser.py`: `full_reasoning` and `detected_open_tag` never read;
-module docstring claims it handles the `reasoning_content` path (it does
-not); hosts `MetricsState`, unrelated to thinking.
-`harness.py` `_stream_llm_response`: `if not chunk.choices: continue` and the
-`delta` assignment both appear twice. → `PLAN.md` step 2.
-
 **R8. No reasoning sent back, even inside a tool loop** · known risk
 Replay removed 2026-09-30 until `PLAN.md` step 2. ⚠ Some models may reject
 or degrade a tool-loop follow-up without their reasoning (DeepSeek thinking

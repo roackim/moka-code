@@ -85,7 +85,7 @@ files by `projects.py`. See [notes/config.md](./config.md).
 - **Sandbox is transport, not policy** — moka parses no commands and confines no paths; a container/bwrap mount is the wall, and the user names the backend
 - **Endpoints** — server config + transport live in one `Endpoint` type (`harness/endpoint.py`, with `endpoint_*` modules for transport/discovery); UI commands are thin adapters
 - **Model selection is `(server, model)`** — `/model` refreshes discovery live, resolves a model across servers, then switches the harness. Per-server choices persist in `state.toml`; the discovery catalog is in memory only (never persisted), refreshed at startup, on reloads, `/model` and `/effort`. OpenRouter models are disabled unless they have a `[servers.<name>.models."<id>"]` table.
-- **Thinking-tag parsing** — the state machine (`harness/thinking_parser.py`) handles `<think>`/`</think>` and `<thinking>`/`</thinking>` across chunk boundaries
+- **No thinking-tag parsing** — `content` is stored and shown verbatim; reasoning comes only from the server's own fields
 
 ## Module Relationships
 
@@ -99,7 +99,6 @@ moka_code/
     harness.py           ← Orchestrator (delegates to modules below); builds/swaps the transport
     permissions.py       ← Single decision point: PermissionGate (role no/ask/yes → deny/ask/allow)
     roles.py             ← Role (prompt + per-tool no/ask/yes + require_sandbox; single source of truth)
-    thinking_parser.py   ← Thinking-tag state machine + metrics emission
     endpoint.py          ← Endpoint config + transport; endpoint_* modules split the families
     tools.py             ← @tool registry + schemas; InProcessTransport; delegates bodies to worker.py
     elision.py           ← Bound oversized tool results before they enter history

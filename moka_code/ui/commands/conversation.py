@@ -193,9 +193,10 @@ def _add_answer(ui: ChatUIProtocol, text: str, ids) -> None:
 
 
 def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
-    """Reconstruct visible messages from imported harness history."""
-    from moka_code.harness.thinking_parser import ThinkingTagParser
+    """Reconstruct visible messages from imported harness history.
 
+    Content is shown verbatim (inline ``<think>`` tags of older exports
+    included), as it is stored and sent back."""
     for message in history:
         role = message.get("role", "")
         content = message.get("content", "")
@@ -211,47 +212,14 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
             # content may be None for tool-call-only assistant messages.
             content = content or ""
             reasoning = message.get("reasoning")
-            if reasoning:
-                # Current format: reasoning is stored verbatim in its own
-                # field, so restore it exactly and keep the answer separate.
-                # Short reasoning gets no line, as during generation.
-                if thought_worth_showing(reasoning):
-                    think = ui.chat_history_panel.add_message(
-                        reasoning, msg_type=ThinkingMsg(), harness_message_ids=ids)
-                    think.set_collapsed(True)
-                    think.finalize()
-                if content:
-                    _add_answer(ui, content, ids)
-            else:
-                # Older exports: reasoning is
-                # inline in content as thinking tags. Split it with the same
-                # parser the harness uses so it renders as a ThinkingMsg.
-                parser = ThinkingTagParser()
-                raw_segments = parser.feed(content) + parser.flush()
-                # ``feed`` may hold back a partial thinking tag (and ``flush``
-                # emits it as a separate segment once the stream ends). Coalesce
-                # adjacent same-kind segments so import does not split one
-                # assistant reply into multiple messages (which showed up as a
-                # mid-word split separated by the inter-message gap, e.g.
-                # "narro" / "w it down.").
-                segments = []
-                for segment in raw_segments:
-                    if not segment.text:
-                        continue
-                    if segments and segments[-1].is_thinking == segment.is_thinking:
-                        segments[-1].text += segment.text
-                    else:
-                        segments.append(segment)
-                for segment in segments:
-                    if segment.is_thinking:
-                        think = ui.chat_history_panel.add_message(
-                            segment.text, msg_type=ThinkingMsg(), harness_message_ids=ids)
-                        think.set_collapsed(True)
-                        think.finalize()
-                    else:
-                        _add_answer(ui, segment.text, ids)
-                if not segments and content:
-                    _add_answer(ui, content, ids)
+            # Short reasoning gets no line, as during generation.
+            if reasoning and thought_worth_showing(reasoning):
+                think = ui.chat_history_panel.add_message(
+                    reasoning, msg_type=ThinkingMsg(), harness_message_ids=ids)
+                think.set_collapsed(True)
+                think.finalize()
+            if content:
+                _add_answer(ui, content, ids)
             for tool_call in message.get("tool_calls", []):
                 if not isinstance(tool_call, dict) or "function" not in tool_call:
                     continue

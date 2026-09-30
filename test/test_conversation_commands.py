@@ -139,13 +139,8 @@ def test_conversation_import_handles_tool_call_only_assistant(tmp_path):
 
 
 def test_conversation_import_keeps_assistant_reply_in_one_message(tmp_path):
-    """A plain assistant reply must be one AssistantMsg, not split by the tag parser.
-
-    ``ThinkingTagParser.feed`` may hold back a partial thinking tag and ``flush``
-    then emits it as a separate segment. Import used to turn each segment into
-    its own message, splitting the reply into a second AssistantMsg (rendered as a
-    mid-word break with the inter-message gap in between).
-    """
+    """A plain assistant reply must be one AssistantMsg (a former tag parser
+    split it mid-word into two messages)."""
     from moka_code.ui.tui.msg_types import AssistantMsg
 
     ui = FakeUI()
@@ -234,3 +229,22 @@ def test_import_splits_answers_like_live_ones(tmp_path):
     ])
     kinds = [m.segment_kind for m in ui.chat_history_panel.messages if m.group is not None]
     assert kinds == ["text", "code"]
+
+
+def test_conversation_import_shows_inline_think_tags_verbatim(tmp_path):
+    """Decided 2026-09-30 (PLAN.md mode A off): content is never parsed; an
+    older export with inline tags imports as one answer, tags included."""
+    from moka_code.ui.tui.msg_types import AssistantMsg, ThinkingMsg
+
+    ui = FakeUI()
+    content = "<think>hidden?</think>The answer."
+    history = [{"role": "user", "content": "q"}, {"role": "assistant", "content": content}]
+    filename = tmp_path / "old.json"
+    filename.write_text(json.dumps({"role": "default", "history": history}))
+
+    asyncio.run(conversation_import(ui, [str(filename)]))
+
+    assert ui.agent.history == history
+    assert not [m for m in ui.chat_history_panel.messages if isinstance(m.type, ThinkingMsg)]
+    answers = [m for m in ui.chat_history_panel.messages if type(m.type) is AssistantMsg]
+    assert [m.text for m in answers] == [content]

@@ -15,9 +15,8 @@ from moka_code.harness.elision import elide
 from moka_code.harness import events, images
 from moka_code.harness.endpoint import Endpoint, get_active_endpoint
 from moka_code.harness.permissions import PermissionGate
-from moka_code.harness.thinking_parser import ThinkingTagParser, MetricsState
 from moka_code.harness.endpoint_openai import merge_reasoning_details
-from moka_code.harness.usage import TokenUsage, usage_from_response
+from moka_code.harness.usage import MetricsState, TokenUsage, usage_from_response
 
 # Import the minimal toolset
 from moka_code.harness.tools import (
@@ -611,7 +610,9 @@ class Harness:
         ttft_ms = None
 
         metrics = MetricsState()
-        parser = ThinkingTagParser()
+        # The answer exactly as the server sent it: never parsed (no inline
+        # ``<think>`` tags split out; reasoning comes only in its own fields).
+        full_content = ""
         tool_calls_buffer: Dict[int, Dict[str, Any]] = {}
         # Maps a tool-call index -> the active buffer key (a tool-call id, or
         # the index itself when no id was ever seen) so id-less argument deltas
@@ -671,12 +672,8 @@ class Harness:
                 first_chunk_received = True
                 metrics.ttft_ms = ttft_ms
 
-            if not chunk.choices:
-                continue
-
-            delta = chunk.choices[0].delta
-
-            # 1. Handle Reasoning (DeepSeek/R1 style — reasoning_content API field)
+            # 1. Reasoning, from the server's own fields (``reasoning_content``;
+            # the adapters map ``reasoning`` / Ollama ``thinking`` onto it).
             merge_reasoning_details(self._current_reasoning_details,
                                     getattr(delta, "reasoning_details", None))
             reasoning = getattr(delta, "reasoning_content", None)
@@ -693,24 +690,17 @@ class Harness:
                 # fragments (at the reasoning→answer transition), which would
                 # otherwise be dropped and corrupt the call's arguments.
 
-            # 2. Handle Content (with thinking tag parsing)
+            # 2. Content, verbatim.
             content = delta.content
             if content:
                 metrics.ensure_started()
-
-                for segment in parser.feed(content):
-                    if segment.is_thinking:
-                        if self.state != AgentState.THINKING:
-                            self.state = AgentState.THINKING
-                        self._current_reasoning += segment.text
-                        yield events.Reasoning(text=segment.text)
-                    else:
-                        if self.state != AgentState.ANSWERING:
-                            self.state = AgentState.ANSWERING
-                        yield events.Token(text=segment.text)
-                    m = metrics.maybe_metrics(metrics_interval)
-                    if m:
-                        yield m
+                if self.state != AgentState.ANSWERING:
+                    self.state = AgentState.ANSWERING
+                full_content += content
+                yield events.Token(text=content)
+                m = metrics.maybe_metrics(metrics_interval)
+                if m:
+                    yield m
 
             # 3. Handle Tool Calls
             if delta.tool_calls:
@@ -777,18 +767,6 @@ class Harness:
         # One request, one cost: the last usage the stream reported.
         self._add_cost(stream_usage)
 
-        # Flush any remaining content buffer at end of stream
-        for segment in parser.flush():
-            if segment.is_thinking:
-                if self.state != AgentState.THINKING:
-                    self.state = AgentState.THINKING
-                self._current_reasoning += segment.text
-                yield events.Reasoning(text=segment.text)
-            else:
-                if self.state != AgentState.ANSWERING:
-                    self.state = AgentState.ANSWERING
-                yield events.Token(text=segment.text)
-
         # Yield final metrics
         m = metrics.final_metrics()
         if m:
@@ -799,10 +777,6 @@ class Harness:
         if tool_calls_buffer:
             tool_calls_list = self._assemble_tool_calls(tool_calls_buffer)
 
-        # Log results. Reasoning must include BOTH streaming paths — the
-        # ``reasoning_content`` API field and inline thinking tags — so use the
-        # live accumulator (``parser.full_reasoning`` only sees tags).
-        full_content = parser.full_content
         full_reasoning = self._current_reasoning
         if full_content and not tool_calls_list:
             self.debug_stream.log("RESPONSE", full_content)
