@@ -19,7 +19,7 @@ from moka_code.ui.tui.components.popup import Popup, PopupScreen
 from moka_code.ui.tui.components.debug_popup import DebugPopup
 from moka_code.ui.tui.components.bars import StatusBar
 from moka_code.ui.chat_history_panel import ChatHistoryPanel
-from moka_code.ui.chat_message import Message, reference_spans
+from moka_code.ui.chat_message import Message, reference_spans, unmention
 from moka_code.ui.commands import (
     handle_command, get_command_list, get_command_descriptions,
     get_subcommand_list, get_subcommand_descriptions,
@@ -669,13 +669,7 @@ class chatTUI(ChatActionHandlers):
     def _collect_images(self, text: str):
         """The images *text* attaches, or ``None`` when the message is refused
         (the reason is shown and the text stays in the input)."""
-        try:
-            attached = images.collect(text, self._pasted_images,
-                                      getattr(self.agent, "workspace", "."),
-                                      images.max_bytes())
-        except images.ImageError as exc:
-            self.chat_history_panel.add_message(f"Can't attach {exc}", msg_type=SysMsgWarning())
-            return None
+        attached = images.collect(text, self._pasted_images)
         endpoint = getattr(self.agent, "endpoint", None)
         accepts = getattr(endpoint, "accepts_images", lambda: None)()
         if attached and accepts is False:
@@ -696,7 +690,7 @@ class chatTUI(ChatActionHandlers):
             return  # Ignore empty or whitespace-only input
 
         if clean_text.startswith('/'):
-            self.on_command_submit(clean_text)
+            self.on_command_submit(unmention(clean_text))
             return
 
         # $ prefix: execute shell command directly (not visible to LLM)
@@ -738,7 +732,7 @@ class chatTUI(ChatActionHandlers):
             # Create user message and queue it
             user_msg = self.chat_history_panel.add_user_message(text, attached)
 
-            self._enqueue_message(text, user_msg, attached)
+            self._enqueue_message(unmention(text), user_msg, attached)
             
             # Enable auto-scroll to show the new message
             self.chat_history_panel.auto_scroll = True

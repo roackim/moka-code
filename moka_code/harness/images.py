@@ -19,15 +19,10 @@ from typing import Any, Dict, Iterable, List, Optional
 
 ImageRef = Dict[str, Any]
 
-IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp")
-
 _EXTENSIONS = {"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp"}
 
 # ``[image #N]`` markers inserted by a clipboard paste.
 MARKER_RE = re.compile(r"\[image #(\d+)\]")
-# ``@path`` mentions: ``@'quoted path'``, ``@"quoted path"`` or ``@plain\ path``
-# (trailing punctuation is not part of a plain path).
-MENTION_RE = re.compile(r"""(?<!\S)@(?:'([^']+)'|"([^"]+)"|((?:\\ |\S)+?)(?=[.,;:!?)]*(?:\s|$)))""")
 
 
 def max_bytes() -> int:
@@ -106,20 +101,6 @@ def _check_size(size: int, max_bytes: int, name: str) -> None:
         )
 
 
-def load(path: str | os.PathLike, max_bytes: int) -> ImageRef:
-    """Reference an image file on disk (``@path``)."""
-    path = Path(path)
-    try:
-        _check_size(path.stat().st_size, max_bytes, path.name)
-        data = path.read_bytes()
-    except OSError as exc:
-        raise ImageError(f"{path.name}: {exc.strerror or exc}") from exc
-    try:
-        return _ref(path, path.name, data)
-    except ImageError as exc:
-        raise ImageError(f"{path.name}: {exc}") from exc
-
-
 def store(data: bytes, max_bytes: Optional[int], name: str = "clipboard") -> ImageRef:
     """Save image bytes (a paste) to the cache and reference them."""
     if max_bytes is not None:
@@ -133,40 +114,15 @@ def store(data: bytes, max_bytes: Optional[int], name: str = "clipboard") -> Ima
     return _ref(path, name, data)
 
 
-def mentioned_paths(text: str) -> List[str]:
-    """``@path`` mentions in *text* that name an image file (by suffix)."""
-    paths = []
-    for match in MENTION_RE.finditer(text):
-        raw = match.group(1) or match.group(2) or match.group(3).replace("\\ ", " ")
-        if raw.lower().endswith(IMAGE_SUFFIXES):
-            paths.append(raw)
-    return paths
-
-
-def collect(text: str, pasted: Dict[int, ImageRef], workspace: str,
-            max_bytes: int) -> List[ImageRef]:
-    """The images a message attaches, numbered as the transcript shows them.
-
-    Pasted images count only while their ``[image #N]`` marker is still in the
-    text. ``@path`` mentions of existing image files follow, numbered after
-    the pasted ones; a mention of a missing file stays plain text (the model
-    may be asked to create it). Raises :class:`ImageError` when an image
-    cannot be attached.
-    """
+def collect(text: str, pasted: Dict[int, ImageRef]) -> List[ImageRef]:
+    """The pasted images a message attaches: those whose ``[image #N]`` marker
+    is still in the text. Files on disk are never attached; the model reads
+    them itself (``read``)."""
     images: List[ImageRef] = []
     for match in MARKER_RE.finditer(text):
         n = int(match.group(1))
         if n in pasted and all(image["n"] != n for image in images):
             images.append({**pasted[n], "n": n})
-    next_n = max([0, *pasted]) + 1
-    for raw in mentioned_paths(text):
-        path = Path(os.path.expanduser(raw))
-        if not path.is_absolute():
-            path = Path(workspace) / path
-        if not path.is_file() or any(image["path"] == str(path) for image in images):
-            continue
-        images.append({**load(path, max_bytes), "n": next_n})
-        next_n += 1
     return images
 
 

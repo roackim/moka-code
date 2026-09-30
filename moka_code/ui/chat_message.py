@@ -179,7 +179,16 @@ def _tool_summary(name: str, args: dict, output: Optional[str]) -> str:
     return " ".join(part for part in (target, strip_ansi(metric)) if part)
 
 
-_REFERENCE_RE = re.compile(f"{images.MARKER_RE.pattern}|{images.MENTION_RE.pattern}")
+# ``@path`` mentions: ``@'quoted path'``, ``@"quoted path"`` or ``@plain\ path``
+# (trailing punctuation is not part of a plain path).
+MENTION_RE = re.compile(r"""(?<!\S)@(?:'([^']+)'|"([^"]+)"|((?:\\ |\S)+?)(?=[.,;:!?)]*(?:\s|$)))""")
+_REFERENCE_RE = re.compile(f"{images.MARKER_RE.pattern}|{MENTION_RE.pattern}")
+
+
+def unmention(text: str) -> str:
+    """*text* with each ``@path`` mention made a plain path. ``@`` is input
+    syntax (the file picker); the model and commands see the path."""
+    return MENTION_RE.sub(lambda m: m.group(0)[1:], text)
 
 
 def reference_spans(line: str) -> list[tuple[int, int, Any]]:

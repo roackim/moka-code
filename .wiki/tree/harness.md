@@ -111,7 +111,7 @@ Image attachments on user messages. History stores a reference (`path`,
 then `image_url` data URLs, base64 read at request time). `probe` reads
 PNG/JPEG/GIF/WebP headers (no Pillow); `store` caches pasted bytes in
 `~/.cache/moka/images/<hash>.<ext>`; `collect` resolves a draft's `[image #N]`
-markers and `@path` mentions; `embed`/`restore` carry bytes through
+markers (files on disk are never attached; the model `read`s them); `embed`/`restore` carry bytes through
 `/export`/`/import`. `endpoint_ollama.ollama_messages` converts the parts to
 Ollama's `images: [base64]`.
 `read` can return an image (`worker.read` with the harness-set

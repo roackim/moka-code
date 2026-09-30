@@ -18,6 +18,7 @@ from moka_code.harness.endpoint_discovery import image_input_from_metadata
 from moka_code.harness.endpoint_ollama import ollama_messages
 from moka_code.harness.harness import Harness
 from moka_code.ui.app import chatTUI
+from moka_code.ui.chat_message import unmention
 from moka_code.ui.commands.conversation import conversation_export, conversation_import
 from moka_code.ui.tui.msg_types import UserMsg
 
@@ -90,24 +91,19 @@ def test_store_refuses_over_the_limit():
         images.store(png(), 10)
 
 
-def test_collect_pasted_markers_then_mentions(tmp_path):
+def test_collect_attaches_pasted_markers_only(tmp_path):
     (tmp_path / "shot.png").write_bytes(png(10, 20))
-    (tmp_path / "my pic.jpg").write_bytes(jpeg(4, 4))
     pasted = {1: images.store(png(), 5 * MB), 2: images.store(png(5, 5), 5 * MB)}
 
-    text = ("see [image #2] and @shot.png, also @'my pic.jpg' "
-            "@missing.png @notes.md")
-    attached = images.collect(text, pasted, str(tmp_path), 5 * MB)
+    attached = images.collect("see [image #2] and @shot.png", pasted)
 
-    # [image #1] was deleted from the draft: not attached. Mentions number on.
-    assert [(i["n"], i["name"]) for i in attached] == [
-        (2, "clipboard"), (3, "shot.png"), (4, "my pic.jpg")]
+    # [image #1] was deleted from the draft; @shot.png is a path, not an attachment.
+    assert [(i["n"], i["name"]) for i in attached] == [(2, "clipboard")]
 
 
-def test_collect_refuses_too_large_mention(tmp_path):
-    (tmp_path / "big.png").write_bytes(png())
-    with pytest.raises(images.ImageError, match="big.png"):
-        images.collect("@big.png", {}, str(tmp_path), 10)
+def test_unmention_makes_mentions_plain_paths():
+    text = "fix @src/a.py, see @'my pic.jpg' and @b\\ c.md; mail a@b.c"
+    assert unmention(text) == "fix src/a.py, see 'my pic.jpg' and b\\ c.md; mail a@b.c"
 
 
 def test_describe_line():
@@ -186,31 +182,32 @@ def _ui_with_endpoint(tmp_path, accepts):
 
 
 def test_text_only_model_refuses_and_keeps_the_input(tmp_path):
-    (tmp_path / "a.png").write_bytes(png())
     ui = _ui_with_endpoint(tmp_path, accepts=False)
-    ui.input_component.update("describe @a.png")
+    ui._pasted_images = {1: images.store(png(), 5 * MB)}
+    ui.input_component.update("describe [image #1]")
 
     ui.input_component.handle_input("\r")
 
-    assert ui.input_component.text == "describe @a.png"
+    assert ui.input_component.text == "describe [image #1]"
     assert ui.message_queue.qsize() == 0
     assert any("deepseek/deepseek-chat can't read images" in line
                for line in ui.activity_panel.lines)
 
 
 def test_unknown_capability_sends(tmp_path):
-    (tmp_path / "a.png").write_bytes(png(7, 9))
     ui = _ui_with_endpoint(tmp_path, accepts=None)
-    ui.input_component.update("describe @a.png")
+    ui._pasted_images = {1: images.store(png(7, 9), 5 * MB)}
+    ui.input_component.update("describe [image #1] like @a.png")
 
     ui.input_component.handle_input("\r")
 
     assert ui.input_component.text == ""
     text, msg, attached = ui.message_queue.get_nowait()
-    assert text == "describe @a.png"
-    assert [(i["name"], i["width"], i["height"]) for i in attached] == [("a.png", 7, 9)]
-    assert msg.base_text.splitlines()[-1].startswith("▣ image #1 · a.png · 7×9")
-    assert ui.chat_history_panel.copy_text_for(msg) == "describe @a.png"
+    # The model sees a plain path; the transcript keeps the @mention.
+    assert text == "describe [image #1] like a.png"
+    assert [(i["name"], i["width"], i["height"]) for i in attached] == [("clipboard", 7, 9)]
+    assert msg.base_text.splitlines()[-1].startswith("▣ image #1 · clipboard · 7×9")
+    assert ui.chat_history_panel.copy_text_for(msg) == "describe [image #1] like @a.png"
 
 
 # ---------------------------------------------------------------------------

@@ -342,9 +342,9 @@ then stays in the input (used when an image cannot be attached).
   saved by content hash to `~/.cache/moka/images/` (`images.store`) and
   inserted as `[image #N]`; `chatTUI._pasted_images` maps N to it for the draft.
 - **On submit** `images.collect` attaches the pasted images whose marker is
-  still in the text, then `@path` mentions of existing image files (relative
-  to the workspace; numbered after the pasted ones). Too large → refused.
-  `endpoint.accepts_images() is False` → refused ("<model> can't read
+  still in the text. `@path` never attaches: `chat_message.unmention` drops
+  the `@` from the text sent to the model and from slash commands (`/edit
+  @a.py` opens `a.py`); the transcript keeps `@path`. `endpoint.accepts_images() is False` → refused ("<model> can't read
   images…"); unknown → sent.
 - The user message lists them under its text (`ChatHistoryPanel.add_user_message`);
   `c` copies only the text. `[image #N]` markers and `@path` mentions are drawn

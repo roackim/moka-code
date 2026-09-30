@@ -109,6 +109,13 @@ def refresh_status_bar(app) -> None:
         server_color = theme.SUCCESS
     else:
         server_color = theme.DEFAULT
+    endpoint_model = f"{endpoint.name}:{model}"
+
+    # No server configured: the built-in localhost fallback is in use. Say so
+    # plainly unless it actually answered.
+    if not settings.config.servers and conn != "ok":
+        endpoint_model = "no server"
+        server_color = theme.ERROR
 
     usage = getattr(agent, "_last_usage", None)
     context_used = getattr(usage, "prompt_tokens", None)
@@ -137,7 +144,7 @@ def refresh_status_bar(app) -> None:
     )
 
     app.status_bar.set_values({
-        "endpoint_model": f"{endpoint.name}:{model}",
+        "endpoint_model": endpoint_model,
         "context": f"ctx {_format_tokens(context_used)}/{_format_tokens(context_max)}",
         "role": f"role {role}",
         "state": state,
