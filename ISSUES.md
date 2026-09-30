@@ -84,10 +84,6 @@ model accepts.
 
 ## UI
 
-**U2. `$` shell prefix still handled** · confirmed
-Hint removed; `app.py` `on_user_submit` still runs `$…` as a shell command.
-Decided: remove. → `PLAN.md` step 0.
-
 **U3. Flat templates use `#` for help lines** · confirmed
 `ui`, `context`, `debug` templates. Decided: `##` for help lines.
 → `PLAN.md` step 0.
@@ -117,7 +113,8 @@ status bar shows `name:?`.
 (11), `chat_message.py` (8), `app.py` (7), `chat_history_panel.py` (7),
 `endpoint.py` (7), `tui/actions.py` (7). Examples in `endpoint.py`:
 `set_model`, `_native_base_url`, `_ollama_messages`, `_native_response`,
-`_openrouter_context_window`. Some will be false positives.
+`_openrouter_context_window`. Also `Harness._get_tool_output` (no callers;
+found 2026-09-30). Some will be false positives.
 
 **H2. Compatibility aliases** · to audit
 `ui/app.py` `_update_mode_line` ("back-compat alias"),

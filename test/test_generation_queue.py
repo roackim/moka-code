@@ -115,3 +115,23 @@ def test_submitting_never_starts_a_second_worker(monkeypatch):
         return same
 
     assert asyncio.run(scenario())
+
+
+def test_dollar_prefix_is_an_ordinary_message(monkeypatch):
+    """Decided 2026-09-30 (PLAN.md step 0.4): no ``$`` shell escape; a
+    message starting with ``$`` goes to the model like any other."""
+    sent = []
+
+    async def chat(text, attached=None):
+        sent.append(text)
+        yield events.Done()
+
+    async def scenario():
+        ui = _ui(monkeypatch, chat)
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        ui.on_user_submit("$ ls")
+        await asyncio.sleep(0.05)
+        ui.worker_task.cancel()
+
+    asyncio.run(scenario())
+    assert sent == ["$ ls"]

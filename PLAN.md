@@ -45,7 +45,7 @@ against the provider's current docs before they are built on.
    - every picker built on `SelectionMenu` is clickable (completions,
      `/model`, `/session`, `/theme`, ...);
    - the `/config` popup uses the same sorted list. ✅
-4. Remove the `$` shell prefix handling.
+4. Remove the `$` shell prefix handling. ✅
 5. `##` for help lines in the `ui`, `context` and `debug` templates (after
    checking the template sync and its guard test).
 

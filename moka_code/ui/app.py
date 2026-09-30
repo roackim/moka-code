@@ -28,7 +28,6 @@ from moka_code.ui.commands import (
 from moka_code.ui.generation_presenter import process_generation
 from moka_code.ui.stream_revealer import StreamRevealer
 from moka_code.ui.status_presenter import refresh_status_bar
-from moka_code.ui.shell_command import handle_shell_command
 from moka_code.ui.tui.focus import FocusScope
 from moka_code.ui.tui.navigation import ModalHost
 from moka_code.ui.tui.chat_screen import ChatScreen
@@ -152,8 +151,8 @@ class chatTUI(ChatActionHandlers):
         self._focus_scope = FocusScope(self._focus_targets)
         self.debug_panel = DebugLogPanel(max_lines=1000, frame_color=theme.ERROR, content_color=theme.MUTED, left_pad=1, right_pad=0)
         self.debug_popup = DebugPopup(self.debug_panel)
-        # Activity surface: non-conversation output (shell results, command
-        # status, notices) lives here, not in the transcript.
+        # Activity surface: non-conversation output (command status,
+        # notices) lives here, not in the transcript.
         self.activity_panel = DebugLogPanel(max_lines=2000, frame_color=theme.WARNING, content_color=theme.MUTED, left_pad=1, right_pad=0)
         self.activity_popup = DebugPopup(self.activity_panel, title="activity")
         self.chat_history_panel.activity_sink = self._on_activity
@@ -723,11 +722,6 @@ class chatTUI(ChatActionHandlers):
             self.on_command_submit(unmention(clean_text))
             return
 
-        # $ prefix: execute shell command directly (not visible to LLM)
-        if clean_text.startswith('$'):
-            self._handle_shell_command(clean_text[1:].strip())
-            return
-
         if self.pending_permission_prompt:
             self.chat_history_panel.add_message(
                 "Permission required for pending tool call. Use [a] allow or [x] deny first. Slash commands are still available.",
@@ -762,10 +756,6 @@ class chatTUI(ChatActionHandlers):
             
             # Enable auto-scroll to show the new message
             self.chat_history_panel.auto_scroll = True
-
-    def _handle_shell_command(self, command: str):
-        """Execute a shell command (see ``ui/shell_command.py``)."""
-        handle_shell_command(self, command)
 
     def _update_focus_states(self):
         """Update focus states of components based on _last_focus_id."""

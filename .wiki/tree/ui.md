@@ -18,7 +18,6 @@ architecture overview.
 | `generation_presenter.py` | Maps harness generation events onto transcript messages |
 | `stream_revealer.py` | `StreamRevealer` — paces streamed-text reveal (no TUI imports; time injected) |
 | `status_presenter.py` | Renders agent/endpoint state into the status bar |
-| `shell_command.py` | The `$` shell-command escape for the chat input |
 | `clipboard.py` | `copy_to_clipboard` (native helpers, then OSC 52); `read_clipboard` for Ctrl+V (image bytes or text) |
 | `external_editor.py` | Opens files in `$VISUAL`/`$EDITOR`, suspending the TUI |
 | `logging_handlers.py` | `TuiLogHandler` — routes log records to the debug panel |
