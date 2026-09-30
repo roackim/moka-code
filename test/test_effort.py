@@ -1,5 +1,6 @@
-"""Reasoning effort: ``efforts`` in servers.toml model tables, ``/effort``,
-request fields."""
+"""Reasoning effort: levels detected from the catalog, ``/effort``, request
+fields. Decided 2026-09-30: no ``efforts`` key in servers.toml; levels come
+only from detection."""
 
 import asyncio
 from types import SimpleNamespace
@@ -21,13 +22,13 @@ def test_effort_payload_uses_each_servers_field():
         ("openrouter", {"reasoning": {"effort": "high"}}),
         ("ollama", {"think": "high"}),
     ]:
-        endpoint = _endpoint(type_, models={"m": {"efforts": ["low", "high"]}})
+        endpoint = _endpoint(type_)
         endpoint.effort = "high"
         assert endpoint.effort_payload() == expected
 
 
 def test_effort_payload_is_never_dropped():
-    endpoint = _endpoint("ollama", models={"m": {"efforts": ["low"]}})
+    endpoint = _endpoint("ollama")
     assert endpoint.effort_payload() == {}            # nothing chosen
     endpoint.effort = "high"          # not (or no longer) declared: still sent
     assert endpoint.effort_payload() == {"think": "high"}
@@ -35,9 +36,11 @@ def test_effort_payload_is_never_dropped():
     assert endpoint.effort_payload() == {"think": False}
 
 
-def test_model_table_sets_the_efforts():
-    endpoint = _endpoint("openrouter", models={"m": {"efforts": ["max"]}})
-    assert endpoint.effort_levels() == ["max"]
+def test_efforts_key_in_a_model_table_is_reported(tmp_path):
+    (tmp_path / "servers.toml").write_text(
+        '[servers.openrouter.models."m"]\nefforts = ["max"]\n')
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+    assert any("unknown key 'efforts'" in e for e in config.load_errors)
 
 
 def test_effort_state_round_trip(tmp_path):
@@ -73,8 +76,9 @@ def _config(monkeypatch, servers, catalog=None, efforts=None):
 
 
 def test_effort_command_sets_and_persists(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "ollama", "models": {"m": {"efforts": ["low", "high"]}}}})
-    endpoint = _endpoint("ollama", models={"m": {"efforts": ["low", "high"]}})
+    _config(monkeypatch, {"s": {"type": "ollama"}},
+            catalog={"s": [{"id": "m", "metadata": {"reasoning": {"supported_efforts": ["low", "high"]}}}]})
+    endpoint = _endpoint("ollama")
     ui, messages = _ui(endpoint)
 
     asyncio.run(models.effort_command(ui, ["high"]))
@@ -92,16 +96,17 @@ def test_effort_command_without_levels_explains(monkeypatch):
     _config(monkeypatch, {"s": {"type": "ollama"}})
     ui, messages = _ui(_endpoint("ollama"))
     asyncio.run(models.effort_command(ui, []))
-    assert "efforts" in messages[-1]
+    assert "No reasoning effort detected" in messages[-1]
 
 
 def test_effort_inline_menu_and_picker_mark_the_active_level(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "ollama", "models": {"m": {"efforts": ["low", "high"]}}}},
+    _config(monkeypatch, {"s": {"type": "ollama"}},
+            catalog={"s": [{"id": "m", "metadata": {"reasoning": {"supported_efforts": ["low", "high"]}}}]},
             efforts={"s": {"m": "high"}})
     assert models.effort_completions() == ["default", "low", "high"]
     assert models.effort_descriptions()["high"] == "active"
 
-    ui, _ = _ui(_endpoint("ollama", models={"m": {"efforts": ["low", "high"]}}))
+    ui, _ = _ui(_endpoint("ollama"))
     captured = {}
     ui.show_search_modal = lambda title, items, **k: captured.update(items=items, **k)
     asyncio.run(models.effort_command(ui, []))
@@ -120,10 +125,6 @@ def test_efforts_detected_from_catalog_metadata(monkeypatch):
 
     _config(monkeypatch, {"s": {"type": "openrouter"}},
             catalog={"s": [{"id": "m", "metadata": {"supported_parameters": ["reasoning"]}}]})
-    endpoint = _endpoint("openrouter")
-    assert endpoint.effort_levels()[0] == "none"
-    endpoint.models = {"m": {"efforts": ["high"]}}    # an explicit model table wins
-    assert endpoint.effort_levels() == ["high"]
     assert models.effort_completions() == ["default", "none", "low", "medium", "high"]
 
 
@@ -171,15 +172,14 @@ def test_openai_catalog_keeps_model_metadata():
     assert endpoint_discovery.efforts_from_metadata(model.metadata) == ["low", "high"]
 
 
-def test_endpoint_reads_the_live_catalog_not_a_copy(monkeypatch):
-    """A catalog refreshed after the endpoint was built is what it reads."""
+def test_effort_levels_read_the_live_catalog_not_a_copy(monkeypatch):
+    """A catalog refreshed after the first read is what /effort offers."""
     _config(monkeypatch, {"s": {"type": "openai"}}, catalog={"s": [{"id": "m"}]})
-    endpoint = _endpoint("openai")
-    assert endpoint.effort_levels() == []
+    assert models.effort_completions() == []
 
     settings.config.models_by_server["s"] = [
         {"id": "m", "metadata": {"reasoning": {"supported_efforts": ["low", "high"]}}}]
-    assert endpoint.effort_levels() == ["low", "high"]
+    assert models.effort_completions() == ["default", "low", "high"]
 
 
 def test_effort_missing_from_the_catalog_is_still_sent_and_shown(monkeypatch):

@@ -2,8 +2,8 @@
 
 The canonical statement of what moka is and how it should evolve. **Read this
 before proposing or making changes.** These principles emerged from a large
-simplification effort (recorded in `SIMPLIFICATION.md`), but they are not about
-simplifying — they are the project's design rules.
+simplification effort, but they are not about simplifying — they are the
+project's design rules.
 
 > This note is direction. Every other wiki page documents what *is*; never infer
 > intent from state documentation.
@@ -48,7 +48,7 @@ Moka is a thin runtime over hand-editable configuration:
 
 ## How to propose a change
 
-- Read these principles first, then `HANDOFF.md` for current state.
+- Read these principles first.
 - State which principle the change serves and **what it removes**.
 - Additions must displace something.
 - If the direction is unclear, ask before proposing.

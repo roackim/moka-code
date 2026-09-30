@@ -1,6 +1,6 @@
 # test/ — Test Suite
 
-All tests use pytest. Run with the project virtualenv (see HANDOFF §1):
+All tests use pytest. Run with the pixi env:
 
 ```bash
 .pixi/envs/default/bin/python -m pytest test/ -q

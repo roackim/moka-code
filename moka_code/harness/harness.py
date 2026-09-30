@@ -92,7 +92,7 @@ class Harness:
         self._last_usage: Optional[TokenUsage] = None
 
         # Reasoning of the response being streamed: text, and OpenRouter's
-        # structured blocks (sent back unmodified, see ``_to_api_message``).
+        # structured blocks. Stored only; never sent back (PLAN.md step 2).
         self._current_reasoning: str = ""
         self._current_reasoning_details: List[Dict[str, Any]] = []
 
@@ -246,31 +246,21 @@ class Harness:
             return self.history
         return self.history[last_compaction_idx:]
 
-    def _to_api_message(self, entry: Dict[str, Any], keep_reasoning: bool = False) -> Dict[str, Any]:
+    def _to_api_message(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         """Project a stored history entry onto the API message shape.
 
-        Only API fields leave (``_API_FIELDS``; moka's ``id``, ``source`` and
-        image references stay home). Image references become content parts,
-        encoded only here. With ``keep_reasoning`` an assistant entry carries
-        its reasoning under the neutral ``reasoning`` / ``reasoning_details``
-        keys; each endpoint moves them to its own field
-        (``endpoint_openai.outgoing_messages``, ``endpoint_ollama``).
+        Only API fields leave (``_API_FIELDS``; moka's ``id``, ``source``,
+        image references and stored reasoning stay home). Image references
+        become content parts, encoded only here.
         """
         msg = {key: entry[key] for key in _API_FIELDS if key in entry}
         if entry.get("images"):
             msg["content"] = images.api_content(msg.get("content"), entry["images"])
-        if keep_reasoning and entry.get("role") == "assistant":
-            if entry.get("reasoning"):
-                msg["reasoning"] = entry["reasoning"]
-            if entry.get("reasoning_details"):
-                msg["reasoning_details"] = entry["reasoning_details"]
         return msg
 
     def _api_history(self) -> List[Dict[str, Any]]:
-        """The effective history as API messages, every assistant message
-        with its reasoning."""
-        return [self._to_api_message(m, keep_reasoning=True)
-                for m in self._get_effective_history()]
+        """The effective history as API messages."""
+        return [self._to_api_message(m) for m in self._get_effective_history()]
 
     def _get_tool_output(self, ref: str) -> Optional[str]:
         """
@@ -1212,8 +1202,8 @@ class Harness:
                 
                 logger.debug(f"LLM response complete. Content length: {len(full_content) if full_content else 0}, Reasoning length: {len(full_reasoning) if full_reasoning else 0}, Tool calls: {len(tool_calls_list) if tool_calls_list else 0}")
                 
-                # Reasoning is always stored (export/import, transcript); what
-                # goes back to the model is decided by ``_api_history``.
+                # Reasoning is stored (export/import, transcript), never sent
+                # back to the model (PLAN.md step 2).
                 msg = {
                     "id": assistant_msg_id,
                     "role": "assistant",
@@ -1230,9 +1220,7 @@ class Harness:
                 self.history.append(msg)
                 self._last_assistant_message_id = assistant_msg_id
 
-                # This turn continues (tool results follow): its reasoning goes
-                # back with it.
-                messages.append(self._to_api_message(msg, keep_reasoning=True))
+                messages.append(self._to_api_message(msg))
                 
                 # If no tools, we're done
                 if not tool_calls_list:

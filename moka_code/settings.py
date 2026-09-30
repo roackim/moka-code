@@ -335,8 +335,7 @@ _DEBUG_SPEC: Dict[str, tuple[str, str]] = {
 # cleaned up on startup. Add a key here when you delete it from its ``*_SPEC``
 # and ``DEFAULT_*_TOML`` (see "Adding or deprecating a config key" in AGENTS.md).
 _RETIRED_UI: set[str] = {"spinner_fps"}  # spinner replaced by elapsed-time labels
-# preserve_reasoning_traces moved to servers.toml as per-server/per-model
-# preserve_reasoning.
+# preserve_reasoning_traces: reasoning is no longer sent back (PLAN.md step 2).
 _RETIRED_CONTEXT: set[str] = {"preserve_reasoning_traces"}
 _RETIRED_DEBUG: set[str] = set()
 
@@ -869,12 +868,10 @@ def _validate_models(server: dict, server_type: Any, where: str,
             errors.append(f"{at} must be a table")
             continue
         for key in entry:
-            if key not in ("providers", "efforts"):
+            if key != "providers":
                 errors.append(f"{at} unknown key '{key}'")
             elif key == "providers" and server_type != "openrouter":
                 errors.append(f"{at}.providers is only supported for openrouter servers")
-        if "efforts" in entry and not _is_str_list(entry["efforts"]):
-            errors.append(f"{at}.efforts must be a list of effort levels")
         if "providers" in entry and not _is_str_list(entry["providers"]):
             errors.append(f"{at}.providers must be a list of provider slugs")
 

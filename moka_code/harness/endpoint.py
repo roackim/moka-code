@@ -212,8 +212,8 @@ class Endpoint:
         self.timeout = timeout
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
-        # Per-model tables (``efforts``; OpenRouter: ``providers``, and the
-        # tables are the enabled models) and OpenRouter's default provider
+        # Per-model tables (OpenRouter: ``providers``, and the tables are the
+        # enabled models) and OpenRouter's default provider
         # whitelist, in order.
         self.providers = list(providers) if providers is not None else None
         self.models = {model_id: dict(entry) for model_id, entry in (models or {}).items()}
@@ -614,17 +614,6 @@ class Endpoint:
             if model_name.endswith("/" + model_id):
                 return entry
         return None
-
-    def _current_entry(self) -> Optional[dict]:
-        model_name = self._selected_model
-        return self._model_entry(model_name) if model_name else None
-
-    def effort_levels(self) -> list[str]:
-        """Effort levels for the current model: its model table's ``efforts``,
-        else detected from the catalog metadata. Empty means the model takes
-        no effort parameter."""
-        return _discovery.effort_levels(
-            self._current_entry(), self._catalog_metadata(self._selected_model))
 
     def _catalog_metadata(self, model_name: Optional[str]) -> dict:
         return catalog_entry(self.name, model_name).get("metadata") or {}

@@ -46,7 +46,7 @@ that catches it.
 | I13 | Startup warnings dumped in the transcript; toasts overwrote the status bar; no single place for "what is wrong and how to fix it" | `app.py`, `main.py`, `bars.py` | User | Replaced by notice band + setup notes |
 | I14 | Wrong fix hint in a startup warning (`/sandbox none` does not exist) | `harness.py` | User | Fixed |
 | I15 | Model discovery skipped on `/config theme` and `/config role`, although the user had asked for rediscovery on `/model`, `/effort`, `/reload` and `/config` | `ui/commands/core.py`, `base.py` | User | Fixed (every reload rediscovers) |
-| I16 | `HANDOFF.md`, the second file every agent must read, is stale: titled "Pico-Chat", branch `cleanup`, HEAD `caaa359`, test count 457/540 (actual: 861), commands for a `.pixi` env and a `pico_chat` package, and references to `SIMPLIFICATION.md` and `plans/cleanup_round2.md`, which do not exist. `principles.md` also cites the missing `SIMPLIFICATION.md` | `HANDOFF.md`, `.wiki/notes/principles.md` | Found writing this document | Open (`ISSUES.md` D1, D2) |
+| I16 | `HANDOFF.md`, the second file every agent must read, is stale: titled "Pico-Chat", branch `cleanup`, HEAD `caaa359`, test count 457/540 (actual: 861), commands for a `.pixi` env and a `pico_chat` package, and references to `SIMPLIFICATION.md` and `plans/cleanup_round2.md`, which do not exist. `principles.md` also cites the missing `SIMPLIFICATION.md` | `HANDOFF.md`, `.wiki/notes/principles.md` | Found writing this document | Fixed 2026-09-30: `HANDOFF.md` dropped, references removed |
 
 ### 2.2 Introduced or worsened during the 2026-09-30 session
 
@@ -70,8 +70,8 @@ Measured 2026-09-30. The individual issues are tracked in **`ISSUES.md`**;
 this section only summarizes what kinds of debt were found, since that is
 what the process has to catch.
 
-- **Dead code:** 97 vulture candidates (`ISSUES.md` H1). `HANDOFF.md` lists a
-  vulture gate; nobody ran it in this session.
+- **Dead code:** 97 vulture candidates (`ISSUES.md` H1). The old
+  `HANDOFF.md` listed a vulture gate; nobody ran it in this session.
 - **Hidden fallbacks** of the same class as I1: 48 fallback / legacy /
   back-compat mentions (H3); the ones checked so far all hide missing or
   wrong input: a guessed 32k context window (P4), a silently chosen editor
@@ -136,10 +136,6 @@ what the process has to catch.
   levels come from detection.* Agents read it before touching an area; tests
   that lock in a decision cite its entry.
 - **`PLAN.md`**: direction for the next steps (exists).
-- **`HANDOFF.md`**: rewrite, short, dated, verified. Only facts an agent can
-  check (branch, how to run tests, gates, gotchas). Or fold it into
-  `AGENTS.md` and delete it. Add a guard test that every file path it
-  references exists.
 - **Code is not intent.** State it in `AGENTS.md` next to the wiki rule.
 
 ### 5.2 Rules (candidates for `AGENTS.md`)
@@ -179,7 +175,7 @@ what the process has to catch.
   - config templates: no key outside the spec, no rejected keys (from
     `DECISIONS.md`);
   - every `fallback` in the code is on an allowlist with a reason;
-  - `HANDOFF.md` / wiki references point at existing files.
+  - file paths cited in `AGENTS.md`, the wiki and plans exist.
 - **Dead-code gate:** run vulture in the suite (with a reviewed whitelist),
   so dead code fails a run instead of accumulating.
 - **Test review:** when a test asserts behaviour, it cites the decision it
@@ -195,7 +191,7 @@ before any fix:
 5. Config loading and templates (keys, defaults, validation, sync).
 6. UI toolkit: per-caller copies of shared behaviour.
 7. Tests: which assert decisions, which assert accidents.
-8. Docs: `HANDOFF.md`, wiki pages vs code.
+8. Docs: wiki pages vs code.
 
 ### 5.6 Review and session hygiene
 - **Smaller steps, committed per step** (the user commits), so each diff is
@@ -203,7 +199,7 @@ before any fix:
 - **Independent review:** a second agent reviews each step's diff against the
   rules in 5.2 (not for style), before the user reviews.
 - **End of session:** update `DECISIONS.md` and the open-questions list;
-  verify `HANDOFF.md` facts; note unfinished work.
+  note unfinished work.
 - **Memory:** save the rules in 5.2 as feedback memories so they persist even
   when a session skips the docs.
 
@@ -212,7 +208,8 @@ before any fix:
 ## 6. Open questions
 
 1. `DECISIONS.md` as a separate file, or a section in `PLAN.md`?
-2. Keep `HANDOFF.md` (rewritten and guarded) or fold it into `AGENTS.md`?
+2. ~~Keep `HANDOFF.md` or fold it into `AGENTS.md`?~~ Decided 2026-09-30:
+   dropped entirely.
 3. Which rules from 5.2 go into `AGENTS.md` now, and in what wording?
 4. Independent review of each step by a second agent: yes, and when (every
    step, or only multi-file ones)?

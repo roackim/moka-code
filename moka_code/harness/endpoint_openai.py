@@ -88,35 +88,6 @@ def merge_reasoning_details(blocks: list, pieces: Any) -> None:
                 block[key] = value
 
 
-def outgoing_messages(server_type: str, messages: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
-    """Put reasoning sent back to the model in this server's own field.
-
-    History-built messages carry it under neutral ``reasoning`` (text) and
-    ``reasoning_details`` (OpenRouter blocks) keys: llama.cpp and other
-    OpenAI-compatible servers that show reasoning read ``reasoning_content``;
-    OpenRouter takes ``reasoning_details`` unmodified when the model produced
-    them, else ``reasoning``. Real OpenAI Chat Completions never returns
-    reasoning text, so nothing is sent back there.
-    """
-    out = []
-    for message in messages:
-        if "reasoning" not in message and "reasoning_details" not in message:
-            out.append(message)
-            continue
-        message = dict(message)
-        text = message.pop("reasoning", None)
-        details = message.pop("reasoning_details", None)
-        if server_type in ("llamacpp", "openai") and text:
-            message["reasoning_content"] = text
-        elif server_type == "openrouter":
-            if details:
-                message["reasoning_details"] = details
-            elif text:
-                message["reasoning"] = text
-        out.append(message)
-    return out
-
-
 def _adapt_stream_chunk(data: Dict[str, Any]) -> Any:
     """Adapt one streaming ``chat.completions`` SSE object to SDK chunk shape."""
     choice = None
@@ -207,7 +178,7 @@ async def create_completion(
     for attempt in range(max_retries):
         payload: Dict[str, Any] = {
             "model": model_name,
-            "messages": outgoing_messages(endpoint.type, messages),
+            "messages": messages,
             "stream": stream,
         }
         if tools:

@@ -24,6 +24,9 @@ against the provider's current docs before they are built on.
   thinking blocks; DeepSeek wants reasoning back only inside a tool loop;
   Qwen3 templates drop earlier thinking; OpenRouter requires it across tool
   calls.
+- **No reasoning is sent back until step 2.** The previous replay
+  (every turn, every model) was removed on 2026-09-30. No user setting for
+  replay depth (not in servers, context or roles); providers decide.
 - **Compaction is filtered by default.** Reasoning dropped; each tool call
   reduced to one line with its key arguments, no output.
 

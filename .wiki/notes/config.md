@@ -87,8 +87,7 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   order — `order` alone would let OpenRouter fall back to any host. The retired
   keys `provider`, `enabled_models` and `model_providers` are reported with
   their replacement and the server is skipped (`_RETIRED_SERVER_KEYS`).
-  `efforts` (string list, in a model table) is what `/effort`
-  offers for that model. Absent, it is detected: effort-variant ids (`X:low` / `X:high` on
+  Effort levels are detected only (no config key): effort-variant ids (`X:low` / `X:high` on
   one server) make `/effort` switch models (`models._effort_variants`); else
   catalog metadata (`endpoint_discovery.efforts_from_metadata`: OpenRouter-format
   `reasoning.supported_efforts` (exact; any OpenAI-compatible server's `/models`

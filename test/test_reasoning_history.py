@@ -1,5 +1,7 @@
-"""Reasoning is persisted in history and re-sent with every assistant message,
-so the model sees its prior chain-of-thought."""
+"""Reasoning is persisted in history and never sent back to the model.
+
+Decided 2026-09-30: the replay implementation is removed; replay is rebuilt
+per provider in PLAN.md step 2."""
 
 import asyncio
 from types import SimpleNamespace
@@ -103,10 +105,6 @@ def test_api_message_sends_only_api_fields():
     }
 
     assert _harness()._to_api_message(entry) == {"role": "assistant", "content": "answer"}
-    assert _harness()._to_api_message(entry, keep_reasoning=True) == {
-        "role": "assistant", "content": "answer", "reasoning": "a deep thought",
-        "reasoning_details": [{"type": "reasoning.text", "text": "t"}],
-    }
 
 
 def _history_with_two_turns():
@@ -126,34 +124,11 @@ def _history_with_two_turns():
     return harness
 
 
-def test_every_turns_reasoning_is_sent_back():
+def test_no_reasoning_is_sent_back():
     api = _history_with_two_turns()._api_history()
 
-    assert api[1]["reasoning"] == "old thought"       # an earlier turn
-    assert api[3]["reasoning"] == "why I call"        # the tool loop in progress
+    assert all("reasoning" not in m and "reasoning_details" not in m for m in api)
     assert all("id" not in m and "source" not in m for m in api)
-
-
-def test_each_server_gets_reasoning_in_its_own_field():
-    from moka_code.harness.endpoint_ollama import ollama_messages
-    from moka_code.harness.endpoint_openai import outgoing_messages
-
-    details = [{"type": "reasoning.encrypted", "data": "xyz", "index": 0}]
-    plain = {"role": "assistant", "content": "a", "reasoning": "r"}
-    rich = {**plain, "reasoning_details": details}
-
-    assert outgoing_messages("llamacpp", [rich]) == [
-        {"role": "assistant", "content": "a", "reasoning_content": "r"}]
-    assert outgoing_messages("openrouter", [rich]) == [
-        {"role": "assistant", "content": "a", "reasoning_details": details}]
-    assert outgoing_messages("openrouter", [plain]) == [
-        {"role": "assistant", "content": "a", "reasoning": "r"}]
-    assert outgoing_messages("openai", [rich]) == [
-        {"role": "assistant", "content": "a", "reasoning_content": "r"}]
-    # Real OpenAI returns no reasoning text: nothing to send back, no field.
-    assert outgoing_messages("openai", [{"role": "assistant", "content": "a"}]) == [
-        {"role": "assistant", "content": "a"}]
-    assert ollama_messages([rich]) == [{"role": "assistant", "content": "a", "thinking": "r"}]
 
 
 def test_streamed_reasoning_details_are_rebuilt_per_block():
@@ -220,7 +195,7 @@ def test_tool_calls_are_sent_back_with_their_results(tmp_path, monkeypatch):
     assert caller["tool_calls"][0]["function"]["arguments"] == '{"path": "a.txt"}'
 
 
-def test_tool_loop_request_carries_the_reasoning_behind_the_call(tmp_path, monkeypatch):
+def test_tool_loop_request_carries_no_reasoning(tmp_path, monkeypatch):
     from moka_code.harness.roles import Role
 
     (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
@@ -251,8 +226,7 @@ def test_tool_loop_request_carries_the_reasoning_behind_the_call(tmp_path, monke
     asyncio.run(drain())
 
     caller = next(m for m in requests[1] if m.get("tool_calls"))
-    assert caller["reasoning"] == "need the file"
-    assert caller["reasoning_details"] == details
+    assert "reasoning" not in caller and "reasoning_details" not in caller
     stored = next(m for m in harness.history if m.get("tool_calls"))
     assert stored["reasoning_details"] == details
 

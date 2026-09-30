@@ -12,16 +12,6 @@ known bad pattern, not yet checked).
 
 ## Docs
 
-**D1. `HANDOFF.md` is stale** · confirmed
-Every agent must read it second (`AGENTS.md`). It is titled "Pico-Chat",
-gives branch `cleanup`, HEAD `caaa359`, "Last updated 2026-09-24", test
-counts 457/540 (actual: 861), commands for a `.pixi` env and a `pico_chat`
-package, and cites `SIMPLIFICATION.md` and `plans/cleanup_round2.md`, which
-do not exist.
-
-**D2. `principles.md` cites a missing `SIMPLIFICATION.md`** · confirmed
-`.wiki/notes/principles.md` line 5.
-
 **D3. Reasoning wiki page describes a past state** · confirmed
 `.wiki/notes/reasoning-traces.md`: the verification section still describes
 a run "with preserve on and off" (the setting no longer exists).
@@ -37,29 +27,10 @@ content; any answer containing `<think>` loses the rest of its text into
 hidden reasoning; an unclosed tag swallows the whole answer (`flush()`).
 → `PLAN.md` step 2 (mode A off).
 
-**R2. Reasoning replayed to a different model** · confirmed
-`harness.py` `_api_history`: all stored reasoning, including signed or
-encrypted OpenRouter `reasoning_details`, goes to whatever model is active.
-→ `PLAN.md` step 2.
-
-**R3. Reasoning replayed for every turn, whatever the server accepts** · confirmed
-Always on since `preserve_reasoning` was removed. ⚠ DeepSeek's reasoner is
-documented to reject `reasoning_content` in input (unverified here).
-→ `PLAN.md` step 2 (current turn by default).
-
 **R4. Inline-tag reasoning stored differently live and on import** · confirmed
 Live: tags moved out of `content` into `reasoning`. Import of old exports
 (`ui/commands/conversation.py` `_rebuild_ui_from_history`): split for display
 only, tags stay in `content` and are replayed as answer text.
-→ `PLAN.md` step 2.
-
-**R5. Tag-parsed reasoning sent back in a field the model never used** · confirmed
-A model that reasoned inline gets it back as `reasoning_content` / `thinking`
-/ `reasoning`. → `PLAN.md` step 2.
-
-**R6. `openai` type docstring contradicts the code** · confirmed
-`endpoint_openai.py` `outgoing_messages`: docstring says nothing is sent back
-to OpenAI; the code sends `reasoning_content` whenever text exists.
 → `PLAN.md` step 2.
 
 **R7. Dead parser state and misplaced code** · confirmed
@@ -68,6 +39,12 @@ module docstring claims it handles the `reasoning_content` path (it does
 not); hosts `MetricsState`, unrelated to thinking.
 `harness.py` `_stream_llm_response`: `if not chunk.choices: continue` and the
 `delta` assignment both appear twice. → `PLAN.md` step 2.
+
+**R8. No reasoning sent back, even inside a tool loop** · known risk
+Replay removed 2026-09-30 until `PLAN.md` step 2. ⚠ Some models may reject
+or degrade a tool-loop follow-up without their reasoning (DeepSeek thinking
+mode; Gemini/Anthropic signed blocks via OpenRouter). Unverified.
+→ `PLAN.md` step 2.
 
 ---
 
@@ -85,9 +62,6 @@ and full tool output. → `PLAN.md` step 3.
 **P1. No provider contract; ~20 `type ==` branches** · confirmed
 `endpoint.py`, `endpoint_discovery.py`, `endpoint_openai.py`, `settings.py`.
 → `PLAN.md` step 1.
-
-**P2. `efforts` model-table key still in code** · confirmed
-Rejected by the user; removed from the template only. → `PLAN.md` step 0.
 
 **P3. No model auto-selected** · confirmed
 After the first server is added, nothing is selected until `/model`.
@@ -107,6 +81,13 @@ entries used as fallback. Could pick the wrong model silently.
 **P6. `model` fallback in selection** · to audit
 `settings.py` `get_model_for_server`: falls back to the server table's
 `model` key. Check whether this is explicit config or a hidden default.
+
+**P7. Guessed effort levels** · to audit
+`harness/endpoint_discovery.py` `efforts_from_metadata`: without
+`reasoning.supported_efforts`, `supported_parameters` containing `reasoning`
+yields a guessed `none/low/medium/high`; Ollama `thinking` gives levels only
+when the model name contains `gpt-oss`. Levels shown may not be what the
+model accepts.
 
 ---
 

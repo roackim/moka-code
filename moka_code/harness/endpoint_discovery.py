@@ -220,14 +220,6 @@ def efforts_from_metadata(metadata: dict) -> list[str]:
     return []
 
 
-def effort_levels(model_entry: dict | None, metadata: dict) -> list[str]:
-    """Effort levels a model takes as a request parameter: its model table's
-    ``efforts``, else detected from catalog metadata."""
-    if model_entry and "efforts" in model_entry:
-        return list(model_entry["efforts"])
-    return efforts_from_metadata(metadata or {})
-
-
 def image_input_from_metadata(metadata: dict) -> bool | None:
     """Image support recorded in catalog metadata; ``None`` when absent.
 

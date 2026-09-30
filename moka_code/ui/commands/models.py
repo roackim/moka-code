@@ -300,18 +300,16 @@ def _effort_choices(server: Optional[str], model: Optional[str]):
 
     Effort variants (``X:low`` / ``X:high``) are chosen by switching model;
     otherwise the choices are ``default`` plus the request-parameter levels
-    (``efforts`` in servers.toml, else detected from the catalog). No
-    choices: the model has no effort switch.
+    detected from the catalog. No choices: the model has no effort switch.
     """
     from moka_code.harness.endpoint import catalog_entry
-    from moka_code.harness.endpoint_discovery import effort_levels
+    from moka_code.harness.endpoint_discovery import efforts_from_metadata
 
     variants = _effort_variants(server, model)
     if variants:
         return list(variants), model.rpartition(":")[2], variants
-    table = settings.config.servers.get(server) or {}
     metadata = catalog_entry(server, model).get("metadata") or {}
-    levels = effort_levels((table.get("models") or {}).get(model), metadata)
+    levels = efforts_from_metadata(metadata)
     saved = settings.config.get_effort(server, model)
     if saved and saved not in levels:
         levels = [*levels, saved]       # still sent: keep it visible and active
@@ -359,9 +357,7 @@ async def effort_command(ui: ChatUIProtocol, args: List[str]):
                        or server not in settings.config.models_by_server)
         ui.chat_history_panel.add_message(
             (f"Could not reach {server} to detect its effort levels. " if unreachable else "")
-            + f"No reasoning effort detected for {model or 'this model'}. "
-            "Declare it with efforts = [\"low\", \"medium\", \"high\"] in its "
-            "server (or model) table ('/config servers').",
+            + f"No reasoning effort detected for {model or 'this model'}.",
             msg_type=SysMsgError(), title="effort")
         return
 
