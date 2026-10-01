@@ -1,10 +1,10 @@
 # Provider contract
 
-> **Status:** built (`PLAN.md` step 1, 2a and 2b, 2026-10-01). This page describes what exists; the rows marked 2b /
-> 2c in §11 and DeepSeek are not built yet.
+> **Status:** built (`PLAN.md` steps 1, 2a, 2b and 2c, 2026-10-01). This page
+> describes what exists. Nothing has run against a real DeepSeek key.
 
-A *provider* is a server family moka can talk to: llama.cpp and OpenRouter
-(Ollama was removed on 2026-10-01, §9.11; the catch-all `openai-compatible`
+A *provider* is a server family moka can talk to: llama.cpp, OpenRouter and
+DeepSeek (Ollama was removed on 2026-10-01, §9.11; the catch-all `openai-compatible`
 type on 2026-10-01, §9.12). Their differences used to be about two dozen `type == ...` branches
 spread over `endpoint.py`, `endpoint_discovery.py`, `endpoint_openai.py`,
 `settings.py` and `unserved_model`. This page defines the one seam that
@@ -25,10 +25,12 @@ Endpoint                      contract + per-server config and state
 ├─ OpenAICompatible           abstract, no type: shared /chat/completions,
 │  │                          /models, SSE code
 │  ├─ LlamaCpp                type "llamacpp": adds /props, default URL
-   └─ OpenRouter              type "openrouter": fixed URL, model whitelist,
-                              provider routing
+│  ├─ OpenRouter              type "openrouter": fixed URL, model whitelist,
+│  │                          provider routing
+   └─ DeepSeek                type "deepseek": fixed URL, own /models shape,
+                              minimum replay depth
 
-REGISTRY = {"llamacpp": LlamaCpp, "openrouter": OpenRouter}
+REGISTRY = {"llamacpp": LlamaCpp, "openrouter": OpenRouter, "deepseek": DeepSeek}
 ```
 
 - No `if type == ...` outside the registry lookup. The harness, the UI and
@@ -50,7 +52,7 @@ Declarative, read by config validation and by the template generator.
 |---|---|
 | `type` | the `type = "..."` value |
 | `default_url` | optional `base_url`, used when absent (llama.cpp only) |
-| `fixed_url` | `base_url` is forbidden, this is the URL (OpenRouter only) |
+| `fixed_url` | `base_url` is forbidden, this is the URL (OpenRouter, DeepSeek) |
 | `extra_keys` | server-table keys beyond the common ones |
 | `template` | the `servers.toml` block for this provider |
 
@@ -65,6 +67,7 @@ Common keys (all providers): `type`, `base_url` (per the rule above),
 |---|---|---|
 | `llamacpp` | optional, default `http://localhost:8080/v1` | — |
 | `openrouter` | forbidden, fixed `https://openrouter.ai/api/v1` | `models`, `providers`, `providers_by_model` |
+| `deepseek` | forbidden, fixed `https://api.deepseek.com` | — |
 
 Every provider sends the selected `model` id exactly as listed. There is no
 "one served model wins" mode: llama.cpp ignores `model` in single-model mode
@@ -187,8 +190,8 @@ the server decides).
 The fewest turns of reasoning the server's docs say must be sent back (999 =
 all); the base class returns 0. The notice band warns when the active role's
 `replay_reasoning_depth` is below it (from live state, so also after a model or
-server switch); the configured depth is still sent. No provider overrides it
-yet (DeepSeek, 2c).
+server switch); the configured depth is still sent. Only DeepSeek overrides it (999 whenever
+`tools` is sent).
 
 ### `replay(entry) -> dict`
 
@@ -214,17 +217,17 @@ returns only whether it succeeded.
 
 Slot labels are row ids only (gaps in the numbering are historical).
 
-| Slot | `llamacpp` | `openrouter` |
-|---|---|---|
-| S2 list | `/models` + `/props` | openrouter.ai `/models` ∩ the `models` list (catalog unreachable: the listing fails, last good one kept) |
-| S4 context | `/props` `n_ctx`, else `/models` `context_length` | catalog `context_length` |
-| S5 images | `/props` `modalities.vision` | `architecture.input_modalities` |
-| S6 efforts | `reasoning.supported_efforts` if the server advertises it, else none known | `reasoning.supported_efforts` only |
-| S7 field | `reasoning_effort` | `reasoning.effort` |
-| S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same, plus `reasoning_details` assembled into `reasoning_native` |
-| S9 reasoning in | `reasoning_content`, sent even when empty | `reasoning_details` (same model) else `reasoning`; nothing when empty |
-| S11 usage | `include_usage`; cache from `timings.cache_n` | `include_usage`, `cost` |
-| S13 extras | — | `providers` / `providers_by_model` routing, `allow_fallbacks: false` |
+| Slot | `llamacpp` | `openrouter` | `deepseek` |
+|---|---|---|---|
+| S2 list | `/models` + `/props` | openrouter.ai `/models` ∩ the `models` list (catalog unreachable: the listing fails, last good one kept) | `GET /models` |
+| S4 context | `/props` `n_ctx`, else `/models` `context_length` | catalog `context_length` | `/models` `context_window` |
+| S5 images | `/props` `modalities.vision` | `architecture.input_modalities` | `/models` `input_modalities` |
+| S6 efforts | `reasoning.supported_efforts` if the server advertises it, else none known | `reasoning.supported_efforts` only | `/models` `effort.supported_levels` |
+| S7 field | `reasoning_effort` | `reasoning.effort` | `reasoning_effort` (no `thinking` field) |
+| S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same, plus `reasoning_details` assembled into `reasoning_native` | `reasoning_content` |
+| S9 reasoning in | `reasoning_content`, sent even when empty | `reasoning_details` (same model) else `reasoning`; nothing when empty | `reasoning_content`, always (HTTP 400 if missing with `tools`); minimum depth 999 with `tools` |
+| S11 usage | `include_usage`; cache from `timings.cache_n` | `include_usage`, `cost` | `include_usage`; `prompt_tokens_details.cached_tokens`, `completion_tokens_details.reasoning_tokens` |
+| S13 extras | — | `providers` / `providers_by_model` routing, `allow_fallbacks: false` | — |
 
 The context window is required (no `max_context`): a selected model whose
 listing states none is an error notice. llama.cpp router mode lists several models on `/models`, each with
@@ -380,6 +383,10 @@ Everything else is identical.
     2026-09-30 every turn was replayed for every model; from then until 2b
     nothing was.
 
+14. **DeepSeek added** (2026-10-01, `PLAN.md` 2c; docs read 2026-10-01, no
+    real key yet): own `/models` reader, minimum replay depth, no `thinking`
+    field.
+
 ---
 
 ## 10. Decisions (all approved by the user on 2026-10-01)
@@ -423,7 +430,7 @@ documented well enough to answer the rows is not supported (OpenCode Go,
 postponed 2026-10-01: per-model APIs, and a `/models` without a context
 window).
 
-*Status:* ✅ built · 2b / 2c = `PLAN.md` steps, not built yet.
+*Status:* ✅ built.
 
 ### 11.1 The sheet to fill
 
@@ -456,7 +463,7 @@ a table or a guess)
 |---|---|---|---|
 | C1 | Chat route and payload | `model`, `messages`, `stream`, `tools`, `stream_options.include_usage` | ✅ |
 | C2 | Effort field | a chosen level is always sent as chosen, never checked against B4 | ✅ |
-| C3 | Thinking on/off switch | only if the docs have one; send it or rely on the server default (DeepSeek: undecided, 2c) | 2c |
+| C3 | Thinking on/off switch | only if the docs have one; send it or rely on the server default. DeepSeek: thinking is on by default and moka sends no `thinking` field (no off switch is asked for; `/effort` still sets `reasoning_effort`) | ✅ |
 | C4 | Routing or other extras | `_extra_payload` (OpenRouter `provider`) | ✅ |
 
 **D. The response** (§3 `Chunk`)
@@ -477,7 +484,7 @@ a table or a guess)
 | E1 | The documented field(s) to send reasoning back in | fixed per provider from its docs, never configurable (llama.cpp, DeepSeek: `reasoning_content`; OpenRouter: `reasoning_details` or `reasoning`) | ✅ |
 | E2 | Text or native | native only back to the model that produced it (`origin = {type, model}`); other models get the text | ✅ |
 | E3 | When there is no reasoning | decided per provider, in its own `replay()` (llama.cpp, DeepSeek: field sent empty; OpenRouter: nothing); unverified cases go to ISSUES | ✅ |
-| E4 | Minimum depth | `min_replay_depth(has_tools)`, default 0; DeepSeek: all turns whenever `tools` is sent (else HTTP 400). A role below it gets a warning in the notice band, from live state (so also after a model or server switch); the configured depth is still sent | ✅ base · 2c DeepSeek |
+| E4 | Minimum depth | `min_replay_depth(has_tools)`, default 0; DeepSeek: all turns whenever `tools` is sent (else HTTP 400). A role below it gets a warning in the notice band, from live state (so also after a model or server switch); the configured depth is still sent | ✅ |
 | E5 | Signed or encrypted reasoning (OpenAI, Anthropic, Gemini) | not supported for now | — |
 
 What the harness does, for every provider: stores `reasoning`,

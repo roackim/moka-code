@@ -110,6 +110,9 @@ tables from it.
 - `llamacpp.py` — `LlamaCpp(OpenAICompatible)`: default URL; `list_models` adds context and
   vision from `/props` (unknown if it does not answer),
   cache count from `timings.cache_n` when usage has none
+- `deepseek.py` — `DeepSeek(OpenAICompatible)`: fixed URL; own `/models` reader
+  (`context_window`, `input_modalities`, `effort.supported_levels`);
+  `min_replay_depth` 999 with tools
 - `openrouter.py` — `OpenRouter(OpenAICompatible)`: fixed URL; `models`
   (list) is the whitelist; `providers` (server default) and
   `providers_by_model` (per-model replacement) are strict ordered whitelists sent as

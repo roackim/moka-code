@@ -74,6 +74,7 @@ SIMPLE = HISTORY[:2]
 
 LLAMACPP = {"type": "llamacpp", "base_url": "http://h/v1"}
 OPENROUTER = {"type": "openrouter"}
+DEEPSEEK = {"type": "deepseek"}
 
 
 @pytest.fixture
@@ -467,3 +468,57 @@ def test_openrouter_sends_nothing_when_the_model_gave_no_reasoning(fake, tmp_pat
     history[3].pop("reasoning")
     messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(OPENROUTER), 1, history)
     assert all(not {"reasoning", "reasoning_details", "reasoning_content"} & m.keys() for m in messages)
+
+
+# -- DeepSeek (PLAN.md 2c, api-docs.deepseek.com, read 2026-10-01) ------------------------
+
+def test_deepseek_learns_its_facts_from_models(fake):
+    """``context_window``, ``input_modalities``, ``effort.supported_levels``."""
+    fake.on("GET", "/models", wire.json_response(wire.DEEPSEEK_MODELS))
+    endpoint = make_endpoint(DEEPSEEK)
+    assert learn(endpoint) == {
+        "deepseek-flash": (1048576, True, ["low", "high", "max"]),
+        "deepseek-v4-pro": (1048576, False, ["low", "high", "max"])}
+    assert fake.requests[0].url == "https://api.deepseek.com/models"
+
+
+def test_deepseek_states_no_context_window_is_unknown(fake):
+    fake.on("GET", "/models", wire.json_response({"data": [{"id": "x", "object": "model"}]}))
+    assert learn(make_endpoint(DEEPSEEK)) == {"x": (None, None, [])}
+
+
+@pytest.mark.parametrize("effort, expected", [
+    ("max", {"reasoning_effort": "max"}), ("low", {"reasoning_effort": "low"}), (None, {})])
+def test_deepseek_effort_is_reasoning_effort_and_thinking_is_never_sent(fake, effort, expected):
+    """moka relies on thinking being on by default (guides/thinking_mode)."""
+    chat_route(fake)
+    run_chat(make_endpoint(DEEPSEEK, effort=effort), SIMPLE, TOOLS)
+    body = chat_body(fake)
+    assert {k: v for k, v in body.items() if k == "reasoning_effort"} == expected
+    assert "thinking" not in body
+
+
+def test_deepseek_reads_reasoning_content_and_usage(fake):
+    fake.on("POST", "/chat/completions", wire.openai_stream(
+        deltas=({"reasoning_content": "hm"},), usage=wire.DEEPSEEK_USAGE))
+    chunks = []
+    run_chat(make_endpoint(DEEPSEEK), SIMPLE, chunks=chunks)
+    assert "".join(c.reasoning for c in chunks) == "hm"
+    [usage] = [c.usage for c in chunks if c.usage]
+    assert (usage.prompt_tokens, usage.cached_prompt_tokens, usage.reasoning_tokens) == (20, 12, 5)
+
+
+def test_deepseek_sends_every_turns_reasoning_content_even_empty(fake, tmp_path, monkeypatch):
+    """With ``tools`` every earlier turn's ``reasoning_content`` must go back
+    or the API answers 400 (guides/thinking_mode); a role at depth 999 sends it,
+    for a step that gave none too."""
+    history = _two_turns({"type": "deepseek", "model": "m"})
+    history[1].pop("reasoning")
+    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(DEEPSEEK), 999, history)
+    assert [m["reasoning_content"] for m in messages if m["role"] == "assistant"] == [
+        "", "why I call"]
+
+
+def test_deepseek_minimum_replay_depth_is_all_turns_with_tools():
+    endpoint = make_endpoint(DEEPSEEK)
+    assert (endpoint.min_replay_depth(True), endpoint.min_replay_depth(False)) == (999, 0)

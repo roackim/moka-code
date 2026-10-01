@@ -17,7 +17,7 @@ known bad pattern, not yet checked).
 when the model gave no reasoning, but DeepSeek behind OpenRouter requires
 `reasoning_content` with tools (its docs): does OpenRouter add it? (b) llama.cpp
 gets `reasoning_content: ""` when the model gave none (opencode's habit, not
-documented). (c) Signed or encrypted blocks (Claude, Gemini via OpenRouter)
+documented). (c) DeepSeek's 400 rule and the whole DeepSeek provider are from its docs, never run with a key. (d) Signed or encrypted blocks (Claude, Gemini via OpenRouter)
 never exercised. Wire tests mark each ⚠. → `reasoning-traces.md`.
 
 ---

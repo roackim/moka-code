@@ -280,3 +280,28 @@ OPENROUTER_MODELS = {"data": json.loads("""
   }
 ]
 """)}
+
+
+# -- DeepSeek ---------------------------------------------------------------------
+
+# GET /models: api-docs.deepseek.com/api/list-models (the page's example,
+# ``api_capabilities`` dropped), read 2026-10-01.
+DEEPSEEK_MODELS = json.loads("""
+{"object": "list", "data": [
+ {"id": "deepseek-flash", "object": "model", "owned_by": "deepseek",
+  "name": "DeepSeek-V4.1-Flash", "context_window": 1048576, "max_output_tokens": 393216,
+  "input_modalities": ["text", "image"], "output_modalities": ["text"],
+  "effort": {"supported_levels": ["low", "high", "max"], "default_level": "high"}},
+ {"id": "deepseek-v4-pro", "object": "model", "owned_by": "deepseek",
+  "name": "DeepSeek-V4-Pro", "context_window": 1048576, "max_output_tokens": 393216,
+  "input_modalities": ["text"], "output_modalities": ["text"],
+  "effort": {"supported_levels": ["low", "high", "max"], "default_level": "high"}}]}
+""")
+
+# ``usage`` of a completion: the keys api-docs.deepseek.com/api/create-chat-completion
+# documents (``prompt_tokens`` = hit + miss); the numbers are invented.
+DEEPSEEK_USAGE = {"usage": {
+    "prompt_tokens": 20, "completion_tokens": 7, "total_tokens": 27,
+    "prompt_tokens_details": {"cached_tokens": 12},
+    "prompt_cache_hit_tokens": 12, "prompt_cache_miss_tokens": 8,
+    "completion_tokens_details": {"reasoning_tokens": 5}}}

@@ -152,16 +152,18 @@ llama.cpp and DeepSeek ✅ (2026-10-01, see Decisions).
 6. Docs: `reasoning-traces.md` rewritten ✅ (ISSUES D3 removed); `providers.md`
    §3, §4 S9, §6 ✅; ISSUES R8 replaced by R9 (unverified edge cases) ✅.
 
-### 2c. DeepSeek provider
+### 2c. DeepSeek provider ✅ (2026-10-01)
 
 1. `DeepSeek(OpenAICompatible)`, fixed URL `https://api.deepseek.com`
-   (⚠ check the base URL page before building).
+   (docs index, read 2026-10-01). ✅
 2. Facts from `GET /models`: `context_window`, `input_modalities`,
-   `effort.supported_levels` (`api/list-models`, read 2026-10-01).
-3. Effort as `reasoning_effort`; reasoning out and back in
-   `reasoning_content`; minimum depth: all turns when `tools` is sent.
-4. ⚠ Whether moka sends `thinking: {type: enabled}` or relies on the default
-   (thinking is on by default per `guides/thinking_mode`): to decide.
+   `effort.supported_levels` (`api/list-models`). ✅
+3. Effort as `reasoning_effort` (`/effort` works from the stated levels);
+   reasoning out and back in `reasoning_content`; minimum depth: all turns when
+   `tools` is sent. ✅
+4. `thinking` is never sent: thinking is on by default
+   (`guides/thinking_mode`) and no off switch is asked for. ✅ (decided
+   2026-10-01)
 
 ## Step 3: compaction
 

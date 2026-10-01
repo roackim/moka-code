@@ -81,7 +81,7 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 
 - **Intent** (hand-edited): the section files above; moka never writes them.
   Every `[servers.<name>]` writes its `type` (`llamacpp`,
-  `openrouter`; from `REGISTRY`); a missing or unknown type is a
+  `openrouter`, `deepseek`; from `REGISTRY`); a missing or unknown type is a
   load error and the server is skipped. Allowed keys: the common ones
   (`_SERVER_KEYS`) plus the class's `extra_keys`. OpenRouter: `models = [...]`
   is the whitelist `/model` lists; `providers = [...]` (server default) and
@@ -100,7 +100,7 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   carry it; never guessed), gives the levels; `/effort` rediscovers the active server first.
   While the server is undiscovered, a saved level is sent as-is; the chosen level is saved per server/model in `state.toml`
   (`[effort.<server>]`; nothing without a selected model) and sent verbatim as
-  `reasoning_effort` (llamacpp) or `reasoning.effort` (openrouter) —
+  `reasoning_effort` (llamacpp, deepseek) or `reasoning.effort` (openrouter) —
   `Endpoint.effort_payload`. Load errors are shown at startup and on `/reload`/`/config`, and
   every reload rebuilds the live endpoint if its server table or selection
   changed. `type = "openrouter"` has no `base_url` (always

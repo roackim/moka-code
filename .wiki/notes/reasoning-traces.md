@@ -5,9 +5,9 @@
 > **Status** (2026-10-01, `PLAN.md` step 2b): reasoning is stored as the model
 > produced it and sent back in the provider's own field, as deep as the role's
 > `replay_reasoning_depth` allows. `content` is never parsed: inline `<think>`
-> tags stay in the answer. Not built yet: DeepSeek (2c), the first provider with a
-> documented minimum depth (`Endpoint.min_replay_depth`; a role below it gets a
-> warning in the notice band).
+> tags stay in the answer. DeepSeek (2c) is the first provider with a documented
+> minimum depth (`Endpoint.min_replay_depth`: all turns whenever tools are sent;
+> a role below it gets a warning in the notice band).
 
 ---
 
@@ -74,6 +74,7 @@ never configurable):
 | Provider | Sent | When the model gave no reasoning |
 |---|---|---|
 | `llamacpp` | `reasoning_content` = the text. llama.cpp uses it if the chat template supports it, else ignores it (PR #18994; `--reasoning-preserve`, default on) | the field is sent empty (⚠ not documented; opencode does the same) |
+| `deepseek` | `reasoning_content`, always (with `tools`, a missing field is HTTP 400; `guides/thinking_mode`) | the field is sent empty |
 | `openrouter` | `reasoning_details` unmodified when `origin` is this server and this model (OpenRouter: blocks must match what the model produced), else the `reasoning` text | nothing is sent (a decision: the docs are silent; ⚠ DeepSeek behind OpenRouter requires the field, unverified without a key) |
 
 Not supported for now: signed or encrypted reasoning (OpenAI, Anthropic, Gemini

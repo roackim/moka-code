@@ -34,8 +34,13 @@ def stated_efforts(entry: Dict[str, Any]) -> list[str]:
     supported = (entry.get("reasoning") or {}).get("supported_efforts")
     if not isinstance(supported, list) or not all(isinstance(e, str) for e in supported):
         return []
+    return weakest_first(supported)
+
+
+def weakest_first(levels: list[str]) -> list[str]:
+    """Effort levels ordered from the weakest, unknown words last."""
     rank = {w: i for i, w in enumerate(EFFORT_WORDS)}
-    return sorted(supported, key=lambda e: rank.get(e, len(rank)))
+    return sorted(levels, key=lambda e: rank.get(e, len(rank)))
 
 
 def stated_images(entry: Dict[str, Any]) -> Optional[bool]:
