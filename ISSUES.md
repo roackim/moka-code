@@ -42,35 +42,14 @@ and full tool output. → `PLAN.md` step 3.
 
 **P1. No provider contract; ~20 `type ==` branches** · in progress
 Provider classes and registry in `harness/providers/` (2026-10-01, step 1.2
-commits 1a and 1b): no `type ==` left; the §9 behaviour changes are next.
+commits 1a and 1b): no `type ==` left. Done since: stream + `Chunk`, Ollama
+removed, `ModelInfo` facts; llama.cpp selection and servers config are next.
 → `PLAN.md` step 1.
 
-**P4. Context window guessed as 32768 when unknown** · confirmed
-`ui/status_presenter.py`: `endpoint.max_context or 32768`. The status bar
-shows a made-up size. The user's todo already records "shows 32k for
-deepseek despite being like 1M".
-
 **P5. Bare model id matched by suffix, alias as fallback** · to audit
-`harness/providers/openrouter.py` (`discover_models._match`, `query_context_window`):
+`harness/providers/openrouter.py` (`list_models._match`):
 `deepseek-v4-flash` resolves to any `…/deepseek-v4-flash`; `~`-prefixed alias
 entries used as fallback. Could pick the wrong model silently.
-
-**P7. Guessed effort levels** · confirmed
-`harness/endpoint.py` `efforts_from_metadata`: invents
-`none/low/medium/high` when a model lists `reasoning` or `reasoning_effort`
-without `reasoning.supported_efforts` (its Ollama guess went with Ollama,
-2026-10-01). Checked 2026-10-01 against each provider's docs and OpenRouter's live `/models`:
-- OpenRouter: 194 of 333 reasoning models state `supported_efforts` (all also
-  list `reasoning_effort`); of the other 139, 135 list only `reasoning`, which
-  is not an effort signal. Docs: `reasoning.effort` takes
-  `max|xhigh|high|medium|low|minimal|none` for any model; an unsupported level
-  is mapped to the nearest supported one.
-- OpenAI: `/v1/models` states no reasoning capabilities; levels are per model in
-  the docs, and some models reject `none` (HTTP 400). Not discoverable.
-- llama.cpp: `reasoning_effort` is accepted; only `none` is interpreted, any
-  other value is passed to the model's chat template. No per-model levels
-  published (`/models` meta, `/props`).
-→ `.wiki/notes/providers.md` §9, decision 4.
 
 **P9. llama.cpp selection overridden by the first listed model** · confirmed
 `endpoint.py` `prewarm_model_name` / `providers/llamacpp.py` `query_model_name`:

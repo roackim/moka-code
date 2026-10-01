@@ -289,14 +289,12 @@ _DEFAULT_EFFORT = "default"
 
 def _effort_choices(server: Optional[str], model: Optional[str]):
     """``(choices, current)`` for a server's model: ``default`` plus the
-    request-parameter levels detected from the catalog. No choices: the model
-    has no effort switch.
+    effort levels the server states (the catalog's ``efforts``). No choices:
+    the model has no effort switch.
     """
     from moka_code.harness.endpoint import catalog_entry
-    from moka_code.harness.endpoint import efforts_from_metadata
 
-    metadata = catalog_entry(server, model).get("metadata") or {}
-    levels = efforts_from_metadata(metadata)
+    levels = list(catalog_entry(server, model).get("efforts") or [])
     saved = settings.config.get_effort(server, model)
     if saved and saved not in levels:
         levels = [*levels, saved]       # still sent: keep it visible and active

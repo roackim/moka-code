@@ -21,6 +21,31 @@ from moka_code.harness.usage import TokenUsage
 logger = logging.getLogger(__name__)
 
 
+# Reasoning effort words, weakest first (OpenAI / OpenRouter vocabulary).
+EFFORT_WORDS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def stated_efforts(entry: Dict[str, Any]) -> list[str]:
+    """The effort levels a ``/models`` entry states in
+    ``reasoning.supported_efforts`` (OpenRouter's shape, which any
+    OpenAI-compatible server may carry), weakest first; ``[]`` otherwise.
+    Never guessed from ``supported_parameters`` (``providers.md`` §9.5)."""
+    supported = (entry.get("reasoning") or {}).get("supported_efforts")
+    if not isinstance(supported, list) or not all(isinstance(e, str) for e in supported):
+        return []
+    rank = {w: i for i, w in enumerate(EFFORT_WORDS)}
+    return sorted(supported, key=lambda e: rank.get(e, len(rank)))
+
+
+def stated_images(entry: Dict[str, Any]) -> Optional[bool]:
+    """Image input as a ``/models`` entry states it in
+    ``architecture.input_modalities``; ``None`` when absent."""
+    modalities = (entry.get("architecture") or {}).get("input_modalities")
+    if isinstance(modalities, list):
+        return "image" in modalities
+    return None
+
+
 def _tool_call_pieces(raw_calls: Any) -> list[ToolCallPiece]:
     """Raw tool-call dicts as pieces (``arguments`` always a JSON text)."""
     pieces = []
@@ -117,34 +142,27 @@ class OpenAICompatible(Endpoint):
     type = "openai"
 
     async def list_models(self) -> list[ModelInfo]:
-        """List models exposed by this endpoint."""
+        """``/models``, with the facts each entry states."""
         response = await asyncio.wait_for(
             self.client.get("/models"), timeout=self.timeout
         )
         response.raise_for_status()
-        data = response.json()
-        result = []
-        for model in data.get("data", []) or []:
-            result.append(ModelInfo(
+        return [
+            ModelInfo(
                 id=model.get("id"),
                 context_window=model.get("context_length"),
+                images=stated_images(model),
+                efforts=stated_efforts(model),
                 owned_by=model.get("owned_by"),
-                metadata=model,
-            ))
-        return result
+                raw=model,
+            )
+            for model in response.json().get("data", []) or []
+        ]
 
     async def query_model_name(self) -> str:
         if self._selected_model:
             return self._selected_model
         raise RuntimeError(f"{self.type} requires a model to be configured")
-
-    async def query_context_window(self, model_name: str) -> int:
-        """The server's own ``/models`` ``context_length`` (real OpenAI reports
-        none: set ``max_context`` in ``servers.toml``)."""
-        for model in await self.list_models():
-            if model.id == model_name and model.context_window:
-                return model.context_window
-        raise RuntimeError(f"{self.name} reports no context window for {model_name}")
 
     def effort_payload(self) -> dict[str, Any]:
         if not self.effort:

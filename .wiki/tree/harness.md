@@ -54,9 +54,9 @@ The former unused `SubagentsWaiting`/`SubagentResult`/`SubagentsDone` events wer
 live transport (httpx client, caches, selected model, connection state). Each
 server family is a subclass in `providers/` (below); nothing outside a provider
 branches on `type`. Class attributes: `type`, `default_url`, `fixed_url`,
-`extra_keys`, `serves_one_model`. Providers implement `list_models`,
-`discover_models`, `query_model_name`, `query_context_window`,
-`query_image_input`, `_stream` and `effort_payload`. `stream(messages, tools)`
+`extra_keys`, `serves_one_model`. Providers implement `list_models` (models with
+their facts: `ModelInfo.context_window`, `images`, `efforts`, read from the
+server), `query_model_name`, `_stream` and `effort_payload`. `stream(messages, tools)`
 is the only request path (chat and compaction): it wraps the provider's
 `_stream` in the retry loop (503 and network errors, backoff) and yields
 `Chunk`s (`text`, `reasoning`, `reasoning_native`, `tool_calls` as
@@ -64,8 +64,7 @@ is the only request path (chat and compaction): it wraps the provider's
 `make_endpoint(name, data)` builds the registry class for a `[servers.<name>]`
 table and resolves `api_key_env` (`type` is required unless the table is named
 after one; `base_url` is required unless the class has a `default_url` or
-`fixed_url`; the loader skips a server otherwise). `EFFORT_WORDS`,
-`efforts_from_metadata` and `image_input_from_metadata` read catalog metadata.
+`fixed_url`; the loader skips a server otherwise).
 Also hosts `ModelInfo`, `ConnectionDiagnosis`, and `.local` hostname resolution
 helpers. Factories: `get_active_endpoint()` (= `get_endpoint(active_server)`,
 `None` when nothing is selected or the server is gone — there is no fallback
@@ -79,19 +78,19 @@ into the endpoint; `refresh_catalog(names)` rediscovers servers in parallel
 this session's last successful discovery, flagged in `Config.stale_servers`
 (`/model` shows `unreachable`), until a refresh succeeds; only the latest-started
 refresh per server applies its result (`_refresh_generation`). The status bar
-reads `Endpoint.context_window()` (catalog first). It runs at
+reads `Endpoint.context_window()` (catalog, else `max_context`, else unknown:
+only the tokens used are shown). It runs at
 startup (active server first), on `/reload` and `/config servers`
 (`reapply_endpoint(rediscover=True)`; theme/role/other edits do not), on
 `/model`, and on `/effort` (active server). The UI's notice band
 flags a selected model that is not among the ids a fresh (non-stale,
 non-llama.cpp) listing shows (`unserved_model`). The selected
 model is one field, `_selected_model` (`_model_resolved` once confirmed;
-llama.cpp: replaced by the served model). Facts probed when the catalog lacks
-them (context window, image support) live in `Endpoint._probed(model)` and are
-dropped whenever that server's catalog is refreshed. Model-name and
-context-window fallbacks are shown but not memoized; `type = "openai"` reads
-the server's `/models` `context_length` (no built-in table: set `max_context`
-for servers that report none, e.g. real OpenAI). `type = "openrouter"` always
+llama.cpp: replaced by the served model). The endpoint caches no model
+facts and probes nothing of its own. The model-name fallback is shown but not
+memoized; `type = "openai"` reads the server's `/models` `context_length` (no
+built-in table: set `max_context` for servers that report none, e.g. real
+OpenAI). `type = "openrouter"` always
 uses `OpenRouter.fixed_url`; a `base_url` in its table is a load error
 (ignored).
 `Harness.endpoint` is an `Endpoint`. See [notes/local-hostname-resolution.md](../notes/local-hostname-resolution.md).
@@ -105,9 +104,12 @@ This one type replaced the former `LLMServerConfig` + `ServerService` +
 `REGISTRY` (`__init__.py`) maps `type` to class; `settings` validates server
 tables from it.
 - `openai_compatible.py` — `OpenAICompatible` (`type = "openai"`): `/models`,
-  SSE `/chat/completions` → `Chunk`s; `parse_usage`; `_extra_payload` hook
+  SSE `/chat/completions` → `Chunk`s; `parse_usage`; `_extra_payload` hook;
+  `stated_efforts` (`reasoning.supported_efforts`, weakest first by
+  `EFFORT_WORDS`) and `stated_images` (`architecture.input_modalities`)
 - `llamacpp.py` — `LlamaCpp(OpenAICompatible)`: default URL, single served
-  model from `/models[0]` (`serves_one_model`), context and vision via `/props`,
+  model from `/models[0]` (`serves_one_model`); `list_models` adds context and
+  vision from `/props` (unknown if it does not answer),
   cache count from `timings.cache_n` when usage has none
 - `openrouter.py` — `OpenRouter(OpenAICompatible)`: fixed URL; one
   `[models."<id>"]` table per enabled model; `providers` (server default,
@@ -132,11 +134,10 @@ markers (files on disk are never attached; the model `read`s them); `embed`/`res
 `max_image_bytes`); `Harness._take_tool_image` caches it and a `source: "tool"`
 user entry carries it after the tool results.
 
-Image support per model: `Endpoint.accepts_images()` (True/False/None) from
-catalog metadata, else `_probed(model)["image_input"]` filled by
-`probe_image_input()` during prewarm (each provider's `query_image_input`:
-llama.cpp `/props` `modalities.vision`,
-OpenRouter `/models/<id>/endpoints` `architecture.input_modalities`).
+Image support per model: `Endpoint.accepts_images()` (True/False/None) reads
+the catalog's `images`, filled by `list_models()` (llama.cpp `/props`
+`modalities.vision`; OpenRouter and OpenAI-compatible `/models`
+`architecture.input_modalities`).
 
 ### `usage.py`
 `TokenUsage` (provider-neutral prompt/completion/total/cache/cost counts; each

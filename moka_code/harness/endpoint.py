@@ -36,28 +36,29 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Model metadata
+# Model facts
 # ---------------------------------------------------------------------------
 
 @dataclass
 class ModelInfo:
-    """Metadata for one model exposed by an endpoint."""
+    """One model a server offers, with the facts its provider read from the
+    server (``providers.md`` §3). Nothing is guessed: unknown stays unknown."""
 
     id: str
-    context_window: int | None = None
+    context_window: int | None = None       # None: the server did not say
+    images: bool | None = None              # None: unknown (never "no")
+    efforts: list[str] = field(default_factory=list)   # [] = none stated
     owned_by: str | None = None
-    metadata: dict[str, Any] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        if self.metadata is None:
-            self.metadata = {}
+    raw: dict[str, Any] = field(default_factory=dict)  # read only by its provider
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "context_window": self.context_window,
+            "images": self.images,
+            "efforts": list(self.efforts),
             "owned_by": self.owned_by,
-            "metadata": self.metadata,
+            "raw": self.raw,
         }
 
     @classmethod
@@ -65,8 +66,10 @@ class ModelInfo:
         return cls(
             id=data.get("id", ""),
             context_window=data.get("context_window"),
+            images=data.get("images"),
+            efforts=list(data.get("efforts") or []),
             owned_by=data.get("owned_by"),
-            metadata=data.get("metadata") or {},
+            raw=data.get("raw") or {},
         )
 
 
@@ -234,7 +237,7 @@ class Endpoint:
         self.timeout = timeout
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
-        # The chosen reasoning effort (levels: ``effort_levels``), sent in this
+        # The chosen reasoning effort (levels: the catalog's ``efforts``), sent in this
         # server's own field.
         self.effort: Optional[str] = None
 
@@ -251,16 +254,10 @@ class Endpoint:
         self._in_flight = 0
         self._stale_clients: list[httpx.AsyncClient] = []
 
-        # Runtime caches.
         # ``_selected_model`` is the one model id requests use; resolved once
         # confirmed (llama.cpp: replaced by the model it actually serves).
+        # Model facts are read from the live catalog, never cached here.
         self._model_resolved: bool = False
-        self._cached_context_window: Optional[int] = None
-        # Facts probed from the server per model (context window, image
-        # support) when the catalog lacks them; dropped whenever this server's
-        # catalog is refreshed (see :meth:`_probed`).
-        self._probed_facts: dict[str, dict] = {}
-        self._probed_generation = 0
         self._selected_model: Optional[str] = model
         self._model_name_pending: bool = False
         self._connection_state: str = "unknown"  # unknown|checking|ok|error
@@ -275,9 +272,8 @@ class Endpoint:
         return self._selected_model
 
     async def prewarm_model_name(self) -> None:
-        """Probe the connection and cache model name/context in the background."""
+        """Probe the connection and resolve the model name in the background."""
         if self._model_resolved and self._connection_state == "ok":
-            await self.probe_image_input()
             return
         self._model_name_pending = True
         self._connection_state = "checking"
@@ -313,69 +309,34 @@ class Endpoint:
                     self._connection_state = "error"
             else:
                 self._connection_state = "ok"
-            try:
-                await self.get_context_window()
-            except Exception as e:
-                logger.warning("prewarm context window failed: %s", e)
-            await self.probe_image_input()
         finally:
             self._model_name_pending = False
 
-    def context_window(self) -> Optional[int]:
-        """The current model's context window as known now: the live
-        catalog's, else the last one resolved by :meth:`get_context_window`."""
-        ctx = catalog_entry(self.name, self._selected_model).get(
-            "context_window")
-        return ctx if isinstance(ctx, int) and ctx > 0 else self._cached_context_window
+    # -- catalog facts -------------------------------------------------------
 
-    def _probed(self, model_name: Optional[str]) -> dict:
-        """This model's probed facts, valid until this server's catalog is
-        refreshed again (a refresh may mean the server changed)."""
-        generation = _refresh_generation.get(self.name, 0)
-        if generation != self._probed_generation:
-            self._probed_generation, self._probed_facts = generation, {}
-        return self._probed_facts.setdefault(model_name or "", {})
+    def context_window(self) -> Optional[int]:
+        """The current model's context window: the live catalog's, else the
+        server table's ``max_context``; ``None`` when neither says."""
+        ctx = catalog_entry(self.name, self._selected_model).get("context_window")
+        if isinstance(ctx, int) and ctx > 0:
+            return ctx
+        return self.max_context or None
 
     def accepts_images(self) -> Optional[bool]:
         """Whether the current model reads images; ``None`` when unknown."""
-        model_name = self._selected_model or ""
-        known = image_input_from_metadata(self._catalog_metadata(model_name))
-        return known if known is not None else self._probed(model_name).get("image_input")
-
-    async def probe_image_input(self) -> None:
-        """Learn whether the current model reads images (no-op once known)."""
-        model_name = self._selected_model
-        if not model_name or self.accepts_images() is not None:
-            return
-        try:
-            known = await self.query_image_input(model_name)
-        except Exception as e:
-            logger.debug("image input probe failed: %s", e)
-            return
-        if known is not None:
-            self._probed(model_name)["image_input"] = known
+        return catalog_entry(self.name, self._selected_model).get("images")
 
     # -- discovery (implemented by each provider) ----------------------------
 
     async def list_models(self) -> list[ModelInfo]:
-        """List models exposed by this endpoint."""
+        """The models this server offers, with their facts (context window,
+        images, effort levels) read from the server. Called only through
+        :func:`refresh_catalog`."""
         raise NotImplementedError
-
-    async def discover_models(self) -> list[ModelInfo]:
-        """The models this endpoint surfaces (default: every listed one)."""
-        return await self.list_models()
 
     async def query_model_name(self) -> str:
         """The model id requests use, asked of the server if needed."""
         raise NotImplementedError
-
-    async def query_context_window(self, model_name: str) -> int:
-        """The model's context window as the server reports it."""
-        raise NotImplementedError
-
-    async def query_image_input(self, model_name: str) -> Optional[bool]:
-        """Ask the server whether *model_name* reads images; ``None`` when unknown."""
-        return None
 
     async def get_model_name(self) -> str:
         """Get the model name (cached or queried)."""
@@ -395,37 +356,6 @@ class Endpoint:
         # Not cached: an offline server must be re-queried once it is back.
         logger.warning("Model name unknown, using 'unknown'")
         return "unknown"
-
-    async def get_context_window(self) -> int:
-        """Get the context window size (cached or queried).
-
-        The live catalog's value wins; a queried value is kept per model
-        until this server's catalog is refreshed (:meth:`_probed`).
-        The fallback is only shown, not memoized, so a later probe can still
-        find the real window after a transient failure.
-        """
-        model_name = await self.get_model_name()
-        ctx = catalog_entry(self.name, model_name).get("context_window")
-        if isinstance(ctx, int) and ctx > 0:
-            self._cached_context_window = ctx
-            return ctx
-        probed = self._probed(model_name)
-        if "context_window" in probed:
-            self._cached_context_window = probed["context_window"]
-            return self._cached_context_window
-        try:
-            self._cached_context_window = await self.query_context_window(model_name)
-            probed["context_window"] = self._cached_context_window
-            logger.info("Queried context window: %s", self._cached_context_window)
-            return self._cached_context_window
-        except Exception as e:
-            logger.warning("Failed to query context window: %s", e)
-        if self.max_context:
-            self._cached_context_window = self.max_context
-        else:
-            self._cached_context_window = 32768
-        logger.warning("Context window unknown, using default: %s", self._cached_context_window)
-        return self._cached_context_window
 
     # -- connection ----------------------------------------------------------
 
@@ -570,10 +500,6 @@ class Endpoint:
             except Exception as e:
                 logger.debug("closing a retired client failed: %s", e)
 
-    def _catalog_metadata(self, model_name: Optional[str]) -> dict:
-        return catalog_entry(self.name, model_name).get("metadata") or {}
-
-
 def make_endpoint(name: str, data: dict[str, Any]) -> Endpoint:
     """Build an endpoint from a ``servers.toml`` ``[servers.<name>]`` table
     (already validated by ``settings``), as an instance of its type's class."""
@@ -682,7 +608,7 @@ async def refresh_catalog(names: Optional[list[str]] = None) -> None:
         try:
             if endpoint is None:
                 raise LookupError(name)
-            models = await asyncio.wait_for(endpoint.discover_models(), DISCOVERY_TIMEOUT)
+            models = await asyncio.wait_for(endpoint.list_models(), DISCOVERY_TIMEOUT)
         except Exception as e:
             logger.debug("discovery failed for %s: %s", name, e)
             models = None
@@ -699,33 +625,6 @@ async def refresh_catalog(names: Optional[list[str]] = None) -> None:
         settings.config.stale_servers.discard(name)
 
     await asyncio.gather(*(one(n) for n in (names or list(settings.config.servers))))
-
-
-# Reasoning effort words, weakest first (OpenAI / OpenRouter vocabulary).
-EFFORT_WORDS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
-
-
-def efforts_from_metadata(metadata: dict) -> list[str]:
-    """Effort levels a model takes as a request parameter, from catalog
-    metadata: OpenRouter's ``reasoning.supported_efforts`` (exact levels),
-    else ``supported_parameters`` (levels guessed)."""
-    supported = (metadata.get("reasoning") or {}).get("supported_efforts")
-    if isinstance(supported, list) and supported and all(isinstance(e, str) for e in supported):
-        rank = {w: i for i, w in enumerate(EFFORT_WORDS)}
-        return sorted(supported, key=lambda e: rank.get(e, len(rank)))
-    params = metadata.get("supported_parameters") or []
-    if "reasoning_effort" in params or "reasoning" in params:
-        return ["none", "low", "medium", "high"]
-    return []
-
-
-def image_input_from_metadata(metadata: dict) -> bool | None:
-    """Image support recorded in catalog metadata (OpenRouter's
-    ``architecture.input_modalities``); ``None`` when absent."""
-    modalities = (metadata.get("architecture") or {}).get("input_modalities")
-    if isinstance(modalities, list):
-        return "image" in modalities
-    return None
 
 
 __all__ = [

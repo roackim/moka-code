@@ -207,8 +207,6 @@ def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
     if endpoint is not None:
         context_window = getattr(endpoint, "context_window", None)
         context_max = context_window() if callable(context_window) else None
-        if context_max is None:
-            context_max = endpoint.max_context or 32768
 
     # Sandbox field: [glyph][prefix]runtime, colored green when active and
     # orange when tools run unsandboxed. Always present so it stays visible.
@@ -229,8 +227,10 @@ def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
 
     app.status_bar.set_values({
         "endpoint_model": endpoint_model,
+        # An unknown window shows only what is used (never a guessed size).
         "context": (f"ctx {_format_tokens(context_used)}/{_format_tokens(context_max)}"
-                    if context_max else ""),
+                    if context_max else f"ctx {_format_tokens(context_used)}"
+                    if endpoint is not None else ""),
         "role": f"role {role}",
         "state": state,
         "endpoint": server,

@@ -1,8 +1,8 @@
-"""Regression tests for OpenRouter context-window lookup.
+"""Regression test for OpenRouter's catalog lookup.
 
 A bare model id (no ``provider/`` namespace) in ``[models."<id>"]`` used to
 fail the exact-id lookup against OpenRouter's catalog, so the context window
-fell back to 32k even for 1M-token models.
+fell back to 32k even for 1M-token models. (Suffix matching itself is ISSUES P5.)
 """
 
 import asyncio
@@ -47,36 +47,14 @@ def _patch_client(monkeypatch, data):
     monkeypatch.setattr(endpoint_mod.httpx, "AsyncClient", lambda *a, **k: _Client(data))
 
 
-def test_openrouter_context_window_matches_bare_id(monkeypatch):
-    _patch_client(monkeypatch, CATALOG)
-    endpoint = OpenRouter(
-        name="or", base_url="https://openrouter.ai/api/v1",
-        api_key="k", model="deepseek/deepseek-v4-flash-0731",
-    )
-
-    ctx = asyncio.run(endpoint.query_context_window("deepseek-v4-flash-0731"))
-
-    assert ctx == 1310720  # canonical entry, not the "~" alias
-
-
-def test_openrouter_context_window_exact_id(monkeypatch):
-    _patch_client(monkeypatch, CATALOG)
-    endpoint = OpenRouter(
-        name="or", base_url="https://openrouter.ai/api/v1",
-        api_key="k", model="other/model",
-    )
-
-    assert asyncio.run(endpoint.query_context_window("other/model")) == 8192
-
-
-def test_discover_openrouter_canonicalizes_bare_enabled_id(monkeypatch):
+def test_openrouter_list_canonicalizes_bare_enabled_id(monkeypatch):
     _patch_client(monkeypatch, CATALOG)
     endpoint = OpenRouter(
         name="or", base_url="https://openrouter.ai/api/v1",
         api_key="k", models={"deepseek-v4-flash-0731": {}},
     )
 
-    models = asyncio.run(endpoint.discover_models())
+    models = asyncio.run(endpoint.list_models())
 
     assert [m.id for m in models] == ["deepseek/deepseek-v4-flash-0731"]
     assert models[0].context_window == 1310720

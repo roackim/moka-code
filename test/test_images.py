@@ -13,7 +13,8 @@ import pytest
 
 from moka_code import settings
 from moka_code.harness import images
-from moka_code.harness.endpoint import Chunk, ToolCallPiece, image_input_from_metadata
+from moka_code.harness.endpoint import Chunk, ToolCallPiece
+from moka_code.harness.providers.openai_compatible import stated_images
 from moka_code.harness.harness import Harness
 from moka_code.ui.app import chatTUI
 from moka_code.ui.chat_message import unmention
@@ -157,10 +158,10 @@ def test_missing_image_is_sent_as_placeholder():
 # capability
 # ---------------------------------------------------------------------------
 
-def test_image_input_from_metadata():
-    assert image_input_from_metadata({"architecture": {"input_modalities": ["text"]}}) is False
-    assert image_input_from_metadata({"architecture": {"input_modalities": ["text", "image"]}}) is True
-    assert image_input_from_metadata({}) is None
+def test_stated_images():
+    assert stated_images({"architecture": {"input_modalities": ["text"]}}) is False
+    assert stated_images({"architecture": {"input_modalities": ["text", "image"]}}) is True
+    assert stated_images({}) is None
 
 
 def _ui_with_endpoint(tmp_path, accepts):
@@ -281,22 +282,13 @@ def test_import_without_bytes_marks_the_image_unavailable(tmp_path):
     assert msg.base_text.endswith("· unavailable")
 
 
-def test_endpoint_learns_image_support_once(monkeypatch):
-    calls = []
-
-    async def query(endpoint, model_name):
-        calls.append(model_name)
-        return False
-
-    monkeypatch.setattr(LlamaCpp, "query_image_input", query)
+def test_image_support_is_read_from_the_live_catalog(monkeypatch):
+    """§9.2 (2026-10-01): no probe of its own; unknown until listed."""
+    monkeypatch.setattr(settings.config, "models_by_server", {})
     endpoint = LlamaCpp(name="local", model="llama3")
     assert endpoint.accepts_images() is None
-
-    asyncio.run(endpoint.probe_image_input())
-    asyncio.run(endpoint.probe_image_input())
-
+    settings.config.models_by_server["local"] = [{"id": "llama3", "images": False}]
     assert endpoint.accepts_images() is False
-    assert calls == ["llama3"]
 
 
 def test_references_are_colored_in_input_and_transcript(tmp_path):
@@ -360,8 +352,8 @@ def _read_harness(tmp_path, monkeypatch, accepts=None):
                return_value=LlamaCpp(name="test", model="m")):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools={"read": "yes"}))
-    if accepts is not None:
-        harness.endpoint._probed("m")["image_input"] = accepts
+    monkeypatch.setattr(settings.config, "models_by_server",
+                        {"test": [{"id": "m", "images": accepts}]})
     call = ToolCallPiece(index=0, id="call_1", name="read", arguments='{"path": "shot.png"}')
     requests = []
 

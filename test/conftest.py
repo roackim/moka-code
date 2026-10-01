@@ -40,7 +40,7 @@ class FakeServer:
     async def get_model_name(self):
         return "test-model"
 
-    async def get_context_window(self):
+    def context_window(self):
         return 32768
 
     async def stream(self, messages, tools=None):

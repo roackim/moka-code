@@ -99,36 +99,25 @@ def test_active_endpoint_uses_only_its_own_server_selection(cfg):
     assert endpoint.selected_model is None
 
 
-def test_get_endpoint_seeds_context_window_from_catalog(cfg):
-    cfg.config.servers["or"] = {"type": "openrouter", "base_url": "http://or/v1"}
+def test_context_window_comes_from_the_catalog(cfg):
+    cfg.config.servers["or"] = {"type": "openrouter"}
     cfg.config.model_selection["or"] = "vendor/m"
     cfg.config.models_by_server["or"] = [{"id": "vendor/m", "context_window": 1048576}]
 
     from moka_code.harness.endpoint import get_endpoint
 
-    endpoint = get_endpoint("or")
-
-    async def _no_network(_model):
-        raise AssertionError("catalog-known window must not be re-queried")
-
-    endpoint.query_context_window = _no_network
-    assert asyncio.run(endpoint.get_context_window()) == 1048576
+    assert get_endpoint("or").context_window() == 1048576
 
 
-def test_context_window_fallback_is_not_memoized():
-    """A transient failure shows the fallback but a later probe can succeed."""
+def test_unknown_context_window_is_never_invented(cfg):
+    """§9.2 / ISSUES P4 (2026-10-01): no probe, no 32768. ``max_context``
+    from the server table is the user's own fallback."""
     endpoint = OpenAICompatible(name="o", base_url="http://o/v1", model="m")
-    answers = [RuntimeError("down"), 65536]
-
-    async def _query(_model):
-        answer = answers.pop(0)
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
-
-    endpoint.query_context_window = _query
-    assert asyncio.run(endpoint.get_context_window()) == 32768
-    assert asyncio.run(endpoint.get_context_window()) == 65536
+    assert endpoint.context_window() is None
+    endpoint.max_context = 65536
+    assert endpoint.context_window() == 65536
+    cfg.config.models_by_server["o"] = [{"id": "m", "context_window": 131072}]
+    assert endpoint.context_window() == 131072
 
 
 def test_model_name_fallback_is_not_memoized():

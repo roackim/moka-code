@@ -133,14 +133,13 @@ ModelInfo: id, context_window, images, efforts, owned_by, raw
 
 - Facts are filled in **here**, by the provider that understands its own
   server. Nothing outside a provider reads `raw` or knows a vendor field
-  name (today `efforts_from_metadata` and `image_input_from_metadata` mix
-  OpenRouter and Ollama shapes for every type; the Ollama ones went with
-  §9.11).
+  name (done 2026-10-01: `stated_efforts` / `stated_images` in
+  `openai_compatible.py` read the shared `/models` shape).
 - The harness stores the result in `Config.models_by_server` (memory only,
   never persisted), marks a server stale when a refresh fails, keeps its last
   good list.
-- Replaces `list_models` + `discover_models` + `query_context_window` +
-  `probe_image_input` (see decision 1, §10).
+- Replaced `list_models` + `discover_models` + `query_context_window` +
+  `probe_image_input` (decision 1, §10; done 2026-10-01).
 
 ### `stream(messages, tools) -> AsyncIterator[Chunk]`
 
@@ -209,7 +208,7 @@ target, see §9.5).
 |---|---|---|---|
 | S2 list | `/models` + `/props` | `/models` | openrouter.ai `/models` ∩ the `models` list |
 | S4 context | `/props` `n_ctx`, else `/models` `context_length` | `/models` `context_length` | catalog `context_length` |
-| S5 images | `/props` `modalities.vision` | metadata shapes, else unknown | `architecture.input_modalities` |
+| S5 images | `/props` `modalities.vision` | `architecture.input_modalities`, else unknown | `architecture.input_modalities` |
 | S6 efforts (target) | `reasoning.supported_efforts` if the server advertises it, else none known | same | `reasoning.supported_efforts` only |
 | S7 field | `reasoning_effort` | `reasoning_effort` | `reasoning.effort` |
 | S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same | same, plus `reasoning_details` assembled into `reasoning_native` |

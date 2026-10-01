@@ -89,10 +89,10 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   order — `order` alone would let OpenRouter fall back to any host. The retired
   keys `provider`, `enabled_models` and `model_providers` are reported with
   their replacement and the server is skipped (`_RETIRED_SERVER_KEYS`).
-  Effort levels are detected only (no config key): catalog metadata
-  (`endpoint.efforts_from_metadata`: OpenRouter-format
-  `reasoning.supported_efforts` (exact; any OpenAI-compatible server's `/models`
-  may carry it), else `supported_parameters` (guessed)) gives the levels; `/effort` rediscovers the active server first.
+  Effort levels are detected only (no config key): the catalog's `efforts`,
+  which a provider fills only from a stated list (OpenRouter-format
+  `reasoning.supported_efforts`; any OpenAI-compatible server's `/models` may
+  carry it; never guessed), gives the levels; `/effort` rediscovers the active server first.
   While the server is undiscovered, a saved level is sent as-is; the chosen level is saved per server/model in `state.toml`
   (`[effort.<server>]`, `""` for a single-model server) and sent verbatim as
   `reasoning_effort` (llamacpp/openai) or `reasoning.effort` (openrouter) —

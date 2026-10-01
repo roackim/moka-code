@@ -184,7 +184,6 @@ def test_refresh_theme_recolors_status_server_model():
         model="qwen",
         selected_model="qwen",
         _connection_state="ok",
-        _cached_context_window=32768,
         max_context=32768,
         _model_name_pending=False,
         _original_base_url="http://localhost:8080/v1",

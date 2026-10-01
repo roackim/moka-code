@@ -5,8 +5,10 @@ from typing import Any, AsyncGenerator, Dict, Optional
 
 import httpx
 
-from moka_code.harness.endpoint import Chunk, ModelInfo, image_input_from_metadata
-from moka_code.harness.providers.openai_compatible import OpenAICompatible, _delta
+from moka_code.harness.endpoint import Chunk, ModelInfo
+from moka_code.harness.providers.openai_compatible import (
+    OpenAICompatible, _delta, stated_efforts, stated_images,
+)
 
 
 class OpenRouter(OpenAICompatible):
@@ -37,8 +39,9 @@ class OpenRouter(OpenAICompatible):
                 return None
         return response.json().get("data", [])
 
-    async def discover_models(self) -> list[ModelInfo]:
-        """Only the enabled models: OpenRouter exposes thousands."""
+    async def list_models(self) -> list[ModelInfo]:
+        """Only the enabled models (OpenRouter exposes thousands), with the
+        facts the public catalog states."""
         enabled = self._enabled_ids()
         if not enabled:
             return []
@@ -68,37 +71,12 @@ class OpenRouter(OpenAICompatible):
             result.append(ModelInfo(
                 id=info.get("id") or eid,
                 context_window=info.get("context_length"),
+                images=stated_images(info),
+                efforts=stated_efforts(info),
                 owned_by=info.get("owned_by"),
-                metadata=info,
+                raw=info,
             ))
         return result
-
-    async def query_context_window(self, model_name: str) -> int:
-        catalog = await self._catalog()
-        if catalog is not None:
-            suffix = "/" + model_name
-            fallback = None
-            for model in catalog:
-                mid = model.get("id", "")
-                if mid != model_name and not mid.endswith(suffix):
-                    continue
-                ctx = model.get("context_length")
-                if not ctx:
-                    continue
-                if mid == model_name or not mid.startswith("~"):
-                    return ctx
-                fallback = fallback or ctx
-            if fallback:
-                return fallback
-        raise RuntimeError("Could not determine context window from OpenRouter")
-
-    async def query_image_input(self, model_name: str) -> Optional[bool]:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.fixed_url}/models/{model_name}/endpoints", timeout=self.timeout,
-            )
-            response.raise_for_status()
-            return image_input_from_metadata(response.json().get("data") or {})
 
     def effort_payload(self) -> dict[str, Any]:
         if not self.effort:

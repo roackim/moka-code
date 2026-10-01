@@ -1059,11 +1059,9 @@ class Harness:
             except Exception as e:
                 logger.warning(f"Failed to query model name: {e}")
             
-            try:
-                ctx = await self.endpoint.get_context_window()
-                status["context_window"] = f"{ctx // 1024}k" if isinstance(ctx, int) else str(ctx)
-            except Exception as e:
-                logger.warning(f"Failed to query context window: {e}")
+            ctx = self.endpoint.context_window()
+            if ctx:
+                status["context_window"] = f"{ctx // 1024}k"
             
             # Context usage is exact only when the provider reports prompt
             # tokens; otherwise there is nothing to show.

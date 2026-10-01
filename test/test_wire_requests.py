@@ -15,9 +15,7 @@ import asyncio
 import pytest
 
 import wire_fake as wire
-from moka_code.harness.endpoint import (
-    Endpoint, efforts_from_metadata, image_input_from_metadata, make_endpoint as build,
-)
+from moka_code.harness.endpoint import Endpoint, make_endpoint as build
 
 
 # -- the three adapters to the provider API -------------------------------------
@@ -50,16 +48,8 @@ def learn(endpoint) -> dict:
     """``{model id: (context window, accepts images, effort levels)}`` as the
     app learns them from this server."""
     async def go():
-        facts = {}
-        for model in await endpoint.discover_models():
-            try:
-                context = model.context_window or await endpoint.query_context_window(model.id)
-            except RuntimeError:
-                context = None
-            images = image_input_from_metadata(model.metadata)
-            if images is None:
-                images = await endpoint.query_image_input(model.id)
-            facts[model.id] = (context, images, efforts_from_metadata(model.metadata))
+        facts = {m.id: (m.context_window, m.images, m.efforts)
+                 for m in await endpoint.list_models()}
         await endpoint.aclose()
         return facts
     return asyncio.run(go())
@@ -271,3 +261,12 @@ def test_openrouter_offers_only_whitelisted_models_with_their_stated_facts(fake)
     table = {**OPENROUTER, "models": {"deepseek/deepseek-v4.1-flash": {}}}
     assert learn(make_endpoint(table)) == {
         "deepseek/deepseek-v4.1-flash": (1048576, True, ["low", "high", "max"])}
+
+
+def test_openrouter_effort_levels_are_never_guessed(fake):
+    """§9.5 / ISSUES P7 (2026-10-01): this live entry lists ``reasoning`` in
+    ``supported_parameters`` but states no ``supported_efforts``. It used to
+    get ``none/low/medium/high`` guessed; now it gets none."""
+    fake.on("GET", "/models", wire.json_response(wire.OPENROUTER_MODELS))
+    table = {**OPENROUTER, "models": {"qwen/qwen3.8-omni-flash": {}}}
+    assert learn(make_endpoint(table)) == {"qwen/qwen3.8-omni-flash": (1000000, True, [])}

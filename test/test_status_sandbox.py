@@ -1,4 +1,4 @@
-"""Tests for the sandbox status-bar field."""
+"""Tests for the sandbox and context status-bar fields."""
 
 from types import SimpleNamespace
 
@@ -24,7 +24,6 @@ def _app(sandboxed, runtime="none"):
         model="q",
         selected_model="q",
         _connection_state="ok",
-        _cached_context_window=32768,
         max_context=32768,
         _model_name_pending=False,
         _original_base_url="http://localhost:8080/v1",
@@ -63,3 +62,16 @@ def test_resolve_color_accepts_name_hex_and_fallback():
     assert (hexed.r, hexed.g, hexed.b) == (0x11, 0x22, 0x33)
     assert _resolve_color("NOPE", theme.DEFAULT) == theme.DEFAULT
     assert _resolve_color("", theme.WARNING) == theme.WARNING
+
+
+def test_unknown_context_window_shows_only_the_tokens_used():
+    """ISSUES P4 (2026-10-01): no invented 32768 maximum."""
+    app = _app(True)
+    app.agent.endpoint.context_window = lambda: None
+    app.agent._last_usage = SimpleNamespace(prompt_tokens=1500)
+    refresh_status_bar(app)
+    assert app.status_bar.values["context"] == "ctx 1.5k"
+
+    app.agent.endpoint.context_window = lambda: 131072
+    refresh_status_bar(app)
+    assert app.status_bar.values["context"] == "ctx 1.5k/128k"

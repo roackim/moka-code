@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 
+from moka_code.harness.endpoint import ModelInfo
 from moka_code.harness.providers.openai_compatible import OpenAICompatible
 from moka_code.harness.usage import TokenUsage
 
@@ -33,33 +34,39 @@ class LlamaCpp(OpenAICompatible):
                 usage = replace(usage, cached_prompt_tokens=cache_n)
         return usage
 
-    async def query_model_name(self) -> str:
-        models = await self.list_models()
-        if models:
-            return models[0].id
-        raise RuntimeError(f"No models available on endpoint '{self.name}'")
-
-    async def query_context_window(self, model_name: str) -> int:
-        """Query context window from a llama.cpp server via /props."""
+    async def _props(self) -> Optional[Dict[str, Any]]:
+        """``/props``; ``None`` when it does not answer (unknown, not a failure)."""
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(self._props_url(), timeout=self.timeout)
-                if response.status_code == 200:
-                    ctx = response.json().get("default_generation_settings", {}).get("n_ctx")
-                    if ctx:
-                        return ctx
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.debug("Failed to query /props endpoint: %s", e)
+            return None
 
-        models = await self.list_models()
-        for model in models:
-            if model.id == model_name and model.context_window:
-                return model.context_window
-        raise RuntimeError("Could not determine context window from server")
+    async def list_models(self) -> list[ModelInfo]:
+        """``/models``, plus the context window and vision ``/props`` states
+        (⚠ in router mode, whether ``/props`` answers per model is unverified:
+        its answer is applied to every listed model)."""
+        models = await super().list_models()
+        props = await self._props()
+        if props is None:
+            return models
+        n_ctx = (props.get("default_generation_settings") or {}).get("n_ctx")
+        vision = (props.get("modalities") or {}).get("vision")
+        return [
+            replace(
+                model,
+                context_window=n_ctx if isinstance(n_ctx, int) and n_ctx > 0 else model.context_window,
+                images=vision if isinstance(vision, bool) else model.images,
+            )
+            for model in models
+        ]
 
-    async def query_image_input(self, model_name: str) -> Optional[bool]:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(self._props_url(), timeout=self.timeout)
-            response.raise_for_status()
-            vision = (response.json().get("modalities") or {}).get("vision")
-            return vision if isinstance(vision, bool) else None
+    async def query_model_name(self) -> str:
+        # Only ``/models`` (not ``/props``): the served model's id.
+        models = await super().list_models()
+        if models:
+            return models[0].id
+        raise RuntimeError(f"No models available on endpoint '{self.name}'")

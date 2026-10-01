@@ -112,7 +112,8 @@ server receives the request" within one conversation.
 
 Fix: the message-build path no longer fetches the context window at all (the
 system prompt is the role's `prompt`), so a failing query is never re-run per
-message. The fallback (`max_context` or 32768) is shown, not memoized.
+message. (Since 2026-10-01 the context window is read from the catalog only;
+there is no per-endpoint query left.)
 
 ## Connection diagnostics
 
