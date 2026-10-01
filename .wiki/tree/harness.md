@@ -110,9 +110,9 @@ tables from it.
   `{"order": [...], "allow_fallbacks": false}` (`_provider_spec`);
   `providers = []` or none → OpenRouter's own routing;
   `merge_reasoning_details`
-- `ollama.py` — `Ollama(Endpoint)`: delegates to `endpoint_ollama.py` (native
-  `/api/tags`, `/api/show`, `/api/chat` with usage counters; outgoing message
-  normalization)
+- `ollama.py` — `Ollama(Endpoint)`: native `/api/tags`, `/api/show`,
+  `/api/chat` (keeps usage counters); `ollama_messages` normalizes outgoing
+  messages, `native_response` adapts chunks
 
 `endpoint_local.py` — `.local` mDNS resolution.
 
@@ -124,7 +124,7 @@ then `image_url` data URLs, base64 read at request time). `probe` reads
 PNG/JPEG/GIF/WebP headers (no Pillow); `store` caches pasted bytes in
 `~/.cache/moka/images/<hash>.<ext>`; `collect` resolves a draft's `[image #N]`
 markers (files on disk are never attached; the model `read`s them); `embed`/`restore` carry bytes through
-`/export`/`/import`. `endpoint_ollama.ollama_messages` converts the parts to
+`/export`/`/import`. `providers/ollama.ollama_messages` converts the parts to
 Ollama's `images: [base64]`.
 `read` can return an image (`worker.read` with the harness-set
 `max_image_bytes`); `Harness._take_tool_image` caches it and a `source: "tool"`

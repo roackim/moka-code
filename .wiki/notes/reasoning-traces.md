@@ -36,7 +36,7 @@ Provider field names differ and are normalized by the transport adapters:
 | Ollama native | `message.thinking` (llama.cpp-backed proxies: `message.reasoning`) |
 
 `providers/openai_compatible._extract_reasoning()` reads the OpenAI-compatible aliases;
-`endpoint_ollama` maps `thinking`. If a provider's field is not listed here it
+`providers/ollama` maps `thinking`. If a provider's field is not listed here it
 will be silently dropped before the harness sees it — a missing reasoning field
 in an export usually means the adapter, not the harness.
 
@@ -85,7 +85,7 @@ them back **unmodified**.
 | `ollama` | `thinking` | Ollama `/api/chat` message fields |
 | `openai` | `reasoning_content` | the de facto field of OpenAI-compatible servers that show reasoning (llama.cpp behind a proxy, e.g. metallama); without it Qwen's template renders an empty `<think></think>` for each earlier step. Real OpenAI Chat Completions returns no reasoning text, so nothing is ever sent there |
 
-(`endpoint_ollama.ollama_messages`.)
+(`providers/ollama.ollama_messages`.)
 
 `Harness._api_history` keeps it on every assistant message; inside `chat()`
 each new assistant turn is appended with `keep_reasoning=True` too.

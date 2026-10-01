@@ -82,7 +82,7 @@ against the provider's current docs before they are built on.
 2. Move the four providers behind it; delete the ~20 `type ==` branches
    (`endpoint.py`, `endpoint_discovery.py`, `endpoint_openai.py`,
    `settings.py`). Order agreed 2026-10-01: restructure first (1a classes +
-   registry ✅, 1b Ollama into `providers/`), then one commit per §9 change
+   registry ✅, 1b Ollama into `providers/` ✅), then one commit per §9 change
    (stream + `Chunk`; `ModelInfo` facts; Ollama client; llama.cpp selection;
    servers config).
 3. One request path per provider: compaction collects from the stream (the

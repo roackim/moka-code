@@ -14,7 +14,7 @@ import pytest
 from moka_code import settings
 from moka_code.harness import images
 from moka_code.harness.endpoint import image_input_from_metadata
-from moka_code.harness.endpoint_ollama import ollama_messages
+from moka_code.harness.providers.ollama import ollama_messages
 from moka_code.harness.harness import Harness
 from moka_code.ui.app import chatTUI
 from moka_code.ui.chat_message import unmention

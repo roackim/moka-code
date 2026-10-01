@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from moka_code.harness import endpoint_ollama as native
+from moka_code.harness.providers import ollama as native
 from moka_code.harness.endpoint import Endpoint
 from moka_code.harness.providers import Ollama
 
@@ -29,8 +29,8 @@ def make_server(base_url: str = "http://localhost:11434/v1") -> Endpoint:
 
 
 def test_native_base_url_strips_v1_suffix():
-    assert native.native_base_url(make_server()) == "http://localhost:11434"
-    assert native.native_base_url(make_server("http://localhost:11434")) == "http://localhost:11434"
+    assert make_server()._native_base_url() == "http://localhost:11434"
+    assert make_server("http://localhost:11434")._native_base_url() == "http://localhost:11434"
 
 
 def test_list_models_parses_tags():

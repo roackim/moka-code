@@ -42,7 +42,7 @@ and full tool output. → `PLAN.md` step 3.
 
 **P1. No provider contract; ~20 `type ==` branches** · in progress
 Provider classes and registry in `harness/providers/` (2026-10-01, step 1.2
-commit 1a): no `type ==` left; Ollama still delegates to `endpoint_ollama.py`.
+commits 1a and 1b): no `type ==` left; the §9 behaviour changes are next.
 → `PLAN.md` step 1.
 
 **P4. Context window guessed as 32768 when unknown** · confirmed
@@ -81,7 +81,7 @@ thinking` and guesses levels from the model name (`gpt-oss`). Checked
 → `.wiki/notes/providers.md` §9, decision 4.
 
 **P8. Ollama `/api/show` request uses `name`** · to audit
-`endpoint_ollama.py` (`context_window`, `image_input`) sends `{"name": model}`;
+`providers/ollama.py` (`query_context_window`, `query_image_input`) sends `{"name": model}`;
 Ollama's current API reference lists only `model` (required). Unverified
 against a real server; may fail on newer Ollama.
 
@@ -93,7 +93,7 @@ for `type = "llamacpp"` the selected model is replaced by `models[0]` of
 → `PLAN.md` step 1, `providers.md` §9.6.
 
 **P10. Ollama tool-loop messages differ from the API reference** · to audit
-`endpoint_ollama.py` `ollama_messages` passes messages through: an assistant
+`providers/ollama.py` `ollama_messages` passes messages through: an assistant
 `tool_calls[].function.arguments` stays a JSON string and a tool result keeps
 `tool_call_id`. Ollama's API reference ("Chat request (With history, with
 tools)", read 2026-10-01) shows `arguments` as an object and the tool result
@@ -147,10 +147,13 @@ U4–U7 are the ones checked so far; the rest are unreviewed.
 absent". Check whether a missing role file silently becomes a default role.
 
 **H6. Flaky tests that run bash** · to audit
-`test_transport.py::test_transport_dispatches_async_handler` and
-`test_worker_protocol.py::test_handle_request_dispatches_each_verb` each
-failed once in about ten full runs (2026-10-01), on HEAD `7e3b080` too. Cause
-unknown (timing of the subprocess?).
+Tests that run a bash subprocess and check its (streamed) output fail
+intermittently: seen in `test_transport.py`, `test_worker.py`,
+`test_worker_protocol.py` (`test_serve_streams_bash_output`,
+`test_handle_request_dispatches_each_verb`) and `test_tool_cancel.py`. About 1
+run in 10 on 2026-10-01 (on HEAD `7e3b080` too), most runs while the machine
+was loaded (load average 12–18). None of these files touch the providers.
+Likely a timing assumption on subprocess output.
 
 **H5. Tests written from the implementation** · to audit
 Four tests asserted behaviour the user had rejected (fixed 2026-09-30:
