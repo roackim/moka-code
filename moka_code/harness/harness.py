@@ -1210,6 +1210,11 @@ def _build_transport(spec, workspace: str) -> Optional[ToolTransport]:
     return SandboxTransport.from_spec(spec, workspace)
 
 
+def current_workspace() -> str:
+    """The running harness's workspace (the working directory before one exists)."""
+    return _harness.workspace if _harness is not None else os.getcwd()
+
+
 def get_harness(config_path: str | None = None) -> Harness:
     global _harness
     if _harness is None:

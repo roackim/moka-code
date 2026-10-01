@@ -126,7 +126,7 @@ class chatTUI(ChatActionHandlers):
         self.input_component.config = settings.config
         self.input_component.on_submit = self.on_user_submit
         self.input_component.highlighter = reference_spans
-        self.input_component.setup_commands(get_command_list(), get_command_descriptions())
+        self.input_component.setup_commands(get_command_list(), get_command_descriptions)
         self.input_component.setup_subcommands(get_subcommand_list, get_subcommand_descriptions)
         get_context_items = lambda: agent.list_files_and_folders() if hasattr(agent, "list_files_and_folders") else []
         self.input_component.setup_context(get_context_items)

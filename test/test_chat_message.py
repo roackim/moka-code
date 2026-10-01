@@ -168,3 +168,19 @@ def test_thread_render_smoke_markdown_message():
     joined = "\n".join(rows)
     assert "bold" in joined
     assert "▌" in joined  # heavy prefix bar (unfocused)
+
+def test_expanded_thought_ends_on_a_blank_row_without_touching_its_text():
+    """Layout only (2026-10-01): one extra row when expanded, none when folded;
+    the message text is exactly what the model produced."""
+    from moka_code.ui.tui.msg_types import AssistantMsg, ThinkingMsg
+
+    thought = Message("line one\nline two", msg_type=ThinkingMsg(), max_width=40)
+    answer = Message("line one\nline two", msg_type=AssistantMsg(), max_width=40)
+    component = thought.get_component()
+
+    assert component.get_preferred_height(40) == answer.get_component().get_preferred_height(40) + 1
+    assert thought.base_text == "line one\nline two"
+    thought.set_collapsed(True)
+    assert component.get_preferred_height(40) == 1
+    thought.set_collapsed(False)
+    assert component.get_preferred_height(40) == answer.get_component().get_preferred_height(40) + 1

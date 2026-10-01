@@ -71,6 +71,10 @@ class MessageView(Box):
         inner_w = max(1, self.thread_content_width(
             width, self.content_pad_left, self.content_pad_right))
         base = self.child.get_preferred_height(inner_w) + 2 * self.content_pad_y
+        # An expanded thought ends on a blank row, to set it apart from what
+        # follows. Layout only: the message text is never touched.
+        if self.parent_msg is not None and getattr(self.parent_msg, "trailing_blank_row", False):
+            base += 1
         if self._visible_actions():
             base += 1
         # A message always occupies at least its gutter row, even when its

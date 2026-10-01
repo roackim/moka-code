@@ -49,8 +49,11 @@ class Command:
     def __init__(self, name: str, description: str,
                  handler: Optional[CommandHandler] = None,
                  subcommands: Optional[Dict[str, "Command"]] = None,
-                 params: Optional[List[Param]] = None):
+                 params: Optional[List[Param]] = None,
+                 live_description: Optional[Callable[[], str]] = None):
         self.name = name
+        # A description computed when the ``/`` menu opens (e.g. a count).
+        self.live_description = live_description
         self.description = description
         self.handler = handler
         self.subcommands = subcommands or {}
@@ -88,12 +91,16 @@ class Command:
         if arg_index < 0 or arg_index >= len(self.params):
             return []
         parameter = self.params[arg_index]
-        if parameter.path:
-            return self._scan_dirs(parameter.completions)
         if parameter.completions is None:
             return []
         return (parameter.completions() if callable(parameter.completions)
                 else list(parameter.completions))
+
+    def takes_path(self, arg_index: int) -> bool:
+        """Whether an argument is a workspace file (completed from the file list
+        the ``@`` menu uses, not from ``Param.completions``)."""
+        return (not self.has_subcommands() and 0 <= arg_index < len(self.params)
+                and self.params[arg_index].path)
 
     def completions_ordered(self, arg_index: int) -> bool:
         """Whether an argument's completions keep their own order."""
@@ -109,23 +116,6 @@ class Command:
             return {}
         return dict(source() if callable(source) else source)
 
-    @staticmethod
-    def _scan_dirs(workspace: Any = None) -> List[str]:
-        base = workspace() if callable(workspace) else workspace
-        try:
-            entries = []
-            with os.scandir(base or ".") as directory:
-                for entry in directory:
-                    if entry.name.startswith("."):
-                        continue
-                    try:
-                        if entry.is_dir(follow_symlinks=True):
-                            entries.append(entry.name + "/")
-                    except OSError:
-                        pass
-            return entries
-        except OSError:
-            return []
 
 
 def pick(ui: ChatUIProtocol, title: str, items: List[str], on_accept: Callable[[str], None],

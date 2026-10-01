@@ -712,7 +712,7 @@ The package lives in `moka_code/ui/commands/`:
 ### Registered Commands
 
 `help`, `clear`, `reload`, `config`, `edit`, `export`, `import`, `compact`,
-`exit`, `stop`, `terminal`, `activity`, `model`, `role`, `sandbox`, `theme`
+`exit`, `stop`, `terminal`, `activity`, `model`, `role`, `sandbox`, `diff`, `theme`
 
 ### Sandbox (`/sandbox`)
 
@@ -733,6 +733,29 @@ The `start`/`build` `ID` param uses `sandbox_id_completions` +
 `sandbox_base_completions`. All positional completion comes from the tree, not
 from a hand-rolled `get_completions`.
 
+### Diff review (`/diff`)
+
+- Git only, read-only (`harness/changes.py`): the working tree against `HEAD`
+  (the empty tree in a repository without commits), untracked files included,
+  renames shown as a deletion plus an addition. A workspace inside a repository
+  sees only its own folder's changes. No ref, no tracking, nothing is recorded.
+- `/diff` opens a picker (`(all changes)` first, then one row per file:
+  `M  +12 −3`; status `M` `A` `D` `??`); choosing one opens its diff in
+  `$EDITOR`. `/diff <file>` opens that file at once, and suggests only changed
+  files. The diff is a read-only (0444) `.diff` file under `~/.cache/moka/diff/`,
+  removed when the editor closes.
+- Context: `context.toml` `diff_context` sets the unchanged lines around each
+  change: a number (default 3), `"function"` (the whole enclosing function) or
+  `"all"` (the whole file, changes marked in place). `"function"` is git's own
+  detection (the last unindented line, or a `diff=` driver from `.gitattributes`),
+  so it is exact for languages git knows and approximate otherwise.
+- Discoverability: the `/diff` row of the `/` menu reads "Review changes · 3
+  files" (`Command.live_description`, evaluated each time the menu updates; git is
+  asked at most every 3 s, `changes.cached_changes`). Descriptions in the `/`
+  menu may be a function, not only a dict.
+- Later (todo): a focusable REF commit (pick a commit from `git log --oneline` to
+  diff against), a session-start snapshot, git commands.
+
 ### Server & model selection
 
 - Servers are configured by editing `servers.toml` (`/config servers`); there is
@@ -751,6 +774,12 @@ from a hand-rolled `get_completions`.
   `themes.toml` definitions); it takes no argument. The choice persists in
   `state.toml`.
 - `/config theme` edits `themes.toml`.
+
+- `/edit ` completes the workspace files and folders (the same list as the `@`
+  menu: bounded, gitignore-aware, filtered as you type); `Param(path=True)` means
+  a workspace file. A typed `@` is dropped by `unmention`, as for any command.
+- An expanded thought (focused) ends on one blank row (`Message.trailing_blank_row`,
+  added in `MessageView.get_preferred_height`); the message text is never changed.
 
 ### One behaviour for every choice (guarded by `test_command_contract.py`)
 

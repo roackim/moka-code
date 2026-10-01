@@ -200,6 +200,10 @@ DEFAULT_CONTEXT_TOML = """\
 
 # compact_filter_thoughts = true        # leave the model's reasoning out of the summary input
 # compact_filter_tool_calls = true      # each tool call as one line, without its output
+
+## /diff
+
+# diff_context = 3                      # unchanged lines around each change; "function" = the whole function, "all" = the whole file
 """
 
 DEFAULT_DEBUG_TOML = """\
@@ -341,6 +345,7 @@ _CONTEXT_SPEC: Dict[str, tuple[str, str]] = {
     "sessions": ("context_sessions", "int"),
     "compact_filter_thoughts": ("context_compact_filter_thoughts", "bool"),
     "compact_filter_tool_calls": ("context_compact_filter_tool_calls", "bool"),
+    "diff_context": ("context_diff_context", "diff_context"),
 }
 
 _DEBUG_SPEC: Dict[str, tuple[str, str]] = {
@@ -528,6 +533,11 @@ def _coerce(kind: str, value: Any) -> tuple[Any, Optional[str]]:
         if isinstance(value, bool) or not isinstance(value, int):
             return None, "must be an integer or absent"
         return value, None
+    if kind == "diff_context":
+        if value in ("function", "all") or (isinstance(value, int) and not isinstance(value, bool)
+                                           and value >= 0):
+            return value, None
+        return None, "must be a number of lines, 'function' or 'all'"
     if kind == "context_format":
         if value not in ("tree", "flat"):
             return None, "must be 'tree' or 'flat'"
@@ -614,6 +624,7 @@ class Config:
         self.context_sessions: int = 10
         self.context_compact_filter_thoughts: bool = True
         self.context_compact_filter_tool_calls: bool = True
+        self.context_diff_context: int | str = 3
 
         # Style tables.
         self.markdown_styles: Dict[str, Dict[str, Any]] = {

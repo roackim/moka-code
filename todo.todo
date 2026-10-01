@@ -1,5 +1,15 @@
-[ ] in the expanded display of thoughts, show an empty line at last for better visibility and separation (DO NOT MODIFY HISTORY OF MESSAGE CONTENT)
-[ ] make preserve_thinking config part of roles ?
+[ ] add a headless mode to moka
+    -> POSTPONED (2026-10-01): needs a thorough design (no one to answer `ask`,
+       output formats, sessions); no current need
+[x] in the expanded display of thoughts, show an empty line at last for better visibility and separation (DO NOT MODIFY HISTORY OF MESSAGE CONTENT)
+[x] /edit @file -> open $EDITOR ? like for /config servers   (/edit now completes workspace files)
+[x] /diff: git only, no ref, no tracking; read-only temp diff file opened in $EDITOR   (v1 done, vs HEAD)
+    [x] bare /diff = picker of changed files (M/A/D/??), /diff <file> direct
+    [x] discoverability: live "Review changes · N files" in the / menu
+    [ ] later: focusable REF commit; ENTER opens a commit selector (git log --oneline) to diff against
+    [ ] later: baseline at session start (snapshot via a throwaway index + write-tree)?
+    [ ] later: git integration commands in moka? (needs its own design)
+
 [x] swap roles using TAB ?
 [x] swap sandbox using CTRL + TAB ?
 [x] /model should show ALL THE AVAILABLE MODELS like when /model [ENTER]
@@ -7,8 +17,7 @@
 [x] check if window has focus, otherwise, well, unfocus things, at the very least the input fields
 [x] when input field is multiline, i think the selector should be on top of input field, not one line above the trigger
 [x] model reasonning effort switch !important /effort (only for models / servers that supports it)
-[ ] /edit @file -> open $EDITOR ? like for /config servers
-[ ] /diffview @file -? open $EDITOR of a diff ? or just open a moka panel with the diffs ? kinda like
+
 
 [x] /terminal should be able to run in (current default) and out of the sandbox
     -> add a param ?

@@ -579,6 +579,11 @@ class Message:
             self.layout_revision += 1
             self.box.mark_changed()
 
+    @property
+    def trailing_blank_row(self) -> bool:
+        """An expanded collapsible message (a thought) ends on a blank row."""
+        return self.collapsible and not self.collapsed
+
     def begin_phase(self, phase: str):
         """Label this message with the current wait phase (``processing``/``thinking``).
 

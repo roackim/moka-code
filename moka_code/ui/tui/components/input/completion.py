@@ -140,7 +140,8 @@ class CommandCompletion(Completer):
                  descriptions: Optional[dict] = None):
         super().__init__(menu)
         self.commands = commands
-        self.descriptions = dict(descriptions or {})
+        # A dict, or a function returning one (descriptions that change).
+        self.descriptions = descriptions if callable(descriptions) else dict(descriptions or {})
         self._apply_selector_style()
 
     def should_trigger(self, text: str) -> bool:
@@ -186,8 +187,8 @@ class CommandCompletion(Completer):
             self.hide()
             return
 
-        self._show(self.commands, search_term, display_prefix="/",
-                   descriptions=self.descriptions)
+        descriptions = self.descriptions() if callable(self.descriptions) else self.descriptions
+        self._show(self.commands, search_term, display_prefix="/", descriptions=descriptions)
 
     def accept_selection(self, text: str, cursor_pos: int) -> Optional[tuple[str, int]]:
         """Accept current selection, return (completed_text, cursor_pos)."""
@@ -333,9 +334,12 @@ class ArgumentCompletion(Completer):
     completer (CommandCompletion, SubcommandCompletion) is not active.
     """
 
-    def __init__(self, menu, commands: Dict[str, "Command"]):
+    def __init__(self, menu, commands: Dict[str, "Command"],
+                 files: Optional[Callable[[], List[str]]] = None):
         super().__init__(menu)
         self.commands = commands  # The COMMANDS registry
+        # The workspace files (what the ``@`` menu lists), for path arguments.
+        self.files = files
         self._apply_selector_style()
 
     def _resolve(self, text: str) -> Optional[tuple["Command", int, str, tuple[str, ...]]]:
@@ -402,7 +406,10 @@ class ArgumentCompletion(Completer):
         cmd, arg_index, current_text, prior_args = result
 
         # Get completions from the resolved command
-        items = cmd.get_completions(arg_index, prior_args)
+        if cmd.takes_path(arg_index) and self.files is not None:
+            items = self.files()
+        else:
+            items = cmd.get_completions(arg_index, prior_args)
         if not items:
             self.hide()
             return

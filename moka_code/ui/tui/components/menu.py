@@ -1,5 +1,5 @@
 import time
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Optional, Tuple, Union
 from enum import Enum
 from moka_code.ui.tui.components.base import Component
 from moka_code.ui.tui.buffer import Buffer
@@ -8,9 +8,31 @@ from moka_code.ui.tui.colors import RGB, theme
 from moka_code.ui.tui.events import MouseEvent
 
 
-def _tail_len(description: str, footer: str) -> int:
+# A description or footer: plain text, or ``[(text, color)]`` segments (color
+# ``None`` keeps the default), e.g. a status word and its numbers coloured apart.
+Cell = Union[str, List[Tuple[str, Optional[RGB]]]]
+
+
+def cell_text(cell: Cell) -> str:
+    return cell if isinstance(cell, str) else "".join(text for text, _color in cell)
+
+
+def _write_cell(buffer: Buffer, x: int, y: int, cell: Cell, fg, bg, max_width: int) -> None:
+    if isinstance(cell, str):
+        buffer.write_str(x, y, cell, fg=fg, bg=bg, max_width=max_width)
+        return
+    used = 0
+    for text, color in cell:
+        if used >= max_width:
+            break
+        buffer.write_str(x + used, y, text, fg=color or fg, bg=bg, max_width=max_width - used)
+        used += len(text)
+
+
+def _tail_len(description: Cell, footer: Cell) -> int:
     """Width of a row's muted description plus its optional footer."""
-    return len(description) + (2 + len(footer) if footer else 0)
+    footer_len = len(cell_text(footer))
+    return len(cell_text(description)) + (2 + footer_len if footer_len else 0)
 
 
 def sort_items(items: List[str]) -> List[str]:
@@ -276,16 +298,16 @@ class SelectionMenu(Component):
                 footer = self.item_footers.get(item, "")
                 tail_x = content_x + name_col + 2
                 tail_area = content_area - name_col - 2
-                if desc and tail_area > 0:
-                    buffer.write_str(tail_x, curr_y, desc,
-                                     fg=theme.MUTED, bg=self.bg, max_width=tail_area)
+                desc_len = len(cell_text(desc))
+                if desc_len and tail_area > 0:
+                    _write_cell(buffer, tail_x, curr_y, desc,
+                                theme.MUTED, self.bg, tail_area)
                 if footer:
-                    footer_x = tail_x + len(desc) + 2
-                    footer_area = content_area - (name_col + 2 + len(desc) + 2)
+                    footer_x = tail_x + desc_len + 2
+                    footer_area = content_area - (name_col + 2 + desc_len + 2)
                     if footer_area > 0:
-                        buffer.write_str(footer_x, curr_y, footer,
-                                         fg=self.footer_color, bg=self.bg,
-                                         max_width=footer_area)
+                        _write_cell(buffer, footer_x, curr_y, footer,
+                                    self.footer_color, self.bg, footer_area)
 
             for p in range(self.right_pad):
                 buffer.set(self.x + 1 + self.left_pad + content_area + p, curr_y, " ",

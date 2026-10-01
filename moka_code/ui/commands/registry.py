@@ -53,6 +53,7 @@ from .sandbox import (
     sandbox_runtime_completions,
     sandbox_start,
 )
+from .diff import changed_descriptions, changed_files, diff_command, live_description
 from .themes import theme_command
 
 # Help needs the whole registry, so its handler is assembled here.
@@ -131,6 +132,10 @@ COMMANDS: Dict[str, Command] = {
                                 "sandbox terminal", "Open a shell inside the active sandbox",
                                 handler=sandbox_terminal),
                         }),
+    "diff":         Command("diff", "Review uncommitted changes (opens a picker)",
+                            handler=diff_command, live_description=live_description,
+                            params=[Param("FILE", completions=changed_files,
+                                          descriptions=changed_descriptions, ordered=True)]),
     "theme":        Command("theme", "Select the color theme (opens a picker with live preview)",
                             handler=theme_command),
 }
@@ -161,7 +166,8 @@ def get_command_list() -> List[str]:
 
 def get_command_descriptions() -> Dict[str, str]:
     """Map top-level command name -> one-line description."""
-    return {name: cmd.description for name, cmd in COMMANDS.items()}
+    return {name: (cmd.live_description() if cmd.live_description else cmd.description)
+            for name, cmd in COMMANDS.items()}
 
 
 def get_subcommand_list(command: str) -> List[str]:

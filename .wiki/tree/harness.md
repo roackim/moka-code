@@ -195,6 +195,15 @@ starts with `Error:` or `[TOOL DENIED]`; unfiltered, the call and its result.
 Reasoning is `[thinking] …` only when `filter_thoughts` is off. Owns
 `COMPACTION_MARKER_PREFIX`.
 
+### `changes.py`
+`changes(workspace)` → `[Change(path, status, added, removed)]` (`None` outside a
+git repository): `git status --porcelain -z -uall` plus `git diff --numstat`
+against `HEAD`, scoped to the workspace folder; `cached_changes` (3 s) for the `/`
+menu; `diff_text(workspace, path=None, context=3)` the unified diff (`context`: N
+lines, `"function"` or `"all"`), untracked files via
+`git diff --no-index`. Read-only: git only ever runs `status`, `diff`,
+`rev-parse`, `hash-object`, with `GIT_OPTIONAL_LOCKS=0`. Used by `/diff`.
+
 ### `roles.py`
 `Role` — the single source of truth for a conversation's operating mode: a
 `description`, a `prompt`, a `tools: dict[str, str]` mapping each registered

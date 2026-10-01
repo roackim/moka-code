@@ -106,7 +106,7 @@ class InputComponent(Component):
     def setup_commands(self, commands: List[str], descriptions: Optional[Dict[str, str]] = None):
         """Initialize command completion (optionally with one-line descriptions)."""
         self.command_list = commands
-        self.command_descriptions = dict(descriptions or {})
+        self.command_descriptions = descriptions if callable(descriptions) else dict(descriptions or {})
     
     def setup_subcommands(self, get_subcommands_callback: Callable[[str], List[str]],
                           get_descriptions_callback: Optional[Callable[[str], Dict[str, str]]] = None):
@@ -156,7 +156,9 @@ class InputComponent(Component):
         """Lazy-create argument completion menu for generic Param-driven completion."""
         if self.argument_completion is None and self._command_registry:
             self.argument_completion = self._new_completion(
-                lambda menu: ArgumentCompletion(menu, self._command_registry))
+                lambda menu: ArgumentCompletion(
+                    menu, self._command_registry,
+                    files=lambda: (self.context_items_callback() if self.context_items_callback else [])))
 
     # def setup_menus(self, commands: List[str], get_context_items: Optional[Callable[[], List[str]]] = None,
                     # get_subcommands: Optional[Callable[[str], List[str]]] = None):

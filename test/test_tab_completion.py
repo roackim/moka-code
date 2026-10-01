@@ -87,3 +87,17 @@ def test_model_space_keeps_the_text_and_lists_every_model(monkeypatch):
     assert inp.buffer.text == "/model "
     assert inp.has_active_completion()
     assert sorted(inp.argument_completion.menu.items) == ["Qwen:high", "Qwen:low", "deepseek/x"]
+
+
+def test_edit_completes_workspace_files_not_just_folders():
+    """``/edit `` offers the files the ``@`` menu lists (2026-10-01); it used to
+    scan the top-level folders only."""
+    inp = _input(["src/", "src/a.py", "README.md", "notes.txt"])
+    _type(inp, "/edit ")
+    assert inp.has_active_completion()
+    assert set(inp.argument_completion.menu.items) == {"src/", "src/a.py", "README.md", "notes.txt"}
+
+    _type(inp, "rea")
+    assert inp.argument_completion.menu.items == ["README.md"]        # filtered as you type
+    inp.handle_input("\t")
+    assert inp.buffer.text == "/edit README.md "
