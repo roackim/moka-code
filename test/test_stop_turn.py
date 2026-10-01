@@ -4,19 +4,17 @@ import asyncio
 import json
 import os
 import time
-from types import SimpleNamespace as NS
 from unittest.mock import patch
 
 from moka_code.harness import events
+from moka_code.harness.endpoint import Chunk, ToolCallPiece
 from moka_code.harness.harness import Harness
 from moka_code.harness.roles import Role
 from moka_code.harness.providers import LlamaCpp
 
 
 def _tool_chunk(call_id, name, args):
-    delta = NS(content=None, reasoning_content=None,
-               tool_calls=[NS(index=0, id=call_id, function=NS(name=name, arguments=json.dumps(args)))])
-    return NS(choices=[NS(delta=delta, finish_reason=None)], usage=None)
+    return Chunk(tool_calls=[ToolCallPiece(index=0, id=call_id, name=name, arguments=json.dumps(args))])
 
 
 def _harness(tmp_path, tools, first_call):
@@ -25,10 +23,10 @@ def _harness(tmp_path, tools, first_call):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools=tools))
 
-    async def completion(messages, tools=None, stream=True):
+    async def completion(messages, tools=None):
         yield _tool_chunk("c1", *first_call)
 
-    harness.endpoint.create_completion = completion
+    harness.endpoint.stream = completion
     return harness
 
 

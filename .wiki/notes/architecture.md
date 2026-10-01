@@ -61,7 +61,7 @@ The core reasoning loop:
 User types → InputComponent
            → chatTUI.handle_submit()
            → Harness.chat()
-           → Endpoint.create_completion()
+           → Endpoint.stream() (neutral Chunks)
            → events yielded → UI renders streaming tokens
            → tool call detected → PermissionGate checks the active role's per-tool setting
            → tool executed → result appended to history

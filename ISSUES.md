@@ -103,6 +103,14 @@ Pinned as it is today in `test_wire_requests.py`.
 
 ---
 
+**P11. llama.cpp `cache_n` never used** · confirmed (docs)
+`providers/llamacpp.py` `_usage` reads `timings.cache_n` only when usage has no
+cache count, but llama.cpp's documented usage carries
+`prompt_tokens_details.cached_tokens: 0` (tools/server/README.md, read
+2026-10-01), so the cache shown is always 0. Pinned in
+`test_wire_requests.py::test_llamacpp_cache_counts_as_reported`. Unverified
+whether a real server reports a non-zero `cached_tokens` itself.
+
 ## UI
 
 **U4. Editor silently chosen** · to audit

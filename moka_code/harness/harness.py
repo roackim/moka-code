@@ -15,8 +15,7 @@ from moka_code.harness.elision import elide
 from moka_code.harness import events, images
 from moka_code.harness.endpoint import Endpoint, get_active_endpoint
 from moka_code.harness.permissions import PermissionGate
-from moka_code.harness.providers.openrouter import merge_reasoning_details
-from moka_code.harness.usage import MetricsState, TokenUsage, usage_from_response
+from moka_code.harness.usage import MetricsState, TokenUsage
 
 # Import the minimal toolset
 from moka_code.harness.tools import (
@@ -491,19 +490,12 @@ class Harness:
         }
 
         summary_text = ""
-        async for response in self.endpoint.create_completion(
-            messages=self._system_messages() + [summarize_user],
-            tools=None,
-            stream=False,
-        ):
-            self._add_cost(usage_from_response(response))
-            if not response.choices:
-                continue
-            message = response.choices[0].message
-            content = getattr(message, "content", None)
-            if content:
-                summary_text = content.strip()
-                break
+        usage = None
+        async for chunk in self.endpoint.stream(self._system_messages() + [summarize_user]):
+            summary_text += chunk.text
+            usage = chunk.usage or usage
+        self._add_cost(usage)       # one request, one cost: the last usage reported
+        summary_text = summary_text.strip()
 
         if not summary_text:
             raise RuntimeError("Compaction failed: model returned empty summary")
@@ -634,34 +626,27 @@ class Harness:
         empty_chunks = 0
         stream_usage: Optional[TokenUsage] = None
         self._last_finish_reason = None
-        async for chunk in self.endpoint.create_completion(messages, tools=self.tool_schemas, stream=True):
+        async for chunk in self.endpoint.stream(messages, tools=self.tool_schemas):
             chunk_count += 1
 
-            usage = usage_from_response(chunk)
-            if usage is not None:
-                metrics.set_usage(usage)
-                self._last_usage = usage
-                stream_usage = usage
+            if chunk.usage is not None:
+                metrics.set_usage(chunk.usage)
+                self._last_usage = chunk.usage
+                stream_usage = chunk.usage
 
-            if not chunk.choices:
+            if chunk.reasoning_native is not None:
+                self._current_reasoning_details = chunk.reasoning_native
+
+            if not (chunk.text or chunk.reasoning or chunk.tool_calls or chunk.finish):
                 empty_chunks += 1
-                logger.debug(f"Chunk {chunk_count}: No choices")
+                logger.debug(f"Chunk {chunk_count}: empty")
                 continue
 
-            delta = chunk.choices[0].delta
-            finish_reason = chunk.choices[0].finish_reason
-
-            if finish_reason:
-                self._last_finish_reason = finish_reason
-                logger.debug(f"Chunk {chunk_count}: finish_reason={finish_reason}")
-                if hasattr(delta, 'content') and delta.content:
-                    logger.debug(f"  Final delta content: {delta.content}")
-                if hasattr(delta, 'refusal') and delta.refusal:
-                    logger.warning(f"  LLM REFUSAL: {delta.refusal}")
-                if hasattr(delta, 'tool_calls') and delta.tool_calls:
-                    logger.debug(f"  Final delta has tool calls")
+            if chunk.finish:
+                self._last_finish_reason = chunk.finish
+                logger.debug(f"Chunk {chunk_count}: finish_reason={chunk.finish}")
                 if chunk_count <= 3:
-                    logger.warning(f"Got finish_reason={finish_reason} on chunk {chunk_count} - very early finish! Possible API error or content filter.")
+                    logger.warning(f"Got finish_reason={chunk.finish} on chunk {chunk_count} - very early finish! Possible API error or content filter.")
                     logger.debug(f"  Full chunk: {chunk}")
 
             if not first_chunk_received:
@@ -672,11 +657,8 @@ class Harness:
                 first_chunk_received = True
                 metrics.ttft_ms = ttft_ms
 
-            # 1. Reasoning, from the server's own fields (``reasoning_content``;
-            # the adapters map ``reasoning`` / Ollama ``thinking`` onto it).
-            merge_reasoning_details(self._current_reasoning_details,
-                                    getattr(delta, "reasoning_details", None))
-            reasoning = getattr(delta, "reasoning_content", None)
+            # 1. Reasoning, from the server's own fields.
+            reasoning = chunk.reasoning
             if reasoning:
                 if self.state != AgentState.THINKING:
                     self.state = AgentState.THINKING
@@ -686,12 +668,12 @@ class Harness:
                 m = metrics.maybe_metrics(metrics_interval)
                 if m:
                     yield m
-                # No ``continue``: a delta may also carry content or tool-call
+                # No ``continue``: a chunk may also carry content or tool-call
                 # fragments (at the reasoning→answer transition), which would
                 # otherwise be dropped and corrupt the call's arguments.
 
             # 2. Content, verbatim.
-            content = delta.content
+            content = chunk.text
             if content:
                 metrics.ensure_started()
                 if self.state != AgentState.ANSWERING:
@@ -703,8 +685,8 @@ class Harness:
                     yield m
 
             # 3. Handle Tool Calls
-            if delta.tool_calls:
-                for tc in delta.tool_calls:
+            if chunk.tool_calls:
+                for tc in chunk.tool_calls:
                     # Robust keying for streaming providers. Deltas for ONE call
                     # carry the id only on the first chunk and id-less
                     # argument fragments afterwards; but the model may also
@@ -739,10 +721,10 @@ class Harness:
                                 "function": {"name": "", "arguments": ""}
                             }
 
-                    if getattr(tc.function, "name", None):
-                        tool_calls_buffer[key]["function"]["name"] += tc.function.name
-                    if getattr(tc.function, "arguments", None):
-                        tool_calls_buffer[key]["function"]["arguments"] += tc.function.arguments
+                    if tc.name:
+                        tool_calls_buffer[key]["function"]["name"] += tc.name
+                    if tc.arguments:
+                        tool_calls_buffer[key]["function"]["arguments"] += tc.arguments
 
                     # Announce the in-progress call so the UI can render a live
                     # draft line (spinner + name + args so far) instead of

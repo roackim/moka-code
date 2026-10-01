@@ -56,7 +56,11 @@ server family is a subclass in `providers/` (below); nothing outside a provider
 branches on `type`. Class attributes: `type`, `default_url`, `fixed_url`,
 `extra_keys`, `serves_one_model`. Providers implement `list_models`,
 `discover_models`, `query_model_name`, `query_context_window`,
-`query_image_input`, `_completion` and `effort_payload`.
+`query_image_input`, `_stream` and `effort_payload`. `stream(messages, tools)`
+is the only request path (chat and compaction): it wraps the provider's
+`_stream` in the retry loop (503 and network errors, backoff) and yields
+`Chunk`s (`text`, `reasoning`, `reasoning_native`, `tool_calls` as
+`ToolCallPiece`s, `usage`, `finish`); the harness reads no vendor field.
 `make_endpoint(name, data)` builds the registry class for a `[servers.<name>]`
 table and resolves `api_key_env` (`type` is required unless the table is named
 after one; `base_url` is required unless the class has a `default_url` or
@@ -101,15 +105,17 @@ This one type replaced the former `LLMServerConfig` + `ServerService` +
 `REGISTRY` (`__init__.py`) maps `type` to class; `settings` validates server
 tables from it.
 - `openai_compatible.py` — `OpenAICompatible` (`type = "openai"`): `/models`,
-  SSE `/chat/completions` transport and adapters; `_extra_payload` hook
+  SSE `/chat/completions` → `Chunk`s; `parse_usage`; `_extra_payload` hook
 - `llamacpp.py` — `LlamaCpp(OpenAICompatible)`: default URL, single served
-  model from `/models[0]` (`serves_one_model`), context and vision via `/props`
+  model from `/models[0]` (`serves_one_model`), context and vision via `/props`,
+  cache count from `timings.cache_n` when usage has none
 - `openrouter.py` — `OpenRouter(OpenAICompatible)`: fixed URL; one
   `[models."<id>"]` table per enabled model; `providers` (server default,
   per-model override) is a strict ordered whitelist sent as
   `{"order": [...], "allow_fallbacks": false}` (`_provider_spec`);
   `providers = []` or none → OpenRouter's own routing;
-  `merge_reasoning_details`
+  `reasoning_details` assembled into `Chunk.reasoning_native`
+  (`merge_reasoning_details`)
 - `ollama.py` — `Ollama(Endpoint)`: native `/api/tags`, `/api/show`,
   `/api/chat` (keeps usage counters); `ollama_messages` normalizes outgoing
   messages, `native_response` adapts chunks
@@ -137,8 +143,8 @@ Ollama `/api/show` `capabilities`, llama.cpp `/props` `modalities.vision`,
 OpenRouter `/models/<id>/endpoints` `architecture.input_modalities`).
 
 ### `usage.py`
-`TokenUsage` and normalization helpers convert OpenAI-compatible and Ollama
-usage counters into provider-neutral prompt/completion/total token data.
+`TokenUsage` (provider-neutral prompt/completion/total/cache/cost counts; each
+provider fills it from its own fields) and `MetricsState`.
 
 ### `llm_status.py`
 `AgentState` enum: `UNCONNECTED`, `IDLE`, `THINKING`, `ANSWERING`.

@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from dataclasses import replace
+from typing import Any, Dict, Optional
 
 import httpx
 
 from moka_code.harness.providers.openai_compatible import OpenAICompatible
+from moka_code.harness.usage import TokenUsage
 
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,15 @@ class LlamaCpp(OpenAICompatible):
 
     def _props_url(self) -> str:
         return self.base_url.replace("/v1", "/props")
+
+    def _usage(self, data: Dict[str, Any]) -> Optional[TokenUsage]:
+        usage = super()._usage(data)
+        if usage is not None and usage.cached_prompt_tokens is None:
+            # llama.cpp reports KV-cache reuse in ``timings``, next to usage.
+            cache_n = (data.get("timings") or {}).get("cache_n")
+            if isinstance(cache_n, int):
+                usage = replace(usage, cached_prompt_tokens=cache_n)
+        return usage
 
     async def query_model_name(self) -> str:
         models = await self.list_models()

@@ -43,19 +43,11 @@ class FakeServer:
     async def get_context_window(self):
         return 32768
 
-    async def create_completion(self, messages, tools=None, stream=True):
+    async def stream(self, messages, tools=None):
+        from moka_code.harness.endpoint import Chunk
+
         self.last_messages = messages
-
-        class _Msg:
-            content = self._response_content
-
-        class _Choice:
-            message = _Msg()
-
-        class _Resp:
-            choices = [_Choice()]
-
-        yield _Resp()
+        yield Chunk(text=self._response_content)
 
 
 class StubReadTool:

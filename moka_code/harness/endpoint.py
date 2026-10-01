@@ -14,12 +14,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Dict, Optional
 from urllib.parse import urlsplit
 
 import httpx
 
+from moka_code.harness.usage import TokenUsage
 from moka_code.harness.endpoint_local import (
     _local_cache,
     _resolve_local_hostname,
@@ -80,6 +81,34 @@ class ModelInfo:
             owned_by=data.get("owned_by"),
             metadata=data.get("metadata") or {},
         )
+
+
+# ---------------------------------------------------------------------------
+# Stream chunks
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ToolCallPiece:
+    """A fragment of one streamed tool call."""
+
+    index: int
+    id: Optional[str] = None
+    name: Optional[str] = None
+    arguments: str = ""     # a JSON text fragment (dict arguments are dumped)
+
+
+@dataclass
+class Chunk:
+    """One piece of a streamed answer, in no provider's vocabulary."""
+
+    text: str = ""                          # answer text, verbatim
+    reasoning: str = ""                     # reasoning text, as the server sent it
+    # Opaque reasoning blocks, yielded once at the end, already assembled by
+    # the provider (OpenRouter's ``reasoning_details``).
+    reasoning_native: Optional[list] = None
+    tool_calls: list[ToolCallPiece] = field(default_factory=list)
+    usage: Optional[TokenUsage] = None
+    finish: Optional[str] = None            # the server's finish reason
 
 
 # ---------------------------------------------------------------------------
@@ -452,33 +481,64 @@ class Endpoint:
 
     # -- chat completion -----------------------------------------------------
 
-    async def create_completion(
+    async def stream(
         self,
         messages: list[Dict[str, Any]],
         tools: Optional[list[Dict[str, Any]]] = None,
-        stream: bool = True,
-    ) -> AsyncGenerator[Any, None]:
-        """Create a chat completion through the provider's transport.
+    ) -> AsyncGenerator[Chunk, None]:
+        """Stream a chat completion for the selected model and effort.
 
-        Chunks are adapted to the SDK shape (``choices[0].delta`` /
-        ``finish_reason`` / ``usage``, and ``choices[0].message`` for
-        non-streaming).
+        A 503 (model loading) or a network error retries the whole request
+        with backoff, up to ``retry_attempts``; any other HTTP error is raised.
         """
         self._in_flight += 1
         try:
-            async for chunk in self._completion(messages, tools, stream):
-                yield chunk
+            max_retries = self.retry_attempts
+            retry_delay = self.retry_delay
+            for attempt in range(max_retries):
+                try:
+                    async for chunk in self._stream(messages, tools):
+                        yield chunk
+                    return
+                except (httpx.HTTPStatusError, httpx.RequestError,
+                        asyncio.TimeoutError, httpx.TimeoutException) as e:
+                    loading = isinstance(e, httpx.HTTPStatusError)
+                    if loading and e.response.status_code != 503:
+                        raise
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            "%s, retrying in %.1fs (attempt %d/%d)",
+                            "Model loading (503)" if loading else f"Request failed ({type(e).__name__})",
+                            retry_delay, attempt + 1, max_retries,
+                        )
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 1.5
+                        continue
+                    if loading:
+                        raise httpx.HTTPStatusError(
+                            f"Model loading timeout after {max_retries} attempts: {e}",
+                            request=e.request, response=e.response,
+                        ) from e
+                    raise
         finally:
             self._in_flight -= 1
             await self._close_stale_clients()
 
-    def _completion(
+    def _stream(
         self,
         messages: list[Dict[str, Any]],
         tools: Optional[list[Dict[str, Any]]],
-        stream: bool,
-    ) -> AsyncGenerator[Any, None]:
+    ) -> AsyncGenerator[Chunk, None]:
+        """One streamed request (no retries), as :class:`Chunk` objects."""
         raise NotImplementedError
+
+    @staticmethod
+    async def _raise_for_status(response: httpx.Response) -> None:
+        """Raise on an HTTP error; a 503's message is the server's body."""
+        if response.status_code == 503:
+            body = (await response.aread()).decode(errors="replace")
+            raise httpx.HTTPStatusError(body, request=response.request, response=response)
+        response.raise_for_status()
 
     def effort_payload(self) -> dict[str, Any]:
         """The chosen effort in this server's request field (``{}`` if none).
@@ -694,8 +754,10 @@ def image_input_from_metadata(metadata: dict) -> bool | None:
 
 
 __all__ = [
+    "Chunk",
     "Endpoint",
     "ModelInfo",
+    "ToolCallPiece",
     "ConnectionDiagnosis",
     "make_endpoint",
     "get_active_endpoint",

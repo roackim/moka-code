@@ -11,24 +11,16 @@ import asyncio
 from types import SimpleNamespace
 
 from moka_code.harness import events
+from moka_code.harness.endpoint import Chunk, ToolCallPiece
 from moka_code.harness.harness import Harness
 
 
 def _delta_with_tool_calls(calls):
-    return SimpleNamespace(
-        id="c1",
-        choices=[SimpleNamespace(
-            index=0,
-            delta=SimpleNamespace(content=None, reasoning_content=None, tool_calls=calls),
-            finish_reason=None,
-        )],
-        usage=None,
-    )
+    return Chunk(tool_calls=calls)
 
 
 def _tc(index, call_id, name="", arguments=None):
-    return SimpleNamespace(index=index, id=call_id,
-                           function=SimpleNamespace(name=name, arguments=arguments))
+    return ToolCallPiece(index=index, id=call_id, name=name or None, arguments=arguments or "")
 
 
 def _assemble(deltas_list):
@@ -50,10 +42,10 @@ def _assemble(deltas_list):
                 if key not in buffer:
                     buffer[key] = {"index": tc.index, "id": None, "type": "function",
                                    "function": {"name": "", "arguments": ""}}
-            if tc.function.name:
-                buffer[key]["function"]["name"] += tc.function.name
-            if tc.function.arguments:
-                buffer[key]["function"]["arguments"] += tc.function.arguments
+            if tc.name:
+                buffer[key]["function"]["name"] += tc.name
+            if tc.arguments:
+                buffer[key]["function"]["arguments"] += tc.arguments
     return Harness._assemble_tool_calls(buffer), buffer
 
 
@@ -130,12 +122,12 @@ def _stream_drafts(chunks, monkeypatch=None, step=0.0):
         import moka_code.harness.harness as harness_mod
         monkeypatch.setattr(harness_mod, "time", SimpleNamespace(perf_counter=lambda: clock[0]))
 
-    async def create_completion(messages, tools=None, stream=True):
+    async def stream(messages, tools=None):
         for chunk in chunks:
             clock[0] += step
             yield chunk
 
-    harness.endpoint = SimpleNamespace(create_completion=create_completion)
+    harness.endpoint = SimpleNamespace(stream=stream)
 
     async def _collect():
         return [event async for event in harness._stream_llm_response([])]
@@ -200,7 +192,7 @@ def test_draft_cadence_is_time_throttled(monkeypatch):
 def test_reasoning_delta_does_not_drop_tool_call_fragment():
     """A delta carrying reasoning and a tool-call fragment keeps both."""
     chunk = _delta_with_tool_calls([_tc(0, "call_1", name="read", arguments='{"path": "a.py"}')])
-    chunk.choices[0].delta.reasoning_content = "thinking"
+    chunk.reasoning = "thinking"
     harness_events = _stream_drafts([chunk])
 
     assert any(isinstance(e, events.Reasoning) for e in harness_events)

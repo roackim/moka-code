@@ -29,17 +29,17 @@ def test_retired_endpoint_waits_for_the_reply_in_flight(monkeypatch):
     async def scenario():
         gate = release()
 
-        async def fake_completion(self, messages, tools, stream):
+        async def fake_stream(self, messages, tools):
             await gate.wait()
             yield "chunk"
-        monkeypatch.setattr(OpenAICompatible, "_completion", fake_completion)
+        monkeypatch.setattr(OpenAICompatible, "_stream", fake_stream)
 
         endpoint = _endpoint()
         client = endpoint.client
         chunks = []
 
         async def consume():
-            async for chunk in endpoint.create_completion([]):
+            async for chunk in endpoint.stream([]):
                 chunks.append(chunk)
         task = asyncio.create_task(consume())
         await asyncio.sleep(0)

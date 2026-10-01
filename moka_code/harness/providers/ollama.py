@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import json
 import logging
-from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Dict, Optional
 
 import httpx
 
-from moka_code.harness.endpoint import Endpoint, ModelInfo, image_input_from_metadata
+from moka_code.harness.endpoint import (
+    Chunk, Endpoint, ModelInfo, ToolCallPiece, image_input_from_metadata,
+)
+from moka_code.harness.usage import TokenUsage
 
 
 logger = logging.getLogger(__name__)
@@ -47,41 +49,30 @@ def ollama_messages(messages: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
     return normalized
 
 
-def native_response(data: Dict[str, Any]) -> Any:
-    """Adapt one native Ollama response to the OpenAI chunk shape."""
+def native_response(data: Dict[str, Any]) -> Chunk:
+    """One native Ollama response line as a :class:`Chunk`.
+
+    The final line (``done``) carries only the usage counters.
+    """
+    if data.get("done"):
+        usage = TokenUsage(prompt_tokens=data.get("prompt_eval_count"),
+                           completion_tokens=data.get("eval_count"), raw=data)
+        return Chunk(usage=None if usage.is_empty else usage)
     message = data.get("message") or {}
-    content = message.get("content")
     # Ollama streams ``thinking``; llama.cpp-backed proxies may use ``reasoning``.
     reasoning = message.get("thinking") or message.get("reasoning")
     tool_calls = []
     for index, call in enumerate(message.get("tool_calls") or []):
         function = call.get("function") or {}
         arguments = function.get("arguments", {})
-        tool_calls.append(SimpleNamespace(
+        tool_calls.append(ToolCallPiece(
             index=index,
             id=call.get("id"),
-            function=SimpleNamespace(
-                name=function.get("name"),
-                arguments=json.dumps(arguments) if isinstance(arguments, dict) else arguments,
-            ),
+            name=function.get("name"),
+            arguments=json.dumps(arguments) if isinstance(arguments, dict) else (arguments or ""),
         ))
-    delta = SimpleNamespace(
-        content=content,
-        reasoning_content=reasoning,
-        tool_calls=tool_calls,
-    )
-    choice = SimpleNamespace(
-        delta=delta,
-        finish_reason="stop" if data.get("done") else None,
-    )
-    usage = {
-        "prompt_eval_count": data.get("prompt_eval_count"),
-        "eval_count": data.get("eval_count"),
-    }
-    return SimpleNamespace(
-        choices=[] if data.get("done") else [choice],
-        usage=usage,
-    )
+    return Chunk(text=message.get("content") or "", reasoning=reasoning or "",
+                 tool_calls=tool_calls)
 
 
 class Ollama(Endpoint):
@@ -176,16 +167,15 @@ class Ollama(Endpoint):
         except Exception:
             return False
 
-    async def _completion(
+    async def _stream(
         self,
         messages: list[Dict[str, Any]],
         tools: Optional[list[Dict[str, Any]]],
-        stream: bool,
-    ) -> AsyncGenerator[Any, None]:
+    ) -> AsyncGenerator[Chunk, None]:
         payload: Dict[str, Any] = {
             "model": await self.get_model_name(),
             "messages": ollama_messages(messages),
-            "stream": stream,
+            "stream": True,
         }
         if tools:
             payload["tools"] = tools
@@ -198,11 +188,7 @@ class Ollama(Endpoint):
                 json=payload,
                 timeout=None,
             ) as response:
-                response.raise_for_status()
-                if not stream:
-                    data = await response.json()
-                    yield native_response(data)
-                    return
+                await self._raise_for_status(response)
                 async for line in response.aiter_lines():
                     if not line:
                         continue

@@ -108,9 +108,8 @@ def test_native_response_adapts_content_and_usage():
         "prompt_eval_count": 100,
         "eval_count": 12,
     })
-    assert chunk.choices == []
-    assert chunk.usage["prompt_eval_count"] == 100
-    assert chunk.usage["eval_count"] == 12
+    assert (chunk.text, chunk.tool_calls) == ("", [])      # the done line: usage only
+    assert (chunk.usage.prompt_tokens, chunk.usage.completion_tokens) == (100, 12)
 
 
 def test_native_response_adapts_reasoning_and_tool_calls():
@@ -131,11 +130,11 @@ def test_native_response_adapts_reasoning_and_tool_calls():
         },
         "done": False,
     })
-    assert chunk.choices[0].delta.reasoning_content == "let me think"
-    call = chunk.choices[0].delta.tool_calls[0]
-    assert call.function.name == "read"
-    assert '"path"' in call.function.arguments
-    assert chunk.choices[0].finish_reason is None
+    assert chunk.reasoning == "let me think"
+    call = chunk.tool_calls[0]
+    assert call.name == "read"
+    assert '"path"' in call.arguments
+    assert chunk.finish is None
 
 
 def test_check_connection_reports_success():
@@ -174,6 +173,8 @@ def test_create_ollama_completion_sends_string_content(monkeypatch):
     captured = {}
 
     class _Response:
+        status_code = 200
+
         def raise_for_status(self):
             return None
 
@@ -203,10 +204,8 @@ def test_create_ollama_completion_sends_string_content(monkeypatch):
     async def run():
         return [
             chunk
-            async for chunk in server._completion(
+            async for chunk in server.stream(
                 [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_1"}]}],
-                None,
-                True,
             )
         ]
 

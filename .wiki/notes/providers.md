@@ -144,10 +144,13 @@ ModelInfo: id, context_window, images, efforts, owned_by, raw
 - Replaces `list_models` + `discover_models` + `query_context_window` +
   `probe_image_input` (see decision 1, §10).
 
-### `stream(messages, tools, model, effort) -> AsyncIterator[Chunk]`
+### `stream(messages, tools) -> AsyncIterator[Chunk]`
 
 The only request path. Compaction uses it too (collects the text); the
-non-streaming path is deleted.
+non-streaming path is deleted. The model and effort are the instance's
+(`selected_model`, `effort`): per-server state lives in the endpoint
+(`PLAN.md` Decisions; signature decided 2026-10-01). The base class runs the
+retry loop (§7) around the provider's one-request `_stream()`.
 
 ```
 Chunk: text, reasoning, reasoning_native, tool_calls, usage, finish
@@ -214,7 +217,7 @@ target, see §9.5).
 | S5 images | `/props` `modalities.vision` | metadata shapes, else unknown | `architecture.input_modalities` | `capabilities` has `vision` |
 | S6 efforts (target) | `reasoning.supported_efforts` if the server advertises it, else none known | same | `reasoning.supported_efforts` only | `/api/show` `thinking.values`: strings are levels, `false` is `none` |
 | S7 field | `reasoning_effort` | `reasoning_effort` | `reasoning.effort` | `think` |
-| S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same | same | `thinking` \| `reasoning` |
+| S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same | same, plus `reasoning_details` assembled into `reasoning_native` | `thinking` \| `reasoning` |
 | S9 reasoning in | none (step 2) | none | none | none |
 | S11 usage | `include_usage`; cache from `timings.cache_n` | `include_usage` | `include_usage`, `cost` | `prompt_eval_count` / `eval_count` |
 | S13 extras | — | — | `providers` / `providers_by_model` routing, `allow_fallbacks: false` | — |
@@ -266,7 +269,8 @@ Identical for every provider, not overridden:
 
 ## 7. Failure behaviour
 
-Today's behaviour, unchanged in step 1. Gaps are listed, not fixed.
+The base class's `stream()` handles retries for every provider (Ollama
+included since 2026-10-01, §9.10). Gaps are listed, not fixed.
 
 | Situation | Behaviour | Gap |
 |---|---|---|
@@ -276,8 +280,9 @@ Today's behaviour, unchanged in step 1. Gaps are listed, not fixed.
 | server unreachable at refresh | last list kept, marked stale | — |
 | model not listed any more | selection kept; status bar red, error notice | — |
 
-The neutral error type (status + server message) is introduced with `stream`
-so that showing the server's body later is a one-place change.
+Errors are still `httpx` exceptions. A neutral error type (status + server
+message), so that showing the server's body is a one-place change, was not
+introduced with `stream` (open).
 
 ---
 
@@ -336,6 +341,14 @@ Everything else is identical.
 7. **The `servers.toml` shape changes** (§2.1): `type` always written, `openai`
    renamed `openai-compatible`, OpenRouter's `models` list plus
    `providers_by_model` instead of per-model tables.
+8. **`timings.cache_n` is read only for `llamacpp`** (decided 2026-10-01,
+   slot S11): an `openai-compatible` server in front of llama.cpp no longer
+   gets it. (llama.cpp's documented usage already carries
+   `cached_tokens: 0`, so `cache_n` is not used there either: ISSUES P11.)
+9. **`reasoning_details` is assembled only for `openrouter`** (decided
+   2026-10-01): other servers' reasoning text is still read.
+10. **Ollama retries** a 503 or a network error like every other server
+    (decided 2026-10-01): the retry loop is the base class's.
 
 ---
 

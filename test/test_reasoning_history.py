@@ -4,20 +4,16 @@ Decided 2026-09-30: the replay implementation is removed; replay is rebuilt
 per provider in PLAN.md step 2."""
 
 import asyncio
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from moka_code import settings
+from moka_code.harness.endpoint import Chunk, ToolCallPiece
 from moka_code.harness.harness import Harness
 from moka_code.harness.providers import LlamaCpp, OpenRouter
 
 
 def _chunk(content=None, reasoning=None, finish=None):
-    delta = SimpleNamespace(content=content, reasoning_content=reasoning, tool_calls=None)
-    return SimpleNamespace(
-        choices=[SimpleNamespace(delta=delta, finish_reason=finish)],
-        usage=None,
-    )
+    return Chunk(text=content or "", reasoning=reasoning or "", finish=finish)
 
 
 def _harness():
@@ -32,12 +28,12 @@ def test_chat_stores_reasoning_verbatim_in_history(tmp_path, monkeypatch):
     ):
         harness = Harness(workspace_path=str(tmp_path))
 
-    async def fake_completion(messages, tools=None, stream=True):
+    async def fake_completion(messages, tools=None):
         yield _chunk(reasoning="let me think")
         yield _chunk(content="the answer")
         yield _chunk(finish="stop")
 
-    harness.endpoint.create_completion = fake_completion
+    harness.endpoint.stream = fake_completion
 
     async def drain():
         return [event async for event in harness.chat("hi")]
@@ -52,13 +48,11 @@ def test_chat_stores_reasoning_verbatim_in_history(tmp_path, monkeypatch):
 
 def test_openai_adapter_reads_openrouter_reasoning_field():
     """OpenRouter streams ``reasoning``; DeepSeek streams ``reasoning_content``."""
-    from moka_code.harness.providers.openai_compatible import _adapt_stream_chunk
-
     def reason(payload):
-        chunk = _adapt_stream_chunk(
+        chunk = OpenRouter(name="or")._chunk(
             {"choices": [{"index": 0, "delta": payload, "finish_reason": None}]}
         )
-        return chunk.choices[0].delta.reasoning_content
+        return chunk.reasoning
 
     assert reason({"reasoning": "pondering"}) == "pondering"
     assert reason({"reasoning_content": "pondering"}) == "pondering"
@@ -67,8 +61,6 @@ def test_openai_adapter_reads_openrouter_reasoning_field():
 
 def test_openrouter_streamed_reasoning_reaches_history(tmp_path, monkeypatch):
     """The whole pipe: adapter → harness → history entry."""
-    from moka_code.harness.providers.openai_compatible import _adapt_stream_chunk
-
     with patch(
         "moka_code.harness.harness.get_active_endpoint",
         return_value=OpenRouter(name="test"),
@@ -81,11 +73,11 @@ def test_openrouter_streamed_reasoning_reaches_history(tmp_path, monkeypatch):
         {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
     ]
 
-    async def fake_completion(messages, tools=None, stream=True):
+    async def fake_completion(messages, tools=None):
         for payload in raw:
-            yield _adapt_stream_chunk(payload)
+            yield harness.endpoint._chunk(payload)
 
-    harness.endpoint.create_completion = fake_completion
+    harness.endpoint.stream = fake_completion
 
     async def drain():
         return [event async for event in harness.chat("hi")]
@@ -165,22 +157,18 @@ def test_tool_calls_are_sent_back_with_their_results(tmp_path, monkeypatch):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools={"read": "yes"}))
 
-    call = SimpleNamespace(
-        index=0, id="call_1",
-        function=SimpleNamespace(name="read", arguments='{"path": "a.txt"}'),
-    )
+    call = ToolCallPiece(index=0, id="call_1", name="read", arguments='{"path": "a.txt"}')
     requests = []
 
-    async def fake_completion(messages, tools=None, stream=True):
+    async def fake_completion(messages, tools=None):
         requests.append([dict(m) for m in messages])
         if len(requests) == 1:
-            delta = SimpleNamespace(content=None, reasoning_content=None, tool_calls=[call])
-            yield SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=None)], usage=None)
+            yield Chunk(tool_calls=[call])
         else:
             yield _chunk(content="done")
         yield _chunk(finish="stop")
 
-    harness.endpoint.create_completion = fake_completion
+    harness.endpoint.stream = fake_completion
 
     async def drain():
         return [event async for event in harness.chat("read it")]
@@ -203,22 +191,20 @@ def test_tool_loop_request_carries_no_reasoning(tmp_path, monkeypatch):
                return_value=LlamaCpp(name="test")):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools={"read": "yes"}))
-    call = SimpleNamespace(index=0, id="call_1",
-                           function=SimpleNamespace(name="read", arguments='{"path": "a.txt"}'))
+    call = ToolCallPiece(index=0, id="call_1", name="read", arguments='{"path": "a.txt"}')
     details = [{"type": "reasoning.text", "text": "need the file", "index": 0}]
     requests = []
 
-    async def fake_completion(messages, tools=None, stream=True):
+    async def fake_completion(messages, tools=None):
         requests.append([dict(m) for m in messages])
         if len(requests) == 1:
-            delta = SimpleNamespace(content=None, reasoning_content="need the file",
-                                    reasoning_details=details, tool_calls=[call])
-            yield SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=None)], usage=None)
+            yield Chunk(reasoning="need the file", tool_calls=[call])
+            yield Chunk(reasoning_native=details)
         else:
             yield _chunk(content="done")
         yield _chunk(finish="stop")
 
-    harness.endpoint.create_completion = fake_completion
+    harness.endpoint.stream = fake_completion
 
     async def drain():
         return [event async for event in harness.chat("read it")]
@@ -237,7 +223,7 @@ def test_ollama_native_response_reads_thinking_or_reasoning():
 
     for field in ("thinking", "reasoning"):
         chunk = native_response({"message": {"content": "", field: "hmm"}, "done": False})
-        assert chunk.choices[0].delta.reasoning_content == "hmm"
+        assert chunk.reasoning == "hmm"
 
 
 def _stream(tmp_path, chunks):
@@ -247,12 +233,12 @@ def _stream(tmp_path, chunks):
                return_value=LlamaCpp(name="test")):
         harness = Harness(workspace_path=str(tmp_path))
 
-    async def fake_completion(messages, tools=None, stream=True):
+    async def fake_completion(messages, tools=None):
         for chunk in chunks:
             yield chunk
         yield _chunk(finish="stop")
 
-    harness.endpoint.create_completion = fake_completion
+    harness.endpoint.stream = fake_completion
 
     async def drain():
         return [event async for event in harness.chat("hi")]

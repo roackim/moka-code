@@ -96,21 +96,37 @@ OPENAI_FIRST_CHUNK = json.loads(
     '"obfuscation":"r4N7vQ2m"}')
 
 
-def openai_stream(text: str = "Hi") -> Callable[[httpx.Request], httpx.Response]:
-    """A chat stream: the documented first chunk, one content chunk, the finish
-    chunk, then the usage chunk the docs describe for ``include_usage`` (empty
-    ``choices`` plus a ``usage`` object; the docs give no concrete example)."""
+def openai_stream(text: str = "Hi", deltas: tuple = (), usage: dict | None = None,
+                  ) -> Callable[[httpx.Request], httpx.Response]:
+    """A chat stream: the documented first chunk, any extra ``deltas``, one
+    content chunk, the finish chunk, then the usage chunk the docs describe for
+    ``include_usage`` (empty ``choices`` plus a ``usage`` object; the docs give
+    no concrete example). ``usage`` replaces that last chunk's extra fields."""
     def chunk(delta, finish=None):
         return {**OPENAI_FIRST_CHUNK,
                 "choices": [{"index": 0, "delta": delta, "logprobs": None, "finish_reason": finish}]}
-    usage = {**OPENAI_FIRST_CHUNK, "choices": [],
-             "usage": {"prompt_tokens": 9, "completion_tokens": 2, "total_tokens": 11}}
-    frames = [OPENAI_FIRST_CHUNK, chunk({"content": text}), chunk({}, "stop"), usage]
+    last = {**OPENAI_FIRST_CHUNK, "choices": [],
+            **(usage or {"usage": {"prompt_tokens": 9, "completion_tokens": 2, "total_tokens": 11}})}
+    frames = [OPENAI_FIRST_CHUNK, *map(chunk, deltas), chunk({"content": text}),
+              chunk({}, "stop"), last]
     body = "".join("data: " + json.dumps(f) + "\n\n" for f in frames) + "data: [DONE]\n\n"
     return text_response(body, 200, "text/event-stream")
 
 
 # -- llama.cpp ------------------------------------------------------------------
+
+# The last chunk of a /v1/chat/completions answer: its ``timings`` and its
+# "standard usage object", both from github.com/ggml-org/llama.cpp,
+# tools/server/README.md ("Timings and context usage"), read 2026-10-01.
+LLAMACPP_FINAL_CHUNK = json.loads("""
+{"timings": {"cache_n": 236, "prompt_n": 1, "prompt_ms": 30.958,
+             "prompt_per_token_ms": 30.958, "prompt_per_second": 32.301828283480845,
+             "predicted_n": 35, "predicted_ms": 661.064,
+             "predicted_per_token_ms": 18.887542857142858,
+             "predicted_per_second": 52.94494935437416},
+ "usage": {"completion_tokens": 48, "prompt_tokens": 44, "total_tokens": 92,
+           "prompt_tokens_details": {"cached_tokens": 0}}}
+""")
 
 # GET /models and GET /props: github.com/ggml-org/llama.cpp, tools/server/
 # README.md (master), read 2026-10-01. /props trimmed to the fields below.
@@ -130,6 +146,14 @@ LLAMACPP_PROPS = json.loads("""
 
 
 # -- OpenRouter -----------------------------------------------------------------
+
+# A streamed delta carrying ``reasoning_details``: openrouter.ai/docs/use-cases/
+# reasoning-tokens ("Streaming Response"), read 2026-10-01.
+OPENROUTER_REASONING_DELTA = json.loads("""
+{"reasoning_details": [{"type": "reasoning.text",
+  "text": "Let me think about this step by step...", "signature": null,
+  "id": "reasoning-text-1", "format": "anthropic-claude-v1", "index": 0}]}
+""")
 
 # Two entries of GET https://openrouter.ai/api/v1/models (the public list), read
 # 2026-10-01, trimmed to the keys moka reads.

@@ -1,8 +1,8 @@
 """``type = "openai"`` (renamed ``openai-compatible`` in step 1.2): ``/chat/completions``, ``/models``, SSE.
 
 OpenAI itself, vLLM, LM Studio, a proxy; the base of llama.cpp and OpenRouter.
-Implemented directly on httpx (no SDK). Raw ``chat.completions`` payloads are
-adapted to the small SDK-shaped objects the harness consumes.
+Implemented directly on httpx (no SDK). Streamed ``chat.completions`` objects
+become :class:`~moka_code.harness.endpoint.Chunk` objects.
 """
 from __future__ import annotations
 
@@ -10,37 +10,31 @@ import asyncio
 import json
 import logging
 import time
-from types import SimpleNamespace
 from typing import Any, AsyncGenerator, Dict, Optional
 
 import httpx
 
-from moka_code.harness.endpoint import Endpoint, ModelInfo
+from moka_code.harness.endpoint import Chunk, Endpoint, ModelInfo, ToolCallPiece
+from moka_code.harness.usage import TokenUsage
 
 
 logger = logging.getLogger(__name__)
 
 
-def _adapt_tool_calls(raw_calls: Any) -> list:
-    """Adapt raw tool-call dicts to the ``{index,id,function:{name,arguments}}`` shape."""
-    if not raw_calls:
-        return []
-    adapted = []
-    for index, call in enumerate(raw_calls):
+def _tool_call_pieces(raw_calls: Any) -> list[ToolCallPiece]:
+    """Raw tool-call dicts as pieces (``arguments`` always a JSON text)."""
+    pieces = []
+    for index, call in enumerate(raw_calls or []):
         function = call.get("function") or {}
         arguments = function.get("arguments")
         # Some providers send arguments as a JSON object already.
         if isinstance(arguments, dict):
             arguments = json.dumps(arguments)
-        adapted.append(SimpleNamespace(
-            index=index,
-            id=call.get("id"),
-            function=SimpleNamespace(
-                name=function.get("name"),
-                arguments=arguments or "",
-            ),
+        pieces.append(ToolCallPiece(
+            index=index, id=call.get("id"), name=function.get("name"),
+            arguments=arguments or "",
         ))
-    return adapted
+    return pieces
 
 
 def _extract_reasoning(data: Dict[str, Any]) -> Optional[str]:
@@ -62,61 +56,49 @@ def _extract_reasoning(data: Dict[str, Any]) -> Optional[str]:
     return reasoning
 
 
-def _adapt_stream_chunk(data: Dict[str, Any]) -> Any:
-    """Adapt one streaming ``chat.completions`` SSE object to SDK chunk shape."""
-    choice = None
-    raw_choices = data.get("choices") or []
-    if raw_choices:
-        rc = raw_choices[0]
-        delta = rc.get("delta") or {}
-        choice = SimpleNamespace(
-            index=rc.get("index", 0),
-            delta=SimpleNamespace(
-                content=delta.get("content"),
-                reasoning_content=_extract_reasoning(delta),
-                reasoning_details=delta.get("reasoning_details"),
-                refusal=delta.get("refusal"),
-                tool_calls=_adapt_tool_calls(delta.get("tool_calls")),
-            ),
-            finish_reason=rc.get("finish_reason"),
-        )
-    return SimpleNamespace(
-        id=data.get("id"),
-        choices=[] if choice is None else [choice],
-        usage=data.get("usage"),
+def _field(data: Any, *names: str) -> Any:
+    if not isinstance(data, dict):
+        return None
+    for name in names:
+        if name in data:
+            return data[name]
+    return None
+
+
+def parse_usage(value: Any) -> Optional[TokenUsage]:
+    """An OpenAI-style ``usage`` object as :class:`TokenUsage` (``None`` if empty)."""
+    if not isinstance(value, dict):
+        return None
+    # Two separate blocks: OpenAI-style usage carries both, so looking them
+    # up as alternatives always found the completion one and lost the cache.
+    reasoning = _field(_field(value, "completion_tokens_details"),
+                       "reasoning_tokens", "reasoning_token_count")
+    cached = _field(_field(value, "prompt_tokens_details"), "cached_tokens")
+    if cached is None:
+        # Anthropic-style usage reports cache reads at the top level.
+        cached = _field(value, "cache_read_input_tokens")
+    cost = _field(value, "cost")
+    if isinstance(cost, bool) or not isinstance(cost, (int, float)):
+        cost = None
+    usage = TokenUsage(
+        prompt_tokens=_field(value, "prompt_tokens"),
+        completion_tokens=_field(value, "completion_tokens"),
+        total_tokens=_field(value, "total_tokens"),
+        reasoning_tokens=reasoning,
+        cached_prompt_tokens=cached,
+        cost=cost,
+        raw=value,
     )
+    return None if usage.is_empty else usage
 
 
-def _adapt_message(message: Dict[str, Any]) -> SimpleNamespace:
-    """Adapt a non-streaming ``choices[0].message`` to SDK message shape."""
-    return SimpleNamespace(
-        role=message.get("role"),
-        content=message.get("content"),
-        reasoning_content=_extract_reasoning(message),
-        reasoning_details=message.get("reasoning_details"),
-        refusal=message.get("refusal"),
-        tool_calls=_adapt_tool_calls(message.get("tool_calls")),
-    )
+def _delta(data: Dict[str, Any]) -> Dict[str, Any]:
+    choices = data.get("choices") or []
+    return (choices[0].get("delta") or {}) if choices else {}
 
 
-def _adapt_chat_response(data: Dict[str, Any]) -> Any:
-    """Adapt a non-streaming ``chat.completions`` response to SDK shape."""
-    choices = []
-    for rc in data.get("choices") or []:
-        choices.append(SimpleNamespace(
-            index=rc.get("index", 0),
-            message=_adapt_message(rc.get("message") or {}),
-            finish_reason=rc.get("finish_reason"),
-        ))
-    return SimpleNamespace(
-        id=data.get("id"),
-        choices=choices,
-        usage=data.get("usage"),
-    )
-
-
-async def iter_sse_chunks(response: httpx.Response):
-    """Parse SSE ``data:`` lines from a streaming response into chunks."""
+async def iter_sse_objects(response: httpx.Response):
+    """Parse SSE ``data:`` lines from a streaming response into JSON objects."""
     async for line in response.aiter_lines():
         if not line or not line.startswith("data:"):
             continue
@@ -124,11 +106,9 @@ async def iter_sse_chunks(response: httpx.Response):
         if data == "[DONE]":
             break
         try:
-            obj = json.loads(data)
+            yield json.loads(data)
         except json.JSONDecodeError:
             logger.debug("Skipping non-JSON SSE line: %r", data[:80])
-            continue
-        yield _adapt_stream_chunk(obj)
 
 
 class OpenAICompatible(Endpoint):
@@ -175,13 +155,37 @@ class OpenAICompatible(Endpoint):
         """Provider-specific request fields beyond the standard payload."""
         return {}
 
-    async def _completion(
+    def _usage(self, data: Dict[str, Any]) -> Optional[TokenUsage]:
+        """The usage reported in one streamed object, if any."""
+        return parse_usage(data.get("usage"))
+
+    def _chunk(self, data: Dict[str, Any]) -> Chunk:
+        """One streamed ``chat.completions`` object as a :class:`Chunk`."""
+        choices = data.get("choices") or []
+        choice = choices[0] if choices else {}
+        delta = choice.get("delta") or {}
+        return Chunk(
+            text=delta.get("content") or "",
+            reasoning=_extract_reasoning(delta) or "",
+            tool_calls=_tool_call_pieces(delta.get("tool_calls")),
+            usage=self._usage(data),
+            finish=choice.get("finish_reason"),
+        )
+
+    async def _stream(
         self,
         messages: list[Dict[str, Any]],
         tools: Optional[list[Dict[str, Any]]],
-        stream: bool,
-    ) -> AsyncGenerator[Any, None]:
-        """Stream (or fetch) a completion from ``/chat/completions``."""
+    ) -> AsyncGenerator[Chunk, None]:
+        async for data in self._sse_objects(messages, tools):
+            yield self._chunk(data)
+
+    async def _sse_objects(
+        self,
+        messages: list[Dict[str, Any]],
+        tools: Optional[list[Dict[str, Any]]],
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """POST ``/chat/completions`` (streamed) and yield each SSE object."""
         _t0 = time.perf_counter()
         model_name = await self.get_model_name()
         logger.info(
@@ -189,100 +193,44 @@ class OpenAICompatible(Endpoint):
             (time.perf_counter() - _t0) * 1000,
             self._model_resolved,
         )
+        payload: Dict[str, Any] = {
+            "model": model_name,
+            "messages": messages,
+            "stream": True,
+        }
+        if tools:
+            payload["tools"] = tools
+        payload["stream_options"] = {"include_usage": True}
+        payload.update(self._extra_payload(model_name))
+        payload.update(self.effort_payload())
 
-        max_retries = self.retry_attempts
-        retry_delay = self.retry_delay
+        if logger.isEnabledFor(logging.DEBUG):
+            msg_summary = []
+            for msg in messages:
+                role = msg.get("role", "?")
+                content_len = len(str(msg.get("content", "")))
+                tc_count = len(msg.get("tool_calls", []))
+                msg_summary.append(f"{role}:{content_len}chars:{tc_count}tools")
+            logger.debug(
+                "API request: model=%s, messages=[%s], tools=%s",
+                model_name, ", ".join(msg_summary), "yes" if tools else "no",
+            )
 
-        for attempt in range(max_retries):
-            payload: Dict[str, Any] = {
-                "model": model_name,
-                "messages": messages,
-                "stream": stream,
-            }
-            if tools:
-                payload["tools"] = tools
-            if stream:
-                payload["stream_options"] = {"include_usage": True}
-            payload.update(self._extra_payload(model_name))
-            payload.update(self.effort_payload())
-
-            if logger.isEnabledFor(logging.DEBUG):
-                msg_summary = []
-                for msg in messages:
-                    role = msg.get("role", "?")
-                    content_len = len(str(msg.get("content", "")))
-                    tc_count = len(msg.get("tool_calls", []))
-                    msg_summary.append(f"{role}:{content_len}chars:{tc_count}tools")
-                logger.debug(
-                    "API request: model=%s, messages=[%s], tools=%s",
-                    model_name, ", ".join(msg_summary), "yes" if tools else "no",
-                )
-
-            _t_req = time.perf_counter()
-            try:
-                if stream:
-                    async with self.client.stream("POST", "/chat/completions", json=payload) as response:
-                        if response.status_code == 503:
-                            error_body = await response.aread()
-                            error_message = error_body.decode(errors="replace")
-                            if attempt < max_retries - 1:
-                                logger.warning(
-                                    "Model loading (503), retrying in %.1fs (attempt %d/%d)",
-                                    retry_delay, attempt + 1, max_retries,
-                                )
-                                await asyncio.sleep(retry_delay)
-                                retry_delay *= 1.5
-                                continue
-                            raise httpx.HTTPStatusError(
-                                f"Model loading timeout after {max_retries} attempts: {error_message}",
-                                request=response.request, response=response,
-                            )
-                        response.raise_for_status()
-                        headers_at = time.perf_counter()
-                        logger.info(
-                            "[llm] POST /chat/completions headers received in %.0fms",
-                            (headers_at - _t_req) * 1000,
-                        )
-                        chunk_count = 0
-                        first_chunk_at = None
-                        async for chunk in iter_sse_chunks(response):
-                            if first_chunk_at is None:
-                                first_chunk_at = time.perf_counter()
-                                logger.info(
-                                    "[llm] first token after %.0fms (headers->first)",
-                                    (first_chunk_at - headers_at) * 1000,
-                                )
-                            chunk_count += 1
-                            if chunk_count <= 2 or chunk_count % 50 == 0:
-                                logger.debug("LLM chunk %d: choices=%d", chunk_count, len(chunk.choices))
-                            yield chunk
-                        logger.debug("LLM stream complete: %d total chunks", chunk_count)
-                    return
-                else:
-                    response = await asyncio.wait_for(
-                        self.client.post("/chat/completions", json=payload),
-                        timeout=self.timeout,
+        _t_req = time.perf_counter()
+        async with self.client.stream("POST", "/chat/completions", json=payload) as response:
+            await self._raise_for_status(response)
+            headers_at = time.perf_counter()
+            logger.info(
+                "[llm] POST /chat/completions headers received in %.0fms",
+                (headers_at - _t_req) * 1000,
+            )
+            count = 0
+            async for data in iter_sse_objects(response):
+                if count == 0:
+                    logger.info(
+                        "[llm] first token after %.0fms (headers->first)",
+                        (time.perf_counter() - headers_at) * 1000,
                     )
-                    if response.status_code == 503:
-                        if attempt < max_retries - 1:
-                            logger.warning("Model loading (503), retrying in %.1fs", retry_delay)
-                            await asyncio.sleep(retry_delay)
-                            retry_delay *= 1.5
-                            continue
-                        response.raise_for_status()
-                    response.raise_for_status()
-                    data = response.json()
-                    yield _adapt_chat_response(data)
-                    return
-            except (httpx.HTTPStatusError, httpx.RequestError, asyncio.TimeoutError, httpx.TimeoutException) as e:
-                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code != 503:
-                    raise
-                if attempt < max_retries - 1:
-                    logger.warning(
-                        "Request failed (%s) retrying in %.1fs (attempt %d/%d)",
-                        type(e).__name__, retry_delay, attempt + 1, max_retries,
-                    )
-                    await asyncio.sleep(retry_delay)
-                    retry_delay *= 1.5
-                    continue
-                raise
+                count += 1
+                yield data
+            logger.debug("LLM stream complete: %d total chunks", count)

@@ -13,7 +13,7 @@ import pytest
 
 from moka_code import settings
 from moka_code.harness import images
-from moka_code.harness.endpoint import image_input_from_metadata
+from moka_code.harness.endpoint import Chunk, ToolCallPiece, image_input_from_metadata
 from moka_code.harness.providers.ollama import ollama_messages
 from moka_code.harness.harness import Harness
 from moka_code.ui.app import chatTUI
@@ -117,8 +117,7 @@ def test_describe_line():
 # ---------------------------------------------------------------------------
 
 def _chunk(content=None, finish=None):
-    delta = SimpleNamespace(content=content, reasoning_content=None, tool_calls=None)
-    return SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=finish)], usage=None)
+    return Chunk(text=content or "", finish=finish)
 
 
 def test_history_keeps_a_reference_and_the_request_gets_parts(tmp_path, monkeypatch):
@@ -127,12 +126,12 @@ def test_history_keeps_a_reference_and_the_request_gets_parts(tmp_path, monkeypa
         harness = Harness(workspace_path=str(tmp_path))
     sent = []
 
-    async def fake_completion(messages, tools=None, stream=True):
+    async def fake_completion(messages, tools=None):
         sent.append(list(messages))
         yield _chunk(content="a cat")
         yield _chunk(finish="stop")
 
-    harness.endpoint.create_completion = fake_completion
+    harness.endpoint.stream = fake_completion
     image = {**images.store(png(), 5 * MB), "n": 1}
 
     async def drain():
@@ -372,20 +371,18 @@ def _read_harness(tmp_path, monkeypatch, accepts=None):
     harness.set_role(Role(name="t", tools={"read": "yes"}))
     if accepts is not None:
         harness.endpoint._probed("m")["image_input"] = accepts
-    call = SimpleNamespace(index=0, id="call_1",
-                           function=SimpleNamespace(name="read", arguments='{"path": "shot.png"}'))
+    call = ToolCallPiece(index=0, id="call_1", name="read", arguments='{"path": "shot.png"}')
     requests = []
 
-    async def fake_completion(messages, tools=None, stream=True):
+    async def fake_completion(messages, tools=None):
         requests.append([dict(m) for m in messages])
         if len(requests) == 1:
-            delta = SimpleNamespace(content=None, reasoning_content=None, tool_calls=[call])
-            yield SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=None)], usage=None)
+            yield Chunk(tool_calls=[call])
         else:
             yield _chunk(content="a red square")
         yield _chunk(finish="stop")
 
-    harness.endpoint.create_completion = fake_completion
+    harness.endpoint.stream = fake_completion
 
     async def drain():
         return [event async for event in harness.chat("look at shot.png")]

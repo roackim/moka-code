@@ -18,7 +18,6 @@ import wire_fake as wire
 from moka_code.harness.endpoint import (
     Endpoint, efforts_from_metadata, image_input_from_metadata, make_endpoint as build,
 )
-from moka_code.harness.usage import usage_from_response
 
 
 # -- the three adapters to the provider API -------------------------------------
@@ -31,16 +30,17 @@ def make_endpoint(table: dict, effort=None) -> Endpoint:
     return endpoint
 
 
-def run_chat(endpoint, messages, tools=None) -> tuple[str, list]:
-    """One streamed chat request; ``(answer text, usage of each chunk)``."""
+def run_chat(endpoint, messages, tools=None, chunks=None) -> tuple[str, list]:
+    """One streamed chat request; ``(answer text, usage of each chunk)``.
+    Every chunk is also appended to ``chunks`` when given."""
     async def go():
         text, usages = "", []
-        async for chunk in endpoint.create_completion(messages, tools=tools, stream=True):
-            for choice in chunk.choices:
-                text += choice.delta.content or ""
-            usage = usage_from_response(chunk)
-            if usage is not None:
-                usages.append((usage.prompt_tokens, usage.completion_tokens))
+        async for chunk in endpoint.stream(messages, tools=tools):
+            if chunks is not None:
+                chunks.append(chunk)
+            text += chunk.text
+            if chunk.usage is not None:
+                usages.append((chunk.usage.prompt_tokens, chunk.usage.completion_tokens))
         await endpoint.aclose()
         return text, usages
     return asyncio.run(go())
@@ -151,6 +151,53 @@ def test_a_503_is_retried_with_the_same_request(fake):
     assert first.body == second.body and text == "Hi"
 
 
+@pytest.mark.parametrize("table, cached", [(LLAMACPP, 0), (COMPAT, 0)])
+def test_llamacpp_cache_counts_as_reported(fake, table, cached):
+    """§9 (2026-10-01): only llama.cpp reads ``timings.cache_n``, and only when
+    usage has no cache count. llama.cpp's documented usage already says
+    ``cached_tokens: 0``, so ``cache_n`` is never used (ISSUES P11)."""
+    fake.on("POST", "/chat/completions", wire.openai_stream(usage=wire.LLAMACPP_FINAL_CHUNK))
+    fake.on("GET", "/models", wire.json_response(wire.LLAMACPP_MODELS))
+    chunks = []
+    run_chat(make_endpoint(table), SIMPLE, chunks=chunks)
+    [usage] = [c.usage for c in chunks if c.usage]
+    assert (usage.prompt_tokens, usage.cached_prompt_tokens) == (44, cached)
+
+
+@pytest.mark.parametrize("table, native", [
+    (OPENROUTER, wire.OPENROUTER_REASONING_DELTA["reasoning_details"]),
+    (COMPAT, None),
+])
+def test_only_openrouter_assembles_reasoning_details(fake, table, native):
+    """§9 (2026-10-01): ``reasoning_details`` blocks are OpenRouter's; every
+    OpenAI-compatible server's reasoning text is still read."""
+    fake.on("POST", "/chat/completions", wire.openai_stream(deltas=(wire.OPENROUTER_REASONING_DELTA,)))
+    chunks = []
+    text, _ = run_chat(make_endpoint(table), SIMPLE, chunks=chunks)
+    assert "".join(c.reasoning for c in chunks) == "Let me think about this step by step..."
+    assert [c.reasoning_native for c in chunks if c.reasoning_native] == ([native] if native else [])
+    assert text == "Hi"
+
+
+def test_compaction_is_streamed(fake, tmp_path):
+    """§9.1 (2026-10-01): one request path; compaction collects the stream."""
+    from unittest.mock import patch
+    from moka_code.harness.harness import Harness
+
+    fake.on("POST", "/chat/completions", wire.openai_stream("mary", deltas=({"content": "Sum"},)))
+    endpoint = make_endpoint(COMPAT)
+    with patch("moka_code.harness.harness.get_active_endpoint", return_value=endpoint):
+        harness = Harness(workspace_path=str(tmp_path))
+    harness._add_message_to_history("user", "hello")
+    harness._add_message_to_history("assistant", "hi there")
+    asyncio.run(harness.compact_history())
+
+    body = chat_body(fake)
+    assert (body["stream"], body["stream_options"]) == (True, {"include_usage": True})
+    assert "tools" not in body
+    assert harness.history[-1]["content"].endswith("\n\nSummary")
+
+
 # -- OpenRouter -----------------------------------------------------------------------------
 
 def test_openrouter_always_talks_to_openrouter(fake):
@@ -223,6 +270,17 @@ def test_ollama_effort_goes_in_think(fake, effort, sent):
     run_chat(make_endpoint(OLLAMA, effort), SIMPLE)
     body = fake.requests[0].body
     assert body.get("think", "absent") == sent
+
+
+def test_ollama_503_is_retried(fake):
+    """§9 (2026-10-01): the retry loop is the base class's, so Ollama retries
+    a 503 like every other server."""
+    fake.on("POST", "/api/chat",
+            wire.text_response("loading model", 503, "text/plain"), wire.ollama_stream())
+    text, usages = run_chat(make_endpoint({**OLLAMA, "retry_delay": 0}), SIMPLE)
+    first, second = fake.sent("POST", "/api/chat")
+    assert first.body == second.body
+    assert (text, usages) == ("Hi", [(26, 282)])
 
 
 # -- connection checks ----------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 
 from moka_code.harness.harness import Harness
-from moka_code.harness.usage import normalize_usage
+from moka_code.harness.providers.openai_compatible import parse_usage as normalize_usage
 from moka_code.ui.status_presenter import _format_cost
 
 

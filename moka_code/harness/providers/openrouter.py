@@ -1,12 +1,12 @@
 """``type = "openrouter"``: fixed URL, a model whitelist, provider routing."""
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, AsyncGenerator, Dict, Optional
 
 import httpx
 
-from moka_code.harness.endpoint import ModelInfo, image_input_from_metadata
-from moka_code.harness.providers.openai_compatible import OpenAICompatible
+from moka_code.harness.endpoint import Chunk, ModelInfo, image_input_from_metadata
+from moka_code.harness.providers.openai_compatible import OpenAICompatible, _delta
 
 
 class OpenRouter(OpenAICompatible):
@@ -104,6 +104,19 @@ class OpenRouter(OpenAICompatible):
         if not self.effort:
             return {}
         return {"reasoning": {"effort": self.effort}}
+
+    async def _stream(
+        self,
+        messages: list[Dict[str, Any]],
+        tools: Optional[list[Dict[str, Any]]],
+    ) -> AsyncGenerator[Chunk, None]:
+        """The answer, then its ``reasoning_details`` blocks, assembled."""
+        blocks: list = []
+        async for data in self._sse_objects(messages, tools):
+            merge_reasoning_details(blocks, _delta(data).get("reasoning_details"))
+            yield self._chunk(data)
+        if blocks:
+            yield Chunk(reasoning_native=blocks)
 
     def _extra_payload(self, model_name: str) -> dict[str, Any]:
         provider_spec = self._provider_spec(model_name)
