@@ -213,6 +213,8 @@ class Endpoint:
     fixed_url: Optional[str] = None
     # Server-table keys beyond the common ones, passed to the constructor.
     extra_keys: frozenset[str] = frozenset()
+    # This provider's block of the ``servers.toml`` template.
+    template: str = ""
 
     def __init__(
         self,
@@ -491,7 +493,7 @@ def get_endpoint(name: str) -> Optional[Endpoint]:
     if selected is not None:
         endpoint._selected_model = selected
     endpoint.source = (dict(data), selected)
-    endpoint.effort = settings.config.get_effort(name, selected or "")
+    endpoint.effort = settings.config.get_effort(name, selected)
     return endpoint
 
 

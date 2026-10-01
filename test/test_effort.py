@@ -19,7 +19,7 @@ def _endpoint(type_, **kw):
 def test_effort_payload_uses_each_servers_field():
     for type_, expected in [
         ("llamacpp", {"reasoning_effort": "high"}),
-        ("openai", {"reasoning_effort": "high"}),
+        ("openai-compatible", {"reasoning_effort": "high"}),
         ("openrouter", {"reasoning": {"effort": "high"}}),
     ]:
         endpoint = _endpoint(type_)
@@ -28,15 +28,15 @@ def test_effort_payload_uses_each_servers_field():
 
 
 def test_effort_payload_is_never_dropped():
-    endpoint = _endpoint("openai")
+    endpoint = _endpoint("openai-compatible")
     assert endpoint.effort_payload() == {}            # nothing chosen
     endpoint.effort = "high"          # not (or no longer) declared: still sent
     assert endpoint.effort_payload() == {"reasoning_effort": "high"}
 
 
-def test_efforts_key_in_a_model_table_is_reported(tmp_path):
+def test_efforts_key_in_servers_toml_is_reported(tmp_path):
     (tmp_path / "servers.toml").write_text(
-        '[servers.openrouter.models."m"]\nefforts = ["max"]\n')
+        '[servers.openrouter]\ntype = "openrouter"\nefforts = ["max"]\n')
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
     assert any("unknown key 'efforts'" in e for e in config.load_errors)
 
@@ -44,13 +44,25 @@ def test_efforts_key_in_a_model_table_is_reported(tmp_path):
 def test_effort_state_round_trip(tmp_path):
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
     config.save_effort("local", "qwen", "high")
-    config.save_effort("other", "", "low")
     reloaded = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
     assert reloaded.load_errors == []
     assert reloaded.get_effort("local", "qwen") == "high"
-    assert reloaded.get_effort("other", None) == "low"
+    assert reloaded.get_effort("local", None) is None      # no model, no effort
     reloaded.save_effort("local", "qwen", None)
     assert "local" not in reloaded.efforts
+
+
+def test_no_model_means_no_effort(monkeypatch):
+    """§9.6 (2026-10-01): the ``""`` key ("single-model server") is gone; with
+    no model selected, nothing is read, saved or sent."""
+    _config(monkeypatch, {"s": {"type": "openai-compatible", "base_url": "http://s/v1"}},
+            efforts={"s": {"": "low"}})        # an old state file
+    assert settings.config.get_effort("s", None) is None
+    endpoint = REGISTRY["openai-compatible"](name="s", base_url="http://s/v1")
+    ui, messages = _ui(endpoint)
+    asyncio.run(models.effort_command(ui, ["low"]))
+    assert messages[-1] == "No model selected (/model)."
+    assert settings.config.efforts == {"s": {"": "low"}}       # nothing saved
 
 
 def _ui(endpoint):
@@ -74,9 +86,9 @@ def _config(monkeypatch, servers, catalog=None, efforts=None):
 
 
 def test_effort_command_sets_and_persists(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}},
+    _config(monkeypatch, {"s": {"type": "openai-compatible", "base_url": "http://s/v1"}},
             catalog={"s": [{"id": "m", "efforts": ["low", "high"]}]})
-    endpoint = _endpoint("openai")
+    endpoint = _endpoint("openai-compatible")
     ui, messages = _ui(endpoint)
 
     asyncio.run(models.effort_command(ui, ["high"]))
@@ -91,20 +103,20 @@ def test_effort_command_sets_and_persists(monkeypatch):
 
 
 def test_effort_command_without_levels_explains(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}})
-    ui, messages = _ui(_endpoint("openai"))
+    _config(monkeypatch, {"s": {"type": "openai-compatible", "base_url": "http://s/v1"}})
+    ui, messages = _ui(_endpoint("openai-compatible"))
     asyncio.run(models.effort_command(ui, []))
     assert "No reasoning effort detected" in messages[-1]
 
 
 def test_effort_inline_menu_and_picker_mark_the_active_level(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}},
+    _config(monkeypatch, {"s": {"type": "openai-compatible", "base_url": "http://s/v1"}},
             catalog={"s": [{"id": "m", "efforts": ["low", "high"]}]},
             efforts={"s": {"m": "high"}})
     assert models.effort_completions() == ["default", "low", "high"]
     assert models.effort_descriptions()["high"] == "active"
 
-    ui, _ = _ui(_endpoint("openai"))
+    ui, _ = _ui(_endpoint("openai-compatible"))
     captured = {}
     ui.show_search_modal = lambda title, items, **k: captured.update(items=items, **k)
     asyncio.run(models.effort_command(ui, []))
@@ -152,7 +164,7 @@ def test_openai_compatible_lists_stated_efforts():
 
 def test_effort_levels_read_the_live_catalog_not_a_copy(monkeypatch):
     """A catalog refreshed after the first read is what /effort offers."""
-    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}}, catalog={"s": [{"id": "m"}]})
+    _config(monkeypatch, {"s": {"type": "openai-compatible", "base_url": "http://s/v1"}}, catalog={"s": [{"id": "m"}]})
     assert models.effort_completions() == []
 
     settings.config.models_by_server["s"] = [
@@ -163,9 +175,9 @@ def test_effort_levels_read_the_live_catalog_not_a_copy(monkeypatch):
 def test_effort_missing_from_the_catalog_is_still_sent_and_shown(monkeypatch):
     """A catalog without the saved level (stale, or the server answered
     without its reasoning object) must not drop or hide the effort."""
-    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}}, catalog={"s": [{"id": "m"}]},
+    _config(monkeypatch, {"s": {"type": "openai-compatible", "base_url": "http://s/v1"}}, catalog={"s": [{"id": "m"}]},
             efforts={"s": {"m": "low"}})
-    endpoint = _endpoint("openai")
+    endpoint = _endpoint("openai-compatible")
     endpoint.effort = "low"
     assert endpoint.effort_payload() == {"reasoning_effort": "low"}
     assert models.effort_completions() == ["default", "low"]
@@ -173,14 +185,14 @@ def test_effort_missing_from_the_catalog_is_still_sent_and_shown(monkeypatch):
 
 
 def test_effort_is_sent_while_the_server_is_undiscovered(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}})
-    endpoint = _endpoint("openai")
+    _config(monkeypatch, {"s": {"type": "openai-compatible", "base_url": "http://s/v1"}})
+    endpoint = _endpoint("openai-compatible")
     endpoint.effort = "low"
     assert endpoint.effort_payload() == {"reasoning_effort": "low"}   # the server decides
 
 
 def test_effort_command_rediscovers_the_active_server(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}})
+    _config(monkeypatch, {"s": {"type": "openai-compatible", "base_url": "http://s/v1"}})
     refreshed = []
 
     async def discover(names=None):
@@ -189,7 +201,7 @@ def test_effort_command_rediscovers_the_active_server(monkeypatch):
             {"id": "m", "efforts": ["low", "high"]}]
     monkeypatch.setattr("moka_code.harness.endpoint.refresh_catalog", discover)
 
-    endpoint = _endpoint("openai")
+    endpoint = _endpoint("openai-compatible")
     ui, _ = _ui(endpoint)
     asyncio.run(models.effort_command(ui, ["high"]))
     assert refreshed == [["s"]]
@@ -202,7 +214,7 @@ def test_refresh_keeps_the_last_discovery_marked_stale(monkeypatch):
     from moka_code.harness.endpoint import ModelInfo
 
     refresh_catalog = endpoint_mod.refresh_catalog     # before _config stubs it
-    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}, "never": {"type": "openai", "base_url": "http://s/v1"}},
+    _config(monkeypatch, {"s": {"type": "openai-compatible", "base_url": "http://s/v1"}, "never": {"type": "openai-compatible", "base_url": "http://s/v1"}},
             catalog={"s": [{"id": "m", "context_window": 128000}]})
     monkeypatch.setattr(settings.config, "stale_servers", set())
     up = {"ok": False}
@@ -217,7 +229,7 @@ def test_refresh_keeps_the_last_discovery_marked_stale(monkeypatch):
     assert settings.config.models_by_server["s"] == [{"id": "m", "context_window": 128000}]
     assert settings.config.stale_servers == {"s"}
     assert "never" not in settings.config.models_by_server      # nothing to keep
-    assert _endpoint("openai").context_window() == 128000
+    assert _endpoint("openai-compatible").context_window() == 128000
     assert models.model_descriptions()["m"] == "s  125k  unreachable  active"
 
     up["ok"] = True
@@ -231,7 +243,7 @@ def test_an_older_refresh_finishing_late_does_not_win(monkeypatch):
     from moka_code.harness.endpoint import ModelInfo
 
     refresh_catalog = endpoint_mod.refresh_catalog
-    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}}, catalog={"s": [{"id": "old"}]})
+    _config(monkeypatch, {"s": {"type": "openai-compatible", "base_url": "http://s/v1"}}, catalog={"s": [{"id": "old"}]})
     monkeypatch.setattr(settings.config, "stale_servers", set())
     calls = []
 
@@ -256,7 +268,7 @@ def test_an_older_refresh_finishing_late_does_not_win(monkeypatch):
 def test_unserved_model_is_reported_only_when_the_list_is_reliable(monkeypatch):
     from moka_code.harness.endpoint import unserved_model
 
-    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}, "or": {"type": "openrouter"},
+    _config(monkeypatch, {"s": {"type": "openai-compatible", "base_url": "http://s/v1"}, "or": {"type": "openrouter"},
                           "ll": {"type": "llamacpp"}},
             catalog={"s": [{"id": "qwen"}, {"id": "Qwen3.8-27B"}],
                      "or": [{"id": "deepseek/deepseek-v4.1-flash"}],

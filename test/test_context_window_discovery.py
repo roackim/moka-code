@@ -51,7 +51,7 @@ def test_openrouter_list_canonicalizes_bare_enabled_id(monkeypatch):
     _patch_client(monkeypatch, CATALOG)
     endpoint = OpenRouter(
         name="or", base_url="https://openrouter.ai/api/v1",
-        api_key="k", models={"deepseek-v4-flash-0731": {}},
+        api_key="k", models=["deepseek-v4-flash-0731"],
     )
 
     models = asyncio.run(endpoint.list_models())

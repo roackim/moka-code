@@ -40,12 +40,6 @@ and full tool output. → `PLAN.md` step 3.
 
 ## Providers and config
 
-**P1. No provider contract; ~20 `type ==` branches** · in progress
-Provider classes and registry in `harness/providers/` (2026-10-01, step 1.2
-commits 1a and 1b): no `type ==` left. Done since: stream + `Chunk`, Ollama
-removed, `ModelInfo` facts, llama.cpp selection; servers config is next.
-→ `PLAN.md` step 1.
-
 **P5. Bare model id matched by suffix, alias as fallback** · to audit
 `harness/providers/openrouter.py` (`list_models._match`):
 `deepseek-v4-flash` resolves to any `…/deepseek-v4-flash`; `~`-prefixed alias
@@ -110,6 +104,14 @@ intermittently: seen in `test_transport.py`, `test_worker.py`,
 run in 10 on 2026-10-01 (on HEAD `7e3b080` too), most runs while the machine
 was loaded (load average 12–18). None of these files touch the providers.
 Likely a timing assumption on subprocess output.
+
+**H7. The suite reads the real `~/.config/moka`** · confirmed
+`settings.config` is loaded at import from the user's config folder (no
+`MOKA_CONFIG_DIR` in `test/conftest.py`), so a test that touches the global
+config sees the user's servers. Found 2026-10-01: `test_themes.py`
+`test_refresh_theme_recolors_status_server_model` passed only because the
+user's `servers.toml` had a server (fixed in that test; the suite also passes
+with an empty `MOKA_CONFIG_DIR`). Other tests may depend on it the same way.
 
 **H5. Tests written from the implementation** · to audit
 Four tests asserted behaviour the user had rejected (fixed 2026-09-30:

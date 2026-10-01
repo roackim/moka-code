@@ -72,7 +72,7 @@ TOOLS = [{"type": "function", "function": {
     "name": "read", "description": "d", "parameters": {"type": "object", "properties": {}}}}]
 SIMPLE = HISTORY[:2]
 
-COMPAT = {"type": "openai", "base_url": "http://h/v1"}
+COMPAT = {"type": "openai-compatible", "base_url": "http://h/v1"}
 LLAMACPP = {"type": "llamacpp", "base_url": "http://h/v1"}
 OPENROUTER = {"type": "openrouter"}
 
@@ -199,14 +199,17 @@ def test_openrouter_always_talks_to_openrouter(fake):
 
 @pytest.mark.parametrize("table, provider", [
     ({"providers": ["deepseek"]}, {"order": ["deepseek"], "allow_fallbacks": False}),
-    ({"providers": ["deepseek"], "models": {"m": {"providers": ["a", "b"]}}},
+    ({"providers": ["deepseek"], "models": ["m"], "providers_by_model": {"m": ["a", "b"]}},
      {"order": ["a", "b"], "allow_fallbacks": False}),       # a model's list replaces the default
-    ({"providers": ["deepseek"], "models": {"m": {"providers": []}}}, None),   # OpenRouter's own routing
-    ({"providers": ["deepseek"], "models": {"m": {}}}, {"order": ["deepseek"], "allow_fallbacks": False}),
+    ({"providers": ["deepseek"], "models": ["m"], "providers_by_model": {"m": []}},
+     None),                                                  # OpenRouter's own routing
+    ({"providers": ["deepseek"], "models": ["m"], "providers_by_model": {"other": ["a"]}},
+     {"order": ["deepseek"], "allow_fallbacks": False}),     # not listed: the default
     ({}, None),
 ])
 def test_openrouter_provider_routing_is_a_strict_whitelist(fake, table, provider):
-    """§9.7 changes where these are written (``providers_by_model``), not what is sent."""
+    """§9.7 (2026-10-01) changed where these are written (``models`` list,
+    ``providers_by_model``), not what is sent."""
     chat_route(fake)
     run_chat(make_endpoint({**OPENROUTER, **table}), SIMPLE)
     assert chat_body(fake).get("provider") == provider
@@ -269,7 +272,7 @@ def test_openai_compatible_reports_only_what_the_server_states(fake):
 
 def test_openrouter_offers_only_whitelisted_models_with_their_stated_facts(fake):
     fake.on("GET", "/models", wire.json_response(wire.OPENROUTER_MODELS))
-    table = {**OPENROUTER, "models": {"deepseek/deepseek-v4.1-flash": {}}}
+    table = {**OPENROUTER, "models": ["deepseek/deepseek-v4.1-flash"]}
     assert learn(make_endpoint(table)) == {
         "deepseek/deepseek-v4.1-flash": (1048576, True, ["low", "high", "max"])}
 
@@ -279,5 +282,5 @@ def test_openrouter_effort_levels_are_never_guessed(fake):
     ``supported_parameters`` but states no ``supported_efforts``. It used to
     get ``none/low/medium/high`` guessed; now it gets none."""
     fake.on("GET", "/models", wire.json_response(wire.OPENROUTER_MODELS))
-    table = {**OPENROUTER, "models": {"qwen/qwen3.8-omni-flash": {}}}
+    table = {**OPENROUTER, "models": ["qwen/qwen3.8-omni-flash"]}
     assert learn(make_endpoint(table)) == {"qwen/qwen3.8-omni-flash": (1000000, True, [])}

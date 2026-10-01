@@ -112,6 +112,9 @@ base_url = "http://localhost:8010/openai/v1"
   `type` named `openai` (renamed `openai-compatible`), or a missing `type`
   gives a load error with the replacement, and that server is skipped (the
   mechanism of `_RETIRED_SERVER_KEYS`). moka never rewrites `servers.toml`.
+- **A `providers_by_model` id not in `models`** is reported (entry not used);
+  the server still loads (decided 2026-10-01).
+- Implemented 2026-10-01 (§9.7).
 
 ---
 
@@ -326,7 +329,7 @@ Everything else is identical.
    `query_model_name` / `get_model_name` and the llama.cpp branch of
    `unserved_model` are deleted). With no selection, `stream` raises "No model
    selected" instead of sending the id `"unknown"`.
-7. **The `servers.toml` shape changes** (§2.1): `type` always written, `openai`
+7. **The `servers.toml` shape changes** (§2.1, done 2026-10-01): `type` always written, `openai`
    renamed `openai-compatible`, OpenRouter's `models` list plus
    `providers_by_model` instead of per-model tables.
 8. **`timings.cache_n` is read only for `llamacpp`** (decided 2026-10-01,

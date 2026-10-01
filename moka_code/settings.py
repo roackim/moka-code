@@ -202,46 +202,19 @@ DEFAULT_STYLES_TOML = """\
 # fg = "#FF6464"
 """
 
+# The servers template: a legend, then each provider's own block
+# (``Endpoint.template``), in registry order.
 DEFAULT_SERVERS_TOML = """\
-## moka servers. One table per server; select a model with /model.
+## moka servers. One [servers.<name>] table per server; the name is yours
+## (shown by /model). Select a model with /model.
 ## Lines starting with a single # are settings to uncomment; ## is help.
 ##
-## A table named after its type needs no type key: [servers.llamacpp],
-## [servers.openrouter], [servers.openai]. Any other name sets one:
-## type = "llamacpp" | "openrouter" | "openai".
-## Server keys: base_url (not openrouter), api_key (or api_key_env),
-## max_context, timeout, retry_attempts, retry_delay; openrouter: providers.
-## Models are discovered from the server (openrouter: the model tables).
+## Every table sets type = """ + " | ".join(f'"{t}"' for t in REGISTRY) + """.
+## Any server: api_key = "..." or api_key_env = "VAR" (no line: no key).
+## Advanced, any server: max_context (used when the server reports no context
+## window), timeout = 30.0, retry_attempts = 3, retry_delay = 2.0.
 
-## llama.cpp -------------------------------------------------------------
-# [servers.llamacpp]
-# base_url = "http://localhost:8080/v1"  # optional (default)
-# api_key = "EMPTY"                      # optional
-# timeout = 30.0                         # optional (default)
-# retry_attempts = 3                     # optional (default)
-# retry_delay = 2.0                      # optional (default)
-
-## OpenRouter (always https://openrouter.ai/api/v1) ----------------------
-# [servers.openrouter]
-# api_key_env = "OPENROUTER_API_KEY"     # read the key from the environment
-# providers = ["deepseek"]               # optional; default routing for every model
-##                                       # below: only these, tried in this order
-#
-## One table per enabled model (the keys are what /model lists). Provider
-## values are slugs from the model's "Providers" tab on openrouter.ai.
-# [servers.openrouter.models."deepseek/deepseek-v4.1-flash"]
-# providers = ["deepseek", "fireworks"]  # optional; replaces the server default
-#
-# [servers.openrouter.models."anthropic/claude-sonnet-4"]
-##                                       # no providers: uses the server default
-# [servers.openrouter.models."qwen/qwen3-coder"]
-# providers = []                         # OpenRouter's own routing
-
-## OpenAI-compatible -----------------------------------------------------
-# [servers.openai]
-# base_url = "https://api.openai.com/v1"
-# api_key_env = "OPENAI_API_KEY"
-"""
+""" + "\n".join(cls.template for cls in REGISTRY.values())
 
 DEFAULT_THEMES_TOML = """\
 ## Color themes. One [themes.<name>] table per theme; select with /theme.
@@ -420,17 +393,19 @@ def _sync_flat_file(path: Path, template: str, retired: "set[str]") -> bool:
 
 _STYLE_SECTIONS = {"markdown_styles", "syntax_highlight"}
 
+# Keys every server table may have; a provider adds its ``extra_keys``.
 _SERVER_KEYS = {
     "type", "base_url", "api_key", "api_key_env", "max_context",
-    "timeout", "retry_attempts", "retry_delay", "providers", "models",
+    "timeout", "retry_attempts", "retry_delay",
 }
-# Retired OpenRouter keys -> what replaces them. A server still using one is
+# Retired keys and types -> what replaces them. A server still using one is
 # reported and skipped (servers.toml is never rewritten by moka).
 _RETIRED_SERVER_KEYS = {
     "provider": "'providers = [...]' (only these, in order)",
-    "enabled_models": "one [servers.<name>.models.\"<id>\"] table per model",
-    "model_providers": "'providers = [...]' inside [servers.<name>.models.\"<id>\"]",
+    "enabled_models": "'models = [...]'",
+    "model_providers": "[servers.<name>.providers_by_model]",
 }
+_RETIRED_SERVER_TYPES = {"openai": "openai-compatible"}
 _SERVER_STR_KEYS = {"type", "base_url", "api_key", "api_key_env"}
 _SERVER_INT_KEYS = {"max_context", "retry_attempts"}
 _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
@@ -650,8 +625,8 @@ class Config:
         self._save_state()
 
     def get_effort(self, server: str, model: Optional[str]) -> Optional[str]:
-        """Saved effort for a server's model (``""``: a single-model server)."""
-        return self.efforts.get(server, {}).get(model or "")
+        """Saved effort for a server's model (``None`` with no model)."""
+        return self.efforts.get(server, {}).get(model) if model else None
 
     def save_active_theme(self, name: str) -> None:
         """Persist the selected color theme (state, not intent)."""
@@ -797,23 +772,31 @@ def _load_servers(config: Config, data: dict, filename: str,
         if not isinstance(server, dict):
             errors.append(f"{where} must be a table")
             continue
-        skip = any(key in _RETIRED_SERVER_KEYS for key in server)
+        skip = False
+        # The type selects the transport; never guessed (a guess silently
+        # routed e.g. an OpenAI-compatible server as llama.cpp).
+        server_type = server.get("type")
+        cls = REGISTRY.get(server_type) if isinstance(server_type, str) else None
+        if server_type is None:
+            errors.append(f"{where}.type is required ({', '.join(REGISTRY)}); server skipped")
+        elif server_type in _RETIRED_SERVER_TYPES:
+            errors.append(f"{where}.type '{server_type}' was renamed "
+                          f"'{_RETIRED_SERVER_TYPES[server_type]}'; server skipped")
+        elif cls is None:
+            errors.append(f"{where}.type unknown server type '{server_type}'; server skipped")
         for key in server:
             if key in _RETIRED_SERVER_KEYS:
                 errors.append(
                     f"{where}.{key} was replaced by {_RETIRED_SERVER_KEYS[key]}; server skipped")
-            elif key not in _SERVER_KEYS:
+                skip = True
+            elif key in _SERVER_KEYS or (cls is not None and key in cls.extra_keys):
+                continue
+            elif cls is not None and any(key in c.extra_keys for c in REGISTRY.values()):
+                owners = [t for t, c in REGISTRY.items() if key in c.extra_keys]
+                errors.append(f"{where}.{key} is only supported for {', '.join(owners)} servers")
+            else:
                 errors.append(f"{where} unknown key '{key}'")
-        # A table named after a type ([servers.openrouter]) needs no type key.
-        server_type = server.get("type", name if name in REGISTRY else None)
-        if server_type is None:
-            errors.append(
-                f"{where}.type is required ({', '.join(sorted(REGISTRY))}), "
-                "or name the table after its type; server skipped")
-        elif server_type not in REGISTRY:
-            errors.append(f"{where}.type unknown server type '{server_type}'; server skipped")
         # No guessed address: only llama.cpp has a default (its own port).
-        cls = REGISTRY.get(server_type)
         if (cls is not None and not cls.fixed_url and not cls.default_url
                 and "base_url" not in server):
             errors.append(f"{where}.base_url is required for {server_type} servers; "
@@ -833,45 +816,42 @@ def _load_servers(config: Config, data: dict, filename: str,
             if key in server and (isinstance(server[key], bool)
                                   or not isinstance(server[key], (int, float))):
                 errors.append(f"{where}.{key} must be a number")
-        _validate_models(server, server_type, where, errors)
-        # The type selects the transport; never guessed (a guess silently
-        # routed e.g. an OpenAI-compatible server as llama.cpp).
-        if server_type not in REGISTRY or skip:
+        if cls is not None and "models" in cls.extra_keys:
+            skip = not _valid_routing(server, name, where, errors) or skip
+        if cls is None or skip:
             continue
-        config.servers[name] = {**server, "type": server_type}
+        config.servers[name] = dict(server)
 
 
 def _is_str_list(value: Any) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
-def _validate_models(server: dict, server_type: Any, where: str,
-                     errors: list[str]) -> None:
-    """Check ``providers`` (OpenRouter only) and the ``[models."<id>"]`` tables."""
-    routed = sorted(t for t, cls in REGISTRY.items() if "providers" in cls.extra_keys)
-    routes = server_type in routed
-    if "providers" in server and not routes:
-        errors.append(f"{where}.providers is only supported for {', '.join(routed)} servers")
+def _valid_routing(server: dict, name: str, where: str, errors: list[str]) -> bool:
+    """Check OpenRouter's ``models``, ``providers`` and ``providers_by_model``;
+    ``False`` (server skipped) when one is malformed or in the old shape."""
+    models = server.get("models", [])
+    if isinstance(models, dict):
+        errors.append(
+            f"{where}.models is now a list: models = [\"<id>\", ...]; per-model "
+            f"providers go in [servers.{name}.providers_by_model]; server skipped")
+        return False
+    if not _is_str_list(models):
+        errors.append(f"{where}.models must be a list of model ids; server skipped")
+        return False
     if "providers" in server and not _is_str_list(server["providers"]):
-        errors.append(f"{where}.providers must be a list of provider slugs")
-    models = server.get("models")
-    if models is None:
-        return
-    if not isinstance(models, dict):
-        errors.append(f"{where}.models must be a table of [models.\"<id>\"] tables")
-        return
-    for model_id, entry in models.items():
-        at = f"{where}.models.\"{model_id}\""
-        if not isinstance(entry, dict):
-            errors.append(f"{at} must be a table")
-            continue
-        for key in entry:
-            if key != "providers":
-                errors.append(f"{at} unknown key '{key}'")
-            elif key == "providers" and not routes:
-                errors.append(f"{at}.providers is only supported for {', '.join(routed)} servers")
-        if "providers" in entry and not _is_str_list(entry["providers"]):
-            errors.append(f"{at}.providers must be a list of provider slugs")
+        errors.append(f"{where}.providers must be a list of provider slugs; server skipped")
+        return False
+    by_model = server.get("providers_by_model", {})
+    if not isinstance(by_model, dict) or not all(_is_str_list(v) for v in by_model.values()):
+        errors.append(f"{where}.providers_by_model must map model ids to lists of "
+                      "provider slugs; server skipped")
+        return False
+    for model_id in by_model:
+        if model_id not in models:
+            errors.append(f"{where}.providers_by_model: '{model_id}' is not in models "
+                          "(entry not used)")
+    return True
 
 
 def _load_themes_file(path: Path, config: Config, errors: list[str]) -> None:

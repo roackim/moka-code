@@ -20,8 +20,8 @@ from moka_code.harness.providers import OpenAICompatible
 @pytest.fixture
 def cfg(monkeypatch):
     monkeypatch.setattr(settings.config, "servers", {
-        "a": {"type": "openai", "base_url": "http://a/v1"},
-        "b": {"type": "openai", "base_url": "http://b/v1"},
+        "a": {"type": "openai-compatible", "base_url": "http://a/v1"},
+        "b": {"type": "openai-compatible", "base_url": "http://b/v1"},
     })
     monkeypatch.setattr(settings.config, "models_by_server", {})
     monkeypatch.setattr(settings.config, "stale_servers", set())

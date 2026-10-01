@@ -175,17 +175,20 @@ def test_completion_menu_refresh_theme():
         colors.set_theme(original)
 
 
-def test_refresh_theme_recolors_status_server_model():
+def test_refresh_theme_recolors_status_server_model(monkeypatch):
     from types import SimpleNamespace
+    from moka_code import settings
     from moka_code.ui.app import chatTUI
 
+    # Its own server, not whatever the real servers.toml holds (no notices).
+    monkeypatch.setattr(settings.config, "servers", {"local": {"type": "llamacpp"}})
+    monkeypatch.setattr(settings.config, "models_by_server", {})
     endpoint = SimpleNamespace(
         name="local",
         model="qwen",
         selected_model="qwen",
         _connection_state="ok",
         max_context=32768,
-        _model_name_pending=False,
         _original_base_url="http://localhost:8080/v1",
     )
     agent = SimpleNamespace(endpoint=endpoint, _last_usage=None, role=None,

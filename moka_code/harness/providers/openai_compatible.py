@@ -1,4 +1,4 @@
-"""``type = "openai"`` (renamed ``openai-compatible`` in step 1.2): ``/chat/completions``, ``/models``, SSE.
+"""``type = "openai-compatible"``: ``/chat/completions``, ``/models``, SSE.
 
 OpenAI itself, vLLM, LM Studio, a proxy; the base of llama.cpp and OpenRouter.
 Implemented directly on httpx (no SDK). Streamed ``chat.completions`` objects
@@ -139,7 +139,14 @@ async def iter_sse_objects(response: httpx.Response):
 class OpenAICompatible(Endpoint):
     """A server speaking the OpenAI chat-completions API."""
 
-    type = "openai"
+    type = "openai-compatible"
+    template = """\
+## OpenAI-compatible (OpenAI, vLLM, LM Studio, a proxy) ------------------
+# [servers.openai]
+# type = "openai-compatible"
+# base_url = "https://api.openai.com/v1"
+# api_key_env = "OPENAI_API_KEY"
+"""
 
     async def list_models(self) -> list[ModelInfo]:
         """``/models``, with the facts each entry states."""

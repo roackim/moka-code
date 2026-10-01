@@ -25,7 +25,6 @@ def _app(sandboxed, runtime="none"):
         selected_model="q",
         _connection_state="ok",
         max_context=32768,
-        _model_name_pending=False,
         _original_base_url="http://localhost:8080/v1",
     )
     agent = SimpleNamespace(

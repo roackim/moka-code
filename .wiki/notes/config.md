@@ -80,22 +80,27 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 ### Intent vs state
 
 - **Intent** (hand-edited): the section files above; moka never writes them.
-  Every `[servers.<name>]` has a `type`; a table named after one
-  (`[servers.openrouter]`) is that type without the key (otherwise missing/unknown
-  → load error, server skipped). Any server may have per-model
-  `[servers.<name>.models."<id>"]` tables; OpenRouter lists only the models
-  that have one. `providers = [...]` (OpenRouter only; server
-  default, or per model, replacing the default) is a strict whitelist tried in
-  order — `order` alone would let OpenRouter fall back to any host. The retired
-  keys `provider`, `enabled_models` and `model_providers` are reported with
-  their replacement and the server is skipped (`_RETIRED_SERVER_KEYS`).
+  Every `[servers.<name>]` writes its `type` (`openai-compatible`,
+  `llamacpp`, `openrouter`; from `REGISTRY`); a missing or unknown type is a
+  load error and the server is skipped. Allowed keys: the common ones
+  (`_SERVER_KEYS`) plus the class's `extra_keys`. OpenRouter: `models = [...]`
+  is the whitelist `/model` lists; `providers = [...]` (server default) and
+  `[servers.<name>.providers_by_model]` (`"<id>" = [...]`, replacing the
+  default; `[]` = OpenRouter's own routing) are strict whitelists tried in
+  order — `order` alone would let OpenRouter fall back to any host; a
+  `providers_by_model` id not in `models` is reported (entry not used). Old
+  shapes are reported with their replacement and the server is skipped:
+  `type = "openai"` (`_RETIRED_SERVER_TYPES`), per-model `models."<id>"`
+  tables, and the keys `provider`, `enabled_models`, `model_providers`
+  (`_RETIRED_SERVER_KEYS`). The `servers.toml` template is generated: a
+  legend plus each class's `template` block.
   Effort levels are detected only (no config key): the catalog's `efforts`,
   which a provider fills only from a stated list (OpenRouter-format
   `reasoning.supported_efforts`; any OpenAI-compatible server's `/models` may
   carry it; never guessed), gives the levels; `/effort` rediscovers the active server first.
   While the server is undiscovered, a saved level is sent as-is; the chosen level is saved per server/model in `state.toml`
-  (`[effort.<server>]`, `""` for a single-model server) and sent verbatim as
-  `reasoning_effort` (llamacpp/openai) or `reasoning.effort` (openrouter) —
+  (`[effort.<server>]`; nothing without a selected model) and sent verbatim as
+  `reasoning_effort` (llamacpp/openai-compatible) or `reasoning.effort` (openrouter) —
   `Endpoint.effort_payload`. Load errors are shown at startup and on `/reload`/`/config`, and
   every reload rebuilds the live endpoint if its server table or selection
   changed. `type = "openrouter"` has no `base_url` (always

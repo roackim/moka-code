@@ -102,7 +102,7 @@ def test_template_key_lines_are_commented(section):
         assert line.lstrip().startswith("#")
 
 
-_SETTING_LINE = re.compile(r"^# (\[|[A-Za-z_][A-Za-z0-9_]*\s*=)")
+_SETTING_LINE = re.compile(r'^# (\[|[A-Za-z_][A-Za-z0-9_]*\s*=|"[^"]+"\s*=)')
 
 
 @pytest.mark.parametrize("section", ["ui", "context", "debug", "styles", "theme", "servers"])

@@ -319,7 +319,7 @@ def effort_descriptions() -> dict:
 
 def _set_effort(ui: ChatUIProtocol, endpoint, effort: Optional[str]) -> None:
     endpoint.effort = effort
-    settings.config.save_effort(endpoint.name, endpoint.selected_model or "", effort)
+    settings.config.save_effort(endpoint.name, endpoint.selected_model, effort)
     ui.chat_history_panel.add_message(
         f"Reasoning effort: {effort or 'server default'}.", msg_type=SysMsg(), title="effort")
     if hasattr(ui, "refresh_status_bar"):
@@ -334,6 +334,10 @@ async def effort_command(ui: ChatUIProtocol, args: List[str]):
     endpoint = getattr(ui.agent, "endpoint", None)
     server = getattr(endpoint, "name", None)
     model = getattr(endpoint, "selected_model", None)
+    if not model:
+        ui.chat_history_panel.add_message(
+            "No model selected (/model).", msg_type=SysMsgError(), title="effort")
+        return
     if server in settings.config.servers:
         await refresh_catalog([server])     # levels come from the live server
     choices, current = _effort_choices(server, model)

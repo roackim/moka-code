@@ -16,20 +16,37 @@ class OpenRouter(OpenAICompatible):
 
     type = "openrouter"
     fixed_url = "https://openrouter.ai/api/v1"
-    extra_keys = frozenset({"providers", "models"})
+    extra_keys = frozenset({"models", "providers", "providers_by_model"})
+    template = """\
+## OpenRouter (always https://openrouter.ai/api/v1) ----------------------
+# [servers.openrouter]
+# type = "openrouter"
+# api_key_env = "OPENROUTER_API_KEY"
+# models = ["deepseek/deepseek-v4.1-flash", "qwen/qwen3-coder"]  # what /model lists
+# providers = ["deepseek"]               # optional; only these, in this order
+##
+## Optional per-model routing: replaces providers for that model; [] means
+## OpenRouter's own routing. Slugs are on the model's "Providers" tab.
+# [servers.openrouter.providers_by_model]
+# "deepseek/deepseek-v4.1-flash" = ["deepseek", "fireworks"]
+# "qwen/qwen3-coder" = []
+"""
 
     def __init__(
         self,
         name: str,
+        models: Optional[list[str]] = None,
         providers: Optional[list[str]] = None,
-        models: Optional[dict[str, dict[str, Any]]] = None,
+        providers_by_model: Optional[dict[str, list[str]]] = None,
         **kwargs: Any,
     ):
         super().__init__(name, **kwargs)
-        # Per-model tables (``providers``; the tables are the enabled models)
-        # and the default provider whitelist, in order.
+        # The enabled model ids (the whitelist), the default provider
+        # whitelist (in order), and per-model replacements of it.
+        self.models = list(models or [])
         self.providers = list(providers) if providers is not None else None
-        self.models = {model_id: dict(entry) for model_id, entry in (models or {}).items()}
+        self.providers_by_model = {
+            model_id: list(slugs) for model_id, slugs in (providers_by_model or {}).items()}
 
     async def _catalog(self) -> Optional[list[dict]]:
         """OpenRouter's public model catalog; ``None`` if it did not answer."""
@@ -101,24 +118,20 @@ class OpenRouter(OpenAICompatible):
         return {"provider": provider_spec} if provider_spec else {}
 
     def _enabled_ids(self) -> list[str]:
-        """Return the explicitly-enabled model ids.
-
-        All OpenRouter models are disabled unless they have a
-        ``[models."<id>"]`` table.
-        """
+        """The enabled model ids: only those in ``models``."""
         return list(self.models)
 
-    def _model_entry(self, model_name: str) -> Optional[dict]:
-        """The ``[models."<id>"]`` table for a model.
+    def _model_providers(self, model_name: str) -> Optional[list[str]]:
+        """This model's ``providers_by_model`` entry, or ``None``.
 
         A bare id (no ``vendor/`` prefix) matches its canonical id, since
-        discovery canonicalizes bare ids.
+        discovery canonicalizes bare ids (ISSUES P5).
         """
-        if model_name in self.models:
-            return self.models[model_name]
-        for model_id, entry in self.models.items():
+        if model_name in self.providers_by_model:
+            return self.providers_by_model[model_name]
+        for model_id, slugs in self.providers_by_model.items():
             if model_name.endswith("/" + model_id):
-                return entry
+                return slugs
         return None
 
     def _provider_spec(self, model_name: str) -> Optional[dict]:
@@ -126,13 +139,12 @@ class OpenRouter(OpenAICompatible):
 
         ``providers`` is a strict whitelist tried in order: ``order`` alone lets
         OpenRouter fall back to any other host, so fallbacks are disabled. A
-        model's own ``providers`` replaces the server default; an empty list
-        (or none at all) means OpenRouter's own routing (``None``).
+        model's ``providers_by_model`` entry replaces the server default; an
+        empty list (or none at all) means OpenRouter's own routing (``None``).
         """
-        entry = self._model_entry(model_name)
-        providers = self.providers
-        if entry is not None and "providers" in entry:
-            providers = entry["providers"]
+        providers = self._model_providers(model_name)
+        if providers is None:
+            providers = self.providers
         if not providers:
             return None
         return {"order": list(providers), "allow_fallbacks": False}

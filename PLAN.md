@@ -87,11 +87,11 @@ against the provider's current docs before they are built on.
    `settings.py`). Order agreed 2026-10-01: restructure first (1a classes +
    registry ✅, 1b Ollama into `providers/` ✅), then one commit per §9 change
    (stream + `Chunk` ✅; Ollama removed ✅; `ModelInfo` facts ✅; llama.cpp
-   selection ✅; servers config).
+   selection ✅; servers config ✅). ✅
 3. One request path per provider: compaction collects from the stream (the
    non-streaming path goes). ✅ (2026-10-01, with `Chunk`)
 4. Server types and the servers template come from the registry; the new
-   servers.toml shape (`providers.md` §2.1).
+   servers.toml shape (`providers.md` §2.1). ✅ (2026-10-01)
 5. Tests rewritten against the contract.
 
 ## Step 2: reasoning

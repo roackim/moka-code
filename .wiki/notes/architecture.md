@@ -84,7 +84,7 @@ files by `projects.py`. See [notes/config.md](./config.md).
 - **Stateless tools, swappable transport** — tool bodies are pure functions in `worker.py`; the harness executes them through a `ToolTransport`, either `InProcessTransport` (bare) or `SandboxTransport` (container/bubblewrap). Same registry/schemas in both
 - **Sandbox is transport, not policy** — moka parses no commands and confines no paths; a container/bwrap mount is the wall, and the user names the backend
 - **Endpoints** — server config + transport live in one `Endpoint` type (`harness/endpoint.py`, with `endpoint_*` modules for transport/discovery); UI commands are thin adapters
-- **Model selection is `(server, model)`** — `/model` refreshes discovery live, resolves a model across servers, then switches the harness. Per-server choices persist in `state.toml`; the discovery catalog is in memory only (never persisted), refreshed at startup, on reloads, `/model` and `/effort`. OpenRouter models are disabled unless they have a `[servers.<name>.models."<id>"]` table.
+- **Model selection is `(server, model)`** — `/model` refreshes discovery live, resolves a model across servers, then switches the harness. Per-server choices persist in `state.toml`; the discovery catalog is in memory only (never persisted), refreshed at startup, on reloads, `/model` and `/effort`. OpenRouter offers only the ids in its server's `models = [...]` list.
 - **No thinking-tag parsing** — `content` is stored and shown verbatim; reasoning comes only from the server's own fields
 
 ## Module Relationships

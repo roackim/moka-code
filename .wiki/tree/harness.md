@@ -88,7 +88,7 @@ listing shows (`unserved_model`). The selected model is one field,
 `_selected_model`, sent as selected on every server; with none, `stream`
 raises "No model selected" (never a guessed id). `prewarm_connection()`
 checks the connection in the background (`_connection_state`). The endpoint
-caches no model facts and probes nothing of its own; `type = "openai"` reads the server's `/models` `context_length` (no
+caches no model facts and probes nothing of its own; `type = "openai-compatible"` reads the server's `/models` `context_length` (no
 built-in table: set `max_context` for servers that report none, e.g. real
 OpenAI). `type = "openrouter"` always
 uses `OpenRouter.fixed_url`; a `base_url` in its table is a load error
@@ -103,16 +103,16 @@ This one type replaced the former `LLMServerConfig` + `ServerService` +
 ### `providers/`
 `REGISTRY` (`__init__.py`) maps `type` to class; `settings` validates server
 tables from it.
-- `openai_compatible.py` — `OpenAICompatible` (`type = "openai"`): `/models`,
+- `openai_compatible.py` — `OpenAICompatible` (`type = "openai-compatible"`): `/models`,
   SSE `/chat/completions` → `Chunk`s; `parse_usage`; `_extra_payload` hook;
   `stated_efforts` (`reasoning.supported_efforts`, weakest first by
   `EFFORT_WORDS`) and `stated_images` (`architecture.input_modalities`)
 - `llamacpp.py` — `LlamaCpp(OpenAICompatible)`: default URL; `list_models` adds context and
   vision from `/props` (unknown if it does not answer),
   cache count from `timings.cache_n` when usage has none
-- `openrouter.py` — `OpenRouter(OpenAICompatible)`: fixed URL; one
-  `[models."<id>"]` table per enabled model; `providers` (server default,
-  per-model override) is a strict ordered whitelist sent as
+- `openrouter.py` — `OpenRouter(OpenAICompatible)`: fixed URL; `models`
+  (list) is the whitelist; `providers` (server default) and
+  `providers_by_model` (per-model replacement) are strict ordered whitelists sent as
   `{"order": [...], "allow_fallbacks": false}` (`_provider_spec`);
   `providers = []` or none → OpenRouter's own routing;
   `reasoning_details` assembled into `Chunk.reasoning_native`

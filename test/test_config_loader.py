@@ -121,22 +121,22 @@ def test_state_is_written_separately_from_intent(tmp_path):
     assert "model_catalog" not in persisted
 
 
-def test_server_type_defaults_to_the_table_name_only(tmp_path):
-    """A missing type must not silently become llama.cpp (single-model); a
-    table named after a type ([servers.openai]) is that type."""
+def test_type_is_always_written(tmp_path):
+    """§2.1 (2026-10-01): no type from the table name, never guessed; the old
+    ``openai`` type names its replacement. Both servers are skipped."""
     _write(tmp_path / "servers.toml", {
         "servers": {
-            "openai": {"base_url": "http://localhost:8000/v1"},
-            "mine": {"base_url": "http://localhost:8000/v1"},
-            "ok": {"type": "openai", "base_url": "http://localhost:8000/v1"},
+            "openrouter": {"api_key_env": "K"},
+            "old": {"type": "openai", "base_url": "http://localhost:8000/v1"},
+            "ok": {"type": "openai-compatible", "base_url": "http://localhost:8000/v1"},
         },
     })
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
-    assert "[servers.mine].type is required" in "\n".join(config.load_errors)
-    assert "mine" not in config.servers
-    assert config.servers["openai"]["type"] == "openai"
-    assert "ok" in config.servers
+    joined = "\n".join(config.load_errors)
+    assert "[servers.openrouter].type is required" in joined
+    assert "[servers.old].type 'openai' was renamed 'openai-compatible'; server skipped" in joined
+    assert set(config.servers) == {"ok"}
 
 
 def test_default_templates_are_valid_and_error_free(tmp_path):
@@ -209,15 +209,45 @@ def test_reload_picks_up_edits(tmp_path):
 def test_openrouter_routing_keys_load(tmp_path):
     _write(tmp_path / "servers.toml", {"servers": {"or": {
         "type": "openrouter",
+        "models": ["deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-4"],
         "providers": ["deepseek"],
-        "models": {"deepseek/deepseek-v4.1-flash": {"providers": ["deepseek", "fireworks"]},
-                   "anthropic/claude-sonnet-4": {}},
+        "providers_by_model": {"deepseek/deepseek-v4.1-flash": ["deepseek", "fireworks"]},
     }}})
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
     assert config.load_errors == []
-    assert list(config.servers["or"]["models"]) == [
+    assert config.servers["or"]["models"] == [
         "deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-4"]
+
+
+def test_old_per_model_tables_are_reported_and_skipped(tmp_path):
+    """§2.1 (2026-10-01): the per-model ``[models."<id>"]`` tables are the old
+    shape; reported with the replacement, never read."""
+    _write(tmp_path / "servers.toml", {"servers": {"or": {
+        "type": "openrouter",
+        "models": {"deepseek/deepseek-v4.1-flash": {"providers": ["deepseek"]}},
+    }}})
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+
+    joined = "\n".join(config.load_errors)
+    assert "[servers.or].models is now a list" in joined
+    assert "[servers.or.providers_by_model]; server skipped" in joined
+    assert "or" not in config.servers
+
+
+def test_providers_by_model_for_an_unlisted_model_is_reported(tmp_path):
+    """Decided 2026-10-01: a typo in ``providers_by_model`` is a load error
+    (routing never silently ignored); the server still loads."""
+    _write(tmp_path / "servers.toml", {"servers": {"or": {
+        "type": "openrouter", "models": ["deepseek/deepseek-v4.1-flash"],
+        "providers_by_model": {"deepseek/deepseek-v4-flash": ["deepseek"]},
+    }}})
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+
+    assert config.load_errors == [
+        "servers.toml: [servers.or].providers_by_model: 'deepseek/deepseek-v4-flash' "
+        "is not in models (entry not used)"]
+    assert "or" in config.servers
 
 
 def test_openrouter_base_url_is_reported_and_never_used(tmp_path):
@@ -248,17 +278,20 @@ def test_retired_openrouter_keys_name_their_replacement_and_skip(tmp_path):
 
 def test_openrouter_routing_values_are_validated(tmp_path):
     _write(tmp_path / "servers.toml", {"servers": {
-        "or": {"type": "openrouter", "base_url": "x", "providers": "deepseek",
-               "models": {"m": {"providers": [1], "sort": "price"}}},
-        "local": {"type": "llamacpp", "base_url": "x", "providers": ["a"]},
+        "or": {"type": "openrouter", "models": ["m"], "providers": "deepseek"},
+        "or2": {"type": "openrouter", "models": "m"},
+        "or3": {"type": "openrouter", "models": ["m"], "providers_by_model": {"m": [1]}},
+        "local": {"type": "llamacpp", "providers": ["a"], "models": ["m"]},
     }})
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
     joined = "\n".join(config.load_errors)
-    assert "[servers.or].providers must be a list of provider slugs" in joined
-    assert '[servers.or].models."m".providers must be a list of provider slugs' in joined
-    assert "[servers.or].models.\"m\" unknown key 'sort'" in joined
+    assert "[servers.or].providers must be a list of provider slugs; server skipped" in joined
+    assert "[servers.or2].models must be a list of model ids; server skipped" in joined
+    assert "[servers.or3].providers_by_model must map model ids" in joined
     assert "[servers.local].providers is only supported for openrouter servers" in joined
+    assert "[servers.local].models is only supported for openrouter servers" in joined
+    assert set(config.servers) == {"local"}
 
 
 def test_legacy_config_dir_moves_once(tmp_path, monkeypatch):
@@ -285,3 +318,17 @@ def test_legacy_config_dir_left_alone_when_moka_dir_exists(tmp_path, monkeypatch
 
     assert settings.migrate_legacy_config_dir() is None
     assert (tmp_path / ".config" / "pico-chat").exists()
+
+
+def test_servers_template_uncommented_is_a_working_config(tmp_path):
+    """§2.1 (2026-10-01): the template comes from the registry, one block per
+    type, each writing its ``type``; uncommented, it loads without errors."""
+    import re
+
+    setting = re.compile(r'^# (?=\[|[A-Za-z_"])')
+    text = "\n".join(setting.sub("", line) for line in settings.DEFAULT_SERVERS_TOML.splitlines())
+    (tmp_path / "servers.toml").write_text(text, encoding="utf-8")
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+
+    assert config.load_errors == []
+    assert sorted(s["type"] for s in config.servers.values()) == sorted(settings.REGISTRY)

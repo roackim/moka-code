@@ -28,7 +28,7 @@ def cfg(monkeypatch, tmp_path):
 
 def test_get_endpoint_applies_per_server_selection(cfg):
     cfg.config.servers["srv"] = {
-        "type": "openai",
+        "type": "openai-compatible",
         "base_url": "http://localhost:8000/v1",
         "api_key": "EMPTY",
     }
@@ -43,7 +43,7 @@ def test_get_endpoint_without_selection_has_no_model(cfg):
     """Decided 2026-09-30: no ``model`` key in servers.toml; models come
     from discovery (OpenRouter: its model tables) and the selection."""
     cfg.config.servers["srv"] = {
-        "type": "openai",
+        "type": "openai-compatible",
         "base_url": "http://localhost:8000/v1",
     }
 
@@ -78,7 +78,7 @@ def test_llamacpp_keeps_the_selected_model(cfg, monkeypatch):
 
 def test_active_endpoint_uses_only_its_own_server_selection(cfg):
     """A server with no selection must not inherit another server's model."""
-    cfg.config.servers["a"] = {"type": "openai", "base_url": "http://a/v1"}
+    cfg.config.servers["a"] = {"type": "openai-compatible", "base_url": "http://a/v1"}
     cfg.config.servers["b"] = {"type": "openrouter", "base_url": "http://b/v1"}
     cfg.config.model_selection["b"] = "vendor/model-b"
     cfg.config.active_server = "a"
@@ -137,13 +137,13 @@ def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatc
         return None
 
     monkeypatch.setattr(Endpoint, "prewarm_connection", _no_probe)
-    cfg.config.servers["a"] = {"type": "openai", "base_url": "http://old/v1"}
+    cfg.config.servers["a"] = {"type": "openai-compatible", "base_url": "http://old/v1"}
     agent = _ReloadAgent(get_active_endpoint())
 
     _reapply(agent)
     assert agent.switched == []  # unchanged config keeps the live endpoint
 
-    cfg.config.servers["a"] = {"type": "openai", "base_url": "http://new/v1"}
+    cfg.config.servers["a"] = {"type": "openai-compatible", "base_url": "http://new/v1"}
     _reapply(agent)
     assert len(agent.switched) == 1
     assert agent.endpoint.base_url == "http://new/v1"
@@ -153,11 +153,9 @@ def test_openrouter_providers_are_a_strict_ordered_whitelist():
     """``order`` alone falls back to any host; fallbacks must be disabled."""
     endpoint = OpenRouter(
         name="or", providers=["deepseek"],
-        models={
-            "deepseek/deepseek-v4.1-flash": {"providers": ["deepseek", "fireworks"]},
-            "anthropic/claude-sonnet-4": {},
-            "qwen/qwen3-coder": {"providers": []},
-        },
+        models=["deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-4", "qwen/qwen3-coder"],
+        providers_by_model={"deepseek/deepseek-v4.1-flash": ["deepseek", "fireworks"],
+                            "qwen/qwen3-coder": []},
     )
     assert endpoint._provider_spec("deepseek/deepseek-v4.1-flash") == {
         "order": ["deepseek", "fireworks"], "allow_fallbacks": False}
@@ -169,8 +167,9 @@ def test_openrouter_providers_are_a_strict_ordered_whitelist():
     assert OpenRouter(name="or")._provider_spec("any/model") is None
 
 
-def test_openrouter_bare_model_table_matches_canonical_id():
-    endpoint = OpenRouter(name="or", models={"deepseek-v4.1-flash": {"providers": ["deepseek"]}})
+def test_openrouter_bare_model_id_matches_canonical_id():
+    endpoint = OpenRouter(name="or", models=["deepseek-v4.1-flash"],
+                          providers_by_model={"deepseek-v4.1-flash": ["deepseek"]})
     assert endpoint._provider_spec("deepseek/deepseek-v4.1-flash") == {
         "order": ["deepseek"], "allow_fallbacks": False}
     assert endpoint._enabled_ids() == ["deepseek-v4.1-flash"]

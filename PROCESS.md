@@ -63,6 +63,7 @@ that catches it.
 | S8 | Guesses stated as facts (llama.cpp `--reasoning-preserve`, DeepSeek replay rules) until challenged | Mark unverified claims; verify before building on them |
 | S9 | Edits to `HANDOFF.md` (gotchas) without noticing the file was stale (I16) | Treat entry docs as something to verify, not only to append to |
 | S10 | (2026-10-01) An external API's behaviour assumed instead of checked, caught by the user. With I17, one of two such cases that day *(rebuilt 2026-10-01; the original specifics are lost)* | Check the docs or a live response first; copy fixtures from the real thing, with source and date |
+| S11 | (2026-10-01) The "HEAD vs working tree" scenario checks of step 1.2 commits 3–5 ran the working tree on both sides: `python script.py` puts the script's folder first on the import path, not the HEAD copy, so the editable install was imported. Caught during commit 6; rerun with `PYTHONPATH`, each commit against its parent, and the results held | Assert which copy was imported (`moka_code.__file__`) before comparing |
 
 ---
 
