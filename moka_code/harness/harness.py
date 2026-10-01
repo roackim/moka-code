@@ -11,6 +11,7 @@ from typing import AsyncGenerator, Any, Dict, List, Optional, Tuple
 from moka_code.harness.llm_status import AgentState
 from moka_code.harness.debug import get_debug_stream
 from moka_code.harness.context_builder import build_harness_context
+from moka_code.harness.compaction import COMPACTION_MARKER_PREFIX, transcript
 from moka_code.harness.elision import elide
 from moka_code.harness import events, images
 from moka_code.harness.endpoint import Endpoint, get_active_endpoint
@@ -30,7 +31,6 @@ import os
 logger = logging.getLogger(__name__)
 
 
-COMPACTION_MARKER_PREFIX = "[COMPACTION_SUMMARY]"
 
 # Fields of a history entry that are sent to the model (see ``_to_api_message``).
 _API_FIELDS = ("role", "content", "tool_calls", "tool_call_id")
@@ -473,6 +473,8 @@ class Harness:
         Returns:
             Summary stats describing the compaction operation.
         """
+        from moka_code import settings
+
         if self.endpoint is None:
             raise RuntimeError("no model selected (/model)")
         effective_history = list(self._get_effective_history())
@@ -507,7 +509,10 @@ class Harness:
                 "Do not reproduce raw tool output; state what it showed. Keep code only "
                 "where it is needed to continue (an unresolved error, a snippet being "
                 "worked on). Be factual; do not invent details.\n\n"
-                f"Conversation JSON:\n{json.dumps(effective_history, ensure_ascii=False)}"
+                "Conversation:\n" + transcript(
+                    effective_history,
+                    filter_thoughts=settings.config.context_compact_filter_thoughts,
+                    filter_tool_calls=settings.config.context_compact_filter_tool_calls)
             ),
         }
 

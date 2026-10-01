@@ -165,15 +165,16 @@ llama.cpp and DeepSeek ✅ (2026-10-01, see Decisions).
    (`guides/thinking_mode`) and no off switch is asked for. ✅ (decided
    2026-10-01)
 
-## Step 3: compaction
+## Step 3: compaction ✅ (2026-10-01)
 
 1. `context.toml`: `compact_filter_thoughts`, `compact_filter_tool_calls`,
-   both on by default.
+   both on by default. ✅
 2. The summarizer gets readable text, never raw stored entries (no ids,
-   image references or native blocks).
+   image references or native blocks): `harness/compaction.py`. ✅
 3. Filtered tool calls become one line with key arguments, no output:
-   `read file.py lines 40–120`, `bash: pytest -q → exit 1`,
-   `edit file.py (3 replacements)`.
+   `read file.py lines 40–120`, `bash: pytest -q → exit 1`, `write f (N lines)`,
+   `edit file.py` (the count would always be 1); a failure (`Error:`,
+   `[TOOL DENIED]`) adds its first line. ✅
 
 ---
 
@@ -190,7 +191,6 @@ llama.cpp and DeepSeek ✅ (2026-10-01, see Decisions).
 
 ## Open questions
 
-- `edit` / `write` one-liners in compaction: is the replacement count enough,
-  or keep the edited line ranges?
+- (answered 2026-10-01) `edit` one-liner: no count (always 1), no line ranges.
 - (answered 2026-10-01) Minimum-depth warning: from live state in the notice
   band, so also on a model or server switch.

@@ -171,7 +171,10 @@ used selection is never replaced and is shown red when it cannot be reached.
 **Context / ui:** `context_format`, `context_max_files`,
 `context_max_depth`, `context_ignore_gitignore`,
 `context_max_image_mb` (`context.max_image_mb`, largest attachable image),
-`context_sessions` (`context.sessions`, conversations saved per project; 0 = off);
+`context_sessions` (`context.sessions`, conversations saved per project; 0 = off),
+`context_compact_filter_thoughts` / `context_compact_filter_tool_calls`
+(`/compact` input: reasoning left out; each tool call one line, no output;
+both default on);
 `ui_theme`, `ui_box_style`, `ui_show_metrics`,
 `ui_status_bar_fields`, `ui_max_input_height` (input box caps + scrolls past
 this many wrapped lines), `ui_stream_smoothing` / `ui_smooth_target_fps`

@@ -184,6 +184,17 @@ See [notes/tools-and-permissions.md](../notes/tools-and-permissions.md).
 before a completed tool result enters history/LLM messages; the `ToolResult`
 event still carries the full output for the UI. `limit <= 0` disables it.
 
+### `compaction.py`
+`transcript(history, filter_thoughts, filter_tool_calls)` — the text
+`compact_history` gives the summarizer instead of the stored entries: `User:` /
+`Assistant:` lines, `Earlier summary:` for a previous marker, `Note:` for system
+notices; no ids, image references, `origin` or native reasoning. Filtered tool
+calls are one line (`read a.py lines 40–120`, `bash: pytest -q → exit 1`,
+`write n.py (3 lines)`, `edit a.py`), plus the first line of the result when it
+starts with `Error:` or `[TOOL DENIED]`; unfiltered, the call and its result.
+Reasoning is `[thinking] …` only when `filter_thoughts` is off. Owns
+`COMPACTION_MARKER_PREFIX`.
+
 ### `roles.py`
 `Role` — the single source of truth for a conversation's operating mode: a
 `description`, a `prompt`, a `tools: dict[str, str]` mapping each registered

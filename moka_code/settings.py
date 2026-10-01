@@ -172,6 +172,8 @@ DEFAULT_CONTEXT_TOML = """\
 # ignore_gitignore = false
 # max_image_mb = 5                    # largest image a message can attach
 # sessions = 10                       # conversations saved per project (/session); 0 = off
+# compact_filter_thoughts = true      # /compact: leave the model's reasoning out of the summary input
+# compact_filter_tool_calls = true    # /compact: each tool call as one line, without its output
 """
 
 DEFAULT_DEBUG_TOML = """\
@@ -296,6 +298,8 @@ _CONTEXT_SPEC: Dict[str, tuple[str, str]] = {
     "ignore_gitignore": ("context_ignore_gitignore", "bool"),
     "max_image_mb": ("context_max_image_mb", "int_or_float"),
     "sessions": ("context_sessions", "int"),
+    "compact_filter_thoughts": ("context_compact_filter_thoughts", "bool"),
+    "compact_filter_tool_calls": ("context_compact_filter_tool_calls", "bool"),
 }
 
 _DEBUG_SPEC: Dict[str, tuple[str, str]] = {
@@ -565,6 +569,8 @@ class Config:
         self.context_ignore_gitignore: bool = False
         self.context_max_image_mb: float = 5
         self.context_sessions: int = 10
+        self.context_compact_filter_thoughts: bool = True
+        self.context_compact_filter_tool_calls: bool = True
 
         # Style tables.
         self.markdown_styles: Dict[str, Dict[str, Any]] = {
