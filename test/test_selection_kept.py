@@ -1,9 +1,10 @@
-"""Model selection: auto-selected only on a fresh state; a last used
-selection is never replaced, and shown red when it cannot be reached.
+"""Model selection: the previous model is kept while it is available;
+otherwise the first available one is selected, with a message saying why.
 
-Decided 2026-09-30 (PLAN.md step 0.2): the first available model (top of
-``/model``) only when nothing was ever selected; otherwise the last used
-model stays, red, with the notice band saying why.
+Decided 2026-10-01 (the user, replacing PLAN.md step 0.2's "a last used model
+is never replaced"): keep the previous model if available, else the first
+available. A server that cannot be listed keeps its selection (red, with the
+notice band saying why): a network blip must not switch servers.
 """
 
 from types import SimpleNamespace
@@ -70,13 +71,63 @@ def test_nothing_available_selects_nothing(cfg):
     assert cfg.active_server is None and not switched and not messages
 
 
-def test_last_used_is_never_replaced(cfg):
-    cfg.active_server, cfg.model_selection = "a", {"a": "gone"}
-    cfg.models_by_server = {"a": [{"id": "other"}], "b": [{"id": "m1"}]}
+def _activating(monkeypatch):
+    monkeypatch.setattr("moka_code.ui.commands.base.activate_endpoint",
+                        lambda ui, endpoint: ui.agent.switch_server(endpoint))
+
+
+def test_available_previous_model_is_kept(cfg, monkeypatch):
+    _activating(monkeypatch)
+    cfg.active_server, cfg.model_selection = "b", {"b": "m2"}
+    cfg.models_by_server = {"a": [{"id": "x"}], "b": [{"id": "m1"}, {"id": "m2"}]}
     ui, messages, switched = _ui()
     auto_select(ui)
-    assert (cfg.active_server, cfg.model_selection) == ("a", {"a": "gone"})
+    assert (cfg.active_server, cfg.model_selection) == ("b", {"b": "m2"})
     assert not switched and not messages
+
+
+def test_model_gone_from_its_live_server_selects_that_servers_first(cfg, monkeypatch):
+    _activating(monkeypatch)
+    cfg.active_server, cfg.model_selection = "b", {"b": "gone"}
+    cfg.models_by_server = {"a": [{"id": "x"}], "b": [{"id": "m2"}, {"id": "m1"}]}
+    ui, messages, switched = _ui()
+    auto_select(ui)
+    assert (cfg.active_server, cfg.model_selection["b"]) == ("b", "m1")
+    assert "Selected m1 on b (gone is no longer served by b; /model to change)" in messages[-1]
+
+
+def test_server_removed_from_config_selects_the_first_available(cfg, monkeypatch):
+    _activating(monkeypatch)
+    cfg.active_server, cfg.model_selection = "openrouter", {"openrouter": "m"}
+    cfg.models_by_server = {"a": [{"id": "x"}], "b": [{"id": "m1"}]}
+    ui, messages, switched = _ui()
+    auto_select(ui)
+    assert (cfg.active_server, cfg.model_selection["a"]) == ("a", "x")
+    assert "server 'openrouter' is not in servers.toml" in messages[-1]
+
+
+def test_a_server_that_cannot_be_listed_keeps_its_selection(cfg, monkeypatch):
+    """Stale (down now) or never listed: the server's answer is unknown, so a
+    blip never switches servers; stale servers are not a choice either."""
+    _activating(monkeypatch)
+    cfg.active_server, cfg.model_selection = "a", {"a": "m"}
+    cfg.models_by_server = {"a": [{"id": "other"}], "b": [{"id": "m1"}]}
+    cfg.stale_servers = {"a"}
+    ui, messages, switched = _ui()
+    auto_select(ui)
+    assert (cfg.active_server, cfg.model_selection) == ("a", {"a": "m"})
+    cfg.stale_servers, cfg.models_by_server = set(), {"b": [{"id": "m1"}]}   # never listed
+    auto_select(ui)
+    assert cfg.active_server == "a" and not switched and not messages
+
+
+def test_stale_servers_are_never_picked(cfg, monkeypatch):
+    _activating(monkeypatch)
+    cfg.models_by_server = {"a": [{"id": "x"}], "b": [{"id": "m1"}]}
+    cfg.stale_servers = {"a"}
+    ui, _, _ = _ui()
+    auto_select(ui)
+    assert cfg.active_server == "b"
 
 
 def _endpoint(name, model):
@@ -85,7 +136,7 @@ def _endpoint(name, model):
     return endpoint
 
 
-def test_unlisted_last_model_is_kept_red(cfg):
+def test_unlisted_model_is_red_until_auto_select_runs(cfg):
     cfg.active_server, cfg.model_selection = "a", {"a": "gone"}
     cfg.models_by_server = {"a": [{"id": "other"}]}
     ui, _, _ = _ui(_endpoint("a", "gone"))
@@ -97,7 +148,7 @@ def test_unlisted_last_model_is_kept_red(cfg):
     assert ("error", "gone is no longer served by a → /model") in notices(ui.agent)
 
 
-def test_server_removed_from_config_keeps_last_selection_red(cfg):
+def test_missing_server_is_red_until_auto_select_runs(cfg):
     cfg.active_server, cfg.model_selection = "gone", {"gone": "m"}
     ui, _, _ = _ui(None)
 

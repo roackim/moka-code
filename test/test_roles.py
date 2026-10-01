@@ -221,3 +221,24 @@ def test_replay_reasoning_depth(tmp_path, monkeypatch):
             template + f"replay_reasoning_depth = {bad}\n", encoding="utf-8")
         with pytest.raises(ValueError, match="replay_reasoning_depth"):
             load_role("t")
+
+
+def test_role_template_layout_and_uncommentable_settings():
+    """Layout (2026-10-01): ``##`` is help, a single ``#`` is a setting that
+    works when uncommented; tools are aligned, technical settings come last."""
+    import re
+    import toml
+
+    template = roles_module._role_template(
+        Role(name="agent", description="d", prompt="p", tools={"read": "yes", "bash": "ask"}))
+
+    assert template.startswith("## Moka role: agent\n\ndescription = ")
+    assert 'read = "yes"\nbash = "ask"\n' in template
+    assert template.index("## Technical settings") > template.index('bash = "ask"')
+    assert [l for l in template.splitlines() if l.startswith("# ")] == [
+        "# require_sandbox = true", "# replay_reasoning_depth = 1"]
+    uncommented = re.sub(r"^# ", "", template, flags=re.M)
+    loaded = toml.loads(uncommented)
+    assert loaded["require_sandbox"] is True and loaded["replay_reasoning_depth"] == 1
+    assert "require_sandbox = true\n" in roles_module._role_template(
+        Role(name="x", require_sandbox=True))

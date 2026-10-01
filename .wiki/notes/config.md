@@ -34,7 +34,7 @@ Missing files are created from fully commented templates
 (`settings.DEFAULT_CONFIG_TEMPLATES`) by `Config.ensure_section_file()` /
 `ensure_config_files()`. In every template a single `#` marks a setting to
 uncomment (a bare `#` spaces a block of settings) and `##` marks help
-(guarded by `test_template_help_lines_use_double_hash`). The built-in role files (`agent.toml`, `chat.toml`)
+(guarded by `test_template_help_lines_use_double_hash`; role files, from `roles._role_template`: description, prompt, tools, then a `## Technical settings` block, guarded by `test_role_template_layout_and_uncommentable_settings`). The built-in role files (`agent.toml`, `chat.toml`)
 are seeded by `roles.ensure_roles_dir()` on startup.
 
 Existing **flat** files (`ui`, `context`, `debug`) are kept in sync
@@ -80,8 +80,9 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 ### Intent vs state
 
 - **Intent** (hand-edited): the section files above; moka never writes them.
-  Every `[servers.<name>]` writes its `type` (`llamacpp`,
-  `openrouter`, `deepseek`; from `REGISTRY`); a missing or unknown type is a
+  A `[servers.<name>]` writes its `type` (`llamacpp`,
+  `openrouter`, `deepseek`; from `REGISTRY`) unless the table is named after one
+  (`[servers.openrouter]`); an otherwise missing or unknown type is a
   load error and the server is skipped. Allowed keys: the common ones
   (`_SERVER_KEYS`) plus the class's `extra_keys`. OpenRouter: `models = [...]`
   is the whitelist `/model` lists; `providers = [...]` (server default) and
@@ -165,8 +166,15 @@ stored one file per role under `roles/<name>.toml`. `PermissionGate`
 `config.model_selection` (`server -> model`), `config.models_by_server`
 (catalog), `config.get_model_for_server(server)` (the last selection only;
 servers.toml has no `model` key). On a fresh state (`active_server` is None)
-`commands.base.auto_select` picks the top of `/model` after discovery; a last
-used selection is never replaced and is shown red when it cannot be reached.
+`commands.base.auto_select` runs after discovery: the previous model is kept
+while available; if its server left `servers.toml`, or the server's fresh
+listing no longer has it, or nothing was selected, it selects the first
+available model (that server's first, else the top of `/model`; stale servers
+are never picked) and says why. A server that cannot be listed keeps its
+selection, shown red with a notice. Failed discoveries are recorded in
+`Config.discovery_errors` and shown for every configured server (an error for
+the active one, a warning for the others), as are unset `api_key_env`
+variables.
 
 **Context / ui:** `context_format`, `context_max_files`,
 `context_max_depth`, `context_ignore_gitignore`,

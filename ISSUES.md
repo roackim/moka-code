@@ -24,10 +24,12 @@ never exercised. Wire tests mark each ⚠. → `reasoning-traces.md`.
 
 ## Compaction
 
-**C1. Summarizer receives raw stored entries** · confirmed
-`harness.py` `compact_history`: `json.dumps(effective_history)` includes all
-reasoning, signed/encrypted blocks, internal ids, `source`, image references,
-and full tool output. → `PLAN.md` step 3.
+**C2. Filtered compaction hides what a command printed** · to check
+(2026-10-01, step 3) With `compact_filter_tool_calls` on, a failing `bash` is
+only `→ exit 1`: the summary cannot say what the test printed unless the
+assistant's own text did. Possible improvement: keep the last lines of a
+failed command's output. Check on real compactions before changing; the escape
+hatch is `compact_filter_tool_calls = false`.
 
 ---
 

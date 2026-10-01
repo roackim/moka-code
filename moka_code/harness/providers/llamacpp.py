@@ -21,10 +21,10 @@ class LlamaCpp(OpenAICompatible):
     type = "llamacpp"
     default_url = "http://localhost:8080/v1"
     template = """\
-## llama.cpp -------------------------------------------------------------
+## llama.cpp (base_url is optional; the default is shown)
 # [servers.local]
 # type = "llamacpp"
-# base_url = "http://localhost:8080/v1"  # optional (default)
+# base_url = "http://localhost:8080/v1"
 """
 
     def _props_url(self) -> str:

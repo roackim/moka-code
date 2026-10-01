@@ -227,28 +227,27 @@ def ensure_roles_dir() -> Path:
 
 
 def _role_template(role: Role) -> str:
-    """Render a role file with a short header and one line per tool."""
+    """Render a role file: description, prompt, one line per tool, then the
+    technical settings. ``##`` is help; a single ``#`` is a setting to uncomment."""
     import json
 
-    header = (
-        f"# Moka role: {role.name}\n"
-        f"#   The file name is the role name.\n"
-        f"#   Select with: /role {role.name}\n"
-        f"#   Edit with:   /config role {role.name}\n"
-        f"#\n"
-        f"# Tools: no = disabled (hidden from the model) · ask = confirm · yes = auto\n"
-        f"# require_sandbox = true locks the conversation unless a sandbox is active.\n"
-        f"# replay_reasoning_depth: turns of the model's reasoning sent back with each\n"
-        f"# request. 0 = none, 1 = the current turn (tool loop), N = last N turns, 999 = all.\n"
-        f"# replay_reasoning_depth = 1\n\n"
+    width = max((len(name) for name in role.tools), default=0)
+    tools = "".join(f'{name.ljust(width)} = "{value}"\n' for name, value in role.tools.items())
+    sandbox = ("require_sandbox = true\n" if role.require_sandbox
+               else "# require_sandbox = true\n")
+    return (
+        f"## Moka role: {role.name}\n\n"
         f"description = {json.dumps(role.description)}\n"
-        f"prompt = {json.dumps(role.prompt)}\n"
+        f"prompt = {json.dumps(role.prompt)}\n\n"
+        f"## All available tools: no = disabled (hidden from the model) · ask = confirm · yes = auto\n"
+        f"{tools}\n"
+        f"## Technical settings\n\n"
+        f"## require_sandbox: true locks the conversation unless a sandbox is active.\n"
+        f"{sandbox}\n"
+        f"## replay_reasoning_depth: turns of the model's reasoning sent back with each\n"
+        f"## request. 0 = none, 1 = the current turn (tool loop), N = last N turns, 999 = all.\n"
+        f"# replay_reasoning_depth = 1\n"
     )
-    if role.require_sandbox:
-        header += "require_sandbox = true\n"
-    header += "\n# All available tools:\n"
-    body = "".join(f'{name} = "{value}"\n' for name, value in role.tools.items())
-    return header + body
 
 
 def create_role(name: str) -> Role:

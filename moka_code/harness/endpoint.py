@@ -533,6 +533,18 @@ def unserved_model(server: Optional[str], model_name: Optional[str]) -> Optional
     return listed
 
 
+def describe_failure(error: Exception) -> str:
+    """A failed discovery as one short phrase for the notice band."""
+    if isinstance(error, httpx.HTTPStatusError):
+        status = error.response.status_code
+        return f"HTTP {status}" + (" (check the API key)" if status in (401, 403) else "")
+    if isinstance(error, (asyncio.TimeoutError, httpx.TimeoutException)):
+        return "timed out"
+    if isinstance(error, httpx.ConnectError):
+        return "cannot connect"
+    return str(error) or type(error).__name__
+
+
 # Per server, the number of the latest refresh started: only its result is
 # applied, so an older refresh finishing late cannot overwrite a newer one.
 _refresh_generation: dict[str, int] = {}
@@ -552,6 +564,7 @@ async def refresh_catalog(names: Optional[list[str]] = None) -> None:
         generation = _refresh_generation.get(name, 0) + 1
         _refresh_generation[name] = generation
         endpoint = get_endpoint(name)
+        failure = None
         try:
             if endpoint is None:
                 raise LookupError(name)
@@ -559,15 +572,19 @@ async def refresh_catalog(names: Optional[list[str]] = None) -> None:
         except Exception as e:
             logger.debug("discovery failed for %s: %s", name, e)
             models = None
+            failure = describe_failure(e) if endpoint is not None else None
         finally:
             if endpoint is not None:
                 await endpoint.aclose()     # a throwaway: never leave its pool open
         if _refresh_generation.get(name) != generation:
             return                          # a newer refresh owns the result
         if models is None:
+            if failure:
+                settings.config.discovery_errors[name] = failure
             if name in settings.config.models_by_server:
                 settings.config.stale_servers.add(name)
             return
+        settings.config.discovery_errors.pop(name, None)
         settings.config.models_by_server[name] = [m.to_dict() for m in models]
         settings.config.stale_servers.discard(name)
 

@@ -89,7 +89,7 @@ listing shows (`unserved_model`). The selected model is one field,
 raises "No model selected" (never a guessed id). `prewarm_connection()`
 checks the connection in the background (`_connection_state`). The endpoint
 caches no model facts and probes nothing of its own; `OpenAICompatible` is the abstract shared chat-completions code (no `type`);
-the registered types are `llamacpp` and `openrouter`. No built-in context
+the registered types are `llamacpp`, `openrouter` and `deepseek`. No built-in context
 table and no `max_context`. `type = "openrouter"` always
 uses `OpenRouter.fixed_url`; a `base_url` in its table is a load error
 (ignored).

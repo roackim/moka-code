@@ -127,78 +127,113 @@ def get_state_path() -> Path:
 # Per-section templates written on first use. Everything is commented out so
 # the built-in defaults apply until the user uncomments what they need.
 DEFAULT_UI_TOML = """\
-## moka UI settings (flat keys). Apply with /reload, or /config ui
-## (which reloads when the editor exits).
-## Lines starting with a single # are settings to uncomment; ## is help.
+## Moka UI settings
+## Apply with /reload, or /config ui (reloads when the editor exits).
+## A line starting with # is a setting to uncomment; ## is help.
 
-# theme = "terminal"                  # "terminal" | "pastel"
-# use_bg_color = false                # paint the theme background
+## Look
+
+# theme = "terminal"                    # "terminal" | "pastel"
+# use_bg_color = false                  # paint the theme background
 # app_global_padding = 0
 # msg_h_padding = 1
-# msg_v_margin = 1                   # blank lines between turns (assistant output is continuous)
+# msg_v_margin = 1                      # blank lines between turns (assistant output is continuous)
 # debug_console_height = 10
-# max_input_height = 8                # input grows with wrapped lines, then scrolls
-# box_style = "square"                # "square" | "double" | "rounded" | "ascii"
+# max_input_height = 8                  # input grows with wrapped lines, then scrolls
+# box_style = "square"                  # "square" | "double" | "rounded" | "ascii"
 # box_style_focused = "square"
+
+## Scrolling
+
 # scroll_lines_per_notch = 3
 # scroll_touchpad_speed = 0.1
 # scroll_touchpad_event_threshold = 2
 # scroll_alt_multiplier = 3.0
+
+## Metrics under the answer
+
 # show_metrics = true
 # metrics_show_tokens = false
 # metrics_show_speed = true
 # metrics_show_ttft = false
 # metrics_refresh_interval = 0.1
+
+## Status bar and notices
+
 # status_bar_fields = ["endpoint_model", "role", "context", "cost", "sandbox"]
-# notice_lines = 2                   # top band height; past it, "+N more · /activity"
-# sandbox_glyph = "⬢"                 # before the sandbox field; empty hides it (emoji ok)
-# sandbox_prefix = "sandbox:"         # before the runtime name; empty hides it
-# sandbox_active_color = "SUCCESS"    # palette name or #rrggbb
+# notice_lines = 2                      # top band height; past it, "+N more · /activity"
+
+## Sandbox field
+
+# sandbox_glyph = "⬢"                   # before the field; empty hides it (emoji ok)
+# sandbox_prefix = "sandbox:"           # before the runtime name; empty hides it
+# sandbox_active_color = "SUCCESS"      # palette name or #rrggbb
 # sandbox_inactive_color = "WARNING"
-# thought_min_tokens = 0              # hide shorter reasoning lines (0 = show all)
-# show_banner = true                  # moka art in an empty transcript
-# stream_smoothing = true             # reveal streamed text smoothly
-# smooth_target_fps = 60              # reveal cadence (independent of render fps)
+
+## Transcript and streaming
+
+# thought_min_tokens = 0                # hide shorter reasoning lines (0 = show all)
+# show_banner = true                    # moka art in an empty transcript
+# stream_smoothing = true               # reveal streamed text smoothly
+# smooth_target_fps = 60                # reveal cadence (independent of render fps)
 # target_fps = 60
 """
 
 DEFAULT_CONTEXT_TOML = """\
-## Context building (flat keys). Apply with /reload, or /config context.
-## Lines starting with a single # are settings to uncomment; ## is help.
+## Moka context settings
+## Apply with /reload, or /config context.
+## A line starting with # is a setting to uncomment; ## is help.
 
-# format = "tree"                     # "tree" (token-saving) | "flat"
+## Project context
+
+# format = "tree"                       # "tree" (token-saving) | "flat"
 # max_files = 500
 # max_depth = 4
 # ignore_gitignore = false
-# max_image_mb = 5                    # largest image a message can attach
-# sessions = 10                       # conversations saved per project (/session); 0 = off
-# compact_filter_thoughts = true      # /compact: leave the model's reasoning out of the summary input
-# compact_filter_tool_calls = true    # /compact: each tool call as one line, without its output
+
+## Images and sessions
+
+# max_image_mb = 5                      # largest image a message can attach
+# sessions = 10                         # conversations saved per project (/session); 0 = off
+
+## /compact
+
+# compact_filter_thoughts = true        # leave the model's reasoning out of the summary input
+# compact_filter_tool_calls = true      # each tool call as one line, without its output
 """
 
 DEFAULT_DEBUG_TOML = """\
-## Debug (flat keys). Apply with /reload, or /config debug.
-## Lines starting with a single # are settings to uncomment; ## is help.
+## Moka debug settings
+## Apply with /reload, or /config debug.
+## A line starting with # is a setting to uncomment; ## is help.
 
-# log_enabled = false                 # write debug_stream.log
+## Logging
+
+# log_enabled = false                   # write debug_stream.log
 """
 
 DEFAULT_STYLES_TOML = """\
-## Optional markdown / syntax-highlight overrides. Apply with /reload, or
-## /config styles. Uncomment and edit what you need. Keys: fg, bg (a hex
-## color, or a theme color name such as "MUTED"), bold, italic, underline.
-## Lines starting with a single # are settings to uncomment; ## is help.
+## Moka markdown and syntax-highlight styles
+## Apply with /reload, or /config styles.
+## A line starting with # is a setting to uncomment; ## is help.
+##
+## Keys: fg, bg (a hex color, or a theme color name such as "MUTED"), bold,
+## italic, underline.
+
+## Markdown
 
 # [markdown_styles.header1]
-# fg = "#FF79C6"
+# fg   = "#FF79C6"
 # bold = true
 
 # [markdown_styles.bold]
-# fg = "#FFD700"
+# fg   = "#FFD700"
 # bold = true
 
 # [markdown_styles.code]
 # fg = "#9CDCFE"
+
+## Syntax highlighting
 
 # [syntax_highlight.keyword]
 # fg = "#FF6464"
@@ -207,29 +242,38 @@ DEFAULT_STYLES_TOML = """\
 # The servers template: a legend, then each provider's own block
 # (``Endpoint.template``), in registry order.
 DEFAULT_SERVERS_TOML = """\
-## moka servers. One [servers.<name>] table per server; the name is yours
-## (shown by /model). Select a model with /model.
-## Lines starting with a single # are settings to uncomment; ## is help.
+## Moka servers
+## One [servers.<name>] table per server; the name is yours (shown by /model).
+## Select a model with /model. Apply with /reload, or /config servers.
+## A line starting with # is a setting to uncomment; ## is help.
 ##
-## Every table sets type = """ + " | ".join(f'"{t}"' for t in REGISTRY) + """.
+## A table named after its type (openrouter, deepseek) needs no type; any other
+## name sets type = """ + " | ".join(f'"{t}"' for t in REGISTRY) + """.
+##
 ## Any server: api_key = "..." or api_key_env = "VAR" (no line: no key).
 ## Advanced, any server: timeout = 30.0, retry_attempts = 3, retry_delay = 2.0.
 
 """ + "\n".join(cls.template for cls in REGISTRY.values())
 
 DEFAULT_THEMES_TOML = """\
-## Color themes. One [themes.<name>] table per theme; select with /theme.
-## Each palette entry is either a hex RGB string or an ANSI slot table:
+## Moka color themes
+## One [themes.<name>] table per theme; select with /theme. Apply with /reload,
+## or /config theme.
+## A line starting with # is a setting to uncomment; ## is help.
+##
+## Each palette entry is a hex RGB string or an ANSI slot table:
 ##   USER       = "#4EC9B0"
 ##   MUTED      = { ansi = 90 }            # standard ANSI fg code
 ##   BACKGROUND = { ansi = 39, bg = 49 }   # fg and/or bg codes
+##
 ## Missing entries inherit from the built-in base of the same name (or terminal).
 ## Several built-ins ship (terminal is the default; run /theme to list them);
 ## they are always available and can be overridden here.
 ##
 ## Palette keys: BACKGROUND, DEFAULT, MUTED, ERROR, WARNING, SUCCESS,
 ##               PERMISSION, USER, ASSISTANT, FOCUSED
-## Lines starting with a single # are settings to uncomment; ## is help.
+
+## Example
 
 # [themes.pastel]
 # BACKGROUND = "#1E1E1E"
@@ -508,6 +552,8 @@ class Config:
         # Servers whose last refresh failed: their entry is the last
         # successful discovery of this session, possibly stale.
         self.stale_servers: set = set()
+        # Why the last discovery of a server failed (memory only), by server.
+        self.discovery_errors: Dict[str, str] = {}
         self._apply_defaults()
         self.reload()
 
@@ -779,12 +825,15 @@ def _load_servers(config: Config, data: dict, filename: str,
             errors.append(f"{where} must be a table")
             continue
         skip = False
-        # The type selects the transport; never guessed (a guess silently
-        # routed e.g. an OpenAI-compatible server as llama.cpp).
+        # The type selects the provider. It is only ever implied by a table
+        # named after a type (``[servers.openrouter]``); never otherwise guessed.
+        if "type" not in server and name in REGISTRY:
+            server = {**server, "type": name}
         server_type = server.get("type")
         cls = REGISTRY.get(server_type) if isinstance(server_type, str) else None
         if server_type is None:
-            errors.append(f"{where}.type is required ({', '.join(REGISTRY)}); server skipped")
+            errors.append(f"{where}.type is required unless the table is named after a type "
+                          f"({', '.join(REGISTRY)}); server skipped")
         elif server_type in _RETIRED_SERVER_TYPES:
             errors.append(f"{where}.type '{server_type}' is no longer supported "
                           f"({', '.join(REGISTRY)}); server skipped")

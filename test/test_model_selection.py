@@ -193,3 +193,41 @@ def test_minimum_replay_depth_is_a_warning_from_live_state(cfg):
     other = LlamaCpp(name="s", base_url="http://s/v1", model="m")
     endpoint = other                                    # switching server re-evaluates
     assert warnings(1, [{"x": 1}]) == []
+
+
+def test_a_server_that_cannot_be_listed_is_reported_even_when_not_active(cfg, monkeypatch):
+    """A failed discovery used to reach only the debug log: with the active
+    server missing, a broken DeepSeek failed without a word."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import httpx
+    from moka_code.harness.endpoint import refresh_catalog
+    from moka_code.ui.status_presenter import notices
+
+    monkeypatch.delenv("DS_KEY", raising=False)
+    cfg.config.servers["ds"] = {"type": "llamacpp", "base_url": "http://ds/v1"}
+    cfg.config.servers["keyed"] = {"type": "llamacpp", "base_url": "http://k/v1",
+                                   "api_key_env": "DS_KEY"}
+    cfg.config.active_server = "gone"
+    agent = SimpleNamespace(endpoint=None, role=None)
+
+    async def refuse(self):
+        request = httpx.Request("GET", "http://ds/v1/models")
+        raise httpx.HTTPStatusError("x", request=request, response=httpx.Response(401, request=request))
+
+    monkeypatch.setattr(LlamaCpp, "list_models", refuse)
+    asyncio.run(refresh_catalog(["ds"]))
+
+    assert cfg.config.discovery_errors == {"ds": "HTTP 401 (check the API key)"}
+    texts = [(level, t) for level, t in notices(agent)]
+    assert ("warning", "ds cannot be listed: HTTP 401 (check the API key) → /config servers") in texts
+    assert ("warning", "$DS_KEY is not set (keyed API key) → export DS_KEY=…") in texts
+
+    async def fine(self):
+        return []
+
+    monkeypatch.setattr(LlamaCpp, "list_models", fine)
+    asyncio.run(refresh_catalog(["ds"]))
+    assert cfg.config.discovery_errors == {}
+    assert not any("cannot be listed" in t for _, t in notices(agent))

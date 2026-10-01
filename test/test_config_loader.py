@@ -121,13 +121,15 @@ def test_state_is_written_separately_from_intent(tmp_path):
     assert "model_catalog" not in persisted
 
 
-def test_type_is_always_written(tmp_path):
-    """§2.1 (2026-10-01): no type from the table name, never guessed; the old
-    ``openai`` and ``openai-compatible`` types are no longer supported. Those
-    servers are skipped."""
+def test_type_defaults_to_the_table_name_only_when_it_is_a_type(tmp_path):
+    """A table named after a type needs no ``type``; any other name must say
+    it, and the retired ``openai`` / ``openai-compatible`` types are reported.
+    Skipped servers are not loaded."""
     _write(tmp_path / "servers.toml", {
         "servers": {
             "openrouter": {"api_key_env": "K"},
+            "deepseek": {},
+            "local": {"base_url": "http://localhost:8080/v1"},
             "old": {"type": "openai", "base_url": "http://localhost:8000/v1"},
             "gone": {"type": "openai-compatible", "base_url": "http://localhost:8000/v1"},
             "ok": {"type": "llamacpp", "base_url": "http://localhost:8000/v1"},
@@ -136,10 +138,12 @@ def test_type_is_always_written(tmp_path):
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
     joined = "\n".join(config.load_errors)
-    assert "[servers.openrouter].type is required" in joined
+    assert "[servers.local].type is required unless the table is named after a type" in joined
     assert "[servers.old].type 'openai' is no longer supported" in joined
     assert "[servers.gone].type 'openai-compatible' is no longer supported" in joined
-    assert set(config.servers) == {"ok"}
+    assert "[servers.openrouter]" not in joined and "[servers.deepseek]" not in joined
+    assert {n: config.servers[n]["type"] for n in config.servers} == {
+        "openrouter": "openrouter", "deepseek": "deepseek", "ok": "llamacpp"}
 
 
 def test_default_templates_are_valid_and_error_free(tmp_path):

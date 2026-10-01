@@ -16,6 +16,15 @@ from moka_code.harness.llm_status import AgentState
 from moka_code.harness.permissions import PermissionGate
 
 
+@pytest.fixture(autouse=True)
+def _no_discovery_errors_leak(monkeypatch):
+    """Discovery failures live on the global config; a test that provokes one
+    must not leave it for the next."""
+    from moka_code import settings
+
+    monkeypatch.setattr(settings.config, "discovery_errors", {})
+
+
 # ---------------------------------------------------------------------------
 # Stubs
 # ---------------------------------------------------------------------------

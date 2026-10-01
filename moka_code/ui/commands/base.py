@@ -230,27 +230,47 @@ def activate_endpoint(ui: ChatUIProtocol, endpoint) -> None:
 
 
 def auto_select(ui: ChatUIProtocol) -> None:
-    """On a fresh state (no model ever selected), select the top entry of
-    ``/model``. A last used selection is never replaced, even when
-    it cannot be reached (the status bar shows it red)."""
-    from moka_code.harness.endpoint import get_endpoint
+    """Keep the previous selection when it is available; otherwise select the
+    first available model (the active server's own first, else the top of
+    ``/model``) and say why.
+
+    "Not available" means the saved server is not in ``servers.toml``, or its
+    fresh listing no longer has the model, or nothing was ever selected. When
+    the server cannot be listed (down, stale, never answered) the selection is
+    kept: a network blip must not switch you to another server (the notice band
+    says what is wrong).
+    """
+    from moka_code.harness.endpoint import get_endpoint, unserved_model
     from moka_code.ui.tui.msg_types import SysMsg
 
-    if settings.config.active_server is not None:
-        return
-    # /model's order: by server, then model id.
-    pairs = [(server, model["id"]) for server in settings.config.servers
-             for model in settings.config.models_by_server.get(server) or []]
+    config = settings.config
+    active = config.active_server
+    previous = config.model_selection.get(active) if active else None
+    if active is None:
+        reason = "first available"
+    elif active not in config.servers:
+        reason = f"server '{active}' is not in servers.toml"
+    elif previous is None:
+        reason = "no model was selected"
+    elif unserved_model(active, previous) is not None:
+        reason = f"{previous} is no longer served by {active}"
+    else:
+        return                              # available, or cannot tell: keep
+    # Only servers that answered: a stale or never-discovered one is not a choice.
+    pairs = [(server, model["id"]) for server in config.servers
+             if server not in config.stale_servers
+             for model in config.models_by_server.get(server) or []]
     if not pairs:
         return
-    server, model = min(pairs)
-    settings.config.save_model_selection(server, model)
-    settings.config.set_active_server(server)
+    own = [pair for pair in pairs if pair[0] == active]
+    server, model = min(own or pairs)
+    config.save_model_selection(server, model)
+    config.set_active_server(server)
     endpoint = get_endpoint(server)
     if endpoint is not None:
         activate_endpoint(ui, endpoint)
     ui.chat_history_panel.add_message(
-        f"Selected {model} on {server} (first available; /model to change).",
+        f"Selected {model} on {server} ({reason}; /model to change).",
         msg_type=SysMsg(), title="model")
 
 

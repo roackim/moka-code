@@ -17,9 +17,8 @@ class DeepSeek(OpenAICompatible):
     type = "deepseek"
     fixed_url = "https://api.deepseek.com"
     template = """\
-## DeepSeek (always https://api.deepseek.com) -----------------------------
+## DeepSeek (always https://api.deepseek.com)
 # [servers.deepseek]
-# type = "deepseek"
 # api_key_env = "DEEPSEEK_API_KEY"
 """
 

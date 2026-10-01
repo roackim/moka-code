@@ -25,8 +25,9 @@ against the provider's current docs before they are built on.
   server states none is an error ("server broken, or moka reads the wrong
   route"). Images and effort levels are optional (absent = unknown / none).
   `max_context` (servers.toml) is deleted.
-- **Servers config (2026-10-01).** `type` is always written (no table-name
-  shortcut); `openai` is renamed `openai-compatible` (deleted since, see above); `llamacpp` no longer
+- **Servers config (2026-10-01).** `type` is implied by a table named after it
+  (`[servers.openrouter]`), written for any other name; never a redundant
+  line (the user's explicit feedback, restored 2026-10-01); `openai` is renamed `openai-compatible` (deleted since, see above); `llamacpp` no longer
   assumes one served model (it can serve several): the selected id is always
   sent; OpenRouter uses a `models` list plus `providers` and
   `providers_by_model` instead of per-model tables; templates show only the
@@ -73,8 +74,12 @@ against the provider's current docs before they are built on.
 
 1. Remove `efforts` model tables from the code; effort levels come only from
    detection. Model tables keep `providers` (OpenRouter). ✅
-2. Model selection: on a fresh state, auto-select the top of `/model`. A last
-   used model is never replaced: it stays, red, with the notice saying why.
+2. Model selection: keep the previous model while it is available, else
+   auto-select the first available (the same server's first, else the top of
+   `/model`) with a message saying why (changed 2026-10-01 on the user's
+   explicit request; it was "a last used model is never replaced"). A server
+   that cannot be listed keeps its selection, red, with the notice saying why:
+   a network blip never switches servers.
    No `model` key in servers.toml (OpenRouter keeps its model tables). ✅
 3. Menus are shared components:
    - with nothing typed, every suggestion list is sorted; a source with a

@@ -116,6 +116,19 @@ def notices(agent) -> list[tuple[str, str]]:
                 f"{name} needs reasoning sent back for {'all' if needed >= 999 else needed} "
                 f"turn(s), role {role.name} sends {depth} → replay_reasoning_depth "
                 f"(/config role {role.name})")
+    # Every configured server, not only the active one: a server that cannot
+    # be listed would otherwise fail without a word (the active one's own
+    # problems are reported above).
+    for server_name, table in settings.config.servers.items():
+        if server_name == name and endpoint is not None:
+            continue
+        other = errors if server_name == selected else warnings
+        key_env = table.get("api_key_env")
+        if key_env and not os.getenv(key_env):
+            other.append(f"${key_env} is not set ({server_name} API key) → export {key_env}=…")
+        elif server_name in settings.config.discovery_errors:
+            other.append(f"{server_name} cannot be listed: "
+                         f"{settings.config.discovery_errors[server_name]} → /config servers")
     sandbox_required = getattr(agent, "sandbox_required", None)
     if callable(sandbox_required) and sandbox_required():
         role = getattr(getattr(agent, "role", None), "name", "this role")

@@ -79,8 +79,7 @@ for both.
 ```toml
 ## One table per server. The name is yours (shown by /model).
 
-[servers.openrouter]
-type = "openrouter"
+[servers.openrouter]                          # named after its type: no type line
 api_key_env = "OPENROUTER_API_KEY"
 models = ["deepseek/deepseek-v4.1-flash"]     # only these are offered
 providers = ["deepseek"]                      # default routing: only these, in order
@@ -93,8 +92,11 @@ type = "llamacpp"
 base_url = "http://localhost:8080/v1"
 ```
 
-- **`type` is always written**, in every table. The "table named after its
-  type" shortcut is deleted. Valid types come from the registry.
+- **`type` is never redundant** (reinstated 2026-10-01, the user's explicit
+  feedback): a table named after a type (`[servers.openrouter]`,
+  `[servers.deepseek]`) has no `type` line, the loader implies it. Any other
+  name (`[servers.local]`) must write `type`, else a load error. Valid types
+  come from the registry; nothing else is guessed.
 - **Keys:** the common keys above. A keyless server has no key line. A set
   `api_key_env` whose variable is unset is an error notice.
 - **OpenRouter:** `models` is the whitelist (what `/model` lists; absent or
@@ -348,7 +350,7 @@ Everything else is identical.
    `query_model_name` / `get_model_name` and the llama.cpp branch of
    `unserved_model` are deleted). With no selection, `stream` raises "No model
    selected" instead of sending the id `"unknown"`.
-7. **The `servers.toml` shape changes** (§2.1, done 2026-10-01): `type` always written, `openai`
+7. **The `servers.toml` shape changes** (§2.1, done 2026-10-01): `type` implied by a table named after it, otherwise written; `openai`
    renamed `openai-compatible`, OpenRouter's `models` list plus
    `providers_by_model` instead of per-model tables.
 8. **`timings.cache_n` is read only for `llamacpp`** (decided 2026-10-01,
