@@ -11,14 +11,13 @@ The OpenAI-compatible chat transport is implemented **directly on httpx** — th
 `openai` SDK was removed. moka owns the connection, DNS/IP resolution, timeouts,
 retries and connection pooling, giving full visibility into how requests are
 sent (and why they're slow). Only the three supported server families are
-covered: llama.cpp / Ollama / OpenRouter (+ generic OpenAI-compatible).
+covered: llama.cpp / OpenRouter (+ generic OpenAI-compatible).
 
 - One `httpx.AsyncClient` per server (`_new_http_client`), reused across
   messages in a conversation (keep-alive connections, no per-message handshake).
 - Streaming is done by parsing SSE (`data:` lines) from `POST /chat/completions`;
   chunks are adapted (`_adapt_stream_chunk` / `_adapt_chat_response`) to the
   shape the old SDK produced so downstream harness/UI code is unchanged.
-- Ollama uses its native `/api/chat` endpoint (which preserves usage counters).
 
 ## The problem
 

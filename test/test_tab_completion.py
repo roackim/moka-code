@@ -76,7 +76,7 @@ def test_model_space_keeps_the_text_and_lists_every_model(monkeypatch):
     from moka_code.harness.endpoint import ModelInfo
     from moka_code.ui.commands import models
 
-    pairs = [("ollama", ModelInfo(id="Qwen:low")), ("ollama", ModelInfo(id="Qwen:high")),
+    pairs = [("local", ModelInfo(id="Qwen:low")), ("local", ModelInfo(id="Qwen:high")),
              ("openrouter", ModelInfo(id="deepseek/x"))]
     monkeypatch.setattr(models, "_cached_pairs", lambda: pairs)
     inp = _input()

@@ -41,7 +41,6 @@ Tests live in `test/`. Run with pytest from the project root.
 | `test_elision.py` | Head/tail truncation boundary cases |
 | `test_patch_parser.py` | `parse_patch` / `apply_patch` 3-mode cascade (now imported from `worker.py`) |
 | `test_ui_permission_submit.py` | Input blocked while awaiting permission prompt |
-| `test_ollama_server.py` | Ollama backend adapter: `/api/tags` model discovery, context-window parsing, native chat response adaptation |
 
 The sandbox tests need **no real container**: they run the actual `worker.py` as
 a local subprocess (the "trivial runtime" that speaks the protocol).

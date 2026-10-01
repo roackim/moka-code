@@ -58,21 +58,13 @@ entries used as fallback. Could pick the wrong model silently.
 **P7. Guessed effort levels** · confirmed
 `harness/endpoint.py` `efforts_from_metadata`: invents
 `none/low/medium/high` when a model lists `reasoning` or `reasoning_effort`
-without `reasoning.supported_efforts`, and for Ollama reads `capabilities:
-thinking` and guesses levels from the model name (`gpt-oss`). Checked
-2026-10-01 against each provider's docs and OpenRouter's live `/models`:
+without `reasoning.supported_efforts` (its Ollama guess went with Ollama,
+2026-10-01). Checked 2026-10-01 against each provider's docs and OpenRouter's live `/models`:
 - OpenRouter: 194 of 333 reasoning models state `supported_efforts` (all also
   list `reasoning_effort`); of the other 139, 135 list only `reasoning`, which
   is not an effort signal. Docs: `reasoning.effort` takes
   `max|xhigh|high|medium|low|minimal|none` for any model; an unsupported level
   is mapped to the nearest supported one.
-- Ollama: `/api/show` returns a `thinking` object (`values`, `default`; omitted
-  for non-thinking models): strings are levels (gpt-oss: low/medium/high),
-  booleans are on/off. Unsupported level names silently use the model default.
-  The code never reads `thinking`. Its `capabilities` branch is fed from
-  `/api/tags` metadata, which has no `capabilities` (only name, model,
-  modified_at, size, digest, details), so it never fires on a real server; its
-  tests hand-feed the shape (H5).
 - OpenAI: `/v1/models` states no reasoning capabilities; levels are per model in
   the docs, and some models reject `none` (HTTP 400). Not discoverable.
 - llama.cpp: `reasoning_effort` is accepted; only `none` is interpreted, any
@@ -80,26 +72,12 @@ thinking` and guesses levels from the model name (`gpt-oss`). Checked
   published (`/models` meta, `/props`).
 → `.wiki/notes/providers.md` §9, decision 4.
 
-**P8. Ollama `/api/show` request uses `name`** · to audit
-`providers/ollama.py` (`query_context_window`, `query_image_input`) sends `{"name": model}`;
-Ollama's current API reference lists only `model` (required). Unverified
-against a real server; may fail on newer Ollama.
-
 **P9. llama.cpp selection overridden by the first listed model** · confirmed
 `endpoint.py` `prewarm_model_name` / `providers/llamacpp.py` `query_model_name`:
 for `type = "llamacpp"` the selected model is replaced by `models[0]` of
 `/models`. llama.cpp router mode serves several models and requires `model`
 (its README), so the user's choice is lost there.
 → `PLAN.md` step 1, `providers.md` §9.6.
-
-**P10. Ollama tool-loop messages differ from the API reference** · to audit
-`providers/ollama.py` `ollama_messages` passes messages through: an assistant
-`tool_calls[].function.arguments` stays a JSON string and a tool result keeps
-`tool_call_id`. Ollama's API reference ("Chat request (With history, with
-tools)", read 2026-10-01) shows `arguments` as an object and the tool result
-as `{"role": "tool", "content": ..., "tool_name": ...}`. Unverified on a real
-server; a follow-up after a tool call may be rejected or ignore the result.
-Pinned as it is today in `test_wire_requests.py`.
 
 ---
 
@@ -166,6 +144,6 @@ Likely a timing assumption on subprocess output.
 **H5. Tests written from the implementation** · to audit
 Four tests asserted behaviour the user had rejected (fixed 2026-09-30:
 type-from-table-name, rediscovery on `/config`, `preserve_reasoning`,
-server-level `efforts`). `test_effort.py` also hand-feeds an Ollama `capabilities` shape the
-server never returns at list time (I17). Others may do the same; see `PROCESS.md` 5.4
+server-level `efforts`). `test_effort.py` also hand-fed an Ollama `capabilities` shape the
+server never returns at list time (I17; gone with Ollama, 2026-10-01). Others may do the same; see `PROCESS.md` 5.4
 (tests cite the decision they protect).

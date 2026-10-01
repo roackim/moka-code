@@ -33,10 +33,9 @@ Provider field names differ and are normalized by the transport adapters:
 | DeepSeek / vLLM / llama.cpp | `delta.reasoning_content` |
 | OpenRouter (and others) | `delta.reasoning` |
 | OpenRouter structured | `delta.reasoning_details[].text` |
-| Ollama native | `message.thinking` (llama.cpp-backed proxies: `message.reasoning`) |
 
-`providers/openai_compatible._extract_reasoning()` reads the OpenAI-compatible aliases;
-`providers/ollama` maps `thinking`. If a provider's field is not listed here it
+`providers/openai_compatible._extract_reasoning()` reads the OpenAI-compatible aliases.
+If a provider's field is not listed here it
 will be silently dropped before the harness sees it — a missing reasoning field
 in an export usually means the adapter, not the harness.
 
@@ -82,10 +81,7 @@ them back **unmodified**.
 |---|---|---|
 | `llamacpp` | `reasoning_content` | llama.cpp `common/chat.cpp` parses it from input messages; `--reasoning-preserve` (default on) + the chat template decide whether earlier turns reach the prompt |
 | `openrouter` | `reasoning_details` unmodified when the model produced them, else `reasoning` | OpenRouter reasoning docs; required across tool calls |
-| `ollama` | `thinking` | Ollama `/api/chat` message fields |
 | `openai` | `reasoning_content` | the de facto field of OpenAI-compatible servers that show reasoning (llama.cpp behind a proxy, e.g. metallama); without it Qwen's template renders an empty `<think></think>` for each earlier step. Real OpenAI Chat Completions returns no reasoning text, so nothing is ever sent there |
-
-(`providers/ollama.ollama_messages`.)
 
 `Harness._api_history` keeps it on every assistant message; inside `chat()`
 each new assistant turn is appended with `keep_reasoning=True` too.
@@ -131,9 +127,8 @@ Also checked with a fake llama.cpp server recording payloads:
   pieces by `index`, based on OpenRouter's docs ("concatenate chunks in order",
   send back unmodified). To settle: one tool-call turn with a Claude or Gemini
   model on OpenRouter; a rejection names the offending block.
-- **Real models never met:** images (content parts, Ollama `images`), the
-  text-only refusal, and Ollama's `thinking` field — all checked with fake
-  servers only.
+- **Real models never met:** images (content parts) and the text-only
+  refusal — checked with fake servers only.
 
 ---
 

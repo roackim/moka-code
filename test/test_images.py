@@ -14,7 +14,6 @@ import pytest
 from moka_code import settings
 from moka_code.harness import images
 from moka_code.harness.endpoint import Chunk, ToolCallPiece, image_input_from_metadata
-from moka_code.harness.providers.ollama import ollama_messages
 from moka_code.harness.harness import Harness
 from moka_code.ui.app import chatTUI
 from moka_code.ui.chat_message import unmention
@@ -23,7 +22,7 @@ from moka_code.ui.tui.msg_types import UserMsg
 
 from conftest import StubAgent
 
-from moka_code.harness.providers import LlamaCpp, Ollama
+from moka_code.harness.providers import LlamaCpp
 
 MB = 1024 * 1024
 
@@ -154,13 +153,6 @@ def test_missing_image_is_sent_as_placeholder():
     assert parts[1] == {"type": "text", "text": "[image #3 unavailable]"}
 
 
-def test_ollama_gets_an_images_field():
-    parts = images.api_content("look", [{**images.store(png(), 5 * MB), "n": 1}])
-    (msg,) = ollama_messages([{"role": "user", "content": parts}])
-    assert msg["content"] == "look"
-    assert msg["images"] == [base64.b64encode(png()).decode()]
-
-
 # ---------------------------------------------------------------------------
 # capability
 # ---------------------------------------------------------------------------
@@ -168,7 +160,6 @@ def test_ollama_gets_an_images_field():
 def test_image_input_from_metadata():
     assert image_input_from_metadata({"architecture": {"input_modalities": ["text"]}}) is False
     assert image_input_from_metadata({"architecture": {"input_modalities": ["text", "image"]}}) is True
-    assert image_input_from_metadata({"capabilities": ["completion", "vision"]}) is True
     assert image_input_from_metadata({}) is None
 
 
@@ -297,8 +288,8 @@ def test_endpoint_learns_image_support_once(monkeypatch):
         calls.append(model_name)
         return False
 
-    monkeypatch.setattr(Ollama, "query_image_input", query)
-    endpoint = Ollama(name="local", base_url="http://localhost:11434/v1", model="llama3")
+    monkeypatch.setattr(LlamaCpp, "query_image_input", query)
+    endpoint = LlamaCpp(name="local", model="llama3")
     assert endpoint.accepts_images() is None
 
     asyncio.run(endpoint.probe_image_input())

@@ -5,9 +5,9 @@
 > `tree/harness.md` and `architecture.md` describe what exists. Once built,
 > this page becomes the state document and this banner goes.
 
-A *provider* is a server family moka can talk to: llama.cpp, Ollama,
-OpenRouter, OpenAI and OpenAI-compatible servers. Today their differences are
-about two dozen `type == ...` branches spread over `endpoint.py`,
+A *provider* is a server family moka can talk to: llama.cpp, OpenRouter,
+OpenAI and OpenAI-compatible servers (Ollama was removed on 2026-10-01,
+§9.11). Today their differences are about two dozen `type == ...` branches spread over `endpoint.py`,
 `endpoint_discovery.py`, `endpoint_openai.py`, `settings.py` and
 `unserved_model`. This page defines the one seam that replaces them, and what
 each side promises the other.
@@ -28,13 +28,11 @@ Endpoint                      contract + per-server config and state
 │  │                          /models, SSE (OpenAI itself, vLLM, LM Studio,
 │  │                          your own proxy)
 │  ├─ LlamaCpp                type "llamacpp": adds /props, default URL
-│  └─ OpenRouter              type "openrouter": fixed URL, model whitelist,
-│                             provider routing
-└─ Ollama                     type "ollama": native /api/chat, /api/tags,
-                              /api/show
+   └─ OpenRouter              type "openrouter": fixed URL, model whitelist,
+                              provider routing
 
 REGISTRY = {"openai-compatible": OpenAICompatible, "llamacpp": LlamaCpp,
-            "openrouter": OpenRouter, "ollama": Ollama}
+            "openrouter": OpenRouter}
 ```
 
 - No `if type == ...` outside the registry lookup. The harness, the UI and
@@ -71,7 +69,6 @@ Common keys (all providers): `type`, `base_url` (per the rule above),
 |---|---|---|
 | `openai-compatible` | required | — |
 | `llamacpp` | optional, default `http://localhost:8080/v1` | — |
-| `ollama` | required (the native API is `base_url` minus `/v1`) | — |
 | `openrouter` | forbidden, fixed `https://openrouter.ai/api/v1` | `models`, `providers`, `providers_by_model` |
 
 Every provider sends the selected `model` id exactly as listed. There is no
@@ -123,8 +120,8 @@ base_url = "http://localhost:8010/openai/v1"
 ### `list_models() -> list[ModelInfo]`
 
 What the server offers now. The provider does whatever requests it needs
-(Ollama: `/api/tags` then `/api/show` per model; llama.cpp: `/models` and
-`/props`; OpenRouter: the public catalog filtered to the `models` tables).
+(llama.cpp: `/models` and `/props`; OpenRouter: the public catalog filtered
+to the `models` tables).
 
 ```
 ModelInfo: id, context_window, images, efforts, owned_by, raw
@@ -137,7 +134,8 @@ ModelInfo: id, context_window, images, efforts, owned_by, raw
 - Facts are filled in **here**, by the provider that understands its own
   server. Nothing outside a provider reads `raw` or knows a vendor field
   name (today `efforts_from_metadata` and `image_input_from_metadata` mix
-  OpenRouter and Ollama shapes for every type).
+  OpenRouter and Ollama shapes for every type; the Ollama ones went with
+  §9.11).
 - The harness stores the result in `Config.models_by_server` (memory only,
   never persisted), marks a server stale when a refresh fails, keeps its last
   good list.
@@ -165,13 +163,12 @@ Chunk: text, reasoning, reasoning_native, tool_calls, usage, finish
   finish            str | None       the server's finish reason
 ```
 
-- The harness never sees `choices`, `delta`, `message.thinking`,
-  `prompt_eval_count` or any vendor field. Chunks replace today's SDK-shaped
+- The harness never sees `choices`, `delta`, `timings` or any vendor
+  field. Chunks replace today's SDK-shaped
   `SimpleNamespace` objects.
 - The provider builds the request: OpenAI-compatible payload
   (`stream_options.include_usage`, `tools`), OpenRouter's `provider` routing,
-  Ollama's native message normalization (`content: None` → `""`, image parts
-  → `images`), and `effort_payload(effort)`.
+  and `effort_payload(effort)`.
 - Retries and errors: §7.
 
 ### `effort_payload(level) -> dict`
@@ -182,7 +179,6 @@ Pure mapping of the chosen level to this server's request field.
 |---|---|
 | `llamacpp`, `openai-compatible` | `{"reasoning_effort": level}` |
 | `openrouter` | `{"reasoning": {"effort": level}}` |
-| `ollama` | `{"think": level}`, `"none"` → `{"think": False}` |
 
 `None` (the "default" choice) → `{}`. A chosen level is **always** sent, never
 checked against `efforts` (an incomplete catalog must not drop a user choice;
@@ -193,13 +189,12 @@ the server decides).
 Reasoning fields for an outgoing assistant message. In step 1 every provider
 returns `{}`: replay was removed on 2026-09-30 and nothing is sent back. The
 hook exists so step 2 fills it per provider without touching the harness
-(`reasoning` → `reasoning_content` / `thinking`; `reasoning_native` only to
+(`reasoning` → `reasoning_content`; `reasoning_native` only to
 the model that produced it).
 
 ### `ping()`
 
-Raises if the server is unreachable. Default: `GET /models`. Ollama:
-`GET /api/tags`. The base class wraps it in `diagnose_connection` (proxy
+Raises if the server is unreachable: `GET /models`. The base class wraps it in `diagnose_connection` (proxy
 hints, `.local` re-resolution, `_connection_state`).
 
 ---
@@ -210,25 +205,23 @@ Slot labels are row ids only (gaps in the numbering are historical). "Today"
 is the current behaviour; step 1 keeps it unless §9 says otherwise (S6 is the
 target, see §9.5).
 
-| Slot | `llamacpp` | `openai-compatible` | `openrouter` | `ollama` |
-|---|---|---|---|---|
-| S2 list | `/models` + `/props` | `/models` | openrouter.ai `/models` ∩ the `models` list | `/api/tags` + `/api/show` |
-| S4 context | `/props` `n_ctx`, else `/models` `context_length` | `/models` `context_length` | catalog `context_length` | `/api/show` `*context_length` / `num_ctx` |
-| S5 images | `/props` `modalities.vision` | metadata shapes, else unknown | `architecture.input_modalities` | `capabilities` has `vision` |
-| S6 efforts (target) | `reasoning.supported_efforts` if the server advertises it, else none known | same | `reasoning.supported_efforts` only | `/api/show` `thinking.values`: strings are levels, `false` is `none` |
-| S7 field | `reasoning_effort` | `reasoning_effort` | `reasoning.effort` | `think` |
-| S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same | same, plus `reasoning_details` assembled into `reasoning_native` | `thinking` \| `reasoning` |
-| S9 reasoning in | none (step 2) | none | none | none |
-| S11 usage | `include_usage`; cache from `timings.cache_n` | `include_usage` | `include_usage`, `cost` | `prompt_eval_count` / `eval_count` |
-| S13 extras | — | — | `providers` / `providers_by_model` routing, `allow_fallbacks: false` | — |
+| Slot | `llamacpp` | `openai-compatible` | `openrouter` |
+|---|---|---|---|
+| S2 list | `/models` + `/props` | `/models` | openrouter.ai `/models` ∩ the `models` list |
+| S4 context | `/props` `n_ctx`, else `/models` `context_length` | `/models` `context_length` | catalog `context_length` |
+| S5 images | `/props` `modalities.vision` | metadata shapes, else unknown | `architecture.input_modalities` |
+| S6 efforts (target) | `reasoning.supported_efforts` if the server advertises it, else none known | same | `reasoning.supported_efforts` only |
+| S7 field | `reasoning_effort` | `reasoning_effort` | `reasoning.effort` |
+| S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same | same, plus `reasoning_details` assembled into `reasoning_native` |
+| S9 reasoning in | none (step 2) | none | none |
+| S11 usage | `include_usage`; cache from `timings.cache_n` | `include_usage` | `include_usage`, `cost` |
+| S13 extras | — | — | `providers` / `providers_by_model` routing, `allow_fallbacks: false` |
 
 `max_context` (server table) stays the user's fallback when a server reports
 no window. llama.cpp router mode lists several models on `/models`, each with
 a `status` and `architecture.input_modalities`; whether `/props` answers per
 model there is unverified (⚠), so a missing `/props` answer means unknown
-context and images, never a failure. Effort variants (`X:low` / `X:high` sibling ids, switched by
-`/effort`) are not a provider concern: they are UI logic over catalog ids and
-stay where they are.
+context and images, never a failure.
 
 ---
 
@@ -269,8 +262,8 @@ Identical for every provider, not overridden:
 
 ## 7. Failure behaviour
 
-The base class's `stream()` handles retries for every provider (Ollama
-included since 2026-10-01, §9.10). Gaps are listed, not fixed.
+The base class's `stream()` handles retries for every provider. Gaps are
+listed, not fixed.
 
 | Situation | Behaviour | Gap |
 |---|---|---|
@@ -294,20 +287,20 @@ bodies, URLs and headers** the current code sends, and what each provider
 learns from its server, through the in-process recording fake of
 `test/wire_fake.py` (an `httpx.MockTransport` that every `httpx.AsyncClient`
 uses, including the throwaway ones). Its fixtures are copied from the real
-APIs (llama.cpp README, Ollama API reference, OpenAI streaming reference,
+APIs (llama.cpp README, OpenAI streaming reference,
 OpenRouter's live `/models`), each with its source and date.
 
 Covered: a plain chat, a tool loop with an image part, effort set and default
 per provider, the 503 retry, OpenRouter's provider routing and fixed URL,
-llama.cpp's model lookup, Ollama's message normalization, the connection
+llama.cpp's model lookup, the connection
 checks, and `list_models` facts per provider (context window, images, effort
 levels). Only three helpers (`make_endpoint`, `run_chat`, `learn`) touch the
 provider API, so they are the only lines that change with the restructure.
 The same tests must pass after it, except the expectations marked §9.x, which
 change on purpose in the same commit.
 
-Each test was checked by breaking the code it covers (effort field, Ollama
-images, `stream_options`, the OpenRouter whitelist): it fails.
+Each test was checked by breaking the code it covers (effort field,
+`stream_options`, the OpenRouter whitelist): it fails.
 
 ---
 
@@ -318,16 +311,10 @@ Everything else is identical.
 1. **Compaction streams** (`PLAN.md` step 1.3): the non-streaming path goes.
 2. **Probe state is removed** if decision 1 is accepted: context window and
    image support come from `list_models()` only.
-3. **Ollama goes through the shared client** if decision 2 is accepted: today
-   its native calls create a bare `httpx.AsyncClient()` (no `Authorization`
-   header, inherited proxy variables honoured, bypassing the local-target rule
-   in `_new_http_client`). The per-request `timeout=None` for chat is kept.
-4. **Ollama `ping` is `/api/tags`** in both the quick check and the
-   diagnosis (today the diagnosis uses `/v1/models`).
+3. *(Withdrawn: Ollama removed, §9.11.)*
+4. *(Withdrawn: Ollama removed, §9.11.)*
 5. **Effort levels are read only where a server states them** (P7). The two
-   guesses go. OpenRouter: `reasoning.supported_efforts` only. Ollama: the
-   `thinking` object of `/api/show` (today never read; the `capabilities`
-   branch cannot fire because `/api/tags` has no `capabilities`). llama.cpp,
+   guesses go. OpenRouter: `reasoning.supported_efforts` only. llama.cpp,
    OpenAI and other OpenAI-compatible servers: levels only if the server
    advertises `reasoning.supported_efforts`; their docs publish no per-model
    list, so otherwise `/effort` offers nothing. A chosen level is still sent
@@ -347,8 +334,17 @@ Everything else is identical.
    `cached_tokens: 0`, so `cache_n` is not used there either: ISSUES P11.)
 9. **`reasoning_details` is assembled only for `openrouter`** (decided
    2026-10-01): other servers' reasoning text is still read.
-10. **Ollama retries** a 503 or a network error like every other server
-    (decided 2026-10-01): the retry loop is the base class's.
+10. *(Ollama retried like every other server via the base class's loop;
+    moot since §9.11.)*
+11. **Ollama removed** (decided 2026-10-01): no `ollama` type, no native
+    `/api/*` client. `type = "ollama"` is reported as an unknown type and the
+    server skipped. An Ollama server can still be configured as
+    `openai-compatible` with `base_url = "http://…:11434/v1"` (its
+    OpenAI-compatible API: chat, streaming, tools, base64 images,
+    `include_usage`, `reasoning_effort`; `docs/api/openai-compatibility.mdx`,
+    read 2026-10-01), but its `/v1/models` states no context window, image
+    support or effort levels. With it, the effort-variant switch (`X:low` /
+    `X:high` sibling ids, `models._effort_variants`) is deleted.
 
 ---
 
@@ -359,13 +355,13 @@ Everything else is identical.
    the fallback chain in `get_context_window`. A fact a server answers only
    through a separate request (llama.cpp `/props`) is fetched inside
    `list_models()`.
-2. **Ollama goes through the shared client** (§9.3).
+2. *(Ollama through the shared client: withdrawn, §9.11.)*
 3. **`ModelInfo.images` / `ModelInfo.efforts` are explicit; `raw` is read only
    by its provider.**
 4. **Guessed effort levels are deleted** (§9.5): exact levels only; a server
    that states none gets no `/effort` menu.
 5. **Layout:** `harness/providers/` (`openai_compatible.py`, `llamacpp.py`,
-   `openrouter.py`, `ollama.py`); the base class, factory, catalog,
+   `openrouter.py`); the base class, factory, catalog,
    `ModelInfo` and `Chunk` stay in `endpoint.py`; `endpoint_discovery.py`,
    `endpoint_openai.py` and `endpoint_ollama.py` are deleted.
 6. **Order:** sub-step 1.0 (golden wire tests on today's code) before

@@ -30,7 +30,7 @@ All tests use pytest. Run with the pixi env:
 | `test_command_import_graph.py` | `ui/commands/` | Domain modules import only `base`; no cycles |
 | `test_core_ui_boundary.py` | `harness/` | R9 guard: harness imports no UI |
 | `test_config_loader.py` | `settings.py` | Split config files, validation, state |
-| `test_images.py` | `harness/images.py`, `ui/app.py`, `commands/conversation.py` | Header probing, image cache, attachment collection, content parts (OpenAI/Ollama), text-only refusal, Ctrl+V, export/import round trip |
+| `test_images.py` | `harness/images.py`, `ui/app.py`, `commands/conversation.py` | Header probing, image cache, attachment collection, content parts, text-only refusal, Ctrl+V, export/import round trip |
 | `test_config_commands.py` | `ui/commands/core.py` | `/config`, `/edit`, `/reload`, external editor |
 | `test_conversation_commands.py` | `ui/commands/conversation.py` | `/import`, `/export`, history rebuild |
 | `test_compaction.py` | `harness.py` | Conversation history summarization (FakeServer) |
@@ -40,7 +40,6 @@ All tests use pytest. Run with the pixi env:
 | `test_local_hostname_resolution.py` | `endpoint_local.py` | `.local` mDNS resolution |
 | `test_local_proxy_diagnostics.py` | `harness/endpoint.py` | Connection diagnosis |
 | `test_wire_requests.py` | providers (`endpoint*.py`) | Wire-level golden tests: request bodies, headers and what each provider learns, through `wire_fake.py`'s recording fake server (samples copied from the real APIs, source and date noted). Pins today's behaviour for the provider restructure (`notes/providers.md` §8) |
-| `test_ollama_server.py` | `providers/ollama.py` | Ollama discovery + native chat |
 | `test_model_selection.py` | `ui/commands/models.py` | Model picker/selection |
 | `test_worker.py` | `worker.py` | Four tool bodies: read/write/edit/bash, timeout, truncation |
 | `test_worker_protocol.py` | `worker.py` | JSONL framing, dispatch, errors, CRLF, shutdown |

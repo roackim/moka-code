@@ -217,15 +217,6 @@ def test_tool_loop_request_carries_no_reasoning(tmp_path, monkeypatch):
     assert stored["reasoning_details"] == details
 
 
-def test_ollama_native_response_reads_thinking_or_reasoning():
-    """Ollama streams ``thinking``; llama.cpp-backed proxies stream ``reasoning``."""
-    from moka_code.harness.providers.ollama import native_response
-
-    for field in ("thinking", "reasoning"):
-        chunk = native_response({"message": {"content": "", field: "hmm"}, "done": False})
-        assert chunk.reasoning == "hmm"
-
-
 def _stream(tmp_path, chunks):
     from moka_code.harness import events
 

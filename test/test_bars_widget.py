@@ -25,14 +25,14 @@ def test_status_bar_renders_configured_fields_in_order():
     status.set_values({
         "role": "role default",
         "context": "ctx 12.4k/32k",
-        "endpoint_model": "ollama:qwen3:8b",
+        "endpoint_model": "local:qwen3:8b",
     })
     buffer = Buffer(60, 1)
 
     status.render(buffer)
 
     assert row_text(buffer).strip().startswith(
-        "ollama:qwen3:8b  role default  ctx 12.4k/32k"
+        "local:qwen3:8b  role default  ctx 12.4k/32k"
     )
 
 

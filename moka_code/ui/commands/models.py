@@ -190,7 +190,7 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
 def _split_server_model(raw: str) -> Tuple[Optional[str], str]:
     """Split ``<server>:<model>`` using known server names.
 
-    Model ids may contain colons (e.g. Ollama tags), so only split on the first
+    Model ids may contain colons, so only split on the first
     occurrence of a known server name followed by ``:``.
     """
     for server_name in sorted(settings.config.servers, key=len, reverse=True):
@@ -287,40 +287,22 @@ def model_descriptions() -> dict:
 _DEFAULT_EFFORT = "default"
 
 
-def _effort_variants(server: Optional[str], model_id: Optional[str]) -> dict:
-    """``{level: model id}`` for the effort-variant siblings of ``model_id``
-    (``X:low`` / ``X:high``) in the server's catalog; empty unless several."""
-    from moka_code.harness.endpoint import EFFORT_WORDS
-
-    base, sep, suffix = (model_id or "").rpartition(":")
-    if not sep or suffix not in EFFORT_WORDS:
-        return {}
-    ids = {m.get("id") for m in settings.config.models_by_server.get(server, [])}
-    variants = {w: f"{base}:{w}" for w in EFFORT_WORDS if f"{base}:{w}" in ids}
-    return variants if len(variants) > 1 else {}
-
-
 def _effort_choices(server: Optional[str], model: Optional[str]):
-    """``(choices, current, variants)`` for a server's model.
-
-    Effort variants (``X:low`` / ``X:high``) are chosen by switching model;
-    otherwise the choices are ``default`` plus the request-parameter levels
-    detected from the catalog. No choices: the model has no effort switch.
+    """``(choices, current)`` for a server's model: ``default`` plus the
+    request-parameter levels detected from the catalog. No choices: the model
+    has no effort switch.
     """
     from moka_code.harness.endpoint import catalog_entry
     from moka_code.harness.endpoint import efforts_from_metadata
 
-    variants = _effort_variants(server, model)
-    if variants:
-        return list(variants), model.rpartition(":")[2], variants
     metadata = catalog_entry(server, model).get("metadata") or {}
     levels = efforts_from_metadata(metadata)
     saved = settings.config.get_effort(server, model)
     if saved and saved not in levels:
         levels = [*levels, saved]       # still sent: keep it visible and active
     if not levels:
-        return [], None, {}
-    return [_DEFAULT_EFFORT, *levels], saved or _DEFAULT_EFFORT, {}
+        return [], None
+    return [_DEFAULT_EFFORT, *levels], saved or _DEFAULT_EFFORT
 
 
 def effort_completions() -> List[str]:
@@ -328,8 +310,8 @@ def effort_completions() -> List[str]:
 
 
 def effort_descriptions() -> dict:
-    choices, current, variants = _effort_choices(*_active())
-    descriptions = {c: variants.get(c, "") for c in choices}
+    choices, current = _effort_choices(*_active())
+    descriptions = {c: "" for c in choices}
     if _DEFAULT_EFFORT in descriptions:
         descriptions[_DEFAULT_EFFORT] = "server default"
     if current:
@@ -356,7 +338,7 @@ async def effort_command(ui: ChatUIProtocol, args: List[str]):
     model = getattr(endpoint, "selected_model", None)
     if server in settings.config.servers:
         await refresh_catalog([server])     # levels come from the live server
-    choices, current, variants = _effort_choices(server, model)
+    choices, current = _effort_choices(server, model)
     if not choices:
         unreachable = (server in settings.config.stale_servers
                        or server not in settings.config.models_by_server)
@@ -367,10 +349,7 @@ async def effort_command(ui: ChatUIProtocol, args: List[str]):
         return
 
     def apply(level):
-        if variants:
-            _select_pair(ui, server, variants[level])
-        else:
-            _set_effort(ui, endpoint, None if level == _DEFAULT_EFFORT else level)
+        _set_effort(ui, endpoint, None if level == _DEFAULT_EFFORT else level)
 
     if args:
         if args[0] not in choices:

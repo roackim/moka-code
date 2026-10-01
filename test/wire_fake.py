@@ -254,38 +254,3 @@ OPENROUTER_MODELS = {"data": json.loads("""
   }
 ]
 """)}
-
-
-# -- Ollama -----------------------------------------------------------------------
-
-# GET /api/tags: docs.ollama.com/api/tags, read 2026-10-01.
-OLLAMA_TAGS = json.loads("""
-{"models": [{"name": "gemma4", "model": "gemma4",
- "modified_at": "2025-10-03T23:34:03.409490317-07:00", "size": 9608350245,
- "digest": "c6eb396dbd5992bbe3f5cdb947e8bbc0ee413d7c17e2beaae69f5d569cf982eb",
- "details": {"format": "gguf", "family": "gemma4", "families": ["gemma4"],
-             "parameter_size": "8.0B", "quantization_level": "Q4_K_M"}}]}
-""")
-# POST /api/show: github.com/ollama/ollama docs/api.md ("Show Model
-# Information", llava example), read 2026-10-01, trimmed.
-OLLAMA_SHOW = json.loads("""
-{"details": {"parent_model": "", "format": "gguf", "family": "llama", "families": ["llama"],
-             "parameter_size": "8.0B", "quantization_level": "Q4_0"},
- "model_info": {"general.architecture": "llama", "general.parameter_count": 8030261248,
-                "llama.context_length": 8192, "llama.vocab_size": 128256},
- "capabilities": ["completion", "vision"]}
-""")
-
-
-def ollama_stream(text: str = "Hi") -> Callable[[httpx.Request], httpx.Response]:
-    """POST /api/chat stream: a content object and the final object, both from
-    the API reference ("Generate a chat completion"), read 2026-10-01."""
-    first = {"model": "llama3.2", "created_at": "2023-08-04T08:52:19.385406455-07:00",
-             "message": {"role": "assistant", "content": text, "images": None}, "done": False}
-    final = {"model": "llama3.2", "created_at": "2023-08-04T19:22:45.499127Z",
-             "message": {"role": "assistant", "content": ""}, "done": True,
-             "total_duration": 4883583458, "load_duration": 1334875,
-             "prompt_eval_count": 26, "prompt_eval_duration": 342546000,
-             "eval_count": 282, "eval_duration": 4535599000}
-    body = "".join(json.dumps(o) + "\n" for o in (first, final))
-    return text_response(body, 200, "application/x-ndjson")

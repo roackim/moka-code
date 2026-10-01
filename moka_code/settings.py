@@ -207,8 +207,8 @@ DEFAULT_SERVERS_TOML = """\
 ## Lines starting with a single # are settings to uncomment; ## is help.
 ##
 ## A table named after its type needs no type key: [servers.llamacpp],
-## [servers.ollama], [servers.openrouter], [servers.openai]. Any other name
-## sets one: type = "llamacpp" | "ollama" | "openrouter" | "openai".
+## [servers.openrouter], [servers.openai]. Any other name sets one:
+## type = "llamacpp" | "openrouter" | "openai".
 ## Server keys: base_url (not openrouter), api_key (or api_key_env),
 ## max_context, timeout, retry_attempts, retry_delay; openrouter: providers.
 ## Models are discovered from the server (openrouter: the model tables).
@@ -220,12 +220,6 @@ DEFAULT_SERVERS_TOML = """\
 # timeout = 30.0                         # optional (default)
 # retry_attempts = 3                     # optional (default)
 # retry_delay = 2.0                      # optional (default)
-
-## Ollama ----------------------------------------------------------------
-# [servers.ollama]
-# base_url = "http://localhost:11434/v1"
-# api_key = "ollama"                     # optional
-# timeout = 30.0                         # optional (default)
 
 ## OpenRouter (always https://openrouter.ai/api/v1) ----------------------
 # [servers.openrouter]
@@ -810,7 +804,7 @@ def _load_servers(config: Config, data: dict, filename: str,
                     f"{where}.{key} was replaced by {_RETIRED_SERVER_KEYS[key]}; server skipped")
             elif key not in _SERVER_KEYS:
                 errors.append(f"{where} unknown key '{key}'")
-        # A table named after a type ([servers.ollama]) needs no type key.
+        # A table named after a type ([servers.openrouter]) needs no type key.
         server_type = server.get("type", name if name in REGISTRY else None)
         if server_type is None:
             errors.append(
@@ -841,8 +835,8 @@ def _load_servers(config: Config, data: dict, filename: str,
                 errors.append(f"{where}.{key} must be a number")
         _validate_models(server, server_type, where, errors)
         # The type selects the transport and whether a model selection is
-        # honored; guessing one silently routed e.g. an Ollama server as
-        # single-model llama.cpp, ignoring the selected model.
+        # honored; guessing one silently routed e.g. an OpenAI-compatible
+        # server as single-model llama.cpp, ignoring the selected model.
         if server_type not in REGISTRY or skip:
             continue
         config.servers[name] = {**server, "type": server_type}

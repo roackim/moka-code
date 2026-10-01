@@ -10,8 +10,8 @@ against the provider's current docs before they are built on.
 
 - **Providers.** An `Endpoint` *is* an instance of its provider's class:
   base `Endpoint` (the contract + per-server config and state) →
-  `OpenAICompatible` (type `openai-compatible`) → `LlamaCpp`, `OpenRouter`;
-  `Ollama` on its own. A registry `{type: class}` drives config validation
+  `OpenAICompatible` (type `openai-compatible`) → `LlamaCpp`, `OpenRouter`.
+  A registry `{type: class}` drives config validation
   and the servers template. Per-server state (selected model, connection,
   effort) lives in the instance. Contract: `.wiki/notes/providers.md`.
 - **Servers config (2026-10-01).** `type` is always written (no table-name
@@ -21,10 +21,13 @@ against the provider's current docs before they are built on.
   `providers_by_model` instead of per-model tables; templates show only the
   keys a server needs; old shapes are reported with their replacement, never
   aliased.
+- **Ollama removed (2026-10-01).** No `ollama` type and no native client; an
+  Ollama server can be used as `openai-compatible` (`…:11434/v1`), without
+  context window, image or effort facts. The effort-variant switch
+  (`X:low` / `X:high` sibling ids) went with it. `providers.md` §9.11.
 - **Effort levels are read only where a server states them.** No guessing:
-  OpenRouter `reasoning.supported_efforts`; Ollama `/api/show`
-  `thinking.values`; others only if the server advertises
-  `reasoning.supported_efforts`. A server that states none gets no `/effort`
+  OpenRouter `reasoning.supported_efforts`; others only if the server
+  advertises `reasoning.supported_efforts`. A server that states none gets no `/effort`
   menu. A chosen level is always sent as chosen.
 - **Reasoning is kept as the model produced it and sent back the same way.**
   moka never parses, moves or rewrites it.
@@ -65,7 +68,7 @@ against the provider's current docs before they are built on.
 
 1. Write `.wiki/notes/providers.md` first, for review:
    - config spec: keys, required/forbidden (e.g. OpenRouter: no `base_url`;
-     Ollama/openai-compatible: `base_url` required);
+     openai-compatible: `base_url` required);
    - `stream(messages, tools, model, effort)` → neutral chunks: text,
      reasoning text, `reasoning_native`, tool-call pieces, usage, finish
      reason;
@@ -79,12 +82,12 @@ against the provider's current docs before they are built on.
    Drafted and approved 2026-10-01. Sub-step 1.0 (before any code moves):
    golden wire tests recording today's request bodies per provider. ✅
    (`test/test_wire_requests.py`, `test/wire_fake.py`)
-2. Move the four providers behind it; delete the ~20 `type ==` branches
+2. Move the providers behind it; delete the ~20 `type ==` branches
    (`endpoint.py`, `endpoint_discovery.py`, `endpoint_openai.py`,
    `settings.py`). Order agreed 2026-10-01: restructure first (1a classes +
    registry ✅, 1b Ollama into `providers/` ✅), then one commit per §9 change
-   (stream + `Chunk` ✅; `ModelInfo` facts; Ollama client; llama.cpp selection;
-   servers config).
+   (stream + `Chunk` ✅; Ollama removed ✅; `ModelInfo` facts; llama.cpp
+   selection; servers config).
 3. One request path per provider: compaction collects from the stream (the
    non-streaming path goes). ✅ (2026-10-01, with `Chunk`)
 4. Server types and the servers template come from the registry; the new
@@ -103,7 +106,6 @@ against the provider's current docs before they are built on.
 2. Remove the tag parser from the stream and from import. ✅ (2026-10-01)
 3. `replay` per provider:
    - llama.cpp / OpenAI-compatible: `reasoning` → `reasoning_content`;
-   - Ollama: `reasoning` → `thinking`;
    - OpenRouter: `reasoning_native` when `origin.model` is the target,
      else `reasoning` text;
    - default depth: current turn (see Decisions).

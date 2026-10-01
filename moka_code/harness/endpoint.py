@@ -52,19 +52,6 @@ class ModelInfo:
         if self.metadata is None:
             self.metadata = {}
 
-    # Convenience accessors for the most useful Ollama metadata fields.
-    @property
-    def size(self) -> int | None:
-        return self.metadata.get("size")
-
-    @property
-    def family(self) -> str | None:
-        return self.metadata.get("family")
-
-    @property
-    def modified_at(self) -> str | None:
-        return self.metadata.get("modified_at")
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -668,8 +655,8 @@ def unserved_model(server: Optional[str], model_name: Optional[str]) -> Optional
             or (cls is not None and cls.serves_one_model)):
         return None
     for model_id in listed:
-        if model_id in (model_name, f"{model_name}:latest") or model_id.endswith("/" + model_name):
-            return None     # exact, Ollama's implicit tag, OpenRouter's bare id
+        if model_id == model_name or model_id.endswith("/" + model_name):
+            return None     # exact, or OpenRouter's bare id
     return listed
 
 
@@ -714,17 +701,14 @@ async def refresh_catalog(names: Optional[list[str]] = None) -> None:
     await asyncio.gather(*(one(n) for n in (names or list(settings.config.servers))))
 
 
-# Reasoning effort words, weakest first (OpenAI / OpenRouter vocabulary). A
-# model id suffix ``:<word>`` marks an effort variant (``/effort`` switches
-# between sibling ids).
+# Reasoning effort words, weakest first (OpenAI / OpenRouter vocabulary).
 EFFORT_WORDS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
 
 
 def efforts_from_metadata(metadata: dict) -> list[str]:
     """Effort levels a model takes as a request parameter, from catalog
     metadata: OpenRouter's ``reasoning.supported_efforts`` (exact levels),
-    else ``supported_parameters`` (levels guessed); Ollama's ``thinking``
-    capability (only gpt-oss takes levels, others just on/off)."""
+    else ``supported_parameters`` (levels guessed)."""
     supported = (metadata.get("reasoning") or {}).get("supported_efforts")
     if isinstance(supported, list) and supported and all(isinstance(e, str) for e in supported):
         rank = {w: i for i, w in enumerate(EFFORT_WORDS)}
@@ -732,24 +716,15 @@ def efforts_from_metadata(metadata: dict) -> list[str]:
     params = metadata.get("supported_parameters") or []
     if "reasoning_effort" in params or "reasoning" in params:
         return ["none", "low", "medium", "high"]
-    if "thinking" in (metadata.get("capabilities") or []):
-        name = str(metadata.get("model") or metadata.get("name") or "")
-        return ["none", "low", "medium", "high"] if "gpt-oss" in name else ["none"]
     return []
 
 
 def image_input_from_metadata(metadata: dict) -> bool | None:
-    """Image support recorded in catalog metadata; ``None`` when absent.
-
-    OpenRouter lists ``architecture.input_modalities``; Ollama's ``/api/show``
-    lists ``capabilities`` (``"vision"``).
-    """
+    """Image support recorded in catalog metadata (OpenRouter's
+    ``architecture.input_modalities``); ``None`` when absent."""
     modalities = (metadata.get("architecture") or {}).get("input_modalities")
     if isinstance(modalities, list):
         return "image" in modalities
-    capabilities = metadata.get("capabilities")
-    if isinstance(capabilities, list):
-        return "vision" in capabilities
     return None
 
 

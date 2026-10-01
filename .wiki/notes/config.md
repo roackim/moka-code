@@ -81,7 +81,7 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 
 - **Intent** (hand-edited): the section files above; moka never writes them.
   Every `[servers.<name>]` has a `type`; a table named after one
-  (`[servers.ollama]`) is that type without the key (otherwise missing/unknown
+  (`[servers.openrouter]`) is that type without the key (otherwise missing/unknown
   → load error, server skipped). Any server may have per-model
   `[servers.<name>.models."<id>"]` tables; OpenRouter lists only the models
   that have one. `providers = [...]` (OpenRouter only; server
@@ -89,16 +89,14 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   order — `order` alone would let OpenRouter fall back to any host. The retired
   keys `provider`, `enabled_models` and `model_providers` are reported with
   their replacement and the server is skipped (`_RETIRED_SERVER_KEYS`).
-  Effort levels are detected only (no config key): effort-variant ids (`X:low` / `X:high` on
-  one server) make `/effort` switch models (`models._effort_variants`); else
-  catalog metadata (`endpoint.efforts_from_metadata`: OpenRouter-format
+  Effort levels are detected only (no config key): catalog metadata
+  (`endpoint.efforts_from_metadata`: OpenRouter-format
   `reasoning.supported_efforts` (exact; any OpenAI-compatible server's `/models`
-  may carry it), else `supported_parameters` (guessed), else Ollama `thinking`
-  capability) gives the levels; `/effort` rediscovers the active server first.
+  may carry it), else `supported_parameters` (guessed)) gives the levels; `/effort` rediscovers the active server first.
   While the server is undiscovered, a saved level is sent as-is; the chosen level is saved per server/model in `state.toml`
   (`[effort.<server>]`, `""` for a single-model server) and sent verbatim as
-  `reasoning_effort` (llamacpp/openai), `reasoning.effort` (openrouter) or
-  `think` (ollama, `"none"` → `false`) — `Endpoint.effort_payload`. Load errors are shown at startup and on `/reload`/`/config`, and
+  `reasoning_effort` (llamacpp/openai) or `reasoning.effort` (openrouter) —
+  `Endpoint.effort_payload`. Load errors are shown at startup and on `/reload`/`/config`, and
   every reload rebuilds the live endpoint if its server table or selection
   changed. `type = "openrouter"` has no `base_url` (always
   `https://openrouter.ai/api/v1`); setting one is reported as a load error.

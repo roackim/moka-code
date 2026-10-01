@@ -1,7 +1,6 @@
 """Usage counters as each provider reports them, read into ``TokenUsage``."""
 
 from moka_code.harness.providers import LlamaCpp, OpenAICompatible
-from moka_code.harness.providers.ollama import native_response
 from moka_code.harness.providers.openai_compatible import parse_usage
 
 
@@ -15,14 +14,6 @@ def test_normalizes_openai_usage():
     assert usage.prompt_tokens == 12400
     assert usage.completion_tokens == 321
     assert usage.total_tokens == 12721
-
-
-def test_ollama_native_done_line_carries_the_usage():
-    chunk = native_response({"done": True, "prompt_eval_count": 12400, "eval_count": 321})
-
-    assert chunk.usage.prompt_tokens == 12400
-    assert chunk.usage.completion_tokens == 321
-    assert chunk.usage.total_tokens is None
 
 
 def test_usage_from_a_stream_object_without_choices():

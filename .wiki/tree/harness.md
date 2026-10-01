@@ -116,9 +116,6 @@ tables from it.
   `providers = []` or none → OpenRouter's own routing;
   `reasoning_details` assembled into `Chunk.reasoning_native`
   (`merge_reasoning_details`)
-- `ollama.py` — `Ollama(Endpoint)`: native `/api/tags`, `/api/show`,
-  `/api/chat` (keeps usage counters); `ollama_messages` normalizes outgoing
-  messages, `native_response` adapts chunks
 
 `endpoint_local.py` — `.local` mDNS resolution.
 
@@ -130,8 +127,7 @@ then `image_url` data URLs, base64 read at request time). `probe` reads
 PNG/JPEG/GIF/WebP headers (no Pillow); `store` caches pasted bytes in
 `~/.cache/moka/images/<hash>.<ext>`; `collect` resolves a draft's `[image #N]`
 markers (files on disk are never attached; the model `read`s them); `embed`/`restore` carry bytes through
-`/export`/`/import`. `providers/ollama.ollama_messages` converts the parts to
-Ollama's `images: [base64]`.
+`/export`/`/import`.
 `read` can return an image (`worker.read` with the harness-set
 `max_image_bytes`); `Harness._take_tool_image` caches it and a `source: "tool"`
 user entry carries it after the tool results.
@@ -139,7 +135,7 @@ user entry carries it after the tool results.
 Image support per model: `Endpoint.accepts_images()` (True/False/None) from
 catalog metadata, else `_probed(model)["image_input"]` filled by
 `probe_image_input()` during prewarm (each provider's `query_image_input`:
-Ollama `/api/show` `capabilities`, llama.cpp `/props` `modalities.vision`,
+llama.cpp `/props` `modalities.vision`,
 OpenRouter `/models/<id>/endpoints` `architecture.input_modalities`).
 
 ### `usage.py`

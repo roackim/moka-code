@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from moka_code.harness.providers import LlamaCpp, Ollama, OpenRouter
+from moka_code.harness.providers import LlamaCpp, OpenAICompatible, OpenRouter
 
 
 @pytest.fixture
@@ -28,9 +28,9 @@ def cfg(monkeypatch, tmp_path):
 
 def test_get_endpoint_applies_per_server_selection(cfg):
     cfg.config.servers["srv"] = {
-        "type": "ollama",
-        "base_url": "http://localhost:11434/v1",
-        "api_key": "ollama",
+        "type": "openai",
+        "base_url": "http://localhost:8000/v1",
+        "api_key": "EMPTY",
     }
     cfg.config.model_selection["srv"] = "selected-model"
 
@@ -43,8 +43,8 @@ def test_get_endpoint_without_selection_has_no_model(cfg):
     """Decided 2026-09-30: no ``model`` key in servers.toml; models come
     from discovery (OpenRouter: its model tables) and the selection."""
     cfg.config.servers["srv"] = {
-        "type": "ollama",
-        "base_url": "http://localhost:11434/v1",
+        "type": "openai",
+        "base_url": "http://localhost:8000/v1",
     }
 
     from moka_code.harness.endpoint import get_endpoint
@@ -56,7 +56,7 @@ def test_model_key_in_servers_toml_is_reported(tmp_path):
     from moka_code.settings import Config
 
     (tmp_path / "servers.toml").write_text(
-        '[servers.ollama]\nbase_url = "http://h:11434/v1"\nmodel = "m"\n')
+        '[servers.openai]\nbase_url = "http://h:8000/v1"\nmodel = "m"\n')
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
     assert any("unknown key 'model'" in e for e in config.load_errors)
 
@@ -87,7 +87,7 @@ def test_llamacpp_reconciles_requested_selection_with_served_model(cfg, monkeypa
 
 def test_active_endpoint_uses_only_its_own_server_selection(cfg):
     """A server with no selection must not inherit another server's model."""
-    cfg.config.servers["a"] = {"type": "ollama", "base_url": "http://a/v1"}
+    cfg.config.servers["a"] = {"type": "openai", "base_url": "http://a/v1"}
     cfg.config.servers["b"] = {"type": "openrouter", "base_url": "http://b/v1"}
     cfg.config.model_selection["b"] = "vendor/model-b"
     cfg.config.active_server = "a"
@@ -117,7 +117,7 @@ def test_get_endpoint_seeds_context_window_from_catalog(cfg):
 
 def test_context_window_fallback_is_not_memoized():
     """A transient failure shows the fallback but a later probe can succeed."""
-    endpoint = Ollama(name="o", base_url="http://o/v1", model="m")
+    endpoint = OpenAICompatible(name="o", base_url="http://o/v1", model="m")
     answers = [RuntimeError("down"), 65536]
 
     async def _query(_model):
@@ -132,7 +132,7 @@ def test_context_window_fallback_is_not_memoized():
 
 
 def test_model_name_fallback_is_not_memoized():
-    endpoint = Ollama(name="o", base_url="http://o/v1")
+    endpoint = OpenAICompatible(name="o", base_url="http://o/v1")
     answers = [RuntimeError("down"), "llama3"]
 
     async def _query():
@@ -172,13 +172,13 @@ def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatc
         return None
 
     monkeypatch.setattr(Endpoint, "prewarm_model_name", _no_probe)
-    cfg.config.servers["a"] = {"type": "ollama", "base_url": "http://old/v1"}
+    cfg.config.servers["a"] = {"type": "openai", "base_url": "http://old/v1"}
     agent = _ReloadAgent(get_active_endpoint())
 
     _reapply(agent)
     assert agent.switched == []  # unchanged config keeps the live endpoint
 
-    cfg.config.servers["a"] = {"type": "ollama", "base_url": "http://new/v1"}
+    cfg.config.servers["a"] = {"type": "openai", "base_url": "http://new/v1"}
     _reapply(agent)
     assert len(agent.switched) == 1
     assert agent.endpoint.base_url == "http://new/v1"
