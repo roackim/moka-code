@@ -295,6 +295,12 @@ class Endpoint:
         calls it only for the entries its role's replay depth allows."""
         return {}
 
+    def min_replay_depth(self, has_tools: bool) -> int:
+        """The fewest turns of reasoning this server's docs say must be sent
+        back (999 = all); 0 when it documents none. A role below it gets a
+        warning, nothing else (the configured depth is still sent)."""
+        return 0
+
     # -- discovery (implemented by each provider) ----------------------------
 
     async def list_models(self) -> list[ModelInfo]:

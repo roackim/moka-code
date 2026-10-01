@@ -165,3 +165,31 @@ def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatc
     assert agent.endpoint.base_url == "http://new/v1"
 
 
+
+
+def test_minimum_replay_depth_is_a_warning_from_live_state(cfg):
+    """2b (2026-10-01): a role below the provider's documented minimum gets a
+    warning, from live state (a model or server switch re-evaluates it)."""
+    from types import SimpleNamespace
+    from moka_code.harness.roles import Role
+    from moka_code.ui.status_presenter import notices
+
+    class Strict(LlamaCpp):
+        def min_replay_depth(self, has_tools):
+            return 999 if has_tools else 0
+
+    cfg.config.servers["s"] = {"type": "llamacpp", "base_url": "http://s/v1"}
+    cfg.config.models_by_server["s"] = [{"id": "m", "context_window": 8192}]
+    endpoint = Strict(name="s", base_url="http://s/v1", model="m")
+
+    def warnings(depth, tools):
+        agent = SimpleNamespace(endpoint=endpoint, tool_schemas=tools,
+                                role=Role(name="r", replay_reasoning_depth=depth))
+        return [t for level, t in notices(agent) if level == "warning"]
+
+    assert "all turn(s), role r sends 1" in warnings(1, [{"x": 1}])[0]
+    assert warnings(999, [{"x": 1}]) == []
+    assert warnings(1, None) == []                      # no tools sent: no minimum
+    other = LlamaCpp(name="s", base_url="http://s/v1", model="m")
+    endpoint = other                                    # switching server re-evaluates
+    assert warnings(1, [{"x": 1}]) == []

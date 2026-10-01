@@ -1,7 +1,6 @@
 # Provider contract
 
-> **Status:** built (`PLAN.md` step 1, 2a, and 2b except the minimum-depth
-> warning, 2026-10-01). This page describes what exists; the rows marked 2b /
+> **Status:** built (`PLAN.md` step 1, 2a and 2b, 2026-10-01). This page describes what exists; the rows marked 2b /
 > 2c in §11 and DeepSeek are not built yet.
 
 A *provider* is a server family moka can talk to: llama.cpp and OpenRouter
@@ -182,6 +181,14 @@ Pure mapping of the instance's chosen `effort` to this server's request field.
 `None` (the "default" choice) → `{}`. A chosen level is **always** sent, never
 checked against `efforts` (an incomplete catalog must not drop a user choice;
 the server decides).
+
+### `min_replay_depth(has_tools) -> int`
+
+The fewest turns of reasoning the server's docs say must be sent back (999 =
+all); the base class returns 0. The notice band warns when the active role's
+`replay_reasoning_depth` is below it (from live state, so also after a model or
+server switch); the configured depth is still sent. No provider overrides it
+yet (DeepSeek, 2c).
 
 ### `replay(entry) -> dict`
 
@@ -470,7 +477,7 @@ a table or a guess)
 | E1 | The documented field(s) to send reasoning back in | fixed per provider from its docs, never configurable (llama.cpp, DeepSeek: `reasoning_content`; OpenRouter: `reasoning_details` or `reasoning`) | ✅ |
 | E2 | Text or native | native only back to the model that produced it (`origin = {type, model}`); other models get the text | ✅ |
 | E3 | When there is no reasoning | decided per provider, in its own `replay()` (llama.cpp, DeepSeek: field sent empty; OpenRouter: nothing); unverified cases go to ISSUES | ✅ |
-| E4 | Minimum depth | `min_replay_depth(has_tools)`, default 0; DeepSeek: all turns whenever `tools` is sent (else HTTP 400). A role below it gets a warning in the notice band, from live state (so also after a model or server switch); the configured depth is still sent | 2b / 2c |
+| E4 | Minimum depth | `min_replay_depth(has_tools)`, default 0; DeepSeek: all turns whenever `tools` is sent (else HTTP 400). A role below it gets a warning in the notice band, from live state (so also after a model or server switch); the configured depth is still sent | ✅ base · 2c DeepSeek |
 | E5 | Signed or encrypted reasoning (OpenAI, Anthropic, Gemini) | not supported for now | — |
 
 What the harness does, for every provider: stores `reasoning`,

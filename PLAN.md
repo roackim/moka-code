@@ -146,6 +146,7 @@ llama.cpp and DeepSeek ✅ (2026-10-01, see Decisions).
 4. A provider's documented minimum depth (`min_replay_depth(has_tools)`,
    default 0); a role below it: a warning in the notice band, from live state
    (so also after a model or server switch; answers the open question below).
+   ✅ (no provider sets one until 2c; tested with a stub.)
 5. Wire tests per provider (§9.13): depth 0, 1 and N, native only to its
    model, empty reasoning. ✅
 6. Docs: `reasoning-traces.md` rewritten ✅ (ISSUES D3 removed); `providers.md`

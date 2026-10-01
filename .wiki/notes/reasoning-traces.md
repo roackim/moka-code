@@ -5,8 +5,9 @@
 > **Status** (2026-10-01, `PLAN.md` step 2b): reasoning is stored as the model
 > produced it and sent back in the provider's own field, as deep as the role's
 > `replay_reasoning_depth` allows. `content` is never parsed: inline `<think>`
-> tags stay in the answer. Not built yet: the minimum-depth warning (2b step 3)
-> and DeepSeek (2c).
+> tags stay in the answer. Not built yet: DeepSeek (2c), the first provider with a
+> documented minimum depth (`Endpoint.min_replay_depth`; a role below it gets a
+> warning in the notice band).
 
 ---
 

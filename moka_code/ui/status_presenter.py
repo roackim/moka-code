@@ -107,6 +107,15 @@ def notices(agent) -> list[tuple[str, str]]:
               and endpoint.context_window() is None):
             errors.append(f"{name} states no context window for {endpoint.selected_model} "
                           "→ server broken, or moka reads the wrong route")
+    role = getattr(agent, "role", None)
+    depth = getattr(role, "replay_reasoning_depth", None)
+    if endpoint is not None and depth is not None:
+        needed = endpoint.min_replay_depth(bool(getattr(agent, "tool_schemas", None)))
+        if depth < needed:
+            warnings.append(
+                f"{name} needs reasoning sent back for {'all' if needed >= 999 else needed} "
+                f"turn(s), role {role.name} sends {depth} → replay_reasoning_depth "
+                f"(/config role {role.name})")
     sandbox_required = getattr(agent, "sandbox_required", None)
     if callable(sandbox_required) and sandbox_required():
         role = getattr(getattr(agent, "role", None), "name", "this role")
