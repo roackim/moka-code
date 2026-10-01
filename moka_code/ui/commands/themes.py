@@ -5,31 +5,14 @@ from __future__ import annotations
 from typing import List
 
 from moka_code import settings
-from moka_code.ui.tui.msg_types import SysMsg, SysMsgError
+from moka_code.ui.tui.msg_types import SysMsg
 
-from .base import ChatUIProtocol
-
-
-def _valid_names() -> set[str]:
-    from moka_code.ui.tui.colors import available_themes
-
-    return set(available_themes())
-
-
-def _description(name: str) -> str:
-    if name in getattr(settings.config, "themes", {}):
-        return "custom (themes.toml)"
-    return "built-in"
+from .base import ChatUIProtocol, theme_descriptions, theme_name_completions
 
 
 def _select(ui: ChatUIProtocol, name: str) -> None:
     from moka_code.ui.tui.colors import set_theme
 
-    if name not in _valid_names():
-        ui.chat_history_panel.add_message(
-            f"Unknown theme '{name}'. Available: {', '.join(sorted(_valid_names()))}",
-            msg_type=SysMsgError(), title="theme")
-        return
     set_theme(name)
     settings.config.save_active_theme(name)
     refresh = getattr(ui, "refresh_theme", None)
@@ -44,8 +27,8 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
     from moka_code.ui.tui.colors import set_theme, theme
     from moka_code.ui.tui.components.menu import sort_items
 
-    names = list(_valid_names())
-    descriptions = {name: _description(name) for name in names}
+    names = theme_name_completions()
+    descriptions = theme_descriptions()
     previous = settings.config.get_active_theme()
     footers = {previous: "active"} if previous in names else {}
     initial = names.index(previous) if previous in names else 0
@@ -117,11 +100,9 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
 
 
 async def theme_command(ui: ChatUIProtocol, args: List[str]):
-    """``/theme`` opens the picker; ``/theme <name>`` selects directly."""
-    if not args:
-        await _open_picker(ui)
-        return
-    _select(ui, args[0])
+    """``/theme`` opens the picker (live preview while browsing). It takes no
+    argument: the preview is the point of choosing."""
+    await _open_picker(ui)
 
 
 __all__ = ["theme_command"]

@@ -719,8 +719,8 @@ The package lives in `moka_code/ui/commands/`:
 Verb-first command tree (`COMMANDS["sandbox"].subcommands`):
 
 - `/sandbox` → subcommand help; `/sandbox config` → edit the project file.
-- `/sandbox start [id]` → activate; no id lists sandboxes (id/type/description);
-  missing image offers *Build now* / *Cancel*.
+- `/sandbox start [id]` → activate; no id opens a picker (id, type or description,
+  the active one tagged); missing image offers *Build now* / *Cancel*.
 - `/sandbox build <id>` → build the image (streams to activity; no activate).
 - `/sandbox init podman|docker [base]` → write a starter `Containerfile` /
   `Dockerfile`; `params` complete runtime (`podman|docker`) then base
@@ -741,15 +741,32 @@ from a hand-rolled `get_completions`.
 
 ### Roles
 
-- `/role` lists roles (marking the active one) or switches with `/role <name>`.
+- `/role` opens a picker (the active role tagged `active`); `/role <name>` switches directly.
 - `/config role <name>` creates/opens `roles/<name>.toml` in `$EDITOR` and reloads;
   `/config role delete <name> confirm` removes it.
 
 ### Themes
 
-- `/theme` opens a searchable picker (built-ins plus `themes.toml` definitions);
-  `/theme <name>` selects directly and persists it in `state.toml`.
+- `/theme` opens a searchable picker with live preview (built-ins plus
+  `themes.toml` definitions); it takes no argument. The choice persists in
+  `state.toml`.
 - `/config theme` edits `themes.toml`.
+
+### One behaviour for every choice (guarded by `test_command_contract.py`)
+
+- `/cmd ` always suggests its values (`Param.completions` + `descriptions`, shown
+  automatically, fuzzy-filtered); a parameter without suggestions must be free
+  text and is listed in the test's `FREE_TEXT` (today only `/export FILENAME`).
+- A bare `/cmd` that selects among values opens a picker over the same values,
+  through `base.pick` (headless: the same list as text); `/cmd <value>` selects
+  directly. `/model`, `/effort`, `/session`, `/role`, `/config`,
+  `/sandbox start` all do (`/theme` is the exception below). Values and descriptions have one source each
+  (e.g. `theme_name_completions` / `theme_descriptions`).
+- `/theme` is the exception on purpose (decided 2026-10-01): it takes **no
+  argument** and has no argument suggestions, because the point of choosing is
+  the live preview while browsing. Type `/theme` and press Enter; the picker
+  previews each theme as you move over it (`on_highlight`), Enter keeps it, Esc
+  restores the saved one.
 
 ### Structure
 

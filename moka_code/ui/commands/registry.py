@@ -94,7 +94,7 @@ COMMANDS: Dict[str, Command] = {
                             handler=effort_command,
                             params=[Param("LEVEL", completions=effort_completions,
                                           descriptions=effort_descriptions, ordered=True)]),
-    "role":         Command("role", "List roles or switch the active one",
+    "role":         Command("role", "Switch the active role (opens a picker)",
                             handler=cmd_role,
                             params=[Param("NAME", completions=role_name_completions,
                                           descriptions=role_descriptions)]),
@@ -112,7 +112,7 @@ COMMANDS: Dict[str, Command] = {
                                               completions=sandbox_id_completions,
                                               descriptions=sandbox_id_descriptions)]),
                             "start": Command(
-                                "sandbox start", "Activate a sandbox (list when no id given)",
+                                "sandbox start", "Activate a sandbox (opens a picker when no id given)",
                                 handler=sandbox_start,
                                 params=[Param("ID", required=False,
                                               completions=sandbox_id_completions,
@@ -131,9 +131,8 @@ COMMANDS: Dict[str, Command] = {
                                 "sandbox terminal", "Open a shell inside the active sandbox",
                                 handler=sandbox_terminal),
                         }),
-    "theme":        Command("theme", "Select the color theme (opens a picker)",
-                            handler=theme_command,
-                            params=[Param("THEME", required=False)]),
+    "theme":        Command("theme", "Select the color theme (opens a picker with live preview)",
+                            handler=theme_command),
 }
 
 

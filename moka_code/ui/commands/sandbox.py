@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 from moka_code.ui.tui.msg_types import SysMsg, SysMsgError, SysMsgWarning
 
-from .base import ChatUIProtocol, open_project_sandbox, open_shell
+from .base import ChatUIProtocol, open_project_sandbox, open_shell, pick
 
 
 SUBCOMMANDS = ("config", "build", "start", "stop", "terminal", "init")
@@ -261,7 +261,14 @@ async def sandbox_start(ui: ChatUIProtocol, args: List[str]) -> None:
             msg_type=SysMsgError(), title="sandbox")
 
     if not args:
-        _list_sandboxes(ui, project)
+        if not project.sandboxes:
+            _list_sandboxes(ui, project)
+            return
+        pick(ui, "Sandboxes", sorted(project.sandboxes),
+             lambda choice: asyncio.ensure_future(sandbox_start(ui, [choice])),
+             descriptions={sid: (e.description or e.type) for sid, e in project.sandboxes.items()},
+             footers={project.active: "active"} if project.active else None,
+             headless=lambda: _list_sandboxes(ui, project))
         return
 
     sandbox_id = args[0]

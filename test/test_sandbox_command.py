@@ -369,3 +369,23 @@ def test_next_role_command_wraps(monkeypatch):
     assert next_role_command(ui) == "/role review"
     ui.agent.role.name = "review"
     assert next_role_command(ui) == "/role agent"
+
+
+def test_start_without_id_opens_a_picker_that_starts_the_choice(monkeypatch, tmp_path):
+    """Like /model, /theme, /role: a bare command opens a picker over the same
+    values the ``/sandbox start <id>`` suggestions use."""
+    workspace = _workdir(tmp_path, monkeypatch, active="dev")
+    _ready(monkeypatch)
+    ui = _UI(workspace, with_modal=True)
+
+    async def scenario():
+        await _sandbox_cmd().execute(ui, ["start"])
+        assert ui.modal["title"] == "Sandboxes"
+        assert ui.modal["items"] == ["dev", "tight"]
+        ui.modal["on_accept"]("tight")
+        await asyncio.gather(
+            *[t for t in asyncio.all_tasks() if t is not asyncio.current_task()])
+
+    asyncio.run(scenario())
+
+    assert projects.load_project(workspace).active == "tight"

@@ -23,6 +23,7 @@ from .base import (
     config_section_completions,
     open_project_sandbox,
     open_shell,
+    pick,
     reapply_endpoint,
     role_descriptions,
     role_name_completions,
@@ -114,13 +115,14 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
             "role": "roles/<name>.toml  (create/edit a role)",
         }
         sections = config_section_completions()
-        show = getattr(ui, "show_search_modal", None)
-        if show is None:
+
+        def _as_text() -> None:
             lines = [f"{s.ljust(10)} {descriptions[s]}" for s in sort_items(sections)]
             ui.chat_history_panel.add_message("\n".join(lines), msg_type=SysMsg(), title="config")
-            return
-        show("Config", sections, descriptions=descriptions,
-             on_accept=lambda section: asyncio.ensure_future(cmd_config(ui, [section])))
+
+        pick(ui, "Config", sections,
+             lambda section: asyncio.ensure_future(cmd_config(ui, [section])),
+             descriptions=descriptions, headless=_as_text)
         return
 
     section = args[0].lower()

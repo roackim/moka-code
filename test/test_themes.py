@@ -64,13 +64,16 @@ def test_theme_picker_previews_and_restores(monkeypatch, tmp_path):
         colors.set_theme(original)
 
 
-def test_theme_command_selects_and_persists(monkeypatch, tmp_path):
+def test_picking_a_theme_selects_and_persists(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "get_state_path", lambda: tmp_path / "state.toml")
     original_theme = colors.theme.name
     original_active = settings.config.active_theme
     try:
         ui = _UI()
-        asyncio.run(theme_command(ui, ["moka"]))
+        asyncio.run(theme_command(ui, []))
+        accept = ui.modals[0][4]
+
+        accept("moka")
 
         assert colors.theme.name == "moka"
         assert settings.config.active_theme == "moka"
@@ -80,12 +83,20 @@ def test_theme_command_selects_and_persists(monkeypatch, tmp_path):
         colors.set_theme(original_theme)
 
 
-def test_theme_command_unknown_reports_error():
-    ui = _UI()
+def test_theme_takes_no_argument_enter_opens_the_picker(monkeypatch, tmp_path):
+    """The live preview is the point of choosing: ``/theme`` has no argument and
+    no argument suggestions; any text after it is ignored."""
+    from moka_code.ui.commands.registry import COMMANDS
 
-    asyncio.run(theme_command(ui, ["nope"]))
-
-    assert any("Unknown theme" in m for m in ui.chat_history_panel.messages)
+    monkeypatch.setattr(settings, "get_state_path", lambda: tmp_path / "state.toml")
+    original = colors.theme.name
+    try:
+        assert COMMANDS["theme"].params == []
+        ui = _UI()
+        asyncio.run(theme_command(ui, ["moka"]))
+        assert ui.modals and colors.theme.name == original
+    finally:
+        colors.set_theme(original)
 
 
 def test_theme_command_opens_picker(monkeypatch, tmp_path):
@@ -282,6 +293,34 @@ def test_theme_preview_registers_as_overlay():
 
     preview.hide()
     assert preview not in compositor.overlays
+
+
+def test_theme_preview_aligns_each_swatch_with_its_label():
+    """Each color box sits over the word that names it (2026-10-01), with a gap
+    between columns."""
+    from moka_code.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.components import theme_preview as module
+
+    original = colors.theme.name
+    try:
+        colors.set_theme("moka")
+        preview = module.ThemePreview()
+        preview.is_visible = True
+        buffer = Buffer(100, 24)
+        preview.render(buffer)
+
+        swatch_row, label_row = buffer.cells[2], buffer.cells[3]
+        text = "".join(cell.char for cell in label_row)
+        for field, label, _start, _offset in preview._columns():
+            at = text.index(label)
+            swatch_x = [i for i, cell in enumerate(swatch_row) if cell.char == "█"
+                        and at <= i < at + len(label)]
+            assert swatch_x and len(swatch_x) == 2
+            assert swatch_x[0] - at == (len(label) - 2) // 2      # centered over the label
+            color = getattr(colors.theme, field)
+            assert tuple(swatch_row[swatch_x[0]].fg[:3]) == (color.r, color.g, color.b)
+    finally:
+        colors.set_theme(original)
 
 
 def test_theme_preview_renders_palette_swatches():

@@ -32,6 +32,7 @@ _FIELDS: Tuple[Tuple[str, str], ...] = (
 
 _HEIGHT = 4  # top border + swatch row + sample row + bottom border
 _SWATCH = "██"
+_GAP = 2  # blank cells between two columns
 
 
 class ThemePreview(Component):
@@ -73,14 +74,26 @@ class ThemePreview(Component):
         if callable(request):
             request()
 
+    @staticmethod
+    def _columns() -> "list[Tuple[str, str, int, int]]":
+        """``(field, label, start, swatch offset)`` per palette field. Each
+        column is as wide as its label; its swatch is centered over the label,
+        so the box and the word it names line up."""
+        columns, start = [], 0
+        for field, label in _FIELDS:
+            columns.append((field, label, start, max(0, (len(label) - len(_SWATCH)) // 2)))
+            start += max(len(label), len(_SWATCH)) + _GAP
+        return columns
+
     def _sample_width(self) -> int:
-        return sum(len(label) + 1 for _field, label in _FIELDS) + 1
+        _field, label, start, _offset = self._columns()[-1]
+        return start + max(len(label), len(_SWATCH)) + 1
 
     def render(self, buffer: Buffer) -> None:
         if not self.is_visible:
             return
 
-        content = max(self._sample_width(), len(_FIELDS) * 3)
+        content = self._sample_width()
         width = min(buffer.width - 2, max(24, content + 4))
         if width <= 0:
             return
@@ -102,22 +115,14 @@ class ThemePreview(Component):
         buffer.write_str(x + 2, y, f" theme: {theme.name} ", fg=theme.USER, bg=bg,
                          max_width=max(0, width - 4))
 
-        # Row 1: one swatch block per palette field.
-        swatch_x = x + 2
-        for field, _label in _FIELDS:
-            if swatch_x + 2 > x + width - 1:
+        # Rows 1 and 2: a swatch over the word it names, in the same column.
+        for field, label, start, offset in self._columns():
+            column_x = x + 2 + start
+            if column_x + max(len(label), len(_SWATCH)) > x + width - 1:
                 break
-            buffer.write_str(swatch_x, y + 1, _SWATCH, fg=getattr(theme, field), bg=bg)
-            swatch_x += 3
-
-        # Row 2: sample words, each in its palette color.
-        sample_x = x + 2
-        for field, label in _FIELDS:
-            if sample_x + len(label) > x + width - 1:
-                break
-            buffer.write_str(sample_x, y + 2, label, fg=getattr(theme, field), bg=bg,
-                             max_width=max(0, x + width - 1 - sample_x))
-            sample_x += len(label) + 1
+            color = getattr(theme, field)
+            buffer.write_str(column_x + offset, y + 1, _SWATCH, fg=color, bg=bg)
+            buffer.write_str(column_x, y + 2, label, fg=color, bg=bg)
 
 
 __all__ = ["ThemePreview"]

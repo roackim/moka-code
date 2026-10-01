@@ -128,6 +128,19 @@ class Command:
             return []
 
 
+def pick(ui: ChatUIProtocol, title: str, items: List[str], on_accept: Callable[[str], None],
+         descriptions: Optional[Dict[str, str]] = None, footers: Optional[Dict[str, str]] = None,
+         ordered: bool = False, headless: Optional[Callable[[], None]] = None) -> None:
+    """The one way a command offers a choice: a type-to-filter picker over
+    ``items`` (the same values and descriptions the ``/cmd <arg>`` suggestions
+    use). ``headless`` shows them as text when there is no compositor."""
+    show = getattr(ui, "show_search_modal", None)
+    modal = show(title, items, descriptions=descriptions, footers=footers,
+                 on_accept=on_accept, ordered=ordered) if callable(show) else None
+    if modal is None and headless is not None:
+        headless()
+
+
 def config_section_completions() -> List[str]:
     """Return the editable config targets (for ``/config <section>``)."""
     return [*settings.CONFIG_FILES, "sandbox", "role"]
