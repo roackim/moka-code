@@ -265,7 +265,8 @@ def test_unserved_model_is_reported_only_when_the_list_is_reliable(monkeypatch):
     assert unserved_model("s", "Qwen3.8-27B:high") == ["qwen", "Qwen3.8-27B"]
     assert unserved_model("s", "qwen") is None                  # exact
     assert unserved_model("or", "deepseek-v4.1-flash") is None   # bare OpenRouter id
-    assert unserved_model("ll", "requested") is None             # llama.cpp serves one
+    assert unserved_model("ll", "requested") == ["whatever.gguf"]  # §9.6: llama.cpp too
+    assert unserved_model("ll", "whatever.gguf") is None
     assert unserved_model("never", "m") is None                  # not discovered
     settings.config.stale_servers.add("s")
     assert unserved_model("s", "Qwen3.8-27B:high") is None       # stale: can't tell

@@ -159,11 +159,6 @@ class OpenAICompatible(Endpoint):
             for model in response.json().get("data", []) or []
         ]
 
-    async def query_model_name(self) -> str:
-        if self._selected_model:
-            return self._selected_model
-        raise RuntimeError(f"{self.type} requires a model to be configured")
-
     def effort_payload(self) -> dict[str, Any]:
         if not self.effort:
             return {}
@@ -204,13 +199,10 @@ class OpenAICompatible(Endpoint):
         tools: Optional[list[Dict[str, Any]]],
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """POST ``/chat/completions`` (streamed) and yield each SSE object."""
-        _t0 = time.perf_counter()
-        model_name = await self.get_model_name()
-        logger.info(
-            "[llm] model_name resolved in %.0fms (cached=%s)",
-            (time.perf_counter() - _t0) * 1000,
-            self._model_resolved,
-        )
+        model_name = self._selected_model
+        if not model_name:
+            # Never a guessed id: the selection is the user's (``/model``).
+            raise RuntimeError(f"No model selected on {self.name} (/model)")
         payload: Dict[str, Any] = {
             "model": model_name,
             "messages": messages,

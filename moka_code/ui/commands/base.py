@@ -211,7 +211,7 @@ def activate_endpoint(ui: ChatUIProtocol, endpoint) -> None:
     """Make ``endpoint`` the agent's live endpoint and probe it in the background.
 
     Shared by ``/model`` and the config reloads. The status bar refreshes now
-    and again once the probe resolves the served model and context window.
+    and again once the connection check finishes.
     """
     import asyncio
     from moka_code.harness.endpoint import prewarm_local_resolution
@@ -220,7 +220,7 @@ def activate_endpoint(ui: ChatUIProtocol, endpoint) -> None:
     prewarm_local_resolution(endpoint._original_base_url)
 
     async def _prewarm():
-        await endpoint.prewarm_model_name()
+        await endpoint.prewarm_connection()
         if hasattr(ui, "refresh_status_bar"):
             ui.refresh_status_bar()
 

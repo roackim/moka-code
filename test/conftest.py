@@ -37,9 +37,6 @@ class FakeServer:
         self.last_messages = None
         self._response_content = response_content
 
-    async def get_model_name(self):
-        return "test-model"
-
     def context_window(self):
         return 32768
 

@@ -801,7 +801,7 @@ class chatTUI(ChatActionHandlers):
             endpoint = getattr(agent, "endpoint", None)
             if endpoint is not None and (
                 is_local_resolution_pending(endpoint._original_base_url)
-                or getattr(endpoint, "_model_name_pending", False)
+                or getattr(endpoint, "_connection_state", None) == "checking"
             ):
                 self._status_spinner_frame += 1
                 self.refresh_status_bar()
@@ -950,7 +950,7 @@ class chatTUI(ChatActionHandlers):
             logger.info("Agent started")
         
         # Discover every configured server's models in the background (the
-        # active one first, then its served model name), whether or not a
+        # active one first, then its connection check), whether or not a
         # model is selected yet.
         endpoint = getattr(self.agent, "endpoint", None)
         if endpoint is not None:
@@ -964,7 +964,7 @@ class chatTUI(ChatActionHandlers):
             if endpoint is not None:
                 await refresh_catalog([endpoint.name])
                 self.refresh_status_bar()
-                await endpoint.prewarm_model_name()
+                await endpoint.prewarm_connection()
             await refresh_catalog([n for n in settings.config.servers
                                    if endpoint is None or n != endpoint.name])
             auto_select(self)

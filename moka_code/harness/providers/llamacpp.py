@@ -20,7 +20,6 @@ class LlamaCpp(OpenAICompatible):
 
     type = "llamacpp"
     default_url = "http://localhost:8080/v1"
-    serves_one_model = True
 
     def _props_url(self) -> str:
         return self.base_url.replace("/v1", "/props")
@@ -63,10 +62,3 @@ class LlamaCpp(OpenAICompatible):
             )
             for model in models
         ]
-
-    async def query_model_name(self) -> str:
-        # Only ``/models`` (not ``/props``): the served model's id.
-        models = await super().list_models()
-        if models:
-            return models[0].id
-        raise RuntimeError(f"No models available on endpoint '{self.name}'")

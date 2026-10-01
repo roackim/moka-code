@@ -153,8 +153,7 @@ def refresh_status_bar(app) -> None:
         _set_fields(app, agent, label, label, "", theme.ERROR, role, state, None)
         return
 
-    # ``selected_model`` is the one id the next request uses (llama.cpp:
-    # replaced by the served model once the connection probe resolves it).
+    # ``selected_model`` is the one id the next request uses, as selected.
     model = getattr(endpoint, "selected_model", None) or "?"
     # Strip a leading path and common file suffix from a model id
     # (e.g. /data/llm/weights/Qwen3.8-27B-Q4_0.gguf -> Qwen3.8-27B-Q4_0)
@@ -170,10 +169,10 @@ def refresh_status_bar(app) -> None:
     if effort:      # shown whenever it is sent (always, see effort_payload)
         model = f"{model} · {effort}"
 
-    # Show an animated spinner while .local hostname resolution or model
-    # name discovery is pending.
+    # Show an animated spinner while .local hostname resolution or the
+    # connection check is pending.
     from moka_code.harness.endpoint import is_local_resolution_pending, unserved_model
-    if is_local_resolution_pending(endpoint._original_base_url) or getattr(endpoint, "_model_name_pending", False):
+    if is_local_resolution_pending(endpoint._original_base_url) or getattr(endpoint, "_connection_state", None) == "checking":
         frame = SPINNER_FRAMES[app._status_spinner_frame % len(SPINNER_FRAMES)]
         model = f"{frame} {model}"
 

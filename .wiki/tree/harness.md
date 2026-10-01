@@ -54,9 +54,9 @@ The former unused `SubagentsWaiting`/`SubagentResult`/`SubagentsDone` events wer
 live transport (httpx client, caches, selected model, connection state). Each
 server family is a subclass in `providers/` (below); nothing outside a provider
 branches on `type`. Class attributes: `type`, `default_url`, `fixed_url`,
-`extra_keys`, `serves_one_model`. Providers implement `list_models` (models with
+`extra_keys`. Providers implement `list_models` (models with
 their facts: `ModelInfo.context_window`, `images`, `efforts`, read from the
-server), `query_model_name`, `_stream` and `effort_payload`. `stream(messages, tools)`
+server), `_stream` and `effort_payload`. `stream(messages, tools)`
 is the only request path (chat and compaction): it wraps the provider's
 `_stream` in the retry loop (503 and network errors, backoff) and yields
 `Chunk`s (`text`, `reasoning`, `reasoning_native`, `tool_calls` as
@@ -83,12 +83,12 @@ only the tokens used are shown). It runs at
 startup (active server first), on `/reload` and `/config servers`
 (`reapply_endpoint(rediscover=True)`; theme/role/other edits do not), on
 `/model`, and on `/effort` (active server). The UI's notice band
-flags a selected model that is not among the ids a fresh (non-stale,
-non-llama.cpp) listing shows (`unserved_model`). The selected
-model is one field, `_selected_model` (`_model_resolved` once confirmed;
-llama.cpp: replaced by the served model). The endpoint caches no model
-facts and probes nothing of its own. The model-name fallback is shown but not
-memoized; `type = "openai"` reads the server's `/models` `context_length` (no
+flags a selected model that is not among the ids a fresh (non-stale)
+listing shows (`unserved_model`). The selected model is one field,
+`_selected_model`, sent as selected on every server; with none, `stream`
+raises "No model selected" (never a guessed id). `prewarm_connection()`
+checks the connection in the background (`_connection_state`). The endpoint
+caches no model facts and probes nothing of its own; `type = "openai"` reads the server's `/models` `context_length` (no
 built-in table: set `max_context` for servers that report none, e.g. real
 OpenAI). `type = "openrouter"` always
 uses `OpenRouter.fixed_url`; a `base_url` in its table is a load error
@@ -107,8 +107,7 @@ tables from it.
   SSE `/chat/completions` → `Chunk`s; `parse_usage`; `_extra_payload` hook;
   `stated_efforts` (`reasoning.supported_efforts`, weakest first by
   `EFFORT_WORDS`) and `stated_images` (`architecture.input_modalities`)
-- `llamacpp.py` — `LlamaCpp(OpenAICompatible)`: default URL, single served
-  model from `/models[0]` (`serves_one_model`); `list_models` adds context and
+- `llamacpp.py` — `LlamaCpp(OpenAICompatible)`: default URL; `list_models` adds context and
   vision from `/props` (unknown if it does not answer),
   cache count from `timings.cache_n` when usage has none
 - `openrouter.py` — `OpenRouter(OpenAICompatible)`: fixed URL; one

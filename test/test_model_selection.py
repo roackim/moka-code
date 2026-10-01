@@ -61,28 +61,19 @@ def test_model_key_in_servers_toml_is_reported(tmp_path):
     assert any("unknown key 'model'" in e for e in config.load_errors)
 
 
-def test_llamacpp_reconciles_requested_selection_with_served_model(cfg, monkeypatch):
-    endpoint = LlamaCpp(
-        name="local", base_url="http://localhost:8080/v1",
-        api_key="EMPTY", model="served-model",
-    )
+def test_llamacpp_keeps_the_selected_model(cfg, monkeypatch):
+    """§9.6 (2026-10-01): the connection check never replaces the selection."""
+    endpoint = LlamaCpp(name="local", api_key="EMPTY", model="requested")
 
     async def _fake_diagnose():
+        endpoint._connection_state = "ok"
         return SimpleNamespace(ok=True)
 
-    async def _fake_query_model_name():
-        return "served-model"
-
     monkeypatch.setattr(endpoint, "diagnose_connection", _fake_diagnose)
-    monkeypatch.setattr(endpoint, "query_model_name", _fake_query_model_name)
+    asyncio.run(endpoint.prewarm_connection())
 
-    endpoint._selected_model = "requested-but-ignored"
-    asyncio.run(endpoint.prewarm_model_name())
-
-    assert endpoint.selected_model == "served-model"
-    assert endpoint._model_resolved
-
-
+    assert endpoint.selected_model == "requested"
+    assert endpoint._connection_state == "ok"
 
 
 def test_active_endpoint_uses_only_its_own_server_selection(cfg):
@@ -120,21 +111,6 @@ def test_unknown_context_window_is_never_invented(cfg):
     assert endpoint.context_window() == 131072
 
 
-def test_model_name_fallback_is_not_memoized():
-    endpoint = OpenAICompatible(name="o", base_url="http://o/v1")
-    answers = [RuntimeError("down"), "llama3"]
-
-    async def _query():
-        answer = answers.pop(0)
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
-
-    endpoint.query_model_name = _query
-    assert asyncio.run(endpoint.get_model_name()) == "unknown"
-    assert asyncio.run(endpoint.get_model_name()) == "llama3"
-
-
 class _ReloadAgent:
     def __init__(self, endpoint):
         self.endpoint = endpoint
@@ -160,7 +136,7 @@ def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatc
     async def _no_probe(self):
         return None
 
-    monkeypatch.setattr(Endpoint, "prewarm_model_name", _no_probe)
+    monkeypatch.setattr(Endpoint, "prewarm_connection", _no_probe)
     cfg.config.servers["a"] = {"type": "openai", "base_url": "http://old/v1"}
     agent = _ReloadAgent(get_active_endpoint())
 

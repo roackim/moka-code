@@ -214,15 +214,26 @@ def test_openrouter_provider_routing_is_a_strict_whitelist(fake, table, provider
 
 # -- llama.cpp ---------------------------------------------------------------------------------
 
-def test_llamacpp_today_asks_the_server_which_model_it_serves(fake):
-    """§9.6 / ISSUES P9: the selected ``m`` is replaced by the first listed
-    model, after a ``GET /models`` before the chat. After the change: no
-    lookup, model ``m`` is sent."""
+def test_llamacpp_sends_the_selected_model(fake):
+    """§9.6 / ISSUES P9 (2026-10-01): the selected ``m`` is sent as selected,
+    with no ``GET /models`` lookup first (it used to be replaced by the first
+    listed model, losing the choice on a router-mode server)."""
     fake.on("GET", "/models", wire.json_response(wire.LLAMACPP_MODELS))
     chat_route(fake)
     run_chat(make_endpoint(LLAMACPP), SIMPLE)
-    assert fake.calls() == [("GET", "/v1/models"), ("POST", "/v1/chat/completions")]
-    assert chat_body(fake)["model"] == "../models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+    assert fake.calls() == [("POST", "/v1/chat/completions")]
+    assert chat_body(fake)["model"] == "m"
+
+
+@pytest.mark.parametrize("table", [LLAMACPP, COMPAT, OPENROUTER])
+def test_no_selection_sends_nothing(fake, table):
+    """§9.6 (2026-10-01): no model selected is an error, never a guessed id
+    (``"unknown"`` used to be sent)."""
+    endpoint = make_endpoint(table)
+    endpoint._selected_model = None
+    with pytest.raises(RuntimeError, match="No model selected"):
+        run_chat(endpoint, SIMPLE)
+    assert fake.requests == []
 
 
 # -- connection checks ----------------------------------------------------------------------------

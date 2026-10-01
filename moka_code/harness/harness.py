@@ -520,13 +520,6 @@ class Harness:
         """Check if the LLM server is reachable."""
         return self.endpoint is not None and await self.endpoint.check_connection()
 
-    async def get_model_name(self) -> str:
-        """
-        Get the active model name from the server.
-        Returns cached value if already queried.
-        """
-        return await self.endpoint.get_model_name() if self.endpoint is not None else ""
-
     def _system_messages(self) -> List[Dict[str, Any]]:
         """The system prompt comes solely from the active role's ``prompt``."""
         prompt = (getattr(getattr(self, "role", None), "prompt", "") or "").strip()
@@ -1053,11 +1046,7 @@ class Harness:
         status["online"] = await self.endpoint.check_connection()
         
         if status["online"]:
-            # Query model info
-            try:
-                status["model"] = await self.endpoint.get_model_name()
-            except Exception as e:
-                logger.warning(f"Failed to query model name: {e}")
+            status["model"] = self.endpoint.selected_model or "unknown"
             
             ctx = self.endpoint.context_window()
             if ctx:

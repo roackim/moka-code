@@ -834,9 +834,8 @@ def _load_servers(config: Config, data: dict, filename: str,
                                   or not isinstance(server[key], (int, float))):
                 errors.append(f"{where}.{key} must be a number")
         _validate_models(server, server_type, where, errors)
-        # The type selects the transport and whether a model selection is
-        # honored; guessing one silently routed e.g. an OpenAI-compatible
-        # server as single-model llama.cpp, ignoring the selected model.
+        # The type selects the transport; never guessed (a guess silently
+        # routed e.g. an OpenAI-compatible server as llama.cpp).
         if server_type not in REGISTRY or skip:
             continue
         config.servers[name] = {**server, "type": server_type}

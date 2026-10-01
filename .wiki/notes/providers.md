@@ -318,12 +318,14 @@ Everything else is identical.
    advertises `reasoning.supported_efforts`; their docs publish no per-model
    list, so otherwise `/effort` offers nothing. A chosen level is still sent
    as chosen (§3).
-6. **`llamacpp` no longer assumes one served model.** Today
-   `prewarm_model_name` replaces the selection with the first listed model
-   (`query_model_name`), which overrides your choice on a router-mode server.
-   After: the selected id is sent, and a selection the server no longer lists
-   is kept and shown red like on every other server (`selects_model`,
-   `served_model()` and the llama.cpp branch of `unserved_model` are deleted).
+6. **`llamacpp` no longer assumes one served model** (done 2026-10-01). It
+   used to replace the selection with the first listed model
+   (`query_model_name`), overriding your choice on a router-mode server. Now
+   the selected id is sent, and a selection the server no longer lists is kept
+   and shown red like on every other server (`serves_one_model`,
+   `query_model_name` / `get_model_name` and the llama.cpp branch of
+   `unserved_model` are deleted). With no selection, `stream` raises "No model
+   selected" instead of sending the id `"unknown"`.
 7. **The `servers.toml` shape changes** (§2.1): `type` always written, `openai`
    renamed `openai-compatible`, OpenRouter's `models` list plus
    `providers_by_model` instead of per-model tables.

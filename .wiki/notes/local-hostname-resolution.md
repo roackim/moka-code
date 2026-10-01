@@ -61,18 +61,15 @@ While resolution is in progress, `is_local_resolution_pending(url)` returns
 True; the status bar shows an animated spinner next to the model name
 (`ui/app.py` advances a `SPINNER_FRAMES` frame on each `TickEvent`).
 
-## Model-name pre-warm
+## Connection pre-warm
 
-`LLMServer.prewarm_model_name()` discovers and caches the model name (and
-context window) in the background at tab/conversation open, so the status bar
-shows the real model (e.g. for llama.cpp) instead of `?`. `refresh_status_bar`
-shows `selected_model` (resolved to the served model for llama.cpp).
-
-It also drives the status-bar connection color. It first runs a real
-`diagnose_connection()` probe so the color reflects true reachability — green
-only when the server actually responds, red when it's unreachable, orange while
-the probe is in flight. (`get_model_name()` swallows network errors and falls
-back to the configured model, so it can't be used to judge reachability.)
+`Endpoint.prewarm_connection()` runs in the background at startup and on a
+server switch: it re-resolves a `.local` host, then runs a real
+`diagnose_connection()` probe, which drives the status-bar connection color —
+green only when the server actually responds, red when it's unreachable,
+orange (with the spinner) while `_connection_state == "checking"`. The model
+shown is always `selected_model`, as selected (llama.cpp included since
+2026-10-01).
 
 ## Caching + invalidation
 

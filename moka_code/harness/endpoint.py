@@ -213,8 +213,6 @@ class Endpoint:
     fixed_url: Optional[str] = None
     # Server-table keys beyond the common ones, passed to the constructor.
     extra_keys: frozenset[str] = frozenset()
-    # Loads one model and ignores the request's ``model`` (llama.cpp).
-    serves_one_model: bool = False
 
     def __init__(
         self,
@@ -254,12 +252,9 @@ class Endpoint:
         self._in_flight = 0
         self._stale_clients: list[httpx.AsyncClient] = []
 
-        # ``_selected_model`` is the one model id requests use; resolved once
-        # confirmed (llama.cpp: replaced by the model it actually serves).
-        # Model facts are read from the live catalog, never cached here.
-        self._model_resolved: bool = False
+        # ``_selected_model`` is the one model id requests use, sent as
+        # selected. Model facts are read from the live catalog, never cached here.
         self._selected_model: Optional[str] = model
-        self._model_name_pending: bool = False
         self._connection_state: str = "unknown"  # unknown|checking|ok|error
         # ``(server table, selected model)`` this endpoint was built from, so a
         # reload can tell whether the live endpoint is stale.
@@ -271,46 +266,16 @@ class Endpoint:
     def selected_model(self) -> Optional[str]:
         return self._selected_model
 
-    async def prewarm_model_name(self) -> None:
-        """Probe the connection and resolve the model name in the background."""
-        if self._model_resolved and self._connection_state == "ok":
+    async def prewarm_connection(self) -> None:
+        """Check the connection in the background (``_connection_state``)."""
+        if self._connection_state == "ok":
             return
-        self._model_name_pending = True
-        self._connection_state = "checking"
-        try:
-            if self._hostname and self._hostname.endswith(".local"):
-                new_url = _resolve_local_hostname_async(self._original_base_url)
-                if new_url != self._original_base_url and new_url != self.base_url:
-                    self.base_url = new_url
-                    self._replace_client()
-            diagnosis = await self.diagnose_connection()
-            if not diagnosis.ok:
-                self._connection_state = "error"
-                return
-            if self.serves_one_model:
-                try:
-                    actual = await self.query_model_name()
-                    if actual and actual != self._selected_model:
-                        logger.warning(
-                            "Endpoint '%s' serves '%s' (requested '%s'); using "
-                            "the served model.", self.name, actual, self._selected_model,
-                        )
-                    if actual:
-                        self._selected_model = actual
-                        self._model_resolved = True
-                except Exception as e:
-                    logger.warning("Could not resolve served model: %s", e)
-            if not self._model_resolved:
-                try:
-                    await self.get_model_name()
-                    self._connection_state = "ok"
-                except Exception as e:
-                    logger.warning("prewarm model name failed: %s", e)
-                    self._connection_state = "error"
-            else:
-                self._connection_state = "ok"
-        finally:
-            self._model_name_pending = False
+        if self._hostname and self._hostname.endswith(".local"):
+            new_url = _resolve_local_hostname_async(self._original_base_url)
+            if new_url != self._original_base_url and new_url != self.base_url:
+                self.base_url = new_url
+                self._replace_client()
+        await self.diagnose_connection()       # sets ``_connection_state``
 
     # -- catalog facts -------------------------------------------------------
 
@@ -333,29 +298,6 @@ class Endpoint:
         images, effort levels) read from the server. Called only through
         :func:`refresh_catalog`."""
         raise NotImplementedError
-
-    async def query_model_name(self) -> str:
-        """The model id requests use, asked of the server if needed."""
-        raise NotImplementedError
-
-    async def get_model_name(self) -> str:
-        """Get the model name (cached or queried)."""
-        if self._model_resolved and self._selected_model:
-            return self._selected_model
-        try:
-            self._selected_model = await self.query_model_name()
-            self._model_resolved = True
-            logger.info("Queried model name: %s", self._selected_model)
-            return self._selected_model
-        except Exception as e:
-            logger.warning("Failed to query model name: %s", e)
-        if self._selected_model:
-            self._model_resolved = True
-            logger.info("Using model from config: %s", self._selected_model)
-            return self._selected_model
-        # Not cached: an offline server must be re-queried once it is back.
-        logger.warning("Model name unknown, using 'unknown'")
-        return "unknown"
 
     # -- connection ----------------------------------------------------------
 
@@ -569,16 +511,12 @@ def catalog_entry(server: Optional[str], model_name: Optional[str]) -> dict:
 
 def unserved_model(server: Optional[str], model_name: Optional[str]) -> Optional[list[str]]:
     """The ids ``server`` lists when ``model_name`` is not among them, else
-    ``None`` (served, or nothing reliable to compare: never discovered, stale,
-    or a llama.cpp server, which serves whatever it loaded)."""
+    ``None`` (served, or nothing reliable to compare: never discovered or
+    stale)."""
     from moka_code import settings
-    from moka_code.harness.providers import REGISTRY
 
     listed = [m.get("id") for m in settings.config.models_by_server.get(server or "", [])]
-    data = settings.config.servers.get(server or "") or {}
-    cls = REGISTRY.get(data.get("type"))
-    if (not listed or not model_name or server in settings.config.stale_servers
-            or (cls is not None and cls.serves_one_model)):
+    if not listed or not model_name or server in settings.config.stale_servers:
         return None
     for model_id in listed:
         if model_id == model_name or model_id.endswith("/" + model_name):

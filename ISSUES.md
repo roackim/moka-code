@@ -43,22 +43,13 @@ and full tool output. → `PLAN.md` step 3.
 **P1. No provider contract; ~20 `type ==` branches** · in progress
 Provider classes and registry in `harness/providers/` (2026-10-01, step 1.2
 commits 1a and 1b): no `type ==` left. Done since: stream + `Chunk`, Ollama
-removed, `ModelInfo` facts; llama.cpp selection and servers config are next.
+removed, `ModelInfo` facts, llama.cpp selection; servers config is next.
 → `PLAN.md` step 1.
 
 **P5. Bare model id matched by suffix, alias as fallback** · to audit
 `harness/providers/openrouter.py` (`list_models._match`):
 `deepseek-v4-flash` resolves to any `…/deepseek-v4-flash`; `~`-prefixed alias
 entries used as fallback. Could pick the wrong model silently.
-
-**P9. llama.cpp selection overridden by the first listed model** · confirmed
-`endpoint.py` `prewarm_model_name` / `providers/llamacpp.py` `query_model_name`:
-for `type = "llamacpp"` the selected model is replaced by `models[0]` of
-`/models`. llama.cpp router mode serves several models and requires `model`
-(its README), so the user's choice is lost there.
-→ `PLAN.md` step 1, `providers.md` §9.6.
-
----
 
 **P11. llama.cpp `cache_n` never used** · confirmed (docs)
 `providers/llamacpp.py` `_usage` reads `timings.cache_n` only when usage has no
@@ -82,9 +73,9 @@ only fires when none of them exists.
 `ui/status_presenter.py` `_resolve_color` (sandbox colors in `ui.toml`).
 
 **U7. `?` shown for an unknown model** · to audit
-`ui/status_presenter.py`: `selected_model or "?"`. With a
-real server whose model is not known yet (llama.cpp before its probe), the
-status bar shows `name:?`.
+`ui/status_presenter.py`: `selected_model or "?"`. Since 2026-10-01 nothing
+resolves a model in the background, so this shows only when a server is
+active with no model selected.
 
 ---
 
