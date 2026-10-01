@@ -4,7 +4,7 @@ A terminal coding assistant for local and cloud models.
 
 moka runs in your terminal, in your project folder. The model can read and edit
 files and run commands, and every action goes through permissions you control,
-optionally inside a sandbox. It works with local servers (llama.cpp, Ollama) as
+optionally inside a sandbox. It works with local servers (llama.cpp, or any OpenAI-compatible server) as
 well as cloud models through OpenRouter, and all settings are plain config
 files.
 
@@ -13,8 +13,8 @@ files.
 ## Requirements
 
 - Linux, Python 3.10+
-- A model server: [llama.cpp](https://github.com/ggml-org/llama.cpp),
-  [Ollama](https://ollama.com), or an [OpenRouter](https://openrouter.ai) API key
+- A model server: [llama.cpp](https://github.com/ggml-org/llama.cpp), another
+  OpenAI-compatible server, or an [OpenRouter](https://openrouter.ai) API key
 - Optional: podman, docker or bubblewrap for sandboxes; `wl-paste` or `xclip`
   for pasting images
 
