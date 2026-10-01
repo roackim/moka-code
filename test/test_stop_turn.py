@@ -8,9 +8,9 @@ from types import SimpleNamespace as NS
 from unittest.mock import patch
 
 from moka_code.harness import events
-from moka_code.harness.endpoint import Endpoint
 from moka_code.harness.harness import Harness
 from moka_code.harness.roles import Role
+from moka_code.harness.providers import LlamaCpp
 
 
 def _tool_chunk(call_id, name, args):
@@ -21,7 +21,7 @@ def _tool_chunk(call_id, name, args):
 
 def _harness(tmp_path, tools, first_call):
     with patch("moka_code.harness.harness.get_active_endpoint",
-               return_value=Endpoint(name="t", type="llamacpp")):
+               return_value=LlamaCpp(name="t")):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools=tools))
 

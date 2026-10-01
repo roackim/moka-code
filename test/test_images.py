@@ -13,8 +13,7 @@ import pytest
 
 from moka_code import settings
 from moka_code.harness import images
-from moka_code.harness.endpoint import Endpoint
-from moka_code.harness.endpoint_discovery import image_input_from_metadata
+from moka_code.harness.endpoint import image_input_from_metadata
 from moka_code.harness.endpoint_ollama import ollama_messages
 from moka_code.harness.harness import Harness
 from moka_code.ui.app import chatTUI
@@ -23,6 +22,8 @@ from moka_code.ui.commands.conversation import conversation_export, conversation
 from moka_code.ui.tui.msg_types import UserMsg
 
 from conftest import StubAgent
+
+from moka_code.harness.providers import LlamaCpp, Ollama
 
 MB = 1024 * 1024
 
@@ -122,7 +123,7 @@ def _chunk(content=None, finish=None):
 
 def test_history_keeps_a_reference_and_the_request_gets_parts(tmp_path, monkeypatch):
     with patch("moka_code.harness.harness.get_active_endpoint",
-               return_value=Endpoint(name="test", type="llamacpp")):
+               return_value=LlamaCpp(name="test")):
         harness = Harness(workspace_path=str(tmp_path))
     sent = []
 
@@ -297,8 +298,8 @@ def test_endpoint_learns_image_support_once(monkeypatch):
         calls.append(model_name)
         return False
 
-    monkeypatch.setattr("moka_code.harness.endpoint_discovery.query_image_input", query)
-    endpoint = Endpoint(name="local", type="ollama", model="llama3")
+    monkeypatch.setattr(Ollama, "query_image_input", query)
+    endpoint = Ollama(name="local", base_url="http://localhost:11434/v1", model="llama3")
     assert endpoint.accepts_images() is None
 
     asyncio.run(endpoint.probe_image_input())
@@ -366,7 +367,7 @@ def _read_harness(tmp_path, monkeypatch, accepts=None):
 
     (tmp_path / "shot.png").write_bytes(png(10, 20))
     with patch("moka_code.harness.harness.get_active_endpoint",
-               return_value=Endpoint(name="test", type="llamacpp", model="m")):
+               return_value=LlamaCpp(name="test", model="m")):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools={"read": "yes"}))
     if accepts is not None:

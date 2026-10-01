@@ -5,10 +5,11 @@ import asyncio
 from moka_code import settings
 from moka_code.harness import endpoint as endpoint_mod
 from moka_code.harness.endpoint import Endpoint
+from moka_code.harness.providers import OpenAICompatible
 
 
 def _endpoint():
-    return Endpoint(name="s", type="openai", model="m")
+    return OpenAICompatible(name="s", base_url="http://s/v1", model="m")
 
 
 def test_retired_idle_endpoint_closes_its_client():
@@ -28,10 +29,10 @@ def test_retired_endpoint_waits_for_the_reply_in_flight(monkeypatch):
     async def scenario():
         gate = release()
 
-        async def fake_completion(endpoint, messages, tools, stream):
+        async def fake_completion(self, messages, tools, stream):
             await gate.wait()
             yield "chunk"
-        monkeypatch.setattr(endpoint_mod._openai, "create_completion", fake_completion)
+        monkeypatch.setattr(OpenAICompatible, "_completion", fake_completion)
 
         endpoint = _endpoint()
         client = endpoint.client

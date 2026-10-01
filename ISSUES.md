@@ -40,8 +40,9 @@ and full tool output. → `PLAN.md` step 3.
 
 ## Providers and config
 
-**P1. No provider contract; ~20 `type ==` branches** · confirmed
-`endpoint.py`, `endpoint_discovery.py`, `endpoint_openai.py`, `settings.py`.
+**P1. No provider contract; ~20 `type ==` branches** · in progress
+Provider classes and registry in `harness/providers/` (2026-10-01, step 1.2
+commit 1a): no `type ==` left; Ollama still delegates to `endpoint_ollama.py`.
 → `PLAN.md` step 1.
 
 **P4. Context window guessed as 32768 when unknown** · confirmed
@@ -50,12 +51,12 @@ shows a made-up size. The user's todo already records "shows 32k for
 deepseek despite being like 1M".
 
 **P5. Bare model id matched by suffix, alias as fallback** · to audit
-`harness/endpoint_discovery.py` (`_match`, `openrouter_context_window`):
+`harness/providers/openrouter.py` (`discover_models._match`, `query_context_window`):
 `deepseek-v4-flash` resolves to any `…/deepseek-v4-flash`; `~`-prefixed alias
 entries used as fallback. Could pick the wrong model silently.
 
 **P7. Guessed effort levels** · confirmed
-`harness/endpoint_discovery.py` `efforts_from_metadata`: invents
+`harness/endpoint.py` `efforts_from_metadata`: invents
 `none/low/medium/high` when a model lists `reasoning` or `reasoning_effort`
 without `reasoning.supported_efforts`, and for Ollama reads `capabilities:
 thinking` and guesses levels from the model name (`gpt-oss`). Checked
@@ -80,12 +81,12 @@ thinking` and guesses levels from the model name (`gpt-oss`). Checked
 → `.wiki/notes/providers.md` §9, decision 4.
 
 **P8. Ollama `/api/show` request uses `name`** · to audit
-`endpoint_ollama.py` and `endpoint_discovery.py` send `{"name": model}`;
+`endpoint_ollama.py` (`context_window`, `image_input`) sends `{"name": model}`;
 Ollama's current API reference lists only `model` (required). Unverified
 against a real server; may fail on newer Ollama.
 
 **P9. llama.cpp selection overridden by the first listed model** · confirmed
-`endpoint.py` `prewarm_model_name` / `endpoint_discovery.py` `query_model_name`:
+`endpoint.py` `prewarm_model_name` / `providers/llamacpp.py` `query_model_name`:
 for `type = "llamacpp"` the selected model is replaced by `models[0]` of
 `/models`. llama.cpp router mode serves several models and requires `model`
 (its README), so the user's choice is lost there.
@@ -127,9 +128,8 @@ status bar shows `name:?`.
 **H1. 97 dead-code candidates** · to audit
 `vulture moka_code --min-confidence 60` (2026-09-30). Most in `harness.py`
 (11), `chat_message.py` (8), `app.py` (7), `chat_history_panel.py` (7),
-`endpoint.py` (7), `tui/actions.py` (7). Examples in `endpoint.py`:
-`set_model`, `_native_base_url`, `_ollama_messages`, `_native_response`,
-`_openrouter_context_window`. Also `Harness._get_tool_output` (no callers;
+`endpoint.py` (7), `tui/actions.py` (7). `set_model` and the four private
+Ollama/OpenRouter wrappers of `endpoint.py` were deleted 2026-10-01. Also `Harness._get_tool_output` (no callers;
 found 2026-09-30). Some will be false positives.
 
 **H2. Compatibility aliases** · to audit
@@ -145,6 +145,12 @@ U4–U7 are the ones checked so far; the rest are unreviewed.
 **H4. Built-in roles as code fallbacks** · to audit
 `harness/roles.py`: built-in roles "used as code fallbacks when files are
 absent". Check whether a missing role file silently becomes a default role.
+
+**H6. Flaky tests that run bash** · to audit
+`test_transport.py::test_transport_dispatches_async_handler` and
+`test_worker_protocol.py::test_handle_request_dispatches_each_verb` each
+failed once in about ten full runs (2026-10-01), on HEAD `7e3b080` too. Cause
+unknown (timing of the subprocess?).
 
 **H5. Tests written from the implementation** · to audit
 Four tests asserted behaviour the user had rejected (fixed 2026-09-30:

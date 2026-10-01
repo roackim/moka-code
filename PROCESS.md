@@ -47,6 +47,7 @@ that catches it.
 | I14 | Wrong fix hint in a startup warning (`/sandbox none` does not exist) | `harness.py` | User | Fixed |
 | I15 | Model discovery skipped on `/config theme` and `/config role`, although the user had asked for rediscovery on `/model`, `/effort`, `/reload` and `/config` | `ui/commands/core.py`, `base.py` | User | Fixed (every reload rediscovers) |
 | I16 | `HANDOFF.md`, the second file every agent must read, is stale: titled "Pico-Chat", branch `cleanup`, HEAD `caaa359`, test count 457/540 (actual: 861), commands for a `.pixi` env and a `pico_chat` package, and references to `SIMPLIFICATION.md` and `plans/cleanup_round2.md`, which do not exist. `principles.md` also cites the missing `SIMPLIFICATION.md` | `HANDOFF.md`, `.wiki/notes/principles.md` | Found writing this document | Fixed 2026-09-30: `HANDOFF.md` dropped, references removed |
+| I17 | Tests hand-fed a server response shape the server never returns: `test_effort.py` gives Ollama models a `capabilities` field at list time, but `/api/tags` has none, so the code path they cover never fires on a real server *(rebuilt 2026-10-01, original wording lost)* | `test/test_effort.py`, `endpoint_discovery.py` `efforts_from_metadata` | Effort audit against Ollama's API reference (2026-10-01) | Open (`ISSUES.md` P7, H5; fixed by `providers.md` §9.5) |
 
 ### 2.2 Introduced or worsened during the 2026-09-30 session
 
@@ -61,6 +62,7 @@ that catches it.
 | S7 | Questions accumulated unanswered (15 by the end); some were settled by default in the meantime | Keep an open-questions list; never decide by default |
 | S8 | Guesses stated as facts (llama.cpp `--reasoning-preserve`, DeepSeek replay rules) until challenged | Mark unverified claims; verify before building on them |
 | S9 | Edits to `HANDOFF.md` (gotchas) without noticing the file was stale (I16) | Treat entry docs as something to verify, not only to append to |
+| S10 | (2026-10-01) An external API's behaviour assumed instead of checked, caught by the user. With I17, one of two such cases that day *(rebuilt 2026-10-01; the original specifics are lost)* | Check the docs or a live response first; copy fixtures from the real thing, with source and date |
 
 ---
 
@@ -125,6 +127,9 @@ what the process has to catch.
 12. **Scope drift.** Features grow beyond the request during implementation
     (model tables extended to all types, S2), each growth adding surface to
     maintain and audit.
+13. **Fixtures invented from the code** *(rebuilt 2026-10-01)*. Test inputs
+    are written in the shape the code expects, not the shape the server
+    sends (I17), so a branch that can never fire looks covered.
 
 ---
 
@@ -154,6 +159,9 @@ what the process has to catch.
    until checked against docs.
 7. **Ask and wait.** A pending question blocks the decision it concerns;
    other work can continue.
+8. **Real fixtures** *(rebuilt 2026-10-01)*. Fixtures for external APIs are
+   copied from the real thing (docs or a live response), with source and date
+   next to them; anything unchecked is labelled.
 
 ### 5.3 Workflow for each task
 1. **Restate** the request as literal acceptance checks
@@ -180,6 +188,9 @@ what the process has to catch.
   so dead code fails a run instead of accumulating.
 - **Test review:** when a test asserts behaviour, it cites the decision it
   protects; a test protecting nothing is suspect.
+- **Real fixtures:** server responses in tests come from the provider's docs
+  or a live response, with source and date (`test/test_wire_requests.py`
+  does this).
 
 ### 5.5 Finding the debt we cannot see
 Dedicated audit passes, one area at a time, each producing a findings list

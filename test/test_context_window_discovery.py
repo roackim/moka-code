@@ -8,7 +8,8 @@ fell back to 32k even for 1M-token models.
 import asyncio
 
 import moka_code.harness.endpoint as endpoint_mod
-from moka_code.harness.endpoint import Endpoint
+
+from moka_code.harness.providers import OpenRouter
 
 
 class _Response:
@@ -48,30 +49,30 @@ def _patch_client(monkeypatch, data):
 
 def test_openrouter_context_window_matches_bare_id(monkeypatch):
     _patch_client(monkeypatch, CATALOG)
-    endpoint = Endpoint(
-        name="or", type="openrouter", base_url="https://openrouter.ai/api/v1",
+    endpoint = OpenRouter(
+        name="or", base_url="https://openrouter.ai/api/v1",
         api_key="k", model="deepseek/deepseek-v4-flash-0731",
     )
 
-    ctx = asyncio.run(endpoint._openrouter_context_window("deepseek-v4-flash-0731"))
+    ctx = asyncio.run(endpoint.query_context_window("deepseek-v4-flash-0731"))
 
     assert ctx == 1310720  # canonical entry, not the "~" alias
 
 
 def test_openrouter_context_window_exact_id(monkeypatch):
     _patch_client(monkeypatch, CATALOG)
-    endpoint = Endpoint(
-        name="or", type="openrouter", base_url="https://openrouter.ai/api/v1",
+    endpoint = OpenRouter(
+        name="or", base_url="https://openrouter.ai/api/v1",
         api_key="k", model="other/model",
     )
 
-    assert asyncio.run(endpoint._openrouter_context_window("other/model")) == 8192
+    assert asyncio.run(endpoint.query_context_window("other/model")) == 8192
 
 
 def test_discover_openrouter_canonicalizes_bare_enabled_id(monkeypatch):
     _patch_client(monkeypatch, CATALOG)
-    endpoint = Endpoint(
-        name="or", type="openrouter", base_url="https://openrouter.ai/api/v1",
+    endpoint = OpenRouter(
+        name="or", base_url="https://openrouter.ai/api/v1",
         api_key="k", models={"deepseek-v4-flash-0731": {}},
     )
 

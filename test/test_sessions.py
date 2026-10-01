@@ -8,10 +8,11 @@ import pytest
 
 from moka_code import settings
 from moka_code.harness import sessions
-from moka_code.harness.endpoint import Endpoint
 from moka_code.ui.app import chatTUI
 
 from conftest import StubAgent
+
+from moka_code.harness.providers import Ollama
 
 
 @pytest.fixture(autouse=True)
@@ -84,7 +85,7 @@ def _ui(tmp_path, history=None, resume=False):
     agent.workspace = str(tmp_path)
     agent.history = list(history or [])
     agent.role = SimpleNamespace(name="agent")
-    agent.endpoint = Endpoint(name="t", type="ollama", model="m1")
+    agent.endpoint = Ollama(name="t", base_url="http://t/v1", model="m1")
     return chatTUI(agent, resume=resume)
 
 

@@ -12,10 +12,8 @@ about two dozen `type == ...` branches spread over `endpoint.py`,
 `unserved_model`. This page defines the one seam that replaces them, and what
 each side promises the other.
 
-Related: `plans/server_contract.md` (rules R1–R7, slots S1–S13, wire-level
-test scenarios). This page takes its slot table as the checklist of what a
-provider must define, and replaces its §7 "profile table" with the class
-structure decided in `PLAN.md`.
+The slot table (§4) is the checklist of what a provider must define; the
+class structure is the one decided in `PLAN.md`.
 
 ---
 
@@ -205,8 +203,8 @@ hints, `.local` re-resolution, `_connection_state`).
 
 ## 4. What each provider defines (the slot table)
 
-Slots S1–S13 are those of `plans/server_contract.md` §3.1. "Today" is the
-current behaviour; step 1 keeps it unless §9 says otherwise (S6 is the
+Slot labels are row ids only (gaps in the numbering are historical). "Today"
+is the current behaviour; step 1 keeps it unless §9 says otherwise (S6 is the
 target, see §9.5).
 
 | Slot | `llamacpp` | `openai-compatible` | `openrouter` | `ollama` |
@@ -268,19 +266,18 @@ Identical for every provider, not overridden:
 
 ## 7. Failure behaviour
 
-Today's behaviour, unchanged in step 1. Gaps are listed, not fixed (they are
-`plans/server_contract.md` §10).
+Today's behaviour, unchanged in step 1. Gaps are listed, not fixed.
 
 | Situation | Behaviour | Gap |
 |---|---|---|
 | 503 (model loading) | retried with backoff, then raised with the body | — |
-| network error / timeout | retried (whole request) up to `retry_attempts` | may repeat output already shown (S12) |
-| other 4xx / 5xx | raised as an HTTP status error | the server's body is not shown (R5) |
+| network error / timeout | retried (whole request) up to `retry_attempts` | may repeat output already shown |
+| other 4xx / 5xx | raised as an HTTP status error | the server's body is not shown |
 | server unreachable at refresh | last list kept, marked stale | — |
 | model not listed any more | selection kept; status bar red, error notice | — |
 
 The neutral error type (status + server message) is introduced with `stream`
-so that closing the R5 gap later is a one-place change.
+so that showing the server's body later is a one-place change.
 
 ---
 

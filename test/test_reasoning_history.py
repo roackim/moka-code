@@ -8,8 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from moka_code import settings
-from moka_code.harness.endpoint import Endpoint
 from moka_code.harness.harness import Harness
+from moka_code.harness.providers import LlamaCpp, OpenRouter
 
 
 def _chunk(content=None, reasoning=None, finish=None):
@@ -28,7 +28,7 @@ def _harness():
 def test_chat_stores_reasoning_verbatim_in_history(tmp_path, monkeypatch):
     with patch(
         "moka_code.harness.harness.get_active_endpoint",
-        return_value=Endpoint(name="test", type="llamacpp"),
+        return_value=LlamaCpp(name="test"),
     ):
         harness = Harness(workspace_path=str(tmp_path))
 
@@ -52,7 +52,7 @@ def test_chat_stores_reasoning_verbatim_in_history(tmp_path, monkeypatch):
 
 def test_openai_adapter_reads_openrouter_reasoning_field():
     """OpenRouter streams ``reasoning``; DeepSeek streams ``reasoning_content``."""
-    from moka_code.harness.endpoint_openai import _adapt_stream_chunk
+    from moka_code.harness.providers.openai_compatible import _adapt_stream_chunk
 
     def reason(payload):
         chunk = _adapt_stream_chunk(
@@ -67,11 +67,11 @@ def test_openai_adapter_reads_openrouter_reasoning_field():
 
 def test_openrouter_streamed_reasoning_reaches_history(tmp_path, monkeypatch):
     """The whole pipe: adapter → harness → history entry."""
-    from moka_code.harness.endpoint_openai import _adapt_stream_chunk
+    from moka_code.harness.providers.openai_compatible import _adapt_stream_chunk
 
     with patch(
         "moka_code.harness.harness.get_active_endpoint",
-        return_value=Endpoint(name="test", type="openrouter"),
+        return_value=OpenRouter(name="test"),
     ):
         harness = Harness(workspace_path=str(tmp_path))
 
@@ -109,7 +109,7 @@ def test_api_message_sends_only_api_fields():
 
 def _history_with_two_turns():
     harness = _harness()
-    harness.endpoint = Endpoint(name="t", type="llamacpp")
+    harness.endpoint = LlamaCpp(name="t")
     harness.history = [
         {"id": "u1", "role": "user", "content": "first"},
         {"id": "a1", "role": "assistant", "content": "old answer", "reasoning": "old thought"},
@@ -132,7 +132,7 @@ def test_no_reasoning_is_sent_back():
 
 
 def test_streamed_reasoning_details_are_rebuilt_per_block():
-    from moka_code.harness.endpoint_openai import merge_reasoning_details
+    from moka_code.harness.providers.openrouter import merge_reasoning_details
 
     blocks = []
     merge_reasoning_details(blocks, [{"type": "reasoning.text", "text": "Let ", "index": 0,
@@ -160,7 +160,7 @@ def test_tool_calls_are_sent_back_with_their_results(tmp_path, monkeypatch):
     (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
     with patch(
         "moka_code.harness.harness.get_active_endpoint",
-        return_value=Endpoint(name="test", type="llamacpp"),
+        return_value=LlamaCpp(name="test"),
     ):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools={"read": "yes"}))
@@ -200,7 +200,7 @@ def test_tool_loop_request_carries_no_reasoning(tmp_path, monkeypatch):
 
     (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
     with patch("moka_code.harness.harness.get_active_endpoint",
-               return_value=Endpoint(name="test", type="llamacpp")):
+               return_value=LlamaCpp(name="test")):
         harness = Harness(workspace_path=str(tmp_path))
     harness.set_role(Role(name="t", tools={"read": "yes"}))
     call = SimpleNamespace(index=0, id="call_1",
@@ -244,7 +244,7 @@ def _stream(tmp_path, chunks):
     from moka_code.harness import events
 
     with patch("moka_code.harness.harness.get_active_endpoint",
-               return_value=Endpoint(name="test", type="llamacpp")):
+               return_value=LlamaCpp(name="test")):
         harness = Harness(workspace_path=str(tmp_path))
 
     async def fake_completion(messages, tools=None, stream=True):

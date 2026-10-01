@@ -15,7 +15,7 @@ from moka_code.harness.elision import elide
 from moka_code.harness import events, images
 from moka_code.harness.endpoint import Endpoint, get_active_endpoint
 from moka_code.harness.permissions import PermissionGate
-from moka_code.harness.endpoint_openai import merge_reasoning_details
+from moka_code.harness.providers.openrouter import merge_reasoning_details
 from moka_code.harness.usage import MetricsState, TokenUsage, usage_from_response
 
 # Import the minimal toolset

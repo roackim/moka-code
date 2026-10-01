@@ -6,13 +6,14 @@ import asyncio
 from types import SimpleNamespace
 
 from moka_code import settings
-from moka_code.harness.endpoint import Endpoint
+from moka_code.harness.endpoint import efforts_from_metadata
 from moka_code.settings import Config
 from moka_code.ui.commands import models
+from moka_code.harness.providers import REGISTRY, Ollama, OpenAICompatible
 
 
 def _endpoint(type_, **kw):
-    return Endpoint(name="s", type=type_, model="m", **kw)
+    return REGISTRY[type_](name="s", base_url="http://s/v1", model="m", **kw)
 
 
 def test_effort_payload_uses_each_servers_field():
@@ -76,7 +77,7 @@ def _config(monkeypatch, servers, catalog=None, efforts=None):
 
 
 def test_effort_command_sets_and_persists(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "ollama"}},
+    _config(monkeypatch, {"s": {"type": "ollama", "base_url": "http://s/v1"}},
             catalog={"s": [{"id": "m", "metadata": {"reasoning": {"supported_efforts": ["low", "high"]}}}]})
     endpoint = _endpoint("ollama")
     ui, messages = _ui(endpoint)
@@ -93,14 +94,14 @@ def test_effort_command_sets_and_persists(monkeypatch):
 
 
 def test_effort_command_without_levels_explains(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "ollama"}})
+    _config(monkeypatch, {"s": {"type": "ollama", "base_url": "http://s/v1"}})
     ui, messages = _ui(_endpoint("ollama"))
     asyncio.run(models.effort_command(ui, []))
     assert "No reasoning effort detected" in messages[-1]
 
 
 def test_effort_inline_menu_and_picker_mark_the_active_level(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "ollama"}},
+    _config(monkeypatch, {"s": {"type": "ollama", "base_url": "http://s/v1"}},
             catalog={"s": [{"id": "m", "metadata": {"reasoning": {"supported_efforts": ["low", "high"]}}}]},
             efforts={"s": {"m": "high"}})
     assert models.effort_completions() == ["default", "low", "high"]
@@ -115,8 +116,6 @@ def test_effort_inline_menu_and_picker_mark_the_active_level(monkeypatch):
 
 
 def test_efforts_detected_from_catalog_metadata(monkeypatch):
-    from moka_code.harness.endpoint_discovery import efforts_from_metadata
-
     assert efforts_from_metadata({"supported_parameters": ["tools", "reasoning"]}) == [
         "none", "low", "medium", "high"]
     assert efforts_from_metadata({"capabilities": ["completion", "thinking"], "model": "qwen3"}) == ["none"]
@@ -129,7 +128,7 @@ def test_efforts_detected_from_catalog_metadata(monkeypatch):
 
 
 def test_effort_variants_switch_the_model(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "ollama"}}, catalog={"s": [
+    _config(monkeypatch, {"s": {"type": "ollama", "base_url": "http://s/v1"}}, catalog={"s": [
         {"id": "Qwen:low"}, {"id": "Qwen:high"}, {"id": "Qwen:medium"}, {"id": "other"}]})
     monkeypatch.setattr(settings.config, "model_selection", {"s": "Qwen:low"})
     assert models.effort_completions() == ["low", "medium", "high"]
@@ -137,14 +136,12 @@ def test_effort_variants_switch_the_model(monkeypatch):
 
     selected = []
     monkeypatch.setattr(models, "_select_pair", lambda ui, server, model: selected.append((server, model)))
-    ui, _ = _ui(Endpoint(name="s", type="ollama", model="Qwen:low"))
+    ui, _ = _ui(Ollama(name="s", base_url="http://s/v1", model="Qwen:low"))
     asyncio.run(models.effort_command(ui, ["high"]))
     assert selected == [("s", "Qwen:high")]
 
 
 def test_exact_efforts_from_reasoning_supported_efforts():
-    from moka_code.harness.endpoint_discovery import efforts_from_metadata
-
     # OpenRouter lists strongest first; /effort offers weakest first.
     assert efforts_from_metadata({
         "supported_parameters": ["reasoning", "reasoning_effort"],
@@ -157,8 +154,6 @@ def test_exact_efforts_from_reasoning_supported_efforts():
 
 
 def test_openai_catalog_keeps_model_metadata():
-    from moka_code.harness import endpoint_discovery
-
     entry = {"id": "q", "context_length": 128000,
              "reasoning": {"supported_efforts": ["low", "high"]}}
 
@@ -167,14 +162,15 @@ def test_openai_catalog_keeps_model_metadata():
             return SimpleNamespace(raise_for_status=lambda: None,
                                    json=lambda: {"data": [entry]})
 
-    endpoint = SimpleNamespace(type="openai", client=Client(), timeout=5)
-    [model] = asyncio.run(endpoint_discovery.list_models(endpoint))
-    assert endpoint_discovery.efforts_from_metadata(model.metadata) == ["low", "high"]
+    endpoint = OpenAICompatible(name="s", base_url="http://s/v1")
+    endpoint.client = Client()
+    [model] = asyncio.run(endpoint.list_models())
+    assert efforts_from_metadata(model.metadata) == ["low", "high"]
 
 
 def test_effort_levels_read_the_live_catalog_not_a_copy(monkeypatch):
     """A catalog refreshed after the first read is what /effort offers."""
-    _config(monkeypatch, {"s": {"type": "openai"}}, catalog={"s": [{"id": "m"}]})
+    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}}, catalog={"s": [{"id": "m"}]})
     assert models.effort_completions() == []
 
     settings.config.models_by_server["s"] = [
@@ -185,7 +181,7 @@ def test_effort_levels_read_the_live_catalog_not_a_copy(monkeypatch):
 def test_effort_missing_from_the_catalog_is_still_sent_and_shown(monkeypatch):
     """A catalog without the saved level (stale, or the server answered
     without its reasoning object) must not drop or hide the effort."""
-    _config(monkeypatch, {"s": {"type": "openai"}}, catalog={"s": [{"id": "m"}]},
+    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}}, catalog={"s": [{"id": "m"}]},
             efforts={"s": {"m": "low"}})
     endpoint = _endpoint("openai")
     endpoint.effort = "low"
@@ -195,14 +191,14 @@ def test_effort_missing_from_the_catalog_is_still_sent_and_shown(monkeypatch):
 
 
 def test_effort_is_sent_while_the_server_is_undiscovered(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "openai"}})
+    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}})
     endpoint = _endpoint("openai")
     endpoint.effort = "low"
     assert endpoint.effort_payload() == {"reasoning_effort": "low"}   # the server decides
 
 
 def test_effort_command_rediscovers_the_active_server(monkeypatch):
-    _config(monkeypatch, {"s": {"type": "openai"}})
+    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}})
     refreshed = []
 
     async def discover(names=None):
@@ -224,7 +220,7 @@ def test_refresh_keeps_the_last_discovery_marked_stale(monkeypatch):
     from moka_code.harness.endpoint import ModelInfo
 
     refresh_catalog = endpoint_mod.refresh_catalog     # before _config stubs it
-    _config(monkeypatch, {"s": {"type": "openai"}, "never": {"type": "openai"}},
+    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}, "never": {"type": "openai", "base_url": "http://s/v1"}},
             catalog={"s": [{"id": "m", "context_window": 128000}]})
     monkeypatch.setattr(settings.config, "stale_servers", set())
     up = {"ok": False}
@@ -253,7 +249,7 @@ def test_an_older_refresh_finishing_late_does_not_win(monkeypatch):
     from moka_code.harness.endpoint import ModelInfo
 
     refresh_catalog = endpoint_mod.refresh_catalog
-    _config(monkeypatch, {"s": {"type": "openai"}}, catalog={"s": [{"id": "old"}]})
+    _config(monkeypatch, {"s": {"type": "openai", "base_url": "http://s/v1"}}, catalog={"s": [{"id": "old"}]})
     monkeypatch.setattr(settings.config, "stale_servers", set())
     calls = []
 
@@ -278,7 +274,7 @@ def test_an_older_refresh_finishing_late_does_not_win(monkeypatch):
 def test_unserved_model_is_reported_only_when_the_list_is_reliable(monkeypatch):
     from moka_code.harness.endpoint import unserved_model
 
-    _config(monkeypatch, {"s": {"type": "ollama"}, "or": {"type": "openrouter"},
+    _config(monkeypatch, {"s": {"type": "ollama", "base_url": "http://s/v1"}, "or": {"type": "openrouter"},
                           "ll": {"type": "llamacpp"}},
             catalog={"s": [{"id": "qwen:latest"}, {"id": "Qwen3.8-27B"}],
                      "or": [{"id": "deepseek/deepseek-v4.1-flash"}],

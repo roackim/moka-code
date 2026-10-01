@@ -15,7 +15,9 @@ import asyncio
 import pytest
 
 import wire_fake as wire
-from moka_code.harness.endpoint import Endpoint
+from moka_code.harness.endpoint import (
+    Endpoint, efforts_from_metadata, image_input_from_metadata, make_endpoint as build,
+)
 from moka_code.harness.usage import usage_from_response
 
 
@@ -23,7 +25,7 @@ from moka_code.harness.usage import usage_from_response
 
 def make_endpoint(table: dict, effort=None) -> Endpoint:
     """A server built from a ``servers.toml`` table, with model ``m`` selected."""
-    endpoint = Endpoint.from_dict("srv", table)
+    endpoint = build("srv", table)
     endpoint._selected_model = "m"
     endpoint.effort = effort
     return endpoint
@@ -47,8 +49,6 @@ def run_chat(endpoint, messages, tools=None) -> tuple[str, list]:
 def learn(endpoint) -> dict:
     """``{model id: (context window, accepts images, effort levels)}`` as the
     app learns them from this server."""
-    from moka_code.harness import endpoint_discovery as discovery
-
     async def go():
         facts = {}
         for model in await endpoint.discover_models():
@@ -56,10 +56,10 @@ def learn(endpoint) -> dict:
                 context = model.context_window or await endpoint.query_context_window(model.id)
             except RuntimeError:
                 context = None
-            images = discovery.image_input_from_metadata(model.metadata)
+            images = image_input_from_metadata(model.metadata)
             if images is None:
-                images = await discovery.query_image_input(endpoint, model.id)
-            facts[model.id] = (context, images, discovery.efforts_from_metadata(model.metadata))
+                images = await endpoint.query_image_input(model.id)
+            facts[model.id] = (context, images, efforts_from_metadata(model.metadata))
         await endpoint.aclose()
         return facts
     return asyncio.run(go())

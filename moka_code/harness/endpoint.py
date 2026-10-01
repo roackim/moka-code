@@ -1,14 +1,13 @@
-"""LLM endpoints: one type for config and transport.
+"""LLM endpoints: the provider base class, the factory and the catalog.
 
 An :class:`Endpoint` is both the connection description (base_url, api_key,
-model, discovery/routing options) and the live client. Server-family
-differences are handled by small internal branches — llama.cpp / OpenAI
-compatible, Ollama's native chat API, OpenRouter provider routing — instead of
-an ABC plus one subclass per family.
+model) and the live client. Each server family is a subclass in
+``harness/providers/`` (contract: ``.wiki/notes/providers.md``); the registry
+there maps a ``type`` to its class, and nothing outside a provider branches on
+the type.
 
-The OpenAI-compatible chat transport is implemented directly on httpx (no SDK):
-moka fully owns the connection, DNS/IP, timeouts and retries, and exposes
-precise timing.
+Transports are implemented directly on httpx (no SDK): moka fully owns the
+connection, DNS/IP, timeouts and retries, and exposes precise timing.
 """
 from __future__ import annotations
 
@@ -16,7 +15,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict, Literal, Optional
+from typing import Any, AsyncGenerator, Dict, Optional
 from urllib.parse import urlsplit
 
 import httpx
@@ -33,9 +32,6 @@ from moka_code.harness.endpoint_local import (
 
 
 logger = logging.getLogger(__name__)
-
-
-ServerType = Literal["llamacpp", "ollama", "openrouter", "openai"]
 
 
 # ---------------------------------------------------------------------------
@@ -185,37 +181,43 @@ class ConnectionDiagnosis:
 class Endpoint:
     """A single LLM endpoint: connection config plus live transport.
 
-    Differences between server families live in the few methods that branch on
-    :attr:`type`; there is no subclass hierarchy.
+    The base of every provider class: per-server config and state, the
+    connection pool, the catalog readers. A provider sets the class
+    attributes below and implements the discovery and completion methods.
     """
+
+    # The ``type = "..."`` value in ``servers.toml``.
+    type: str = ""
+    # ``base_url`` when the table has none (llama.cpp only).
+    default_url: Optional[str] = None
+    # ``base_url`` is forbidden and this is the URL (OpenRouter only).
+    fixed_url: Optional[str] = None
+    # Server-table keys beyond the common ones, passed to the constructor.
+    extra_keys: frozenset[str] = frozenset()
+    # Loads one model and ignores the request's ``model`` (llama.cpp).
+    serves_one_model: bool = False
 
     def __init__(
         self,
         name: str,
-        type: ServerType = "llamacpp",
-        base_url: str = "http://localhost:8080/v1",
+        base_url: Optional[str] = None,
         api_key: str = "",
         model: Optional[str] = None,
         max_context: Optional[int] = None,
         timeout: float = 30.0,
         retry_attempts: int = 3,
         retry_delay: float = 2.0,
-        providers: Optional[list[str]] = None,
-        models: Optional[dict[str, dict[str, Any]]] = None,
     ):
+        base_url = self.fixed_url or base_url or self.default_url
+        if not base_url:
+            raise ValueError(f"{self.type} servers need a base_url")
         self.name = name
-        self.type: ServerType = type
         self.base_url = base_url
         self.api_key = api_key
         self.max_context = max_context
         self.timeout = timeout
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
-        # Per-model tables (OpenRouter: ``providers``, and the tables are the
-        # enabled models) and OpenRouter's default provider
-        # whitelist, in order.
-        self.providers = list(providers) if providers is not None else None
-        self.models = {model_id: dict(entry) for model_id, entry in (models or {}).items()}
         # The chosen reasoning effort (levels: ``effort_levels``), sent in this
         # server's own field.
         self.effort: Optional[str] = None
@@ -250,65 +252,11 @@ class Endpoint:
         # reload can tell whether the live endpoint is stale.
         self.source: Optional[tuple] = None
 
-    # -- construction --------------------------------------------------------
-
-    @classmethod
-    def from_dict(cls, name: str, data: dict[str, Any]) -> "Endpoint":
-        """Build an endpoint from a ``servers.toml`` ``[servers.<name>]`` table."""
-        api_key = data.get("api_key", "")
-        api_key_env = data.get("api_key_env")
-        if api_key_env:
-            api_key = os.getenv(api_key_env, api_key)
-        # Only llama.cpp has a default address (its own); the loader requires
-        # base_url for ollama/openai, and openrouter has a fixed one.
-        base_url = data.get("base_url", "http://localhost:8080/v1")
-        if data["type"] == "openrouter":
-            base_url = _discovery.OPENROUTER_BASE_URL
-        return cls(
-            name=name,
-            type=data["type"],
-            base_url=base_url,
-            api_key=api_key,
-            max_context=data.get("max_context"),
-            timeout=data.get("timeout", 30.0),
-            retry_attempts=data.get("retry_attempts", 3),
-            retry_delay=data.get("retry_delay", 2.0),
-            providers=data.get("providers"),
-            models=data.get("models"),
-        )
-
-    @property
-    def supports_model_selection(self) -> bool:
-        """Whether the endpoint honors a per-request ``model`` selection.
-
-        llama.cpp loads exactly one model and ignores the request's ``model``.
-        """
-        return self.type != "llamacpp"
-
     # -- model selection -----------------------------------------------------
 
     @property
     def selected_model(self) -> Optional[str]:
         return self._selected_model
-
-    def set_model(self, model_name: str) -> None:
-        """Select a model without replacing the endpoint connection."""
-        model_name = model_name.strip()
-        if not model_name:
-            raise ValueError("model name cannot be empty")
-        self._selected_model = model_name
-        self._model_resolved = True
-        self._cached_context_window = (catalog_entry(self.name, model_name).get("context_window")
-                                       or self._probed(model_name).get("context_window"))
-        if not self.supports_model_selection:
-            self._model_resolved = False
-            self._cached_context_window = None
-            self._connection_state = "unknown"
-            logger.warning(
-                "Endpoint '%s' serves a single model; the requested model '%s' "
-                "will be resolved to the served model.",
-                self.name, model_name,
-            )
 
     async def prewarm_model_name(self) -> None:
         """Probe the connection and cache model name/context in the background."""
@@ -327,7 +275,7 @@ class Endpoint:
             if not diagnosis.ok:
                 self._connection_state = "error"
                 return
-            if not self.supports_model_selection:
+            if self.serves_one_model:
                 try:
                     actual = await self.query_model_name()
                     if actual and actual != self._selected_model:
@@ -375,7 +323,7 @@ class Endpoint:
     def accepts_images(self) -> Optional[bool]:
         """Whether the current model reads images; ``None`` when unknown."""
         model_name = self._selected_model or ""
-        known = _discovery.image_input_from_metadata(self._catalog_metadata(model_name))
+        known = image_input_from_metadata(self._catalog_metadata(model_name))
         return known if known is not None else self._probed(model_name).get("image_input")
 
     async def probe_image_input(self) -> None:
@@ -384,32 +332,34 @@ class Endpoint:
         if not model_name or self.accepts_images() is not None:
             return
         try:
-            known = await _discovery.query_image_input(self, model_name)
+            known = await self.query_image_input(model_name)
         except Exception as e:
             logger.debug("image input probe failed: %s", e)
             return
         if known is not None:
             self._probed(model_name)["image_input"] = known
 
-    # -- model / context discovery (delegates to endpoint_discovery) ---------
+    # -- discovery (implemented by each provider) ----------------------------
 
     async def list_models(self) -> list[ModelInfo]:
         """List models exposed by this endpoint."""
-        return await _discovery.list_models(self)
+        raise NotImplementedError
 
     async def discover_models(self) -> list[ModelInfo]:
-        """Discover the models surfaced by this endpoint.
-
-        OpenRouter exposes thousands of models, so only explicitly-enabled ids
-        are surfaced. Ollama models are enriched with their context window.
-        """
-        return await _discovery.discover_models(self)
+        """The models this endpoint surfaces (default: every listed one)."""
+        return await self.list_models()
 
     async def query_model_name(self) -> str:
-        return await _discovery.query_model_name(self)
+        """The model id requests use, asked of the server if needed."""
+        raise NotImplementedError
 
     async def query_context_window(self, model_name: str) -> int:
-        return await _discovery.query_context_window(self, model_name)
+        """The model's context window as the server reports it."""
+        raise NotImplementedError
+
+    async def query_image_input(self, model_name: str) -> Optional[bool]:
+        """Ask the server whether *model_name* reads images; ``None`` when unknown."""
+        return None
 
     async def get_model_name(self) -> str:
         """Get the model name (cached or queried)."""
@@ -465,8 +415,6 @@ class Endpoint:
 
     async def check_connection(self) -> bool:
         """Check if the endpoint is reachable."""
-        if self.type == "ollama":
-            return await _ollama.check_connection(self)
         return (await self.diagnose_connection()).ok
 
     async def diagnose_connection(self) -> "ConnectionDiagnosis":
@@ -510,24 +458,36 @@ class Endpoint:
         tools: Optional[list[Dict[str, Any]]] = None,
         stream: bool = True,
     ) -> AsyncGenerator[Any, None]:
-        """Create a chat completion, streaming via SSE when ``stream`` is true.
+        """Create a chat completion through the provider's transport.
 
-        Ollama uses its native chat API so final usage counters are retained;
-        every other family uses the OpenAI-compatible transport. Chunks are
-        adapted to the SDK shape (``choices[0].delta`` / ``finish_reason`` /
-        ``usage``, and ``choices[0].message`` for non-streaming).
+        Chunks are adapted to the SDK shape (``choices[0].delta`` /
+        ``finish_reason`` / ``usage``, and ``choices[0].message`` for
+        non-streaming).
         """
         self._in_flight += 1
         try:
-            if self.type == "ollama":
-                async for chunk in self._create_ollama_completion(messages, tools, stream):
-                    yield chunk
-                return
-            async for chunk in _openai.create_completion(self, messages, tools, stream):
+            async for chunk in self._completion(messages, tools, stream):
                 yield chunk
         finally:
             self._in_flight -= 1
             await self._close_stale_clients()
+
+    def _completion(
+        self,
+        messages: list[Dict[str, Any]],
+        tools: Optional[list[Dict[str, Any]]],
+        stream: bool,
+    ) -> AsyncGenerator[Any, None]:
+        raise NotImplementedError
+
+    def effort_payload(self) -> dict[str, Any]:
+        """The chosen effort in this server's request field (``{}`` if none).
+
+        Always sent as chosen, never checked against the discovered levels:
+        a stale or incomplete catalog must not silently drop it. The server
+        decides (metallama rejects an unknown level with a 400).
+        """
+        raise NotImplementedError
 
     # -- connection pool lifecycle -------------------------------------------
 
@@ -563,85 +523,31 @@ class Endpoint:
             except Exception as e:
                 logger.debug("closing a retired client failed: %s", e)
 
-    async def _create_ollama_completion(
-        self,
-        messages: list[Dict[str, Any]],
-        tools: Optional[list[Dict[str, Any]]],
-        stream: bool,
-    ) -> AsyncGenerator[Any, None]:
-        async for chunk in _ollama.create_completion(self, messages, tools, stream):
-            yield chunk
-
-    def _native_base_url(self) -> str:
-        return _ollama.native_base_url(self)
-
-    @staticmethod
-    def _ollama_messages(messages: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
-        return _ollama.ollama_messages(messages)
-
-    @staticmethod
-    def _native_response(data: Dict[str, Any]) -> Any:
-        return _ollama.native_response(data)
-
-    async def _openrouter_context_window(self, model_name: str) -> int:
-        return await _discovery.openrouter_context_window(self, model_name)
-
-    # -- OpenRouter ----------------------------------------------------------
-
-    def _enabled_ids(self) -> list[str]:
-        """Return the explicitly-enabled model ids.
-
-        All OpenRouter models are disabled unless they have a
-        ``[models."<id>"]`` table.
-        """
-        return list(self.models)
-
-    def _model_entry(self, model_name: str) -> Optional[dict]:
-        """The ``[models."<id>"]`` table for a model.
-
-        A bare id (no ``vendor/`` prefix) matches its canonical id, since
-        discovery canonicalizes bare ids.
-        """
-        if model_name in self.models:
-            return self.models[model_name]
-        for model_id, entry in self.models.items():
-            if model_name.endswith("/" + model_id):
-                return entry
-        return None
-
     def _catalog_metadata(self, model_name: Optional[str]) -> dict:
         return catalog_entry(self.name, model_name).get("metadata") or {}
 
-    def effort_payload(self) -> dict[str, Any]:
-        """The chosen effort in this server's request field (``{}`` if none).
 
-        Always sent as chosen, never checked against the discovered levels:
-        a stale or incomplete catalog must not silently drop it. The server
-        decides (metallama rejects an unknown level with a 400).
-        """
-        if not self.effort:
-            return {}
-        if self.type == "openrouter":
-            return {"reasoning": {"effort": self.effort}}
-        if self.type == "ollama":
-            return {"think": False if self.effort == "none" else self.effort}
-        return {"reasoning_effort": self.effort}
+def make_endpoint(name: str, data: dict[str, Any]) -> Endpoint:
+    """Build an endpoint from a ``servers.toml`` ``[servers.<name>]`` table
+    (already validated by ``settings``), as an instance of its type's class."""
+    from moka_code.harness.providers import REGISTRY
 
-    def _provider_spec(self, model_name: str) -> Optional[dict]:
-        """Build the OpenRouter ``provider`` payload for a model.
-
-        ``providers`` is a strict whitelist tried in order: ``order`` alone lets
-        OpenRouter fall back to any other host, so fallbacks are disabled. A
-        model's own ``providers`` replaces the server default; an empty list
-        (or none at all) means OpenRouter's own routing (``None``).
-        """
-        entry = self._model_entry(model_name)
-        providers = self.providers
-        if entry is not None and "providers" in entry:
-            providers = entry["providers"]
-        if not providers:
-            return None
-        return {"order": list(providers), "allow_fallbacks": False}
+    cls = REGISTRY[data["type"]]
+    api_key = data.get("api_key", "")
+    api_key_env = data.get("api_key_env")
+    if api_key_env:
+        api_key = os.getenv(api_key_env, api_key)
+    extras = {key: data[key] for key in cls.extra_keys if key in data}
+    return cls(
+        name=name,
+        base_url=data.get("base_url"),
+        api_key=api_key,
+        max_context=data.get("max_context"),
+        timeout=data.get("timeout", 30.0),
+        retry_attempts=data.get("retry_attempts", 3),
+        retry_delay=data.get("retry_delay", 2.0),
+        **extras,
+    )
 
 
 def get_active_endpoint() -> Optional[Endpoint]:
@@ -665,7 +571,7 @@ def get_endpoint(name: str) -> Optional[Endpoint]:
     data = settings.config.servers.get(name)
     if data is None:
         return None
-    endpoint = Endpoint.from_dict(name, data)
+    endpoint = make_endpoint(name, data)
     selected = settings.config.get_model_for_server(name)
     if selected is not None:
         endpoint._selected_model = selected
@@ -693,11 +599,13 @@ def unserved_model(server: Optional[str], model_name: Optional[str]) -> Optional
     ``None`` (served, or nothing reliable to compare: never discovered, stale,
     or a llama.cpp server, which serves whatever it loaded)."""
     from moka_code import settings
+    from moka_code.harness.providers import REGISTRY
 
     listed = [m.get("id") for m in settings.config.models_by_server.get(server or "", [])]
     data = settings.config.servers.get(server or "") or {}
+    cls = REGISTRY.get(data.get("type"))
     if (not listed or not model_name or server in settings.config.stale_servers
-            or data.get("type") == "llamacpp"):
+            or (cls is not None and cls.serves_one_model)):
         return None
     for model_id in listed:
         if model_id in (model_name, f"{model_name}:latest") or model_id.endswith("/" + model_name):
@@ -746,11 +654,50 @@ async def refresh_catalog(names: Optional[list[str]] = None) -> None:
     await asyncio.gather(*(one(n) for n in (names or list(settings.config.servers))))
 
 
+# Reasoning effort words, weakest first (OpenAI / OpenRouter vocabulary). A
+# model id suffix ``:<word>`` marks an effort variant (``/effort`` switches
+# between sibling ids).
+EFFORT_WORDS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def efforts_from_metadata(metadata: dict) -> list[str]:
+    """Effort levels a model takes as a request parameter, from catalog
+    metadata: OpenRouter's ``reasoning.supported_efforts`` (exact levels),
+    else ``supported_parameters`` (levels guessed); Ollama's ``thinking``
+    capability (only gpt-oss takes levels, others just on/off)."""
+    supported = (metadata.get("reasoning") or {}).get("supported_efforts")
+    if isinstance(supported, list) and supported and all(isinstance(e, str) for e in supported):
+        rank = {w: i for i, w in enumerate(EFFORT_WORDS)}
+        return sorted(supported, key=lambda e: rank.get(e, len(rank)))
+    params = metadata.get("supported_parameters") or []
+    if "reasoning_effort" in params or "reasoning" in params:
+        return ["none", "low", "medium", "high"]
+    if "thinking" in (metadata.get("capabilities") or []):
+        name = str(metadata.get("model") or metadata.get("name") or "")
+        return ["none", "low", "medium", "high"] if "gpt-oss" in name else ["none"]
+    return []
+
+
+def image_input_from_metadata(metadata: dict) -> bool | None:
+    """Image support recorded in catalog metadata; ``None`` when absent.
+
+    OpenRouter lists ``architecture.input_modalities``; Ollama's ``/api/show``
+    lists ``capabilities`` (``"vision"``).
+    """
+    modalities = (metadata.get("architecture") or {}).get("input_modalities")
+    if isinstance(modalities, list):
+        return "image" in modalities
+    capabilities = metadata.get("capabilities")
+    if isinstance(capabilities, list):
+        return "vision" in capabilities
+    return None
+
+
 __all__ = [
     "Endpoint",
     "ModelInfo",
-    "ServerType",
     "ConnectionDiagnosis",
+    "make_endpoint",
     "get_active_endpoint",
     "get_endpoint",
     "_is_local_target",
@@ -762,11 +709,3 @@ __all__ = [
     "is_local_resolution_pending",
 ]
 
-
-# Imported after the definitions above: the transport/discovery modules import
-# ``ModelInfo`` from this module, so loading them at the top would be circular.
-from moka_code.harness import (  # noqa: E402
-    endpoint_discovery as _discovery,
-    endpoint_ollama as _ollama,
-    endpoint_openai as _openai,
-)

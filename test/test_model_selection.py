@@ -10,6 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from moka_code.harness.providers import LlamaCpp, Ollama, OpenRouter
+
 
 @pytest.fixture
 def cfg(monkeypatch, tmp_path):
@@ -60,10 +62,8 @@ def test_model_key_in_servers_toml_is_reported(tmp_path):
 
 
 def test_llamacpp_reconciles_requested_selection_with_served_model(cfg, monkeypatch):
-    from moka_code.harness.endpoint import Endpoint
-
-    endpoint = Endpoint(
-        name="local", type="llamacpp", base_url="http://localhost:8080/v1",
+    endpoint = LlamaCpp(
+        name="local", base_url="http://localhost:8080/v1",
         api_key="EMPTY", model="served-model",
     )
 
@@ -76,7 +76,7 @@ def test_llamacpp_reconciles_requested_selection_with_served_model(cfg, monkeypa
     monkeypatch.setattr(endpoint, "diagnose_connection", _fake_diagnose)
     monkeypatch.setattr(endpoint, "query_model_name", _fake_query_model_name)
 
-    endpoint.set_model("requested-but-ignored")
+    endpoint._selected_model = "requested-but-ignored"
     asyncio.run(endpoint.prewarm_model_name())
 
     assert endpoint.selected_model == "served-model"
@@ -117,9 +117,7 @@ def test_get_endpoint_seeds_context_window_from_catalog(cfg):
 
 def test_context_window_fallback_is_not_memoized():
     """A transient failure shows the fallback but a later probe can succeed."""
-    from moka_code.harness.endpoint import Endpoint
-
-    endpoint = Endpoint(name="o", type="ollama", base_url="http://o/v1", model="m")
+    endpoint = Ollama(name="o", base_url="http://o/v1", model="m")
     answers = [RuntimeError("down"), 65536]
 
     async def _query(_model):
@@ -134,9 +132,7 @@ def test_context_window_fallback_is_not_memoized():
 
 
 def test_model_name_fallback_is_not_memoized():
-    from moka_code.harness.endpoint import Endpoint
-
-    endpoint = Endpoint(name="o", type="ollama", base_url="http://o/v1")
+    endpoint = Ollama(name="o", base_url="http://o/v1")
     answers = [RuntimeError("down"), "llama3"]
 
     async def _query():
@@ -190,10 +186,8 @@ def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatc
 
 def test_openrouter_providers_are_a_strict_ordered_whitelist():
     """``order`` alone falls back to any host; fallbacks must be disabled."""
-    from moka_code.harness.endpoint import Endpoint
-
-    endpoint = Endpoint(
-        name="or", type="openrouter", providers=["deepseek"],
+    endpoint = OpenRouter(
+        name="or", providers=["deepseek"],
         models={
             "deepseek/deepseek-v4.1-flash": {"providers": ["deepseek", "fireworks"]},
             "anthropic/claude-sonnet-4": {},
@@ -207,14 +201,11 @@ def test_openrouter_providers_are_a_strict_ordered_whitelist():
         "order": ["deepseek"], "allow_fallbacks": False}
     # An explicit empty list means OpenRouter's own routing.
     assert endpoint._provider_spec("qwen/qwen3-coder") is None
-    assert Endpoint(name="or", type="openrouter")._provider_spec("any/model") is None
+    assert OpenRouter(name="or")._provider_spec("any/model") is None
 
 
 def test_openrouter_bare_model_table_matches_canonical_id():
-    from moka_code.harness.endpoint import Endpoint
-
-    endpoint = Endpoint(name="or", type="openrouter",
-                        models={"deepseek-v4.1-flash": {"providers": ["deepseek"]}})
+    endpoint = OpenRouter(name="or", models={"deepseek-v4.1-flash": {"providers": ["deepseek"]}})
     assert endpoint._provider_spec("deepseek/deepseek-v4.1-flash") == {
         "order": ["deepseek"], "allow_fallbacks": False}
     assert endpoint._enabled_ids() == ["deepseek-v4.1-flash"]

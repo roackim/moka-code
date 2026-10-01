@@ -5,12 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from moka_code.harness.endpoint import (
-    Endpoint,
     _local_cache,
     _resolve_local_hostname,
     invalidate_local_hostname,
     prewarm_local_resolution,
 )
+
+from moka_code.harness.providers import LlamaCpp
 
 
 @pytest.fixture(autouse=True)
@@ -22,9 +23,8 @@ def clear_cache():
 
 
 def make_server(base_url: str):
-    return Endpoint(
+    return LlamaCpp(
         name="test",
-        type="llamacpp",
         base_url=base_url,
         api_key="EMPTY",
         model=None,

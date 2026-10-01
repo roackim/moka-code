@@ -50,16 +50,18 @@ The harness yields events; the UI renders them. There is no separate chunk/statu
 The former unused `SubagentsWaiting`/`SubagentResult`/`SubagentsDone` events were removed.
 
 ### `endpoint.py`
-`Endpoint` — **one concrete type** holding connection config *and* the live
-transport (httpx client, caches, selected model, connection state). No ABC or
-subclasses; server-family differences are internal branches:
-- `llamacpp` — single model from `/models[0]`, context via `/props`, ignores per-request model
-- `ollama` — native `/api/tags`, `/api/show`, native `/api/chat` (usage counters)
-- `openrouter` — one `[models."<id>"]` table per enabled model; `providers` (server default, per-model override) is a strict ordered whitelist sent as `{"order": [...], "allow_fallbacks": false}` (`_provider_spec`); `providers = []` or none → OpenRouter's own routing
-- `openai` — configured model + known context-window table
-`Endpoint.from_dict(name, data)` reads a `[servers.<name>]` table and resolves
-`api_key_env` (`type` is required unless the table is named after one;
-`base_url` is required for ollama/openai; the loader skips a server otherwise).
+`Endpoint` — the **base class** of every provider: connection config *and* the
+live transport (httpx client, caches, selected model, connection state). Each
+server family is a subclass in `providers/` (below); nothing outside a provider
+branches on `type`. Class attributes: `type`, `default_url`, `fixed_url`,
+`extra_keys`, `serves_one_model`. Providers implement `list_models`,
+`discover_models`, `query_model_name`, `query_context_window`,
+`query_image_input`, `_completion` and `effort_payload`.
+`make_endpoint(name, data)` builds the registry class for a `[servers.<name>]`
+table and resolves `api_key_env` (`type` is required unless the table is named
+after one; `base_url` is required unless the class has a `default_url` or
+`fixed_url`; the loader skips a server otherwise). `EFFORT_WORDS`,
+`efforts_from_metadata` and `image_input_from_metadata` read catalog metadata.
 Also hosts `ModelInfo`, `ConnectionDiagnosis`, and `.local` hostname resolution
 helpers. Factories: `get_active_endpoint()` (= `get_endpoint(active_server)`,
 `None` when nothing is selected or the server is gone — there is no fallback
@@ -86,8 +88,8 @@ dropped whenever that server's catalog is refreshed. Model-name and
 context-window fallbacks are shown but not memoized; `type = "openai"` reads
 the server's `/models` `context_length` (no built-in table: set `max_context`
 for servers that report none, e.g. real OpenAI). `type = "openrouter"` always
-uses `endpoint_discovery.OPENROUTER_BASE_URL`; a `base_url` in its table is a
-load error (ignored).
+uses `OpenRouter.fixed_url`; a `base_url` in its table is a load error
+(ignored).
 `Harness.endpoint` is an `Endpoint`. See [notes/local-hostname-resolution.md](../notes/local-hostname-resolution.md).
 
 This one type replaced the former `LLMServerConfig` + `ServerService` +
@@ -95,11 +97,24 @@ This one type replaced the former `LLMServerConfig` + `ServerService` +
 `server_service.py` are deleted). The UI `commands/` package calls into
 `endpoint.py` and `settings` directly.
 
-Server-family code is split out and reached through thin `Endpoint` wrappers:
-- `endpoint_openai.py` — SSE transport/adapters
-- `endpoint_ollama.py` — native chat + context; outgoing message normalization
-- `endpoint_discovery.py` — `list_models` / `discover_models` / `query_*`
-- `endpoint_local.py` — `.local` mDNS resolution
+### `providers/`
+`REGISTRY` (`__init__.py`) maps `type` to class; `settings` validates server
+tables from it.
+- `openai_compatible.py` — `OpenAICompatible` (`type = "openai"`): `/models`,
+  SSE `/chat/completions` transport and adapters; `_extra_payload` hook
+- `llamacpp.py` — `LlamaCpp(OpenAICompatible)`: default URL, single served
+  model from `/models[0]` (`serves_one_model`), context and vision via `/props`
+- `openrouter.py` — `OpenRouter(OpenAICompatible)`: fixed URL; one
+  `[models."<id>"]` table per enabled model; `providers` (server default,
+  per-model override) is a strict ordered whitelist sent as
+  `{"order": [...], "allow_fallbacks": false}` (`_provider_spec`);
+  `providers = []` or none → OpenRouter's own routing;
+  `merge_reasoning_details`
+- `ollama.py` — `Ollama(Endpoint)`: delegates to `endpoint_ollama.py` (native
+  `/api/tags`, `/api/show`, `/api/chat` with usage counters; outgoing message
+  normalization)
+
+`endpoint_local.py` — `.local` mDNS resolution.
 
 ### `images.py`
 Image attachments on user messages. History stores a reference (`path`,
@@ -117,7 +132,7 @@ user entry carries it after the tool results.
 
 Image support per model: `Endpoint.accepts_images()` (True/False/None) from
 catalog metadata, else `_probed(model)["image_input"]` filled by
-`probe_image_input()` during prewarm (`endpoint_discovery.query_image_input`:
+`probe_image_input()` during prewarm (each provider's `query_image_input`:
 Ollama `/api/show` `capabilities`, llama.cpp `/props` `modalities.vision`,
 OpenRouter `/models/<id>/endpoints` `architecture.input_modalities`).
 

@@ -5,7 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from moka_code.harness import endpoint_ollama as native
 from moka_code.harness.endpoint import Endpoint
+from moka_code.harness.providers import Ollama
 
 
 def make_client() -> MagicMock:
@@ -16,9 +18,8 @@ def make_client() -> MagicMock:
 
 
 def make_server(base_url: str = "http://localhost:11434/v1") -> Endpoint:
-    return Endpoint(
+    return Ollama(
         name="ollama-test",
-        type="ollama",
         base_url=base_url,
         api_key="EMPTY",
         model=None,
@@ -28,8 +29,8 @@ def make_server(base_url: str = "http://localhost:11434/v1") -> Endpoint:
 
 
 def test_native_base_url_strips_v1_suffix():
-    assert make_server()._native_base_url() == "http://localhost:11434"
-    assert make_server("http://localhost:11434")._native_base_url() == "http://localhost:11434"
+    assert native.native_base_url(make_server()) == "http://localhost:11434"
+    assert native.native_base_url(make_server("http://localhost:11434")) == "http://localhost:11434"
 
 
 def test_list_models_parses_tags():
@@ -101,7 +102,7 @@ def test_query_context_window_parses_parameters():
 
 
 def test_native_response_adapts_content_and_usage():
-    chunk = Endpoint._native_response({
+    chunk = native.native_response({
         "message": {"role": "assistant", "content": "hello"},
         "done": True,
         "prompt_eval_count": 100,
@@ -113,7 +114,7 @@ def test_native_response_adapts_content_and_usage():
 
 
 def test_native_response_adapts_reasoning_and_tool_calls():
-    chunk = Endpoint._native_response({
+    chunk = native.native_response({
         "message": {
             "role": "assistant",
             "content": "call",
@@ -154,7 +155,7 @@ def test_ollama_messages_coerce_null_content_and_drop_null_tool_calls():
         {"role": "assistant", "content": "hi", "tool_calls": None},
     ]
 
-    normalized = Endpoint._ollama_messages(messages)
+    normalized = native.ollama_messages(messages)
 
     assert normalized[1]["content"] == ""
     assert normalized[1]["tool_calls"] == [{"id": "call_1"}]
@@ -202,7 +203,7 @@ def test_create_ollama_completion_sends_string_content(monkeypatch):
     async def run():
         return [
             chunk
-            async for chunk in server._create_ollama_completion(
+            async for chunk in server._completion(
                 [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_1"}]}],
                 None,
                 True,

@@ -290,7 +290,7 @@ _DEFAULT_EFFORT = "default"
 def _effort_variants(server: Optional[str], model_id: Optional[str]) -> dict:
     """``{level: model id}`` for the effort-variant siblings of ``model_id``
     (``X:low`` / ``X:high``) in the server's catalog; empty unless several."""
-    from moka_code.harness.endpoint_discovery import EFFORT_WORDS
+    from moka_code.harness.endpoint import EFFORT_WORDS
 
     base, sep, suffix = (model_id or "").rpartition(":")
     if not sep or suffix not in EFFORT_WORDS:
@@ -308,7 +308,7 @@ def _effort_choices(server: Optional[str], model: Optional[str]):
     detected from the catalog. No choices: the model has no effort switch.
     """
     from moka_code.harness.endpoint import catalog_entry
-    from moka_code.harness.endpoint_discovery import efforts_from_metadata
+    from moka_code.harness.endpoint import efforts_from_metadata
 
     variants = _effort_variants(server, model)
     if variants:

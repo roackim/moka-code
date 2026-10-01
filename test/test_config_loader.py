@@ -221,14 +221,14 @@ def test_openrouter_routing_keys_load(tmp_path):
 
 
 def test_openrouter_base_url_is_reported_and_never_used(tmp_path):
-    from moka_code.harness.endpoint import Endpoint
+    from moka_code.harness.endpoint import make_endpoint
 
     _write(tmp_path / "servers.toml", {"servers": {"or": {
         "type": "openrouter", "base_url": "http://localhost:8010/openrouter/v1"}}})
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
     assert any("[servers.or].base_url is not used" in e for e in config.load_errors)
-    endpoint = Endpoint.from_dict("or", config.servers["or"])      # still loaded
+    endpoint = make_endpoint("or", config.servers["or"])      # still loaded
     assert endpoint.base_url == "https://openrouter.ai/api/v1"
 
 

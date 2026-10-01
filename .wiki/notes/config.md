@@ -91,7 +91,7 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   their replacement and the server is skipped (`_RETIRED_SERVER_KEYS`).
   Effort levels are detected only (no config key): effort-variant ids (`X:low` / `X:high` on
   one server) make `/effort` switch models (`models._effort_variants`); else
-  catalog metadata (`endpoint_discovery.efforts_from_metadata`: OpenRouter-format
+  catalog metadata (`endpoint.efforts_from_metadata`: OpenRouter-format
   `reasoning.supported_efforts` (exact; any OpenAI-compatible server's `/models`
   may carry it), else `supported_parameters` (guessed), else Ollama `thinking`
   capability) gives the levels; `/effort` rediscovers the active server first.

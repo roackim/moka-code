@@ -1,4 +1,4 @@
-"""Ollama native chat transport for :class:`Endpoint`.
+"""Ollama native API for :class:`~moka_code.harness.providers.Ollama`.
 
 Ollama's native ``/api/chat`` API is used instead of the OpenAI-compatible
 shim so final usage counters are retained. Free functions take the endpoint.
@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, Optional
 
 import httpx
 
-from moka_code.harness.endpoint import ModelInfo
+from moka_code.harness.endpoint import ModelInfo, image_input_from_metadata
 
 if TYPE_CHECKING:
     from moka_code.harness.endpoint import Endpoint
@@ -173,3 +173,33 @@ async def context_window(endpoint: "Endpoint", model_name: str) -> int:
         if len(parts) >= 2 and parts[0] in {"num_ctx", "n_ctx"}:
             return int(parts[1])
     raise RuntimeError(f"Could not determine context window for Ollama model: {model_name}")
+
+
+async def discover_models(endpoint: "Endpoint") -> list[ModelInfo]:
+    """Discover Ollama models, enriching each with its context window."""
+    models = await list_models(endpoint)
+    enriched = []
+    for model in models:
+        try:
+            ctx = await context_window(endpoint, model.id)
+            enriched.append(ModelInfo(
+                id=model.id,
+                context_window=ctx,
+                owned_by=model.owned_by,
+                metadata=model.metadata,
+            ))
+        except Exception as e:
+            logger.debug("Could not enrich context for %s: %s", model.id, e)
+            enriched.append(model)
+    return enriched
+
+
+async def image_input(endpoint: "Endpoint", model_name: str) -> bool | None:
+    """Whether *model_name* reads images, from ``/api/show``."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{native_base_url(endpoint)}/api/show",
+            json={"name": model_name}, timeout=endpoint.timeout,
+        )
+        response.raise_for_status()
+        return image_input_from_metadata(response.json())

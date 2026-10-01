@@ -5,15 +5,16 @@ import pytest
 
 from moka_code.harness.endpoint import (
     ConnectionDiagnosis,
-    Endpoint,
     _is_local_target,
     _new_http_client,
 )
 
+from moka_code.harness.providers import LlamaCpp
+
 
 def make_config(base_url: str):
-    return Endpoint(
-        name="t", type="llamacpp", base_url=base_url, api_key="EMPTY",
+    return LlamaCpp(
+        name="t", base_url=base_url, api_key="EMPTY",
         model=None, max_context=None, timeout=1.0,
     )
 

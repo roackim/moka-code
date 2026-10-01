@@ -26,6 +26,8 @@ import toml
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
+from moka_code.harness.providers import REGISTRY
+
 # Default markdown element styles.
 # Each key is an element name; values are dicts with optional:
 #   fg (hex string), bg (hex string), bold (bool), reverse (bool)
@@ -435,7 +437,6 @@ _RETIRED_SERVER_KEYS = {
     "enabled_models": "one [servers.<name>.models.\"<id>\"] table per model",
     "model_providers": "'providers = [...]' inside [servers.<name>.models.\"<id>\"]",
 }
-_SERVER_TYPES = {"llamacpp", "ollama", "openrouter", "openai"}
 _SERVER_STR_KEYS = {"type", "base_url", "api_key", "api_key_env"}
 _SERVER_INT_KEYS = {"max_context", "retry_attempts"}
 _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
@@ -810,21 +811,23 @@ def _load_servers(config: Config, data: dict, filename: str,
             elif key not in _SERVER_KEYS:
                 errors.append(f"{where} unknown key '{key}'")
         # A table named after a type ([servers.ollama]) needs no type key.
-        server_type = server.get("type", name if name in _SERVER_TYPES else None)
+        server_type = server.get("type", name if name in REGISTRY else None)
         if server_type is None:
             errors.append(
-                f"{where}.type is required ({', '.join(sorted(_SERVER_TYPES))}), "
+                f"{where}.type is required ({', '.join(sorted(REGISTRY))}), "
                 "or name the table after its type; server skipped")
-        elif server_type not in _SERVER_TYPES:
+        elif server_type not in REGISTRY:
             errors.append(f"{where}.type unknown server type '{server_type}'; server skipped")
         # No guessed address: only llama.cpp has a default (its own port).
-        if server_type in ("ollama", "openai") and "base_url" not in server:
+        cls = REGISTRY.get(server_type)
+        if (cls is not None and not cls.fixed_url and not cls.default_url
+                and "base_url" not in server):
             errors.append(f"{where}.base_url is required for {server_type} servers; "
                           "server skipped")
             skip = True
-        if server_type == "openrouter" and "base_url" in server:
-            errors.append(f"{where}.base_url is not used: openrouter servers always use "
-                          "https://openrouter.ai/api/v1 (remove the line)")
+        if cls is not None and cls.fixed_url and "base_url" in server:
+            errors.append(f"{where}.base_url is not used: {server_type} servers always use "
+                          f"{cls.fixed_url} (remove the line)")
         for key in _SERVER_STR_KEYS:
             if key in server and not isinstance(server[key], str):
                 errors.append(f"{where}.{key} must be a string")
@@ -840,7 +843,7 @@ def _load_servers(config: Config, data: dict, filename: str,
         # The type selects the transport and whether a model selection is
         # honored; guessing one silently routed e.g. an Ollama server as
         # single-model llama.cpp, ignoring the selected model.
-        if server_type not in _SERVER_TYPES or skip:
+        if server_type not in REGISTRY or skip:
             continue
         config.servers[name] = {**server, "type": server_type}
 
@@ -852,8 +855,10 @@ def _is_str_list(value: Any) -> bool:
 def _validate_models(server: dict, server_type: Any, where: str,
                      errors: list[str]) -> None:
     """Check ``providers`` (OpenRouter only) and the ``[models."<id>"]`` tables."""
-    if "providers" in server and server_type != "openrouter":
-        errors.append(f"{where}.providers is only supported for openrouter servers")
+    routed = sorted(t for t, cls in REGISTRY.items() if "providers" in cls.extra_keys)
+    routes = server_type in routed
+    if "providers" in server and not routes:
+        errors.append(f"{where}.providers is only supported for {', '.join(routed)} servers")
     if "providers" in server and not _is_str_list(server["providers"]):
         errors.append(f"{where}.providers must be a list of provider slugs")
     models = server.get("models")
@@ -870,8 +875,8 @@ def _validate_models(server: dict, server_type: Any, where: str,
         for key in entry:
             if key != "providers":
                 errors.append(f"{at} unknown key '{key}'")
-            elif key == "providers" and server_type != "openrouter":
-                errors.append(f"{at}.providers is only supported for openrouter servers")
+            elif key == "providers" and not routes:
+                errors.append(f"{at}.providers is only supported for {', '.join(routed)} servers")
         if "providers" in entry and not _is_str_list(entry["providers"]):
             errors.append(f"{at}.providers must be a list of provider slugs")
 
