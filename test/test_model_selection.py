@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from moka_code.harness.providers import LlamaCpp, OpenAICompatible
+from moka_code.harness.providers import LlamaCpp
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def cfg(monkeypatch, tmp_path):
 
 def test_get_endpoint_applies_per_server_selection(cfg):
     cfg.config.servers["srv"] = {
-        "type": "openai-compatible",
+        "type": "llamacpp",
         "base_url": "http://localhost:8000/v1",
         "api_key": "EMPTY",
     }
@@ -43,7 +43,7 @@ def test_get_endpoint_without_selection_has_no_model(cfg):
     """Decided 2026-09-30: no ``model`` key in servers.toml; models come
     from discovery (OpenRouter: its model tables) and the selection."""
     cfg.config.servers["srv"] = {
-        "type": "openai-compatible",
+        "type": "llamacpp",
         "base_url": "http://localhost:8000/v1",
     }
 
@@ -78,7 +78,7 @@ def test_llamacpp_keeps_the_selected_model(cfg, monkeypatch):
 
 def test_active_endpoint_uses_only_its_own_server_selection(cfg):
     """A server with no selection must not inherit another server's model."""
-    cfg.config.servers["a"] = {"type": "openai-compatible", "base_url": "http://a/v1"}
+    cfg.config.servers["a"] = {"type": "llamacpp", "base_url": "http://a/v1"}
     cfg.config.servers["b"] = {"type": "openrouter", "base_url": "http://b/v1"}
     cfg.config.model_selection["b"] = "vendor/model-b"
     cfg.config.active_server = "a"
@@ -101,14 +101,30 @@ def test_context_window_comes_from_the_catalog(cfg):
 
 
 def test_unknown_context_window_is_never_invented(cfg):
-    """§9.2 / ISSUES P4 (2026-10-01): no probe, no 32768. ``max_context``
-    from the server table is the user's own fallback."""
-    endpoint = OpenAICompatible(name="o", base_url="http://o/v1", model="m")
+    """§9.2 / ISSUES P4 (2026-10-01): no probe, no 32768, no ``max_context``:
+    only what the server's listing states (2a: its absence is a notice)."""
+    endpoint = LlamaCpp(name="o", base_url="http://o/v1", model="m")
     assert endpoint.context_window() is None
-    endpoint.max_context = 65536
-    assert endpoint.context_window() == 65536
     cfg.config.models_by_server["o"] = [{"id": "m", "context_window": 131072}]
     assert endpoint.context_window() == 131072
+
+
+def test_missing_context_window_is_an_error_notice(cfg):
+    """2a (2026-10-01): a listed model whose server states no context window
+    is flagged; a stale listing or an unlisted model is not this notice."""
+    from types import SimpleNamespace
+    from moka_code.ui.status_presenter import notices
+
+    cfg.config.servers["o"] = {"type": "llamacpp", "base_url": "http://o/v1"}
+    endpoint = LlamaCpp(name="o", base_url="http://o/v1", model="m")
+    agent = SimpleNamespace(endpoint=endpoint, role=None)
+    cfg.config.models_by_server["o"] = [{"id": "m", "context_window": None}]
+    assert any("states no context window for m" in t for _, t in notices(agent))
+    cfg.config.models_by_server["o"] = [{"id": "m", "context_window": 8192}]
+    assert not any("context window" in t for _, t in notices(agent))
+    cfg.config.models_by_server["o"] = [{"id": "m", "context_window": None}]
+    cfg.config.stale_servers.add("o")
+    assert not any("context window" in t for _, t in notices(agent))
 
 
 class _ReloadAgent:
@@ -137,13 +153,13 @@ def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatc
         return None
 
     monkeypatch.setattr(Endpoint, "prewarm_connection", _no_probe)
-    cfg.config.servers["a"] = {"type": "openai-compatible", "base_url": "http://old/v1"}
+    cfg.config.servers["a"] = {"type": "llamacpp", "base_url": "http://old/v1"}
     agent = _ReloadAgent(get_active_endpoint())
 
     _reapply(agent)
     assert agent.switched == []  # unchanged config keeps the live endpoint
 
-    cfg.config.servers["a"] = {"type": "openai-compatible", "base_url": "http://new/v1"}
+    cfg.config.servers["a"] = {"type": "llamacpp", "base_url": "http://new/v1"}
     _reapply(agent)
     assert len(agent.switched) == 1
     assert agent.endpoint.base_url == "http://new/v1"

@@ -188,7 +188,6 @@ def test_refresh_theme_recolors_status_server_model(monkeypatch):
         model="qwen",
         selected_model="qwen",
         _connection_state="ok",
-        max_context=32768,
         _original_base_url="http://localhost:8080/v1",
     )
     agent = SimpleNamespace(endpoint=endpoint, _last_usage=None, role=None,

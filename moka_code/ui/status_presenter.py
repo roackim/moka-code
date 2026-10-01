@@ -75,7 +75,7 @@ def notices(agent) -> list[tuple[str, str]]:
     its cause is fixed. Setup problems (config and role files) are the
     banner's (``app.setup_notes``), not these.
     """
-    from moka_code.harness.endpoint import unserved_model
+    from moka_code.harness.endpoint import catalog_entry, unserved_model
 
     endpoint = getattr(agent, "endpoint", None)
     name = getattr(endpoint, "name", "")
@@ -102,6 +102,11 @@ def notices(agent) -> list[tuple[str, str]]:
             errors.append(f"{name} lists no models → /config servers")
         elif unserved_model(name, getattr(endpoint, "selected_model", None)) is not None:
             errors.append(f"{endpoint.selected_model} is no longer served by {name} → /model")
+        elif (name not in settings.config.stale_servers and endpoint.selected_model
+              and catalog_entry(name, endpoint.selected_model)
+              and endpoint.context_window() is None):
+            errors.append(f"{name} states no context window for {endpoint.selected_model} "
+                          "→ server broken, or moka reads the wrong route")
     sandbox_required = getattr(agent, "sandbox_required", None)
     if callable(sandbox_required) and sandbox_required():
         role = getattr(getattr(agent, "role", None), "name", "this role")

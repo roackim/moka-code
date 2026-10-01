@@ -58,8 +58,8 @@ def test_wheel_moves_the_selection_and_other_mouse_events_are_trapped():
 @pytest.fixture
 def two_servers(monkeypatch):
     monkeypatch.setattr(settings.config, "servers", {
-        "zeta": {"type": "openai-compatible", "base_url": "http://z/v1"},
-        "alpha": {"type": "openai-compatible", "base_url": "http://a/v1"}})
+        "zeta": {"type": "llamacpp", "base_url": "http://z/v1"},
+        "alpha": {"type": "llamacpp", "base_url": "http://a/v1"}})
     monkeypatch.setattr(settings.config, "models_by_server", {
         "zeta": [{"id": "a-model"}], "alpha": [{"id": "z-model"}, {"id": "b-model"}]})
     monkeypatch.setattr(settings.config, "stale_servers", set())

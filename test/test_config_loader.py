@@ -123,19 +123,22 @@ def test_state_is_written_separately_from_intent(tmp_path):
 
 def test_type_is_always_written(tmp_path):
     """§2.1 (2026-10-01): no type from the table name, never guessed; the old
-    ``openai`` type names its replacement. Both servers are skipped."""
+    ``openai`` and ``openai-compatible`` types are no longer supported. Those
+    servers are skipped."""
     _write(tmp_path / "servers.toml", {
         "servers": {
             "openrouter": {"api_key_env": "K"},
             "old": {"type": "openai", "base_url": "http://localhost:8000/v1"},
-            "ok": {"type": "openai-compatible", "base_url": "http://localhost:8000/v1"},
+            "gone": {"type": "openai-compatible", "base_url": "http://localhost:8000/v1"},
+            "ok": {"type": "llamacpp", "base_url": "http://localhost:8000/v1"},
         },
     })
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
     joined = "\n".join(config.load_errors)
     assert "[servers.openrouter].type is required" in joined
-    assert "[servers.old].type 'openai' was renamed 'openai-compatible'; server skipped" in joined
+    assert "[servers.old].type 'openai' is no longer supported" in joined
+    assert "[servers.gone].type 'openai-compatible' is no longer supported" in joined
     assert set(config.servers) == {"ok"}
 
 

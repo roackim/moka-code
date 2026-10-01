@@ -15,7 +15,7 @@ from moka_code.harness.providers import LlamaCpp
 def make_config(base_url: str):
     return LlamaCpp(
         name="t", base_url=base_url, api_key="EMPTY",
-        model=None, max_context=None, timeout=1.0,
+        model=None, timeout=1.0,
     )
 
 

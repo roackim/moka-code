@@ -64,7 +64,7 @@ class OpenRouter(OpenAICompatible):
             return []
         catalog = await self._catalog()
         if catalog is None:
-            return [ModelInfo(id=e) for e in enabled]
+            raise RuntimeError("OpenRouter's catalog did not answer")
         by_id = {m.get("id"): m for m in catalog}
 
         def _match(eid: str) -> dict:

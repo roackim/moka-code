@@ -4,11 +4,11 @@ import asyncio
 
 from moka_code import settings
 from moka_code.harness import endpoint as endpoint_mod
-from moka_code.harness.providers import OpenAICompatible
+from moka_code.harness.providers import LlamaCpp
 
 
 def _endpoint():
-    return OpenAICompatible(name="s", base_url="http://s/v1", model="m")
+    return LlamaCpp(name="s", base_url="http://s/v1", model="m")
 
 
 def test_retired_idle_endpoint_closes_its_client():
@@ -31,7 +31,7 @@ def test_retired_endpoint_waits_for_the_reply_in_flight(monkeypatch):
         async def fake_stream(self, messages, tools):
             await gate.wait()
             yield "chunk"
-        monkeypatch.setattr(OpenAICompatible, "_stream", fake_stream)
+        monkeypatch.setattr(LlamaCpp, "_stream", fake_stream)
 
         endpoint = _endpoint()
         client = endpoint.client
@@ -52,7 +52,7 @@ def test_retired_endpoint_waits_for_the_reply_in_flight(monkeypatch):
 
 
 def test_refresh_catalog_closes_its_throwaway_endpoints(monkeypatch):
-    monkeypatch.setattr(settings.config, "servers", {"s": {"type": "openai-compatible", "base_url": "http://h/v1"}})
+    monkeypatch.setattr(settings.config, "servers", {"s": {"type": "llamacpp", "base_url": "http://h/v1"}})
     monkeypatch.setattr(settings.config, "models_by_server", {})
     built = []
     real_get = endpoint_mod.get_endpoint
@@ -65,6 +65,6 @@ def test_refresh_catalog_closes_its_throwaway_endpoints(monkeypatch):
     async def discover(self):
         return []
     monkeypatch.setattr(endpoint_mod, "get_endpoint", tracking_get)
-    monkeypatch.setattr(OpenAICompatible, "list_models", discover)
+    monkeypatch.setattr(LlamaCpp, "list_models", discover)
     asyncio.run(endpoint_mod.refresh_catalog(["s"]))
     assert built and all(e.client.is_closed for e in built)

@@ -1,6 +1,7 @@
-"""``type = "openai-compatible"``: ``/chat/completions``, ``/models``, SSE.
+"""The shared chat-completions code: ``/chat/completions``, ``/models``, SSE.
 
-OpenAI itself, vLLM, LM Studio, a proxy; the base of llama.cpp and OpenRouter.
+Not a ``type``: the base of the providers that speak this API (llama.cpp,
+OpenRouter), each with its own documented routes and fields.
 Implemented directly on httpx (no SDK). Streamed ``chat.completions`` objects
 become :class:`~moka_code.harness.endpoint.Chunk` objects.
 """
@@ -133,16 +134,7 @@ async def iter_sse_objects(response: httpx.Response):
 
 
 class OpenAICompatible(Endpoint):
-    """A server speaking the OpenAI chat-completions API."""
-
-    type = "openai-compatible"
-    template = """\
-## OpenAI-compatible (OpenAI, vLLM, LM Studio, a proxy) ------------------
-# [servers.openai]
-# type = "openai-compatible"
-# base_url = "https://api.openai.com/v1"
-# api_key_env = "OPENAI_API_KEY"
-"""
+    """Abstract base: a provider speaking the OpenAI chat-completions API."""
 
     async def list_models(self) -> list[ModelInfo]:
         """``/models``, with the facts each entry states."""

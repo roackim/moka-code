@@ -12,7 +12,7 @@ from moka_code.ui.app import chatTUI
 
 from conftest import StubAgent
 
-from moka_code.harness.providers import OpenAICompatible
+from moka_code.harness.providers import LlamaCpp
 
 
 @pytest.fixture(autouse=True)
@@ -85,7 +85,7 @@ def _ui(tmp_path, history=None, resume=False):
     agent.workspace = str(tmp_path)
     agent.history = list(history or [])
     agent.role = SimpleNamespace(name="agent")
-    agent.endpoint = OpenAICompatible(name="t", base_url="http://t/v1", model="m1")
+    agent.endpoint = LlamaCpp(name="t", base_url="http://t/v1", model="m1")
     return chatTUI(agent, resume=resume)
 
 

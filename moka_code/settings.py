@@ -211,8 +211,7 @@ DEFAULT_SERVERS_TOML = """\
 ##
 ## Every table sets type = """ + " | ".join(f'"{t}"' for t in REGISTRY) + """.
 ## Any server: api_key = "..." or api_key_env = "VAR" (no line: no key).
-## Advanced, any server: max_context (used when the server reports no context
-## window), timeout = 30.0, retry_attempts = 3, retry_delay = 2.0.
+## Advanced, any server: timeout = 30.0, retry_attempts = 3, retry_delay = 2.0.
 
 """ + "\n".join(cls.template for cls in REGISTRY.values())
 
@@ -395,19 +394,20 @@ _STYLE_SECTIONS = {"markdown_styles", "syntax_highlight"}
 
 # Keys every server table may have; a provider adds its ``extra_keys``.
 _SERVER_KEYS = {
-    "type", "base_url", "api_key", "api_key_env", "max_context",
+    "type", "base_url", "api_key", "api_key_env",
     "timeout", "retry_attempts", "retry_delay",
 }
-# Retired keys and types -> what replaces them. A server still using one is
+# Retired keys -> what replaces them (retired types: no replacement). A server still using one is
 # reported and skipped (servers.toml is never rewritten by moka).
 _RETIRED_SERVER_KEYS = {
+    "max_context": "nothing (the context window comes from the server)",
     "provider": "'providers = [...]' (only these, in order)",
     "enabled_models": "'models = [...]'",
     "model_providers": "[servers.<name>.providers_by_model]",
 }
-_RETIRED_SERVER_TYPES = {"openai": "openai-compatible"}
+_RETIRED_SERVER_TYPES = {"openai", "openai-compatible"}
 _SERVER_STR_KEYS = {"type", "base_url", "api_key", "api_key_env"}
-_SERVER_INT_KEYS = {"max_context", "retry_attempts"}
+_SERVER_INT_KEYS = {"retry_attempts"}
 _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
 
 # ``active_model`` (the model is per server, ``last_model``) and
@@ -780,8 +780,8 @@ def _load_servers(config: Config, data: dict, filename: str,
         if server_type is None:
             errors.append(f"{where}.type is required ({', '.join(REGISTRY)}); server skipped")
         elif server_type in _RETIRED_SERVER_TYPES:
-            errors.append(f"{where}.type '{server_type}' was renamed "
-                          f"'{_RETIRED_SERVER_TYPES[server_type]}'; server skipped")
+            errors.append(f"{where}.type '{server_type}' is no longer supported "
+                          f"({', '.join(REGISTRY)}); server skipped")
         elif cls is None:
             errors.append(f"{where}.type unknown server type '{server_type}'; server skipped")
         for key in server:

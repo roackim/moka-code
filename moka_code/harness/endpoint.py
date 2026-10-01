@@ -222,7 +222,6 @@ class Endpoint:
         base_url: Optional[str] = None,
         api_key: str = "",
         model: Optional[str] = None,
-        max_context: Optional[int] = None,
         timeout: float = 30.0,
         retry_attempts: int = 3,
         retry_delay: float = 2.0,
@@ -233,7 +232,6 @@ class Endpoint:
         self.name = name
         self.base_url = base_url
         self.api_key = api_key
-        self.max_context = max_context
         self.timeout = timeout
         self.retry_attempts = retry_attempts
         self.retry_delay = retry_delay
@@ -282,12 +280,10 @@ class Endpoint:
     # -- catalog facts -------------------------------------------------------
 
     def context_window(self) -> Optional[int]:
-        """The current model's context window: the live catalog's, else the
-        server table's ``max_context``; ``None`` when neither says."""
+        """The current model's context window, as the live catalog states it;
+        ``None`` when the server stated none (reported as an error)."""
         ctx = catalog_entry(self.name, self._selected_model).get("context_window")
-        if isinstance(ctx, int) and ctx > 0:
-            return ctx
-        return self.max_context or None
+        return ctx if isinstance(ctx, int) and ctx > 0 else None
 
     def accepts_images(self) -> Optional[bool]:
         """Whether the current model reads images; ``None`` when unknown."""
@@ -459,7 +455,6 @@ def make_endpoint(name: str, data: dict[str, Any]) -> Endpoint:
         name=name,
         base_url=data.get("base_url"),
         api_key=api_key,
-        max_context=data.get("max_context"),
         timeout=data.get("timeout", 30.0),
         retry_attempts=data.get("retry_attempts", 3),
         retry_delay=data.get("retry_delay", 2.0),

@@ -122,7 +122,7 @@ Done before the sub-steps: the tag parser removed from the stream and from
 import ✅ (2026-10-01); replay rules checked against the docs of OpenRouter,
 llama.cpp and DeepSeek ✅ (2026-10-01, see Decisions).
 
-### 2a. Provider and config
+### 2a. Provider and config ✅ (2026-10-01)
 
 1. `OpenAICompatible` made abstract; the `openai-compatible` type deleted
    (registry, template, docs, tests).

@@ -78,8 +78,8 @@ into the endpoint; `refresh_catalog(names)` rediscovers servers in parallel
 this session's last successful discovery, flagged in `Config.stale_servers`
 (`/model` shows `unreachable`), until a refresh succeeds; only the latest-started
 refresh per server applies its result (`_refresh_generation`). The status bar
-reads `Endpoint.context_window()` (catalog, else `max_context`, else unknown:
-only the tokens used are shown). It runs at
+reads `Endpoint.context_window()` (the catalog's; a selected model whose
+listing states none is an error notice). It runs at
 startup (active server first), on `/reload` and `/config servers`
 (`reapply_endpoint(rediscover=True)`; theme/role/other edits do not), on
 `/model`, and on `/effort` (active server). The UI's notice band
@@ -88,9 +88,9 @@ listing shows (`unserved_model`). The selected model is one field,
 `_selected_model`, sent as selected on every server; with none, `stream`
 raises "No model selected" (never a guessed id). `prewarm_connection()`
 checks the connection in the background (`_connection_state`). The endpoint
-caches no model facts and probes nothing of its own; `type = "openai-compatible"` reads the server's `/models` `context_length` (no
-built-in table: set `max_context` for servers that report none, e.g. real
-OpenAI). `type = "openrouter"` always
+caches no model facts and probes nothing of its own; `OpenAICompatible` is the abstract shared chat-completions code (no `type`);
+the registered types are `llamacpp` and `openrouter`. No built-in context
+table and no `max_context`. `type = "openrouter"` always
 uses `OpenRouter.fixed_url`; a `base_url` in its table is a load error
 (ignored).
 `Harness.endpoint` is an `Endpoint`. See [notes/local-hostname-resolution.md](../notes/local-hostname-resolution.md).
@@ -103,7 +103,7 @@ This one type replaced the former `LLMServerConfig` + `ServerService` +
 ### `providers/`
 `REGISTRY` (`__init__.py`) maps `type` to class; `settings` validates server
 tables from it.
-- `openai_compatible.py` — `OpenAICompatible` (`type = "openai-compatible"`): `/models`,
+- `openai_compatible.py` — `OpenAICompatible` (abstract, no `type`): `/models`,
   SSE `/chat/completions` → `Chunk`s; `parse_usage`; `_extra_payload` hook;
   `stated_efforts` (`reasoning.supported_efforts`, weakest first by
   `EFFORT_WORDS`) and `stated_images` (`architecture.input_modalities`)

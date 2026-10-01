@@ -28,7 +28,6 @@ def make_server(base_url: str):
         base_url=base_url,
         api_key="EMPTY",
         model=None,
-        max_context=None,
         timeout=1.0,
         retry_attempts=1,
         retry_delay=0.0,

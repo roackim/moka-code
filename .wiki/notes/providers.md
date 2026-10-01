@@ -1,11 +1,11 @@
 # Provider contract
 
-> **Status:** built (`PLAN.md` step 1, done 2026-10-01). This page describes
-> what exists; `replay` (§3) is step 2 and not built yet.
+> **Status:** built (`PLAN.md` step 1 and 2a, done 2026-10-01). This page
+> describes what exists; `replay` (§3) is step 2b and not built yet.
 
-A *provider* is a server family moka can talk to: llama.cpp, OpenRouter,
-OpenAI and OpenAI-compatible servers (Ollama was removed on 2026-10-01,
-§9.11). Their differences used to be about two dozen `type == ...` branches
+A *provider* is a server family moka can talk to: llama.cpp and OpenRouter
+(Ollama was removed on 2026-10-01, §9.11; the catch-all `openai-compatible`
+type on 2026-10-01, §9.12). Their differences used to be about two dozen `type == ...` branches
 spread over `endpoint.py`, `endpoint_discovery.py`, `endpoint_openai.py`,
 `settings.py` and `unserved_model`. This page defines the one seam that
 replaced them, and what each side promises the other.
@@ -22,15 +22,13 @@ the contract and the per-server state; a registry maps `type` to class.
 
 ```
 Endpoint                      contract + per-server config and state
-├─ OpenAICompatible           type "openai-compatible": /chat/completions,
-│  │                          /models, SSE (OpenAI itself, vLLM, LM Studio,
-│  │                          your own proxy)
+├─ OpenAICompatible           abstract, no type: shared /chat/completions,
+│  │                          /models, SSE code
 │  ├─ LlamaCpp                type "llamacpp": adds /props, default URL
    └─ OpenRouter              type "openrouter": fixed URL, model whitelist,
                               provider routing
 
-REGISTRY = {"openai-compatible": OpenAICompatible, "llamacpp": LlamaCpp,
-            "openrouter": OpenRouter}
+REGISTRY = {"llamacpp": LlamaCpp, "openrouter": OpenRouter}
 ```
 
 - No `if type == ...` outside the registry lookup. The harness, the UI and
@@ -60,12 +58,11 @@ Declarative, read by config validation and by the template generator.
 optional; neither → required.
 
 Common keys (all providers): `type`, `base_url` (per the rule above),
-`api_key` or `api_key_env`, and the advanced `max_context`, `timeout`,
-`retry_attempts`, `retry_delay`.
+`api_key` or `api_key_env`, and the advanced `timeout`, `retry_attempts`,
+`retry_delay`.
 
 | Provider | `base_url` | `extra_keys` |
 |---|---|---|
-| `openai-compatible` | required | — |
 | `llamacpp` | optional, default `http://localhost:8080/v1` | — |
 | `openrouter` | forbidden, fixed `https://openrouter.ai/api/v1` | `models`, `providers`, `providers_by_model` |
 
@@ -89,8 +86,8 @@ providers = ["deepseek"]                      # default routing: only these, in 
 "deepseek/deepseek-v4.1-flash" = ["deepseek", "parasail", "krea", "novita"]
 
 [servers.local]
-type = "openai-compatible"
-base_url = "http://localhost:8010/openai/v1"
+type = "llamacpp"
+base_url = "http://localhost:8080/v1"
 ```
 
 - **`type` is always written**, in every table. The "table named after its
@@ -107,8 +104,9 @@ base_url = "http://localhost:8010/openai/v1"
   showing only what a server needs. The advanced keys are listed once in the
   header, not under every provider.
 - **Old shapes are reported, never aliased:** a per-model `models` table, a
-  `type` named `openai` (renamed `openai-compatible`), or a missing `type`
-  gives a load error with the replacement, and that server is skipped (the
+  `type` named `openai` or `openai-compatible` (no longer supported), a
+  `max_context` key, or a missing `type` gives a load error, and that server
+  is skipped (the
   mechanism of `_RETIRED_SERVER_KEYS`). moka never rewrites `servers.toml`.
 - **A `providers_by_model` id not in `models`** is reported (entry not used);
   the server still loads (decided 2026-10-01).
@@ -126,7 +124,8 @@ to the `models` tables).
 
 ```
 ModelInfo: id, context_window, images, efforts, owned_by, raw
-  context_window  int | None      None = the server did not say
+  context_window  int | None      None = the server did not say: an error
+                                  notice for the selected model (§9.12)
   images          bool | None     None = unknown (never treated as "no")
   efforts         list[str]       effort levels the model takes; [] = none known
   raw             dict            the server's entry, read only by its provider
@@ -176,7 +175,7 @@ Pure mapping of the instance's chosen `effort` to this server's request field.
 
 | Provider | Field |
 |---|---|
-| `llamacpp`, `openai-compatible` | `{"reasoning_effort": level}` |
+| `llamacpp` | `{"reasoning_effort": level}` |
 | `openrouter` | `{"reasoning": {"effort": level}}` |
 
 `None` (the "default" choice) → `{}`. A chosen level is **always** sent, never
@@ -203,20 +202,20 @@ returns only whether it succeeded.
 
 Slot labels are row ids only (gaps in the numbering are historical).
 
-| Slot | `llamacpp` | `openai-compatible` | `openrouter` |
-|---|---|---|---|
-| S2 list | `/models` + `/props` | `/models` | openrouter.ai `/models` ∩ the `models` list |
-| S4 context | `/props` `n_ctx`, else `/models` `context_length` | `/models` `context_length` | catalog `context_length` |
-| S5 images | `/props` `modalities.vision` | `architecture.input_modalities`, else unknown | `architecture.input_modalities` |
-| S6 efforts | `reasoning.supported_efforts` if the server advertises it, else none known | same | `reasoning.supported_efforts` only |
-| S7 field | `reasoning_effort` | `reasoning_effort` | `reasoning.effort` |
-| S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same | same, plus `reasoning_details` assembled into `reasoning_native` |
-| S9 reasoning in | none (step 2) | none | none |
-| S11 usage | `include_usage`; cache from `timings.cache_n` | `include_usage` | `include_usage`, `cost` |
-| S13 extras | — | — | `providers` / `providers_by_model` routing, `allow_fallbacks: false` |
+| Slot | `llamacpp` | `openrouter` |
+|---|---|---|
+| S2 list | `/models` + `/props` | openrouter.ai `/models` ∩ the `models` list (catalog unreachable: the listing fails, last good one kept) |
+| S4 context | `/props` `n_ctx`, else `/models` `context_length` | catalog `context_length` |
+| S5 images | `/props` `modalities.vision` | `architecture.input_modalities` |
+| S6 efforts | `reasoning.supported_efforts` if the server advertises it, else none known | `reasoning.supported_efforts` only |
+| S7 field | `reasoning_effort` | `reasoning.effort` |
+| S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same, plus `reasoning_details` assembled into `reasoning_native` |
+| S9 reasoning in | none (step 2b) | none |
+| S11 usage | `include_usage`; cache from `timings.cache_n` | `include_usage`, `cost` |
+| S13 extras | — | `providers` / `providers_by_model` routing, `allow_fallbacks: false` |
 
-`max_context` (server table) stays the user's fallback when a server reports
-no window. llama.cpp router mode lists several models on `/models`, each with
+The context window is required (no `max_context`): a selected model whose
+listing states none is an error notice. llama.cpp router mode lists several models on `/models`, each with
 a `status` and `architecture.input_modalities`; whether `/props` answers per
 model there is unverified (⚠), so a missing `/props` answer means unknown
 context and images, never a failure.
@@ -351,6 +350,15 @@ Everything else is identical.
     read 2026-10-01), but its `/v1/models` states no context window, image
     support or effort levels. With it, the effort-variant switch (`X:low` /
     `X:high` sibling ids, `models._effort_variants`) is deleted.
+
+12. **`openai-compatible` and `max_context` removed** (2026-10-01, `PLAN.md`
+    2a): `OpenAICompatible` is abstract shared code, not a `type`; a server
+    without its own provider class is not supported, and `type =
+    "openai-compatible"` is reported and the server skipped. The context window
+    comes only from the server: a selected model whose listing states none is
+    an error notice ("server broken, or moka reads the wrong route"), and
+    `max_context` is a load error. OpenRouter's catalog being unreachable is a
+    failed listing (stale), not a list of models without facts.
 
 ---
 

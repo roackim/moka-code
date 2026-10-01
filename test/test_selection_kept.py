@@ -14,14 +14,14 @@ from moka_code import settings
 from moka_code.ui.commands.base import auto_select
 from moka_code.ui.status_presenter import notices, refresh_status_bar
 from moka_code.ui.tui.colors import theme
-from moka_code.harness.providers import OpenAICompatible
+from moka_code.harness.providers import LlamaCpp
 
 
 @pytest.fixture
 def cfg(monkeypatch):
     monkeypatch.setattr(settings.config, "servers", {
-        "a": {"type": "openai-compatible", "base_url": "http://a/v1"},
-        "b": {"type": "openai-compatible", "base_url": "http://b/v1"},
+        "a": {"type": "llamacpp", "base_url": "http://a/v1"},
+        "b": {"type": "llamacpp", "base_url": "http://b/v1"},
     })
     monkeypatch.setattr(settings.config, "models_by_server", {})
     monkeypatch.setattr(settings.config, "stale_servers", set())
@@ -80,7 +80,7 @@ def test_last_used_is_never_replaced(cfg):
 
 
 def _endpoint(name, model):
-    endpoint = OpenAICompatible(name=name, base_url=f"http://{name}/v1", model=model)
+    endpoint = LlamaCpp(name=name, base_url=f"http://{name}/v1", model=model)
     endpoint._connection_state = "ok"
     return endpoint
 

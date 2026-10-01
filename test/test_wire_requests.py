@@ -72,7 +72,6 @@ TOOLS = [{"type": "function", "function": {
     "name": "read", "description": "d", "parameters": {"type": "object", "properties": {}}}}]
 SIMPLE = HISTORY[:2]
 
-COMPAT = {"type": "openai-compatible", "base_url": "http://h/v1"}
 LLAMACPP = {"type": "llamacpp", "base_url": "http://h/v1"}
 OPENROUTER = {"type": "openrouter"}
 
@@ -93,11 +92,11 @@ def chat_body(server):
     return request.body
 
 
-# -- OpenAI-compatible chat -------------------------------------------------------------
+# -- chat completions -------------------------------------------------------------
 
-def test_openai_compatible_chat_request(fake):
+def test_chat_completions_request(fake):
     chat_route(fake)
-    text, usages = run_chat(make_endpoint({**COMPAT, "api_key": "K"}), HISTORY, TOOLS)
+    text, usages = run_chat(make_endpoint({**LLAMACPP, "api_key": "K"}), HISTORY, TOOLS)
 
     [request] = fake.requests
     assert (request.method, request.url) == ("POST", "http://h/v1/chat/completions")
@@ -110,17 +109,17 @@ def test_openai_compatible_chat_request(fake):
 
 def test_no_api_key_sends_no_authorization_header(fake):
     chat_route(fake)
-    run_chat(make_endpoint(COMPAT), SIMPLE)
+    run_chat(make_endpoint(LLAMACPP), SIMPLE)
     assert "authorization" not in fake.requests[0].headers
     assert chat_body(fake) == {"model": "m", "messages": SIMPLE, "stream": True,
                                "stream_options": {"include_usage": True}}
 
 
 @pytest.mark.parametrize("table, effort, fragment", [
-    (COMPAT, "high", {"reasoning_effort": "high"}),
+    (LLAMACPP, "high", {"reasoning_effort": "high"}),
     (LLAMACPP, "low", {"reasoning_effort": "low"}),
     (OPENROUTER, "max", {"reasoning": {"effort": "max"}}),
-    (COMPAT, None, {}),
+    (LLAMACPP, None, {}),
     (OPENROUTER, None, {}),
 ])
 def test_effort_is_sent_in_each_servers_own_field(fake, table, effort, fragment):
@@ -135,12 +134,12 @@ def test_effort_is_sent_in_each_servers_own_field(fake, table, effort, fragment)
 def test_a_503_is_retried_with_the_same_request(fake):
     fake.on("POST", "/chat/completions",
             wire.text_response("loading model", 503, "text/plain"), wire.openai_stream())
-    text, _ = run_chat(make_endpoint({**COMPAT, "retry_delay": 0}), SIMPLE)
+    text, _ = run_chat(make_endpoint({**LLAMACPP, "retry_delay": 0}), SIMPLE)
     first, second = fake.sent("POST", "/chat/completions")
     assert first.body == second.body and text == "Hi"
 
 
-@pytest.mark.parametrize("table, cached", [(LLAMACPP, 0), (COMPAT, 0)])
+@pytest.mark.parametrize("table, cached", [(LLAMACPP, 0), (LLAMACPP, 0)])
 def test_llamacpp_cache_counts_as_reported(fake, table, cached):
     """§9 (2026-10-01): only llama.cpp reads ``timings.cache_n``, and only when
     usage has no cache count. llama.cpp's documented usage already says
@@ -154,7 +153,7 @@ def test_llamacpp_cache_counts_as_reported(fake, table, cached):
 
 @pytest.mark.parametrize("table, native", [
     (OPENROUTER, wire.OPENROUTER_REASONING_DELTA["reasoning_details"]),
-    (COMPAT, None),
+    (LLAMACPP, None),
 ])
 def test_only_openrouter_assembles_reasoning_details(fake, table, native):
     """§9 (2026-10-01): ``reasoning_details`` blocks are OpenRouter's; every
@@ -173,7 +172,7 @@ def test_llamacpp_cache_from_timings_when_usage_has_none(fake):
     reading stays pinned until P11 is settled: llama.cpp only (§9.8)."""
     final = {"timings": wire.LLAMACPP_FINAL_CHUNK["timings"],
              "usage": {"completion_tokens": 48, "prompt_tokens": 44, "total_tokens": 92}}
-    for table, cached in [(LLAMACPP, 236), (COMPAT, None)]:
+    for table, cached in [(LLAMACPP, 236), (OPENROUTER, None)]:
         fake.on("POST", "/chat/completions", wire.openai_stream(usage=final))
         chunks = []
         run_chat(make_endpoint(table), SIMPLE, chunks=chunks)
@@ -193,7 +192,7 @@ def test_openrouter_usage_is_read_as_documented(fake):
 
 
 @pytest.mark.parametrize("table, delta, reasoning", [
-    (COMPAT, wire.DEEPSEEK_REASONING_DELTA, "9.11 has fewer tenths"),
+    (LLAMACPP, wire.DEEPSEEK_REASONING_DELTA, "9.11 has fewer tenths"),
     (LLAMACPP, wire.DEEPSEEK_REASONING_DELTA, "9.11 has fewer tenths"),
     # ⚠ OpenRouter documents ``message.reasoning`` (non-streamed); the streamed
     # ``delta.reasoning`` is the same field per chunk, not shown in its docs.
@@ -237,7 +236,7 @@ def test_compaction_is_streamed(fake, tmp_path):
     from moka_code.harness.harness import Harness
 
     fake.on("POST", "/chat/completions", wire.openai_stream("mary", deltas=({"content": "Sum"},)))
-    endpoint = make_endpoint(COMPAT)
+    endpoint = make_endpoint(LLAMACPP)
     with patch("moka_code.harness.harness.get_active_endpoint", return_value=endpoint):
         harness = Harness(workspace_path=str(tmp_path))
     harness._add_message_to_history("user", "hello")
@@ -291,7 +290,7 @@ def test_llamacpp_sends_the_selected_model(fake):
     assert chat_body(fake)["model"] == "m"
 
 
-@pytest.mark.parametrize("table", [LLAMACPP, COMPAT, OPENROUTER])
+@pytest.mark.parametrize("table", [LLAMACPP, LLAMACPP, OPENROUTER])
 def test_no_selection_sends_nothing(fake, table):
     """§9.6 (2026-10-01): no model selected is an error, never a guessed id
     (``"unknown"`` used to be sent)."""
@@ -308,7 +307,7 @@ def test_connection_checks_hit_these_paths(fake):
     fake.on("GET", "/models", wire.json_response(wire.LLAMACPP_MODELS))
 
     async def go():
-        compat = make_endpoint(COMPAT)
+        compat = make_endpoint(LLAMACPP)
         assert await compat.check_connection()
         assert (await compat.diagnose_connection()).ok
         await compat.aclose()
@@ -325,11 +324,11 @@ def test_llamacpp_learns_context_and_vision_from_props(fake):
         "../models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf": (1024, False, [])}
 
 
-def test_openai_compatible_reports_only_what_the_server_states(fake):
+def test_llamacpp_reports_only_what_the_server_states(fake):
     """llama.cpp's ``/models`` lists no context length or modalities: unknown
     (``None``), never invented."""
     fake.on("GET", "/models", wire.json_response(wire.LLAMACPP_MODELS))
-    assert learn(make_endpoint(COMPAT)) == {
+    assert learn(make_endpoint(LLAMACPP)) == {
         "../models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf": (None, None, [])}
 
 
@@ -338,6 +337,16 @@ def test_openrouter_offers_only_whitelisted_models_with_their_stated_facts(fake)
     table = {**OPENROUTER, "models": ["deepseek/deepseek-v4.1-flash"]}
     assert learn(make_endpoint(table)) == {
         "deepseek/deepseek-v4.1-flash": (1048576, True, ["low", "high", "max"])}
+
+
+def test_openrouter_catalog_down_is_a_failed_listing(fake):
+    """2a (2026-10-01): no catalog means no facts; the listing fails (the last
+    good one is kept, flagged stale) instead of offering models without a
+    context window."""
+    fake.on("GET", "/models", wire.json_response({}, status=503))
+    table = {**OPENROUTER, "models": ["deepseek/deepseek-v4.1-flash"]}
+    with pytest.raises(RuntimeError):
+        learn(make_endpoint(table))
 
 
 def test_openrouter_effort_levels_are_never_guessed(fake):
@@ -364,11 +373,11 @@ def test_openrouter_bare_model_id_resolves_to_the_catalog_id(fake):
     assert chat_body(fake)["provider"] == {"order": ["deepseek"], "allow_fallbacks": False}
 
 
-def test_openai_compatible_proxy_reads_openrouter_shaped_facts(fake):
-    """§9.5: any OpenAI-compatible ``/models`` may state OpenRouter's
+def test_llamacpp_reads_openrouter_shaped_facts(fake):
+    """§9.5: a ``/models`` shared by the chat-completions providers may state OpenRouter's
     ``reasoning.supported_efforts`` and ``architecture.input_modalities`` (here
     a proxy in front of OpenRouter, serving its catalog)."""
     fake.on("GET", "/models", wire.json_response(wire.OPENROUTER_MODELS))
-    assert learn(make_endpoint(COMPAT)) == {
+    assert learn(make_endpoint(LLAMACPP)) == {
         "deepseek/deepseek-v4.1-flash": (1048576, True, ["low", "high", "max"]),
         "qwen/qwen3.8-omni-flash": (1000000, True, [])}
