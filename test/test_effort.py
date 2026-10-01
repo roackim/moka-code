@@ -9,7 +9,6 @@ from moka_code import settings
 from moka_code.settings import Config
 from moka_code.ui.commands import models
 from moka_code.harness.providers import REGISTRY, OpenAICompatible
-from moka_code.harness.providers.openai_compatible import stated_efforts
 
 
 def _endpoint(type_, **kw):
@@ -122,44 +121,6 @@ def test_effort_inline_menu_and_picker_mark_the_active_level(monkeypatch):
     asyncio.run(models.effort_command(ui, []))
     assert captured["footers"] == {"high": "active"}
     assert captured["initial_index"] == 2
-
-
-def test_efforts_are_never_guessed(monkeypatch):
-    """§9.5 / ISSUES P7 (2026-10-01): ``supported_parameters`` listing
-    ``reasoning`` is not an effort signal; no levels are invented."""
-    assert stated_efforts({"supported_parameters": ["tools", "reasoning", "reasoning_effort"]}) == []
-    assert stated_efforts({}) == []
-
-    _config(monkeypatch, {"s": {"type": "openrouter"}},
-            catalog={"s": [{"id": "m", "efforts": []}]})
-    assert models.effort_completions() == []
-
-
-def test_exact_efforts_from_reasoning_supported_efforts():
-    # OpenRouter lists strongest first; /effort offers weakest first.
-    assert stated_efforts({
-        "supported_parameters": ["reasoning", "reasoning_effort"],
-        "reasoning": {"mandatory": False, "supported_efforts": ["max", "high", "low"]},
-    }) == ["low", "high", "max"]
-    # No level list: none known (§9.5, no guess).
-    assert stated_efforts({
-        "supported_parameters": ["reasoning"], "reasoning": {"mandatory": False},
-    }) == []
-
-
-def test_openai_compatible_lists_stated_efforts():
-    entry = {"id": "q", "context_length": 128000,
-             "reasoning": {"supported_efforts": ["low", "high"]}}
-
-    class Client:
-        async def get(self, path):
-            return SimpleNamespace(raise_for_status=lambda: None,
-                                   json=lambda: {"data": [entry]})
-
-    endpoint = OpenAICompatible(name="s", base_url="http://s/v1")
-    endpoint.client = Client()
-    [model] = asyncio.run(endpoint.list_models())
-    assert model.efforts == ["low", "high"]
 
 
 def test_effort_levels_read_the_live_catalog_not_a_copy(monkeypatch):

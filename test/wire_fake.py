@@ -155,6 +155,32 @@ OPENROUTER_REASONING_DELTA = json.loads("""
   "id": "reasoning-text-1", "format": "anthropic-claude-v1", "index": 0}]}
 """)
 
+# An encrypted ``reasoning_details`` block: openrouter.ai/docs/use-cases/
+# reasoning-tokens.md ("Encrypted Type"), read 2026-10-01. The same page says
+# streamed blocks are "built by concatenating all chunks in order".
+OPENROUTER_ENCRYPTED_BLOCK = json.loads("""
+{"type": "reasoning.encrypted",
+ "data": "eyJlbmNyeXB0ZWQiOiJ0cnVlIiwiY29udGVudCI6IltSRURBQ1RFRF0ifQ==",
+ "id": "reasoning-encrypted-1", "format": "anthropic-claude-v1", "index": 1}
+""")
+
+# The ``usage`` of the last SSE message: openrouter.ai/docs/use-cases/
+# usage-accounting.md ("Response Format"), read 2026-10-01.
+OPENROUTER_USAGE = json.loads("""
+{"completion_tokens": 2, "completion_tokens_details": {"reasoning_tokens": 0},
+ "cost": 0.95, "cost_details": {"upstream_inference_cost": 19},
+ "prompt_tokens": 194,
+ "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 100, "audio_tokens": 0},
+ "total_tokens": 196}
+""")
+
+# -- DeepSeek (an OpenAI-compatible server) ------------------------------------
+
+# Thinking mode streams ``delta.reasoning_content`` next to ``content``:
+# api-docs.deepseek.com/guides/thinking_mode, read 2026-10-01.
+DEEPSEEK_REASONING_DELTA = {"reasoning_content": "9.11 has fewer tenths"}
+
+
 # Two entries of GET https://openrouter.ai/api/v1/models (the public list), read
 # 2026-10-01, trimmed to the keys moka reads.
 OPENROUTER_MODELS = {"data": json.loads("""

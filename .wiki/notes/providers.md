@@ -1,16 +1,14 @@
 # Provider contract
 
-> **Status: APPROVED (2026-10-01), not implemented.** This page describes the
-> target of `PLAN.md` step 1. Until it is built,
-> `tree/harness.md` and `architecture.md` describe what exists. Once built,
-> this page becomes the state document and this banner goes.
+> **Status:** built (`PLAN.md` step 1, done 2026-10-01). This page describes
+> what exists; `replay` (§3) is step 2 and not built yet.
 
 A *provider* is a server family moka can talk to: llama.cpp, OpenRouter,
 OpenAI and OpenAI-compatible servers (Ollama was removed on 2026-10-01,
-§9.11). Today their differences are about two dozen `type == ...` branches spread over `endpoint.py`,
-`endpoint_discovery.py`, `endpoint_openai.py`, `settings.py` and
-`unserved_model`. This page defines the one seam that replaces them, and what
-each side promises the other.
+§9.11). Their differences used to be about two dozen `type == ...` branches
+spread over `endpoint.py`, `endpoint_discovery.py`, `endpoint_openai.py`,
+`settings.py` and `unserved_model`. This page defines the one seam that
+replaced them, and what each side promises the other.
 
 The slot table (§4) is the checklist of what a provider must define; the
 class structure is the one decided in `PLAN.md`.
@@ -98,7 +96,7 @@ base_url = "http://localhost:8010/openai/v1"
 - **`type` is always written**, in every table. The "table named after its
   type" shortcut is deleted. Valid types come from the registry.
 - **Keys:** the common keys above. A keyless server has no key line. A set
-  `api_key_env` whose variable is unset is an error notice, as today.
+  `api_key_env` whose variable is unset is an error notice.
 - **OpenRouter:** `models` is the whitelist (what `/model` lists; absent or
   empty offers nothing, reported by the existing "lists no models" notice).
   `providers` is the default routing: only those, in order, no fallbacks.
@@ -166,16 +164,15 @@ Chunk: text, reasoning, reasoning_native, tool_calls, usage, finish
 ```
 
 - The harness never sees `choices`, `delta`, `timings` or any vendor
-  field. Chunks replace today's SDK-shaped
-  `SimpleNamespace` objects.
+  field. (Chunks replaced the SDK-shaped `SimpleNamespace` objects.)
 - The provider builds the request: OpenAI-compatible payload
   (`stream_options.include_usage`, `tools`), OpenRouter's `provider` routing,
-  and `effort_payload(effort)`.
+  and `effort_payload()`.
 - Retries and errors: §7.
 
-### `effort_payload(level) -> dict`
+### `effort_payload() -> dict`
 
-Pure mapping of the chosen level to this server's request field.
+Pure mapping of the instance's chosen `effort` to this server's request field.
 
 | Provider | Field |
 |---|---|
@@ -186,33 +183,32 @@ Pure mapping of the chosen level to this server's request field.
 checked against `efforts` (an incomplete catalog must not drop a user choice;
 the server decides).
 
-### `replay(entry, target_model) -> dict`
+### `replay(entry, target_model) -> dict` (step 2, not built)
 
-Reasoning fields for an outgoing assistant message. In step 1 every provider
-returns `{}`: replay was removed on 2026-09-30 and nothing is sent back. The
-hook exists so step 2 fills it per provider without touching the harness
-(`reasoning` → `reasoning_content`; `reasoning_native` only to
-the model that produced it).
+Reasoning fields for an outgoing assistant message. Not built: replay was
+removed on 2026-09-30 and nothing is sent back. Step 2 adds it per provider
+without touching the harness (`reasoning` → `reasoning_content`;
+`reasoning_native` only to the model that produced it).
 
-### `ping()`
+### Connection check
 
-Raises if the server is unreachable: `GET /models`. The base class wraps it in `diagnose_connection` (proxy
-hints, `.local` re-resolution, `_connection_state`).
+`diagnose_connection()` (base class, every provider): `GET /models`, with
+proxy hints and `.local` re-resolution; sets `_connection_state`.
+`prewarm_connection()` runs it in the background; `check_connection()`
+returns only whether it succeeded.
 
 ---
 
 ## 4. What each provider defines (the slot table)
 
-Slot labels are row ids only (gaps in the numbering are historical). "Today"
-is the current behaviour; step 1 keeps it unless §9 says otherwise (S6 is the
-target, see §9.5).
+Slot labels are row ids only (gaps in the numbering are historical).
 
 | Slot | `llamacpp` | `openai-compatible` | `openrouter` |
 |---|---|---|---|
 | S2 list | `/models` + `/props` | `/models` | openrouter.ai `/models` ∩ the `models` list |
 | S4 context | `/props` `n_ctx`, else `/models` `context_length` | `/models` `context_length` | catalog `context_length` |
 | S5 images | `/props` `modalities.vision` | `architecture.input_modalities`, else unknown | `architecture.input_modalities` |
-| S6 efforts (target) | `reasoning.supported_efforts` if the server advertises it, else none known | same | `reasoning.supported_efforts` only |
+| S6 efforts | `reasoning.supported_efforts` if the server advertises it, else none known | same | `reasoning.supported_efforts` only |
 | S7 field | `reasoning_effort` | `reasoning_effort` | `reasoning.effort` |
 | S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same | same, plus `reasoning_details` assembled into `reasoning_native` |
 | S9 reasoning in | none (step 2) | none | none |
@@ -281,9 +277,9 @@ introduced with `stream` (open).
 
 ---
 
-## 8. Proof of "no behaviour change"
+## 8. Proof on the wire
 
-Step 1 is a restructure, so it is proven on the wire, not through the UI.
+Step 1 was a restructure, so it was proven on the wire, not through the UI.
 Sub-step 1.0 is done: `test/test_wire_requests.py` records the **request
 bodies, URLs and headers** the current code sends, and what each provider
 learns from its server, through the in-process recording fake of
@@ -298,11 +294,17 @@ llama.cpp's model lookup, the connection
 checks, and `list_models` facts per provider (context window, images, effort
 levels). Only three helpers (`make_endpoint`, `run_chat`, `learn`) touch the
 provider API, so they are the only lines that change with the restructure.
-The same tests must pass after it, except the expectations marked §9.x, which
-change on purpose in the same commit.
+The same tests passed after it, except the expectations marked §9.x, which
+changed on purpose in the same commit.
 
-Each test was checked by breaking the code it covers (effort field,
-`stream_options`, the OpenRouter whitelist): it fails.
+Since step 1.5 (2026-10-01), provider behaviour is tested only through the
+contract (`make_endpoint`, then `stream`, `list_models`, `effort_payload`, the
+connection check), on this fake: usage and cost, reasoning fields, the
+assembly of `reasoning_details`, routing, model facts. No test calls a
+provider's private helpers. Shapes a doc does not show are marked ⚠ in the
+test that uses them.
+
+Each test was checked by breaking the code it covers: it fails.
 
 ---
 
@@ -381,8 +383,8 @@ Everything else is identical.
 
 1. Subclass `OpenAICompatible` (chat-completions servers) or `Endpoint`.
 2. Set the class attributes of §2, including its `template` block.
-3. Implement `list_models`, `stream`, `effort_payload`, `ping`; override
-   `replay` if it takes reasoning back.
+3. Implement `list_models`, `_stream` and `effort_payload` (a server that
+   is not OpenAI-compatible also overrides the connection check).
 4. Add one line to the registry.
 5. Add wire-level tests for each row of §4 that applies, and its column of
    the slot table.
@@ -393,4 +395,4 @@ first.
 
 Not covered, by design: an abstract base class or plug-in loading; native
 Anthropic, DeepSeek and the OpenAI Responses API (`PLAN.md` future polish).
-`reasoning_native`, `replay` and `origin` are the seam they will use.
+`reasoning_native`, `replay` (step 2) and `origin` are the seam they will use.

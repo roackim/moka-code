@@ -96,12 +96,8 @@ def parse_usage(value: Any) -> Optional[TokenUsage]:
         return None
     # Two separate blocks: OpenAI-style usage carries both, so looking them
     # up as alternatives always found the completion one and lost the cache.
-    reasoning = _field(_field(value, "completion_tokens_details"),
-                       "reasoning_tokens", "reasoning_token_count")
+    reasoning = _field(_field(value, "completion_tokens_details"), "reasoning_tokens")
     cached = _field(_field(value, "prompt_tokens_details"), "cached_tokens")
-    if cached is None:
-        # Anthropic-style usage reports cache reads at the top level.
-        cached = _field(value, "cache_read_input_tokens")
     cost = _field(value, "cost")
     if isinstance(cost, bool) or not isinstance(cost, (int, float)):
         cost = None

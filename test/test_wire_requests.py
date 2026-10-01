@@ -146,7 +146,6 @@ def test_llamacpp_cache_counts_as_reported(fake, table, cached):
     usage has no cache count. llama.cpp's documented usage already says
     ``cached_tokens: 0``, so ``cache_n`` is never used (ISSUES P11)."""
     fake.on("POST", "/chat/completions", wire.openai_stream(usage=wire.LLAMACPP_FINAL_CHUNK))
-    fake.on("GET", "/models", wire.json_response(wire.LLAMACPP_MODELS))
     chunks = []
     run_chat(make_endpoint(table), SIMPLE, chunks=chunks)
     [usage] = [c.usage for c in chunks if c.usage]
@@ -166,6 +165,70 @@ def test_only_openrouter_assembles_reasoning_details(fake, table, native):
     assert "".join(c.reasoning for c in chunks) == "Let me think about this step by step..."
     assert [c.reasoning_native for c in chunks if c.reasoning_native] == ([native] if native else [])
     assert text == "Hi"
+
+
+def test_llamacpp_cache_from_timings_when_usage_has_none(fake):
+    """⚠ Not a documented shape: llama.cpp's README shows usage *with*
+    ``prompt_tokens_details`` (ISSUES P11). Kept so the ``timings.cache_n``
+    reading stays pinned until P11 is settled: llama.cpp only (§9.8)."""
+    final = {"timings": wire.LLAMACPP_FINAL_CHUNK["timings"],
+             "usage": {"completion_tokens": 48, "prompt_tokens": 44, "total_tokens": 92}}
+    for table, cached in [(LLAMACPP, 236), (COMPAT, None)]:
+        fake.on("POST", "/chat/completions", wire.openai_stream(usage=final))
+        chunks = []
+        run_chat(make_endpoint(table), SIMPLE, chunks=chunks)
+        [usage] = [c.usage for c in chunks if c.usage]
+        assert usage.cached_prompt_tokens == cached
+
+
+def test_openrouter_usage_is_read_as_documented(fake):
+    """Usage accounting (source in ``wire_fake``): counts, cache and cost."""
+    fake.on("POST", "/chat/completions",
+            wire.openai_stream(usage={"usage": wire.OPENROUTER_USAGE}))
+    chunks = []
+    run_chat(make_endpoint(OPENROUTER), SIMPLE, chunks=chunks)
+    [usage] = [c.usage for c in chunks if c.usage]
+    assert (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) == (194, 2, 196)
+    assert (usage.reasoning_tokens, usage.cached_prompt_tokens, usage.cost) == (0, 0, 0.95)
+
+
+@pytest.mark.parametrize("table, delta, reasoning", [
+    (COMPAT, wire.DEEPSEEK_REASONING_DELTA, "9.11 has fewer tenths"),
+    (LLAMACPP, wire.DEEPSEEK_REASONING_DELTA, "9.11 has fewer tenths"),
+    # ⚠ OpenRouter documents ``message.reasoning`` (non-streamed); the streamed
+    # ``delta.reasoning`` is the same field per chunk, not shown in its docs.
+    (OPENROUTER, {"reasoning": "pondering"}, "pondering"),
+])
+def test_reasoning_text_is_read_from_each_servers_field(fake, table, delta, reasoning):
+    """Slot S8: the reasoning text reaches ``Chunk.reasoning`` verbatim."""
+    fake.on("POST", "/chat/completions", wire.openai_stream(deltas=(delta,)))
+    chunks = []
+    text, _ = run_chat(make_endpoint(table), SIMPLE, chunks=chunks)
+    assert "".join(c.reasoning for c in chunks) == reasoning
+    assert text == "Hi"
+
+
+def test_openrouter_reasoning_blocks_are_assembled_per_index(fake):
+    """§9.9: the documented text block, streamed in two pieces sharing its
+    ``index``, then the documented encrypted block: rebuilt as two blocks,
+    yielded once at the end, as OpenRouter wants them back."""
+    [block] = wire.OPENROUTER_REASONING_DELTA["reasoning_details"]
+    first = {**block, "text": "Let me think about "}
+    second = {"type": "reasoning.text", "text": "this step by step...", "index": 0}
+    # ⚠ A signature arriving in a later, empty piece is not shown in the docs
+    # (its value is the docs' "Text Type" example); a later non-null field fills in.
+    signed = {"type": "reasoning.text", "text": "", "index": 0,
+              "signature": "sha256:abc123def456..."}
+    deltas = ({"reasoning_details": [first]}, {"reasoning_details": [second]},
+              {"reasoning_details": [signed]},
+              {"reasoning_details": [wire.OPENROUTER_ENCRYPTED_BLOCK]})
+    fake.on("POST", "/chat/completions", wire.openai_stream(deltas=deltas))
+    chunks = []
+    run_chat(make_endpoint(OPENROUTER), SIMPLE, chunks=chunks)
+    assert "".join(c.reasoning for c in chunks) == "Let me think about this step by step..."
+    native = [c.reasoning_native for c in chunks if c.reasoning_native]
+    assert native == [[{**block, "signature": "sha256:abc123def456..."},
+                       wire.OPENROUTER_ENCRYPTED_BLOCK]]
 
 
 def test_compaction_is_streamed(fake, tmp_path):
@@ -284,3 +347,28 @@ def test_openrouter_effort_levels_are_never_guessed(fake):
     fake.on("GET", "/models", wire.json_response(wire.OPENROUTER_MODELS))
     table = {**OPENROUTER, "models": ["qwen/qwen3.8-omni-flash"]}
     assert learn(make_endpoint(table)) == {"qwen/qwen3.8-omni-flash": (1000000, True, [])}
+
+
+def test_openrouter_bare_model_id_resolves_to_the_catalog_id(fake):
+    """ISSUES P5 (to audit): a bare id in ``models`` is matched by suffix; its
+    ``providers_by_model`` entry routes the canonical id."""
+    fake.on("GET", "/models", wire.json_response(wire.OPENROUTER_MODELS))
+    table = {**OPENROUTER, "models": ["deepseek-v4.1-flash"],
+             "providers_by_model": {"deepseek-v4.1-flash": ["deepseek"]}}
+    assert learn(make_endpoint(table)) == {
+        "deepseek/deepseek-v4.1-flash": (1048576, True, ["low", "high", "max"])}
+    chat_route(fake)
+    endpoint = make_endpoint(table)
+    endpoint._selected_model = "deepseek/deepseek-v4.1-flash"
+    run_chat(endpoint, SIMPLE)
+    assert chat_body(fake)["provider"] == {"order": ["deepseek"], "allow_fallbacks": False}
+
+
+def test_openai_compatible_proxy_reads_openrouter_shaped_facts(fake):
+    """§9.5: any OpenAI-compatible ``/models`` may state OpenRouter's
+    ``reasoning.supported_efforts`` and ``architecture.input_modalities`` (here
+    a proxy in front of OpenRouter, serving its catalog)."""
+    fake.on("GET", "/models", wire.json_response(wire.OPENROUTER_MODELS))
+    assert learn(make_endpoint(COMPAT)) == {
+        "deepseek/deepseek-v4.1-flash": (1048576, True, ["low", "high", "max"]),
+        "qwen/qwen3.8-omni-flash": (1000000, True, [])}

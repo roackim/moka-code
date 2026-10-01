@@ -14,7 +14,6 @@ import pytest
 from moka_code import settings
 from moka_code.harness import images
 from moka_code.harness.endpoint import Chunk, ToolCallPiece
-from moka_code.harness.providers.openai_compatible import stated_images
 from moka_code.harness.harness import Harness
 from moka_code.ui.app import chatTUI
 from moka_code.ui.chat_message import unmention
@@ -157,12 +156,6 @@ def test_missing_image_is_sent_as_placeholder():
 # ---------------------------------------------------------------------------
 # capability
 # ---------------------------------------------------------------------------
-
-def test_stated_images():
-    assert stated_images({"architecture": {"input_modalities": ["text"]}}) is False
-    assert stated_images({"architecture": {"input_modalities": ["text", "image"]}}) is True
-    assert stated_images({}) is None
-
 
 def _ui_with_endpoint(tmp_path, accepts):
     agent = StubAgent()

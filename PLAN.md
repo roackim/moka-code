@@ -92,7 +92,7 @@ against the provider's current docs before they are built on.
    non-streaming path goes). ✅ (2026-10-01, with `Chunk`)
 4. Server types and the servers template come from the registry; the new
    servers.toml shape (`providers.md` §2.1). ✅ (2026-10-01)
-5. Tests rewritten against the contract.
+5. Tests rewritten against the contract. ✅ (2026-10-01)
 
 ## Step 2: reasoning
 

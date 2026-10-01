@@ -36,10 +36,9 @@ All tests use pytest. Run with the pixi env:
 | `test_compaction.py` | `harness.py` | Conversation history summarization (FakeServer) |
 | `test_context_builder.py` | `context_builder.py` | File tree building, gitignore, bounded walk |
 | `test_context_completion.py` | `input/completion.py` | `@` file picker completion |
-| `test_context_window_discovery.py` | `harness/endpoint.py` | OpenRouter context-window lookup |
 | `test_local_hostname_resolution.py` | `endpoint_local.py` | `.local` mDNS resolution |
 | `test_local_proxy_diagnostics.py` | `harness/endpoint.py` | Connection diagnosis |
-| `test_wire_requests.py` | providers (`endpoint*.py`) | Wire-level golden tests: request bodies, headers and what each provider learns, through `wire_fake.py`'s recording fake server (samples copied from the real APIs, source and date noted). Pins today's behaviour for the provider restructure (`notes/providers.md` §8) |
+| `test_wire_requests.py` | providers (`endpoint*.py`) | Wire-level golden tests: request bodies, headers and what each provider learns, through `wire_fake.py`'s recording fake server (samples copied from the real APIs, source and date noted). The only place provider behaviour is tested, through the contract (`notes/providers.md` §8) |
 | `test_model_selection.py` | `ui/commands/models.py` | Model picker/selection |
 | `test_worker.py` | `worker.py` | Four tool bodies: read/write/edit/bash, timeout, truncation |
 | `test_worker_protocol.py` | `worker.py` | JSONL framing, dispatch, errors, CRLF, shutdown |
@@ -49,7 +48,6 @@ All tests use pytest. Run with the pixi env:
 | `test_sandbox_command.py` | `commands/sandbox.py` | `/sandbox` list/select/none/unknown, completions |
 | `test_elision.py` | `harness/elision.py` | head/tail truncation boundary cases |
 | `test_patch_parser.py` | `worker.py` | `parse_patch` + `apply_patch` cascade |
-| `test_usage.py` | `usage.py` | Token usage normalization |
 | `test_streaming_incremental.py` | UI rendering | Incremental streaming render artifacts |
 | `test_no_shadowed_modules.py` | package layout | No shadowed/duplicate module names |
 | TUI widget tests | `ui/tui/` | `buffer`, `bars`, `button`, `choice`, `table_view`, `popup`, `text`, `layout`, `fuzzy`/`menu`, `search_modal`, `colors`, `tui_*` (navigation/router/actions/foundations/interactions/integration), `message_focus`, `chat_message`, `input_height`, `debug_popup`, `clipboard` |

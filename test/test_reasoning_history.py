@@ -9,7 +9,7 @@ from unittest.mock import patch
 from moka_code import settings
 from moka_code.harness.endpoint import Chunk, ToolCallPiece
 from moka_code.harness.harness import Harness
-from moka_code.harness.providers import LlamaCpp, OpenRouter
+from moka_code.harness.providers import LlamaCpp
 
 
 def _chunk(content=None, reasoning=None, finish=None):
@@ -46,49 +46,6 @@ def test_chat_stores_reasoning_verbatim_in_history(tmp_path, monkeypatch):
     assert assistant[0]["content"] == "the answer"
 
 
-def test_openai_adapter_reads_openrouter_reasoning_field():
-    """OpenRouter streams ``reasoning``; DeepSeek streams ``reasoning_content``."""
-    def reason(payload):
-        chunk = OpenRouter(name="or")._chunk(
-            {"choices": [{"index": 0, "delta": payload, "finish_reason": None}]}
-        )
-        return chunk.reasoning
-
-    assert reason({"reasoning": "pondering"}) == "pondering"
-    assert reason({"reasoning_content": "pondering"}) == "pondering"
-    assert reason({"reasoning_details": [{"text": "a"}, {"text": "b"}]}) == "ab"
-
-
-def test_openrouter_streamed_reasoning_reaches_history(tmp_path, monkeypatch):
-    """The whole pipe: adapter → harness → history entry."""
-    with patch(
-        "moka_code.harness.harness.get_active_endpoint",
-        return_value=OpenRouter(name="test"),
-    ):
-        harness = Harness(workspace_path=str(tmp_path))
-
-    raw = [
-        {"choices": [{"index": 0, "delta": {"reasoning": "OR THOUGHT"}, "finish_reason": None}]},
-        {"choices": [{"index": 0, "delta": {"content": "answer"}, "finish_reason": None}]},
-        {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
-    ]
-
-    async def fake_completion(messages, tools=None):
-        for payload in raw:
-            yield harness.endpoint._chunk(payload)
-
-    harness.endpoint.stream = fake_completion
-
-    async def drain():
-        return [event async for event in harness.chat("hi")]
-
-    asyncio.run(drain())
-
-    assistant = [m for m in harness.history if m.get("role") == "assistant"]
-    assert assistant[0]["reasoning"] == "OR THOUGHT"
-    assert assistant[0]["content"] == "answer"
-
-
 def test_api_message_sends_only_api_fields():
     entry = {
         "id": "a1", "role": "assistant", "content": "answer", "source": "x",
@@ -121,24 +78,6 @@ def test_no_reasoning_is_sent_back():
 
     assert all("reasoning" not in m and "reasoning_details" not in m for m in api)
     assert all("id" not in m and "source" not in m for m in api)
-
-
-def test_streamed_reasoning_details_are_rebuilt_per_block():
-    from moka_code.harness.providers.openrouter import merge_reasoning_details
-
-    blocks = []
-    merge_reasoning_details(blocks, [{"type": "reasoning.text", "text": "Let ", "index": 0,
-                                      "format": "anthropic-claude-v1", "signature": None}])
-    merge_reasoning_details(blocks, [{"type": "reasoning.text", "text": "me see", "index": 0}])
-    merge_reasoning_details(blocks, [{"type": "reasoning.text", "text": "", "index": 0,
-                                      "signature": "sig"}])
-    merge_reasoning_details(blocks, [{"type": "reasoning.encrypted", "data": "xyz", "index": 1}])
-
-    assert blocks == [
-        {"type": "reasoning.text", "text": "Let me see", "index": 0,
-         "format": "anthropic-claude-v1", "signature": "sig"},
-        {"type": "reasoning.encrypted", "data": "xyz", "index": 1},
-    ]
 
 
 def test_tool_calls_are_sent_back_with_their_results(tmp_path, monkeypatch):

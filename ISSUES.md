@@ -117,5 +117,8 @@ with an empty `MOKA_CONFIG_DIR`). Other tests may depend on it the same way.
 Four tests asserted behaviour the user had rejected (fixed 2026-09-30:
 type-from-table-name, rediscovery on `/config`, `preserve_reasoning`,
 server-level `efforts`). `test_effort.py` also hand-fed an Ollama `capabilities` shape the
-server never returns at list time (I17; gone with Ollama, 2026-10-01). Others may do the same; see `PROCESS.md` 5.4
-(tests cite the decision they protect).
+server never returns at list time (I17; gone with Ollama, 2026-10-01). Provider tests
+were moved onto sourced wire fixtures (`PLAN.md` step 1.5, 2026-10-01; two
+unsourced usage fields, `cache_read_input_tokens` and `reasoning_token_count`,
+were deleted with their tests). Tests outside the providers are unreviewed;
+see `PROCESS.md` 5.4 (tests cite the decision they protect).

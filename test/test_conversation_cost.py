@@ -3,14 +3,8 @@
 from types import SimpleNamespace
 
 from moka_code.harness.harness import Harness
-from moka_code.harness.providers.openai_compatible import parse_usage as normalize_usage
+from moka_code.harness.usage import TokenUsage
 from moka_code.ui.status_presenter import _format_cost
-
-
-def test_usage_reads_the_reported_cost():
-    usage = normalize_usage({"prompt_tokens": 10, "completion_tokens": 5, "cost": 0.000140035})
-    assert usage.cost == 0.000140035
-    assert normalize_usage({"prompt_tokens": 10}).cost is None
 
 
 def test_costs_add_up_per_conversation_and_reset():
@@ -18,13 +12,13 @@ def test_costs_add_up_per_conversation_and_reset():
     harness.history = []
     harness.debug_stream = SimpleNamespace(log=lambda *a, **k: None)
     harness.conversation_cost = None
-    harness._add_cost(normalize_usage({"prompt_tokens": 1, "cost": 0.01}))
-    harness._add_cost(normalize_usage({"prompt_tokens": 1}))       # local server: no cost
-    harness._add_cost(normalize_usage({"prompt_tokens": 1, "cost": 0.0025}))
+    harness._add_cost(TokenUsage(prompt_tokens=1, cost=0.01))
+    harness._add_cost(TokenUsage(prompt_tokens=1))       # local server: no cost
+    harness._add_cost(TokenUsage(prompt_tokens=1, cost=0.0025))
     assert abs(harness.conversation_cost - 0.0125) < 1e-12
     harness.clear_history()
     assert harness.conversation_cost is None
-    harness._add_cost(normalize_usage({"prompt_tokens": 1, "cost": 0.5}))
+    harness._add_cost(TokenUsage(prompt_tokens=1, cost=0.5))
     harness.load_history([])
     assert harness.conversation_cost is None
 

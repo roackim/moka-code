@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from moka_code.harness.providers import LlamaCpp, OpenAICompatible, OpenRouter
+from moka_code.harness.providers import LlamaCpp, OpenAICompatible
 
 
 @pytest.fixture
@@ -149,27 +149,3 @@ def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatc
     assert agent.endpoint.base_url == "http://new/v1"
 
 
-def test_openrouter_providers_are_a_strict_ordered_whitelist():
-    """``order`` alone falls back to any host; fallbacks must be disabled."""
-    endpoint = OpenRouter(
-        name="or", providers=["deepseek"],
-        models=["deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-4", "qwen/qwen3-coder"],
-        providers_by_model={"deepseek/deepseek-v4.1-flash": ["deepseek", "fireworks"],
-                            "qwen/qwen3-coder": []},
-    )
-    assert endpoint._provider_spec("deepseek/deepseek-v4.1-flash") == {
-        "order": ["deepseek", "fireworks"], "allow_fallbacks": False}
-    # No per-model list: the server default applies.
-    assert endpoint._provider_spec("anthropic/claude-sonnet-4") == {
-        "order": ["deepseek"], "allow_fallbacks": False}
-    # An explicit empty list means OpenRouter's own routing.
-    assert endpoint._provider_spec("qwen/qwen3-coder") is None
-    assert OpenRouter(name="or")._provider_spec("any/model") is None
-
-
-def test_openrouter_bare_model_id_matches_canonical_id():
-    endpoint = OpenRouter(name="or", models=["deepseek-v4.1-flash"],
-                          providers_by_model={"deepseek-v4.1-flash": ["deepseek"]})
-    assert endpoint._provider_spec("deepseek/deepseek-v4.1-flash") == {
-        "order": ["deepseek"], "allow_fallbacks": False}
-    assert endpoint._enabled_ids() == ["deepseek-v4.1-flash"]
