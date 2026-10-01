@@ -74,15 +74,46 @@ def _apply_theme(ui=None) -> None:
         logger.warning("Failed to apply theme after reload", exc_info=True)
 
 
-async def cmd_reload(ui: ChatUIProtocol, args: List[str]):
-    """Reload hand-edited configuration from disk (explicit, no watcher)."""
+def _reapply_role(ui: ChatUIProtocol) -> List[str]:
+    """Load the active role's file again, so an edit applies now (not only after
+    a ``/role`` switch). A file that no longer loads keeps the running role
+    (``validate_roles`` reports it); so does a response still being written.
+    Returns what could not be applied."""
+    from moka_code.harness import roles
+
+    current = getattr(getattr(ui, "agent", None), "role", None)
+    if current is None:
+        return []
+    try:
+        fresh = roles.load_role(current.name)
+    except (KeyError, OSError, ValueError):
+        return []
+    if fresh == current:
+        return []
+    is_generating = getattr(ui, "is_generating", None)
+    if callable(is_generating) and is_generating():
+        return [f"role {current.name} changed on disk; run /reload once the response is done"]
+    ui.agent.set_role(fresh)
+    return []
+
+
+def reload_and_apply(ui: ChatUIProtocol, title: str | None = None) -> None:
+    """Reload everything hand-edited and apply it: config files, roles (the
+    active one too), theme, endpoint; then report. The one path behind
+    ``/reload`` and every ``/config`` edit."""
     from moka_code import settings
     from moka_code.harness import roles
 
     errors = settings.reload_config() + roles.validate_roles()
     _apply_theme(ui)
+    errors += _reapply_role(ui)
     reapply_endpoint(ui)
-    _report_reload(ui, errors)
+    _report_reload(ui, errors, title)
+
+
+async def cmd_reload(ui: ChatUIProtocol, args: List[str]):
+    """Reload hand-edited configuration from disk (explicit, no watcher)."""
+    reload_and_apply(ui)
 
 
 def _report_reload(ui: ChatUIProtocol, errors: List[str], title: str | None = None) -> None:
@@ -149,10 +180,7 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
         return
     path = settings.config.ensure_section_file(section)
     await open_editor(ui, path)
-    errors = settings.reload_config()
-    _apply_theme(ui)
-    reapply_endpoint(ui)
-    _report_reload(ui, errors, "config")
+    reload_and_apply(ui, "config")
 
 
 async def _config_sandbox(ui: ChatUIProtocol):
@@ -239,9 +267,7 @@ async def _config_role(ui: ChatUIProtocol, args: List[str]):
         ui.chat_history_panel.add_message(str(exc), msg_type=SysMsgError(), title="config")
         return
     await open_editor(ui, path)
-    errors = settings.reload_config() + roles.validate_roles()
-    reapply_endpoint(ui)
-    _report_reload(ui, errors, "config")
+    reload_and_apply(ui, "config")
 
 
 async def _config_theme(ui: ChatUIProtocol, args: List[str]):
@@ -273,10 +299,7 @@ async def _config_theme(ui: ChatUIProtocol, args: List[str]):
             path.write_text(text.rstrip() + "\n\n" + block, encoding="utf-8")
 
     await open_editor(ui, path)
-    errors = settings.reload_config()
-    _apply_theme(ui)
-    reapply_endpoint(ui)
-    _report_reload(ui, errors, "config")
+    reload_and_apply(ui, "config")
 
 
 async def cmd_edit(ui: ChatUIProtocol, args: List[str]):

@@ -18,17 +18,14 @@ class OpenRouter(OpenAICompatible):
     fixed_url = "https://openrouter.ai/api/v1"
     extra_keys = frozenset({"models", "providers", "providers_by_model"})
     template = """\
-## OpenRouter (always https://openrouter.ai/api/v1)
-## models: what /model lists. providers (optional): only these, in this order.
+## OpenRouter
 # [servers.openrouter]
 # api_key_env = "OPENROUTER_API_KEY"
-# models = ["deepseek/deepseek-v4.1-flash", "qwen/qwen3-coder"]
-# providers = ["deepseek"]
-##
-## Optional per-model routing: replaces providers for that model; [] means
-## OpenRouter's own routing. Slugs are on the model's "Providers" tab.
+# models = ["deepseek/deepseek-v4.1-flash", "qwen/qwen3-coder"]  # what /model lists
+# providers = ["deepseek"]                                        # only these, in order
+
+## OpenRouter, providers for one model ([] = OpenRouter's own routing)
 # [servers.openrouter.providers_by_model]
-# "deepseek/deepseek-v4.1-flash" = ["deepseek", "fireworks"]
 # "qwen/qwen3-coder" = []
 """
 

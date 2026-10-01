@@ -21,7 +21,7 @@ class LlamaCpp(OpenAICompatible):
     type = "llamacpp"
     default_url = "http://localhost:8080/v1"
     template = """\
-## llama.cpp (base_url is optional; the default is shown)
+## llama.cpp
 # [servers.local]
 # type = "llamacpp"
 # base_url = "http://localhost:8080/v1"

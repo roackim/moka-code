@@ -243,17 +243,14 @@ DEFAULT_STYLES_TOML = """\
 # (``Endpoint.template``), in registry order.
 DEFAULT_SERVERS_TOML = """\
 ## Moka servers
-## One [servers.<name>] table per server; the name is yours (shown by /model).
-## Select a model with /model. Apply with /reload, or /config servers.
-## A line starting with # is a setting to uncomment; ## is help.
-##
-## A table named after its type (openrouter, deepseek) needs no type; any other
-## name sets type = """ + " | ".join(f'"{t}"' for t in REGISTRY) + """.
-##
-## Any server: api_key = "..." or api_key_env = "VAR" (no line: no key).
-## Advanced, any server: timeout = 30.0, retry_attempts = 3, retry_delay = 2.0.
 
-""" + "\n".join(cls.template for cls in REGISTRY.values())
+## One table per server; the name is yours (shown by /model).
+## A table named after its type (openrouter, deepseek) needs no type.
+
+""" + "\n".join(cls.template for cls in REGISTRY.values()) + """
+## Technical settings, any server: api_key (or api_key_env), timeout = 30.0,
+## retry_attempts = 3, retry_delay = 2.0.
+"""
 
 DEFAULT_THEMES_TOML = """\
 ## Moka color themes
