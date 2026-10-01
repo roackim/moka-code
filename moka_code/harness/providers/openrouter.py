@@ -95,6 +95,17 @@ class OpenRouter(OpenAICompatible):
             ))
         return result
 
+    def replay(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        """``reasoning_details`` as produced, only to the model that produced
+        them; else the ``reasoning`` text. Nothing when the model gave none."""
+        native = entry.get("reasoning_native")
+        origin = entry.get("origin") or {}
+        if native and origin == {"type": self.type, "model": self._selected_model}:
+            return {"reasoning_details": native}
+        if entry.get("reasoning"):
+            return {"reasoning": entry["reasoning"]}
+        return {}
+
     def effort_payload(self) -> dict[str, Any]:
         if not self.effort:
             return {}

@@ -154,6 +154,11 @@ class OpenAICompatible(Endpoint):
             for model in response.json().get("data", []) or []
         ]
 
+    def replay(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        """``reasoning_content``, the field of llama.cpp and DeepSeek; sent
+        even when empty."""
+        return {"reasoning_content": entry.get("reasoning") or ""}
+
     def effort_payload(self) -> dict[str, Any]:
         if not self.effort:
             return {}

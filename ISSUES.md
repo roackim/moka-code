@@ -10,22 +10,15 @@ known bad pattern, not yet checked).
 
 ---
 
-## Docs
-
-**D3. Reasoning wiki page describes a past state** · confirmed
-`.wiki/notes/reasoning-traces.md`: the verification section still describes
-a run "with preserve on and off" (the setting no longer exists).
-→ `PLAN.md` step 2.
-
----
-
 ## Reasoning
 
-**R8. No reasoning sent back, even inside a tool loop** · known risk
-Replay removed 2026-09-30 until `PLAN.md` step 2. ⚠ Some models may reject
-or degrade a tool-loop follow-up without their reasoning (DeepSeek thinking
-mode; Gemini/Anthropic signed blocks via OpenRouter). Unverified.
-→ `PLAN.md` step 2.
+**R9. Replay edge cases unverified on a real server** · to audit
+(2026-10-01, 2b) Decided without a doc or a key: (a) OpenRouter sends no field
+when the model gave no reasoning, but DeepSeek behind OpenRouter requires
+`reasoning_content` with tools (its docs): does OpenRouter add it? (b) llama.cpp
+gets `reasoning_content: ""` when the model gave none (opencode's habit, not
+documented). (c) Signed or encrypted blocks (Claude, Gemini via OpenRouter)
+never exercised. Wire tests mark each ⚠. → `reasoning-traces.md`.
 
 ---
 

@@ -185,7 +185,9 @@ event still carries the full output for the UI. `limit <= 0` disables it.
 `Role` — the single source of truth for a conversation's operating mode: a
 `description`, a `prompt`, a `tools: dict[str, str]` mapping each registered
 tool to exactly one of `no` / `ask` / `yes`, and `require_sandbox` (bool,
-default false). There is no permission engine.
+default false) and `replay_reasoning_depth` (int ≥ 0, default 1: how many turns
+of reasoning are sent back, `notes/reasoning-traces.md`). There is no
+permission engine.
 - `require_sandbox = true` locks the conversation while no sandbox is active:
   `Harness.sandbox_required()` gates `chat()` (yields an `Error`) and the UI
   refuses normal submissions. Activating a sandbox lifts it automatically.

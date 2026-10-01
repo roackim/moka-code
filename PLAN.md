@@ -135,17 +135,21 @@ llama.cpp and DeepSeek ✅ (2026-10-01, see Decisions).
 1. Stored on each assistant entry: `content` (verbatim), `reasoning` (text),
    `reasoning_native` (opaque, as produced; renamed from
    `reasoning_details`), `origin = {type, model}`. No compatibility for old
-   sessions (decided 2026-10-01).
-2. `replay_reasoning_depth` in role files (see Decisions), default 1.
+   sessions (decided 2026-10-01). ✅ One request builder
+   (`Harness._request_messages`), the parallel `messages` list deleted. ✅
+2. `replay_reasoning_depth` in role files (see Decisions), default 1,
+   commented line in the role template. ✅
 3. `replay(entry)` per provider, with its documented field (see Decisions).
-   OpenRouter: `reasoning_details` when `origin.model` is the current model,
-   else `reasoning` text.
-4. A provider's documented minimum depth; a role below it: warning when the
-   role is selected.
-5. Wire tests per provider (§9.x): tool-loop follow-up carries the field;
-   depth 0, 1 and N; empty reasoning still sent.
-6. Docs: `.wiki/notes/reasoning-traces.md` rewritten (ISSUES D3);
-   `providers.md` §3, §4 S9, §6; ISSUES R8 removed.
+   OpenRouter: `reasoning_details` when `origin` is this server and model,
+   else `reasoning` text; nothing when empty (llama.cpp, DeepSeek: field sent
+   empty). ✅
+4. A provider's documented minimum depth (`min_replay_depth(has_tools)`,
+   default 0); a role below it: a warning in the notice band, from live state
+   (so also after a model or server switch; answers the open question below).
+5. Wire tests per provider (§9.13): depth 0, 1 and N, native only to its
+   model, empty reasoning. ✅
+6. Docs: `reasoning-traces.md` rewritten ✅ (ISSUES D3 removed); `providers.md`
+   §3, §4 S9, §6 ✅; ISSUES R8 replaced by R9 (unverified edge cases) ✅.
 
 ### 2c. DeepSeek provider
 
@@ -185,5 +189,5 @@ llama.cpp and DeepSeek ✅ (2026-10-01, see Decisions).
 
 - `edit` / `write` one-liners in compaction: is the replacement count enough,
   or keep the edited line ranges?
-- Minimum-depth warning: only when the role is selected (decided), or also
-  when switching to a model/server whose minimum the current role misses?
+- (answered 2026-10-01) Minimum-depth warning: from live state in the notice
+  band, so also on a model or server switch.

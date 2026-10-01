@@ -89,10 +89,10 @@ class Harness:
         self.endpoint: Optional[Endpoint] = get_active_endpoint()
         self._last_usage: Optional[TokenUsage] = None
 
-        # Reasoning of the response being streamed: text, and OpenRouter's
-        # structured blocks. Stored only; never sent back (PLAN.md step 2).
+        # Reasoning of the response being streamed: text, and the provider's
+        # opaque blocks (``reasoning_native``), stored as produced.
         self._current_reasoning: str = ""
-        self._current_reasoning_details: List[Dict[str, Any]] = []
+        self._current_reasoning_native: List[Dict[str, Any]] = []
 
     def set_role(self, role) -> None:
         """Apply a role to this conversation before its next turn."""
@@ -256,9 +256,31 @@ class Harness:
             msg["content"] = images.api_content(msg.get("content"), entry["images"])
         return msg
 
+    def _replay_start(self, history: List[Dict[str, Any]]) -> int:
+        """Index of the first entry whose reasoning is sent back: the start of
+        the last N turns (N = the role's ``replay_reasoning_depth``), capped at
+        what exists. A turn starts at a user message (not a tool's images)."""
+        depth = getattr(getattr(self, "role", None), "replay_reasoning_depth", 0)
+        starts = [i for i, m in enumerate(history)
+                  if m.get("role") == "user" and m.get("source") != "tool"]
+        if depth <= 0 or not starts:
+            return len(history)
+        return starts[max(len(starts) - depth, 0)]
+
     def _api_history(self) -> List[Dict[str, Any]]:
-        """The effective history as API messages."""
-        return [self._to_api_message(m) for m in self._get_effective_history()]
+        """The effective history as API messages, with the reasoning the role
+        sends back (the provider's own field, ``Endpoint.replay``)."""
+        history = self._get_effective_history()
+        start = self._replay_start(history)
+        endpoint = getattr(self, "endpoint", None)
+        replay = endpoint.replay if endpoint is not None else None
+        api = []
+        for i, entry in enumerate(history):
+            msg = self._to_api_message(entry)
+            if replay and i >= start and entry.get("role") == "assistant":
+                msg.update(replay(entry))
+            api.append(msg)
+        return api
 
     def _get_tool_output(self, ref: str) -> Optional[str]:
         """
@@ -525,23 +547,16 @@ class Harness:
         prompt = (getattr(getattr(self, "role", None), "prompt", "") or "").strip()
         return [{"role": "system", "content": prompt}] if prompt else []
 
-    async def _build_messages(self, user_input: str,
-                              attached: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
-        """Build message list with the role's system prompt and history."""
-        # Add user message to history and store its ID
-        extra = {"images": list(attached)} if attached else {}
-        user_msg_id = self._add_message_to_history("user", user_input, **extra)
-        self._last_user_message_id = user_msg_id
-
+    def _request_messages(self) -> List[Dict[str, Any]]:
+        """The exact message list the next request sends: the role's system
+        prompt, then the effective history as API messages. The one place a
+        request is built (``chat`` and ``get_current_context`` both use it)."""
         return self._system_messages() + self._api_history()
 
     async def get_current_context(self) -> List[Dict[str, Any]]:
-        """Get the current conversation context (system + history) without modifying state.
-        
-        Returns the exact message list that would be sent to the LLM.
-        Useful for debugging and inspecting what the model sees.
-        """
-        return self._system_messages() + self._api_history()
+        """The exact message list that would be sent to the LLM now, without
+        modifying state (for debugging and inspecting what the model sees)."""
+        return self._request_messages()
 
     async def get_system_prompt(self) -> str:
         """Return the exact system prompt that would be sent on the next turn.
@@ -583,7 +598,7 @@ class Harness:
         permission prompt blocks every subsequent tool call.
 
         Sets: self._last_full_content, _last_full_reasoning,
-              _last_reasoning_details, _last_tool_calls.
+              _last_reasoning_native, _last_tool_calls.
         """
         from moka_code import settings
 
@@ -611,7 +626,7 @@ class Harness:
 
         # Reset live reasoning accumulator for this generation
         self._current_reasoning = ""
-        self._current_reasoning_details = []
+        self._current_reasoning_native = []
 
         metrics_interval = settings.config.ui_metrics_refresh_interval
 
@@ -628,7 +643,7 @@ class Harness:
                 stream_usage = chunk.usage
 
             if chunk.reasoning_native is not None:
-                self._current_reasoning_details = chunk.reasoning_native
+                self._current_reasoning_native = chunk.reasoning_native
 
             if not (chunk.text or chunk.reasoning or chunk.tool_calls or chunk.finish):
                 empty_chunks += 1
@@ -769,14 +784,13 @@ class Harness:
         # Store results for caller
         self._last_full_content = full_content
         self._last_full_reasoning = full_reasoning
-        self._last_reasoning_details = self._current_reasoning_details
+        self._last_reasoning_native = self._current_reasoning_native
         self._last_tool_calls = tool_calls_list
 
 
     async def _execute_tool_calls(
         self, 
-        tool_calls_list: List[Dict[str, Any]], 
-        messages: List[Dict[str, Any]]
+        tool_calls_list: List[Dict[str, Any]],
     ) -> AsyncGenerator[events.Event, None]:
         """
         Execute all tool calls following the state machine flow.
@@ -833,11 +847,6 @@ class Harness:
                     content=f"Error: {error_msg}",
                     tool_call_id=tool_call_id
                 )
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": f"Error: {error_msg}"
-                })
                 continue
             
             permission_decision = self._check_tool_permission(tool_name, args)
@@ -886,11 +895,6 @@ class Harness:
                     content=result,
                     tool_call_id=tool_call_id
                 )
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": result
-                })
                 continue
             
             # STEP 3: Execute tool
@@ -968,11 +972,6 @@ class Harness:
                     content=history_result,
                     tool_call_id=tool_call_id
                 )
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": history_result
-                })
                 
             except Exception as e:
                 # STEP 4: Error
@@ -989,11 +988,6 @@ class Harness:
                     content=f"Error: {error_msg}",
                     tool_call_id=tool_call_id
                 )
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": f"Error: {error_msg}"
-                })
 
         if tool_images:
             for n, image in enumerate(tool_images, start=1):
@@ -1002,7 +996,6 @@ class Harness:
                 "user", f"[images returned by read: {', '.join(tool_image_paths)}]",
                 images=tool_images, source="tool",
             )
-            messages.append(self._to_api_message(self.history[-1]))
 
     def _take_tool_image(self, found: Dict[str, Any]) -> Tuple[str, Optional[Dict[str, Any]]]:
         """Turn an image returned by ``read`` into ``(tool result, reference)``.
@@ -1097,7 +1090,9 @@ class Harness:
             yield events.Done()
             return
 
-        messages = await self._build_messages(user_input, attached)
+        # The user message joins history; every request is built from it.
+        extra = {"images": list(attached)} if attached else {}
+        self._last_user_message_id = self._add_message_to_history("user", user_input, **extra)
         
         # Emit user message start with its ID
         yield events.Start(message_id=self._last_user_message_id, role="user")
@@ -1109,6 +1104,8 @@ class Harness:
                 assistant_msg_id = str(uuid.uuid4())
                 yield events.Start(message_id=assistant_msg_id, role="assistant")
                 
+                messages = self._request_messages()
+
                 # Log request about to be sent
                 logger.debug(f"Calling LLM with {len(messages)} messages in context")
                 
@@ -1145,8 +1142,8 @@ class Harness:
                 
                 logger.debug(f"LLM response complete. Content length: {len(full_content) if full_content else 0}, Reasoning length: {len(full_reasoning) if full_reasoning else 0}, Tool calls: {len(tool_calls_list) if tool_calls_list else 0}")
                 
-                # Reasoning is stored (export/import, transcript), never sent
-                # back to the model (PLAN.md step 2).
+                # Reasoning is stored as produced, with where it came from
+                # (``origin``); what is sent back is decided in one place.
                 msg = {
                     "id": assistant_msg_id,
                     "role": "assistant",
@@ -1158,13 +1155,13 @@ class Harness:
                     msg["tool_calls"] = tool_calls_list
                 if full_reasoning:
                     msg["reasoning"] = full_reasoning
-                if self._last_reasoning_details:
-                    msg["reasoning_details"] = self._last_reasoning_details
+                if self._last_reasoning_native:
+                    msg["reasoning_native"] = self._last_reasoning_native
+                msg["origin"] = {"type": self.endpoint.type,
+                                 "model": self.endpoint.selected_model}
                 self.history.append(msg)
                 self._last_assistant_message_id = assistant_msg_id
 
-                messages.append(self._to_api_message(msg))
-                
                 # If no tools, we're done
                 if not tool_calls_list:
                     logger.debug("No tool calls - generation complete")
@@ -1173,7 +1170,7 @@ class Harness:
                 # Execute tools and yield feedback
                 logger.debug(f"Executing {len(tool_calls_list)} tool call(s)")
                 try:
-                    async for feedback in self._execute_tool_calls(tool_calls_list, messages):
+                    async for feedback in self._execute_tool_calls(tool_calls_list):
                         yield feedback
                 except (asyncio.CancelledError, GeneratorExit):
                     # Stopped mid-turn (/stop): kill the running tool and

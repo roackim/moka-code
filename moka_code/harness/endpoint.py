@@ -289,6 +289,12 @@ class Endpoint:
         """Whether the current model reads images; ``None`` when unknown."""
         return catalog_entry(self.name, self._selected_model).get("images")
 
+    def replay(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        """The fields that send a stored assistant entry's reasoning back,
+        in this server's own field (``{}`` when it takes none). The harness
+        calls it only for the entries its role's replay depth allows."""
+        return {}
+
     # -- discovery (implemented by each provider) ----------------------------
 
     async def list_models(self) -> list[ModelInfo]:

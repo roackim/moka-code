@@ -133,11 +133,10 @@ def harness_stub_compaction():
 def run_harness_tool_call(harness: Harness, tool_call: dict):
     """Run a single tool call through harness._execute_tool_calls and collect events."""
     async def _collect():
-        messages = []
         events = []
-        async for event in harness._execute_tool_calls([tool_call], messages):
+        async for event in harness._execute_tool_calls([tool_call]):
             events.append(event)
-        return events, messages
+        return events, harness._api_history()
 
     return asyncio.run(_collect())
 

@@ -158,9 +158,8 @@ class TestHarnessReadPermissionFlow:
         calls = [_read_call("call_1"), _read_call("call_2")]
 
         async def _collect():
-            messages = []
             collected = []
-            async for event in harness._execute_tool_calls(calls, messages):
+            async for event in harness._execute_tool_calls(calls):
                 collected.append(event)
             return collected
 

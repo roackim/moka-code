@@ -381,3 +381,89 @@ def test_llamacpp_reads_openrouter_shaped_facts(fake):
     assert learn(make_endpoint(LLAMACPP)) == {
         "deepseek/deepseek-v4.1-flash": (1048576, True, ["low", "high", "max"]),
         "qwen/qwen3.8-omni-flash": (1000000, True, [])}
+
+
+# -- reasoning sent back (§9.13, PLAN.md 2b, 2026-10-01) --------------------------------
+
+def _tool_loop_request(fake, tmp_path, monkeypatch, endpoint, depth, history):
+    """The body of the request a conversation sends after ``history``, built by
+    the harness for a role with this replay depth."""
+    from unittest.mock import patch
+    from moka_code.harness.harness import Harness
+    from moka_code.harness.roles import Role
+
+    with patch("moka_code.harness.harness.get_active_endpoint", return_value=endpoint):
+        harness = Harness(workspace_path=str(tmp_path))
+    harness.role = Role(name="t", replay_reasoning_depth=depth)
+    harness.history = history
+    chat_route(fake)
+    run_chat(endpoint, harness._request_messages())
+    return chat_body(fake)["messages"]
+
+
+def _two_turns(first_origin):
+    call = {"id": "call_1", "type": "function",
+            "function": {"name": "read", "arguments": "{}"}}
+    return [
+        {"id": "u1", "role": "user", "content": "first"},
+        {"id": "a1", "role": "assistant", "content": "old answer",
+         "reasoning": "old thought", "origin": first_origin},
+        {"id": "u2", "role": "user", "content": "second"},
+        {"id": "a2", "role": "assistant", "content": None, "tool_calls": [call],
+         "reasoning": "why I call", "origin": {"type": "llamacpp", "model": "m"}},
+        {"id": "t1", "role": "tool", "content": "result", "tool_call_id": "call_1"},
+    ]
+
+
+@pytest.mark.parametrize("depth, expected", [
+    (0, [None, None]),
+    (1, [None, "why I call"]),
+    (2, ["old thought", "why I call"]),
+    (999, ["old thought", "why I call"]),
+])
+def test_llamacpp_sends_reasoning_content_by_depth(fake, tmp_path, monkeypatch, depth, expected):
+    """llama.cpp accepts ``reasoning_content`` on assistant messages (tools/server/
+    README.md and PR #18994, read 2026-10-01); the role's depth picks the turns."""
+    endpoint = make_endpoint(LLAMACPP)
+    messages = _tool_loop_request(fake, tmp_path, monkeypatch, endpoint, depth,
+                                  _two_turns({"type": "llamacpp", "model": "m"}))
+    assistant = [m for m in messages if m["role"] == "assistant"]
+    assert [m.get("reasoning_content") for m in assistant] == expected
+    assert all("reasoning" not in m and "origin" not in m for m in messages)
+
+
+def test_llamacpp_sends_the_field_even_when_the_model_gave_no_reasoning(fake, tmp_path, monkeypatch):
+    """⚠ Not documented; opencode sends the field on every assistant message for
+    the same reason (the chat template renders it either way)."""
+    history = _two_turns({"type": "llamacpp", "model": "m"})
+    history[3].pop("reasoning")
+    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(LLAMACPP), 1, history)
+    caller = next(m for m in messages if m.get("tool_calls"))
+    assert caller["reasoning_content"] == ""
+
+
+def test_openrouter_sends_native_blocks_only_to_their_model(fake, tmp_path, monkeypatch):
+    """openrouter.ai/docs/use-cases/reasoning-tokens.md §Preserving Reasoning
+    (read 2026-10-01): ``reasoning_details`` "unmodified", or the ``reasoning``
+    string; the blocks must match what the model produced."""
+    native = wire.OPENROUTER_REASONING_DELTA["reasoning_details"]
+    history = _two_turns({"type": "openrouter", "model": "m"})
+    for entry in history[1::2][:2]:
+        entry["reasoning_native"] = native
+    history[3]["origin"] = {"type": "openrouter", "model": "m"}
+    history[1]["origin"] = {"type": "openrouter", "model": "other/model"}
+    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(OPENROUTER), 2, history)
+    first, second = [m for m in messages if m["role"] == "assistant"]
+    assert (first.get("reasoning"), "reasoning_details" in first) == ("old thought", False)
+    assert second["reasoning_details"] == native and "reasoning" not in second
+    assert all("reasoning_content" not in m for m in messages)
+
+
+def test_openrouter_sends_nothing_when_the_model_gave_no_reasoning(fake, tmp_path, monkeypatch):
+    """A decision, not a documented rule (the docs are silent): an empty field
+    would be a value the model never produced. ⚠ DeepSeek behind OpenRouter
+    requires the field (its docs); unverified without a key (ISSUES)."""
+    history = _two_turns({"type": "openrouter", "model": "m"})
+    history[3].pop("reasoning")
+    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(OPENROUTER), 1, history)
+    assert all(not {"reasoning", "reasoning_details", "reasoning_content"} & m.keys() for m in messages)

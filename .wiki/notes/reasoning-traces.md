@@ -1,139 +1,109 @@
 # Reasoning Trace Handling in moka
 
-*How moka preserves model reasoning/thinking traces across turns, export and import.*
+*How moka stores model reasoning and sends it back, per provider and per role.*
 
-> **Status** (2026-10-01): Reasoning is **always stored** in history (the
-> assistant entry's `reasoning` text, plus OpenRouter's structured
-> `reasoning_details` as produced) and **never sent back** to the model:
-> replay was removed until `PLAN.md` step 2. `content` is never parsed: inline
-> `<think>` tags stay in the answer. This page is rewritten in step 2.
+> **Status** (2026-10-01, `PLAN.md` step 2b): reasoning is stored as the model
+> produced it and sent back in the provider's own field, as deep as the role's
+> `replay_reasoning_depth` allows. `content` is never parsed: inline `<think>`
+> tags stay in the answer. Not built yet: the minimum-depth warning (2b step 3)
+> and DeepSeek (2c).
 
 ---
 
-## How Reasoning is Streamed
+## Streaming
 
-The streaming entry point is `Harness._stream_llm_response()` in `harness.py`. Two code paths handle reasoning:
-
-### 1. `reasoning_content` API field
-
-```python
-reasoning = getattr(delta, "reasoning_content", None)
-if reasoning:
-    full_reasoning += reasoning
-    yield events.Reasoning(text=reasoning)
-    continue
-```
-
-This handles the non-standard `reasoning_content` field that local inference servers (llama.cpp, vLLM) and some cloud APIs (DeepSeek) use to deliver chain-of-thought traces. The reasoning is accumulated into `full_reasoning` **and** yielded to the UI.
-
-Provider field names differ and are normalized by the transport adapters:
-
-| Provider | Field |
-|---|---|
-| DeepSeek / vLLM / llama.cpp | `delta.reasoning_content` |
-| OpenRouter (and others) | `delta.reasoning` |
-| OpenRouter structured | `delta.reasoning_details[].text` |
-
-`providers/openai_compatible._extract_reasoning()` reads the OpenAI-compatible aliases.
-If a provider's field is not listed here it
-will be silently dropped before the harness sees it — a missing reasoning field
-in an export usually means the adapter, not the harness.
-
-### 2. `content` is never parsed
+`Endpoint.stream()` yields neutral `Chunk`s; `Harness._stream_llm_response()`
+accumulates `text`, `reasoning` and `reasoning_native` and forwards events.
+Each provider reads its documented reasoning fields (`providers.md` §4 S8):
+llama.cpp and DeepSeek `reasoning_content`; OpenRouter `reasoning`, and its
+`reasoning_details` blocks, which `providers/openrouter.merge_reasoning_details`
+folds per `index` (`text`/`summary`/`data` concatenate, `signature`/`id`/`format`
+fill in) into the blocks the model produced. A field missing from the reader is
+dropped before the harness sees it: a missing reasoning field in an export
+usually means the provider class, not the harness.
 
 `content` deltas are answer tokens, stored and shown exactly as sent. A server
 that does not split reasoning out (llama.cpp `--reasoning-format none` or
-`deepseek-legacy` while streaming, or a chat template it does not recognize)
-shows raw `<think>` tags in the answer. The former tag parser
-(`thinking_parser.py`) was removed on 2026-10-01.
+`deepseek-legacy` while streaming, or a template it does not recognize) shows
+raw `<think>` tags in the answer.
 
 ---
 
-## How the Assistant Message is Saved
+## What is stored
 
-```python
-msg = {"id": assistant_msg_id, "role": "assistant", "content": full_content or None}
-if tool_calls_list:
-    msg["tool_calls"] = tool_calls_list
-if full_reasoning:
-    msg["reasoning"] = full_reasoning
-if self._last_reasoning_details:          # OpenRouter blocks, as produced
-    msg["reasoning_details"] = self._last_reasoning_details
-```
+Each assistant entry in history:
 
-OpenRouter streams `reasoning_details` in pieces;
-`providers/openrouter.merge_reasoning_details` folds pieces sharing an `index` into
-one block (`text`/`summary`/`data` concatenate, `signature`/`id`/`format` fill
-in), rebuilding the blocks as the model produced them — OpenRouter requires
-them back **unmodified**.
+| Key | Content |
+|---|---|
+| `content` | the answer, verbatim (`None` for a tool-call-only step) |
+| `tool_calls` | the calls, when any |
+| `reasoning` | the reasoning text, when the model gave any |
+| `reasoning_native` | opaque blocks as produced (OpenRouter `reasoning_details`), when any |
+| `origin` | `{type, model}` of the endpoint that produced it, always |
+
+Saved sessions and `/export` carry all of it. Sessions written before 2b have
+no compatibility: `reasoning_details` is not read, and an entry without
+`origin` counts as foreign (its text is replayed, never its native blocks).
 
 ---
 
-## How History is Re-sent to the LLM
+## What is sent back
 
-`Harness._to_api_message(entry, keep_reasoning)` sends only `_API_FIELDS`
-(`role`, `content`, `tool_calls`, `tool_call_id`) — moka's `id`, `source`,
-`reasoning_tag` of old exports, image references never leave. With
-`keep_reasoning` an assistant message carries its reasoning under neutral
-`reasoning` / `reasoning_details` keys, which each endpoint moves to its field:
+Every request is built in one place, `Harness._request_messages()` (system
+prompt + effective history, from the last compaction marker). `_to_api_message`
+keeps only `role`, `content`, `tool_calls`, `tool_call_id` and image parts;
+moka's `id`, `source`, `origin`, `reasoning*` never leave as such.
 
-| Server (`type`) | Field sent | Source |
+**Which entries:** the role's `replay_reasoning_depth` (default 1; a role file
+sets it, a new role's template shows it commented). A *turn* is one user message
+(not a tool's returned images) and what the model does until its answer.
+
+| Depth | Assistant entries that carry reasoning |
+|---|---|
+| 0 | none |
+| 1 | the current turn: the tool loop in progress |
+| N | the last N turns, capped at what exists (999 = all) |
+
+The compaction marker is never a turn. moka sends what is configured, never
+more or less, whatever the model needs.
+
+**In which field** (`Endpoint.replay(entry)`, fixed per provider from its docs,
+never configurable):
+
+| Provider | Sent | When the model gave no reasoning |
 |---|---|---|
-| `llamacpp` | `reasoning_content` | llama.cpp `common/chat.cpp` parses it from input messages; `--reasoning-preserve` (default on) + the chat template decide whether earlier turns reach the prompt |
-| `openrouter` | `reasoning_details` unmodified when the model produced them, else `reasoning` | OpenRouter reasoning docs; required across tool calls |
+| `llamacpp` | `reasoning_content` = the text. llama.cpp uses it if the chat template supports it, else ignores it (PR #18994; `--reasoning-preserve`, default on) | the field is sent empty (⚠ not documented; opencode does the same) |
+| `openrouter` | `reasoning_details` unmodified when `origin` is this server and this model (OpenRouter: blocks must match what the model produced), else the `reasoning` text | nothing is sent (a decision: the docs are silent; ⚠ DeepSeek behind OpenRouter requires the field, unverified without a key) |
 
-`Harness._api_history` keeps it on every assistant message; inside `chat()`
-each new assistant turn is appended with `keep_reasoning=True` too.
-
-Removed (2026-09-28): folding reasoning into `content` as `<think>…</think>`
-(the model saw its old thoughts as answer text and servers could not treat them
-as reasoning), `reasoning_tag`, and the uncalled thinking-prefill injection.
+Not supported for now: signed or encrypted reasoning (OpenAI, Anthropic, Gemini
+through OpenRouter). Their `reasoning_native` blocks are stored and sent back
+only to the same model, but the signed case was never exercised.
 
 ---
 
 ## Configuration
 
-None. The servers.toml `preserve_reasoning` key (per server / model table) was
-removed (2026-09-30); it is now an unknown key. The former
-`context.preserve_reasoning_traces` is retired and removed from `context.toml`
-on startup. llama.cpp still needs `--reasoning-preserve` (default on) for
-earlier turns to reach the prompt.
+`replay_reasoning_depth` in the role file only. There is no server or global
+key (`preserve_reasoning` was removed 2026-09-30). llama.cpp still needs
+`--reasoning-preserve` (default on) for earlier turns to reach the prompt.
 
 ---
 
-## Verification (2026-09-28)
+## Verification
 
-**Checked against a real provider** — OpenRouter,
-`deepseek/deepseek-v4.1-flash`, harness driven directly, two turns, three
-requests, no errors:
+By tests only (fake servers, `test_wire_requests.py`, `test_reasoning_history.py`):
+the field and the depth per provider, native blocks only to their model, empty
+reasoning. Not checked on a real server since the 2b rebuild.
 
-| What | Result |
-|---|---|
-| Tool loop: reasoning sent back with the tool call (`reasoning_details`) | accepted |
-| Next turn: earlier reasoning re-sent (`preserve_reasoning` default) | accepted, coherent answer |
-| API field allow-list (no `id`) | accepted |
-| Streamed `reasoning_details` merge | 39 pieces → 1 `reasoning.text` block, same length as the reasoning text |
-
-Also checked with a fake llama.cpp server recording payloads:
-`reasoning_content` on the right messages, with preserve on and off.
-
-**Open — possible future investigation**
-
-- **Signed / encrypted reasoning blocks.** DeepSeek sends plain
-  `reasoning.text` blocks without a signature, so the case where a wrong merge
-  would be rejected (Claude or Gemini through OpenRouter: signed text,
-  `reasoning.encrypted`) was not exercised. `merge_reasoning_details` joins
-  pieces by `index`, based on OpenRouter's docs ("concatenate chunks in order",
-  send back unmodified). To settle: one tool-call turn with a Claude or Gemini
-  model on OpenRouter; a rejection names the offending block.
-- **Real models never met:** images (content parts) and the text-only
-  refusal — checked with fake servers only.
+Open: signed or encrypted blocks (Claude or Gemini through OpenRouter) need one
+tool-call turn on a real model; a rejection names the offending block. Images
+(content parts) and the text-only refusal were only ever checked with fakes.
 
 ---
 
 ## Related
 
-- [architecture.md](../notes/architecture.md) — High-level data flow
-- [config.md](../notes/config.md) — Configuration reference
-- `events.py` — Defines the `Reasoning` and `Token` event types
-- `harness.py` — `_stream_llm_response()` and `chat()` methods
+- [providers.md](./providers.md) — the provider contract (`replay`, slot S9)
+- [architecture.md](../notes/architecture.md) — data flow
+- [config.md](../notes/config.md) — configuration reference
+- `harness.py` — `_request_messages`, `_replay_start`, `_api_history`, `chat()`

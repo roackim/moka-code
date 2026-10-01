@@ -1,7 +1,8 @@
 # Provider contract
 
-> **Status:** built (`PLAN.md` step 1 and 2a, done 2026-10-01). This page
-> describes what exists; `replay` (§3) is step 2b and not built yet.
+> **Status:** built (`PLAN.md` step 1, 2a, and 2b except the minimum-depth
+> warning, 2026-10-01). This page describes what exists; the rows marked 2b /
+> 2c in §11 and DeepSeek are not built yet.
 
 A *provider* is a server family moka can talk to: llama.cpp and OpenRouter
 (Ollama was removed on 2026-10-01, §9.11; the catch-all `openai-compatible`
@@ -182,12 +183,16 @@ Pure mapping of the instance's chosen `effort` to this server's request field.
 checked against `efforts` (an incomplete catalog must not drop a user choice;
 the server decides).
 
-### `replay(entry, target_model) -> dict` (step 2, not built)
+### `replay(entry) -> dict`
 
-Reasoning fields for an outgoing assistant message. Not built: replay was
-removed on 2026-09-30 and nothing is sent back. Step 2 adds it per provider
-without touching the harness (`reasoning` → `reasoning_content`;
-`reasoning_native` only to the model that produced it).
+The fields that send a stored assistant entry's reasoning back, in this
+server's own field (`{}` when it takes none; the base class). The harness calls
+it only for the entries its role's `replay_reasoning_depth` allows
+(`reasoning-traces.md`); the provider decides the field and what to do when the
+model produced no reasoning. `OpenAICompatible`: `reasoning_content`, sent even
+when empty (llama.cpp). `OpenRouter`: `reasoning_details` when `entry.origin`
+is `{type, model}` of this endpoint, else the `reasoning` text, nothing if
+there is none.
 
 ### Connection check
 
@@ -210,7 +215,7 @@ Slot labels are row ids only (gaps in the numbering are historical).
 | S6 efforts | `reasoning.supported_efforts` if the server advertises it, else none known | `reasoning.supported_efforts` only |
 | S7 field | `reasoning_effort` | `reasoning.effort` |
 | S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same, plus `reasoning_details` assembled into `reasoning_native` |
-| S9 reasoning in | none (step 2b) | none |
+| S9 reasoning in | `reasoning_content`, sent even when empty | `reasoning_details` (same model) else `reasoning`; nothing when empty |
 | S11 usage | `include_usage`; cache from `timings.cache_n` | `include_usage`, `cost` |
 | S13 extras | — | `providers` / `providers_by_model` routing, `allow_fallbacks: false` |
 
@@ -241,7 +246,8 @@ Identical for every provider, not overridden:
 
 1. **Messages are API-shaped.** Only `role`, `content`, `tool_calls`,
    `tool_call_id`, and image content parts (base64 data URLs). No moka fields
-   (`id`, `source`, image references) and, until step 2, no reasoning.
+   (`id`, `source`, image references); reasoning only as `Endpoint.replay` returns
+   it, for the entries the role's depth allows.
 2. **`model` is the selected id exactly as listed.** `stream` does not map
    bare ids to canonical ones (OpenRouter's suffix matching is P5, to audit).
 3. **`effort` is passed as chosen** (`None` = default); never validated.
@@ -252,8 +258,10 @@ Identical for every provider, not overridden:
 6. **Catalog discipline.** `list_models()` is called only through
    `refresh_catalog`; results live in memory; a failed refresh keeps the last
    good list, marked stale; a provider never caches facts of its own.
-7. **One identity for stored output.** Step 2 records `origin = {type, model}`
-   on each assistant entry from `self.type` and the model used.
+7. **One identity for stored output.** Each assistant entry records
+   `origin = {type, model}` from the endpoint's `type` and selected model.
+8. **One request builder.** `Harness._request_messages()` builds every request
+   (`chat`, `get_current_context`) from history; nothing keeps a second list.
 
 ---
 
@@ -360,6 +368,11 @@ Everything else is identical.
     `max_context` is a load error. OpenRouter's catalog being unreachable is a
     failed listing (stale), not a list of models without facts.
 
+13. **Reasoning is sent back** (2026-10-01, `PLAN.md` 2b): per role
+    (`replay_reasoning_depth`), in the provider's own field (`replay`). Before
+    2026-09-30 every turn was replayed for every model; from then until 2b
+    nothing was.
+
 ---
 
 ## 10. Decisions (all approved by the user on 2026-10-01)
@@ -389,18 +402,104 @@ Everything else is identical.
 
 ## 11. Adding a provider
 
-1. Subclass `OpenAICompatible` (chat-completions servers) or `Endpoint`.
-2. Set the class attributes of §2, including its `template` block.
-3. Implement `list_models`, `_stream` and `effort_payload` (a server that
-   is not OpenAI-compatible also overrides the connection check).
-4. Add one line to the registry.
-5. Add wire-level tests for each row of §4 that applies, and its column of
-   the slot table.
+A provider is a subclass of `OpenAICompatible` (chat-completions servers) or
+`Endpoint`, one file in `harness/providers/`, one line in the registry. No
+`type ==` anywhere; if a change needs one, the contract is missing something
+and this page changes first.
 
-Touches one new file and one registry line. No `type ==` anywhere; if a
-change needs one, the contract is missing something and this page changes
-first.
+**Read the provider's own docs first**, fetched raw (`curl`; OpenRouter docs:
+append `.md`), only for a provider being built. Answer every row below from
+them, write the source and the date next to the answer (here, in the
+provider's test fixtures, in its slot-table column). A shape no doc shows is
+marked ⚠ and listed in `ISSUES.md`; it is never assumed. A server that is not
+documented well enough to answer the rows is not supported (OpenCode Go,
+postponed 2026-10-01: per-model APIs, and a `/models` without a context
+window).
 
-Not covered, by design: an abstract base class or plug-in loading; native
-Anthropic, DeepSeek and the OpenAI Responses API (`PLAN.md` future polish).
-`reasoning_native`, `replay` (step 2) and `origin` are the seam they will use.
+*Status:* ✅ built · 2b / 2c = `PLAN.md` steps, not built yet.
+
+### 11.1 The sheet to fill
+
+**A. Identity and config** (§2)
+
+| # | Question | Rule | Status |
+|---|---|---|---|
+| A1 | `type` string | one class, one `type`; no catch-all type for "any server" | ✅ |
+| A2 | Base URL | `fixed_url` (forbidden in the table), `default_url` (optional) or required | ✅ |
+| A3 | Auth | `api_key` / `api_key_env`; a keyless server has no key line; a set `api_key_env` whose variable is unset is an error notice | ✅ |
+| A4 | Keys beyond the common ones | `extra_keys`; anything else is a load error | ✅ |
+| A5 | Template block | `template`, only the keys a server needs; a guard test reads it | ✅ |
+| A6 | Registry line | `providers/__init__.py`; drives valid types, keys and the template | ✅ |
+
+**B. Model facts** (§3 `list_models`; from the server only, never a catalog,
+a table or a guess)
+
+| # | Question | Rule | Status |
+|---|---|---|---|
+| B1 | Which route lists the models, and the id sent back | the id is sent exactly as listed | ✅ |
+| B2 | Context window: route and field | **required**; a selected model whose listing states none is an error notice ("server broken, or moka reads the wrong route"); no `max_context`, no default | ✅ |
+| B3 | Image input | optional; absent = unknown, never "no" | ✅ |
+| B4 | Effort levels | optional; read only where the server states them; none stated = no `/effort` menu | ✅ |
+| B5 | A fact that needs a second request (e.g. llama.cpp `/props`) | fetched inside `list_models()`; a failed side request means unknown, not a failure | ✅ |
+| B6 | Catalog not reachable | the listing fails (last good list kept, flagged stale); never models without facts | ✅ |
+
+**C. The request** (§3 `stream`, `effort_payload`)
+
+| # | Question | Rule | Status |
+|---|---|---|---|
+| C1 | Chat route and payload | `model`, `messages`, `stream`, `tools`, `stream_options.include_usage` | ✅ |
+| C2 | Effort field | a chosen level is always sent as chosen, never checked against B4 | ✅ |
+| C3 | Thinking on/off switch | only if the docs have one; send it or rely on the server default (DeepSeek: undecided, 2c) | 2c |
+| C4 | Routing or other extras | `_extra_payload` (OpenRouter `provider`) | ✅ |
+
+**D. The response** (§3 `Chunk`)
+
+| # | Question | Rule | Status |
+|---|---|---|---|
+| D1 | Answer text | verbatim: no tag parsing, no `<think>` splitting, anywhere | ✅ |
+| D2 | Reasoning text: which field(s) | read the documented field and its aliases | ✅ |
+| D3 | Native reasoning blocks (structured or opaque) | `reasoning_native`, assembled by the provider, emitted once at the end, kept exactly as produced | ✅ OpenRouter |
+| D4 | Tool-call pieces | index, id, name, argument fragments | ✅ |
+| D5 | Usage: prompt, completion, cache count, cost | read as documented; ⚠ where a shape is not documented (ISSUES P11) | ✅ |
+| D6 | Finish reason | the server's, unchanged | ✅ |
+
+**E. Reasoning sent back** (`replay`, `PLAN.md` step 2b)
+
+| # | Question | Rule | Status |
+|---|---|---|---|
+| E1 | The documented field(s) to send reasoning back in | fixed per provider from its docs, never configurable (llama.cpp, DeepSeek: `reasoning_content`; OpenRouter: `reasoning_details` or `reasoning`) | ✅ |
+| E2 | Text or native | native only back to the model that produced it (`origin = {type, model}`); other models get the text | ✅ |
+| E3 | When there is no reasoning | decided per provider, in its own `replay()` (llama.cpp, DeepSeek: field sent empty; OpenRouter: nothing); unverified cases go to ISSUES | ✅ |
+| E4 | Minimum depth | `min_replay_depth(has_tools)`, default 0; DeepSeek: all turns whenever `tools` is sent (else HTTP 400). A role below it gets a warning in the notice band, from live state (so also after a model or server switch); the configured depth is still sent | 2b / 2c |
+| E5 | Signed or encrypted reasoning (OpenAI, Anthropic, Gemini) | not supported for now | — |
+
+What the harness does, for every provider: stores `reasoning`,
+`reasoning_native` and `origin` on each assistant entry; sends back what the
+role's `replay_reasoning_depth` allows (0 = none, 1 = the current turn, N = the
+last N turns, capped at what exists; default 1; a turn is one user message and
+what the model does until its answer); builds every request from history in one
+place; never parses, moves or rewrites reasoning. No compatibility for
+sessions saved before step 2b.
+
+**F. Failure and connection** (§7)
+
+| # | Question | Rule | Status |
+|---|---|---|---|
+| F1 | Connection check route | `GET /models` by default; override only if it does not exist | ✅ |
+| F2 | Retries | base class: 503 and network errors; the provider adds none | ✅ |
+| F3 | Error body | the server's body is not shown yet (§7 gap) | open |
+
+### 11.2 Proof and docs
+
+1. **Wire tests** (`test_wire_requests.py`) through the contract only (§8):
+   one expectation per row that applies, with its fixture copied from the
+   docs (source and date in the test), undocumented shapes marked ⚠; each
+   test checked by breaking the code it covers.
+2. Add the provider's column to the slot table (§4), and any deliberate
+   change to §9.
+3. Update `reasoning-traces.md` and `config.md` where the provider
+   changes them; record every unverified item in `ISSUES.md`.
+
+Not covered, by design: plug-in loading; native Anthropic and the OpenAI
+Responses API (`PLAN.md` future polish). `reasoning_native`, `replay` (2b) and
+`origin` are the seam they will use.

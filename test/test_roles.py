@@ -196,3 +196,28 @@ def test_require_sandbox_round_trips(tmp_path, monkeypatch):
 def test_require_sandbox_defaults_false():
     assert agent_role().require_sandbox is False
     assert Role(name="x").require_sandbox is False
+
+
+def test_replay_reasoning_depth(tmp_path, monkeypatch):
+    """2b (2026-10-01): default 1, a file can set it, bad values are errors,
+    and the template shows the default as a commented line."""
+    monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
+    (tmp_path / "roles").mkdir()
+    assert Role(name="x").replay_reasoning_depth == 1
+    template = roles_module._role_template(Role(name="t", tools={"read": "yes"}))
+    assert "\n# replay_reasoning_depth = 1\n" in template
+    (tmp_path / "roles" / "t.toml").write_text(template, encoding="utf-8")
+    assert load_role("t").replay_reasoning_depth == 1
+
+    (tmp_path / "roles" / "t.toml").write_text(
+        template + "replay_reasoning_depth = 999\n", encoding="utf-8")
+    loaded = load_role("t")
+    assert loaded.replay_reasoning_depth == 999
+    assert "replay_reasoning_depth" not in loaded.tools
+    assert validate_roles() == []
+
+    for bad in ("-1", "true", '"all"', "1.5"):
+        (tmp_path / "roles" / "t.toml").write_text(
+            template + f"replay_reasoning_depth = {bad}\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="replay_reasoning_depth"):
+            load_role("t")

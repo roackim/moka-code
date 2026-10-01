@@ -42,6 +42,10 @@ class Role:
     #: When True the role only runs while a sandbox is active; otherwise the
     #: conversation is locked (no LLM turns) until one is selected.
     require_sandbox: bool = False
+    #: How many turns of the model's reasoning are sent back with each request:
+    #: 0 = none, 1 = the current turn (the tool loop in progress), N = the last
+    #: N turns, capped at what exists (999 = all).
+    replay_reasoning_depth: int = 1
 
     def enabled_tool_names(self) -> set[str]:
         """Tool names the model is allowed to see (anything but ``no``)."""
@@ -134,7 +138,8 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
     registered = set(registered_tool_names())
     tools: dict[str, str] = {}
     for key, value in data.items():
-        if key in ("description", "prompt", "disabled", "require_sandbox"):
+        if key in ("description", "prompt", "disabled", "require_sandbox",
+                   "replay_reasoning_depth"):
             continue
         key = _RETIRED_TOOL_ALIASES.get(key, key)
         if key in _RETIRED_TOOLS:
@@ -147,12 +152,16 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
                 + " / ".join(TOOL_VALUES)
             )
         tools[key] = value
+    depth = data.get("replay_reasoning_depth", 1)
+    if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
+        raise ValueError(f"roles/{name}.toml: replay_reasoning_depth must be an integer >= 0")
     return Role(
         name=name,
         description=str(data.get("description", "")),
         prompt=str(data.get("prompt", "")),
         tools=tools,
         require_sandbox=bool(data.get("require_sandbox", False)),
+        replay_reasoning_depth=depth,
     )
 
 
@@ -163,6 +172,8 @@ def _role_to_dict(role: Role) -> dict[str, Any]:
     }
     if role.require_sandbox:
         data["require_sandbox"] = True
+    if role.replay_reasoning_depth != 1:
+        data["replay_reasoning_depth"] = role.replay_reasoning_depth
     data.update(role.tools)
     return data
 
@@ -226,7 +237,10 @@ def _role_template(role: Role) -> str:
         f"#   Edit with:   /config role {role.name}\n"
         f"#\n"
         f"# Tools: no = disabled (hidden from the model) · ask = confirm · yes = auto\n"
-        f"# require_sandbox = true locks the conversation unless a sandbox is active.\n\n"
+        f"# require_sandbox = true locks the conversation unless a sandbox is active.\n"
+        f"# replay_reasoning_depth: turns of the model's reasoning sent back with each\n"
+        f"# request. 0 = none, 1 = the current turn (tool loop), N = last N turns, 999 = all.\n"
+        f"# replay_reasoning_depth = 1\n\n"
         f"description = {json.dumps(role.description)}\n"
         f"prompt = {json.dumps(role.prompt)}\n"
     )
