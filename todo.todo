@@ -1,3 +1,8 @@
+[ ] /private cmd : make hte conversation private, no cache no save etc.
+[ ] usr message text wrong color ? should be like input field
+[x] still a bug with the deepseek warning 'deepseek needs reasoning sent back for all turn(s), role agent sends 1 → replay_reasoning_depth'
+    it triggers on start EVEN if not true !! (configured 999 !!!)
+
 [ ] add a headless mode to moka
     -> POSTPONED (2026-10-01): needs a thorough design (no one to answer `ask`,
        output formats, sessions); no current need

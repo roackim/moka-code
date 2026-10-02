@@ -55,8 +55,14 @@ class Harness:
         import os
         self.workspace = workspace_path or os.getcwd()
 
-        from moka_code.harness.roles import agent_role
-        self.role = agent_role()
+        # The user's agent role file, not the built-in: its settings apply from
+        # the first turn. A file that does not load falls back to the built-in
+        # (``validate_roles`` reports it on /reload).
+        from moka_code.harness.roles import agent_role, load_role
+        try:
+            self.role = load_role("agent")
+        except (KeyError, OSError, ValueError):
+            self.role = agent_role()
 
         # Permission gate turns the role's per-tool setting into a decision.
         self._permission_gate = PermissionGate(role=self.role)
