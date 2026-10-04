@@ -656,13 +656,14 @@ class chatTUI(ChatActionHandlers):
 
     def save_session(self) -> None:
         """Save the conversation to its session file (``context.sessions``
-        most recent kept per project; 0 = never saved). Best effort: a failed
+        most recent kept per project; 0 = never saved; never in private mode). Best effort: a failed
         save is logged, never raised into the UI."""
         from moka_code.harness import sessions
 
         keep = settings.config.context_sessions
         history = getattr(self.agent, "history", None)
-        if keep <= 0 or not history or self.session_path is None:
+        if (keep <= 0 or not history or self.session_path is None
+                or getattr(self.agent, "private", False)):
             return
         workspace = getattr(self.agent, "workspace", ".")
         try:

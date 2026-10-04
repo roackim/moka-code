@@ -31,6 +31,7 @@ from .core import (
     cmd_edit,
     cmd_exit,
     cmd_help,
+    cmd_private,
     cmd_reload,
     cmd_stop,
     cmd_terminal,
@@ -64,7 +65,9 @@ async def _help(ui: ChatUIProtocol, args: List[str]):
 # Command Registry
 COMMANDS: Dict[str, Command] = {
     "help":         Command("help", "Show available commands", handler=_help),
-    "clear":        Command("clear", "Clear chat history", handler=cmd_clear),
+    "clear":        Command("clear", "Clear chat history (and leave private mode)", handler=cmd_clear),
+    "private":      Command("private", "Stop saving this conversation until /clear",
+                            handler=cmd_private),
     "reload":       Command("reload", "Reload config files and validate role files from disk",
                             handler=cmd_reload),
     "config":       ConfigCommand(),

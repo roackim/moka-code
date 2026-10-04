@@ -529,7 +529,9 @@ class Message:
 
         self.frame_color = frame_color
         if hasattr(self.component, "fg"):
-            self.component.fg = content_color
+            # No type color means the normal text color; the component only
+            # resolves ``None`` to it at construction.
+            self.component.fg = content_color if content_color is not None else theme.DEFAULT
         if hasattr(self.component, "bg"):
             self.component.bg = theme.get_bg()
 

@@ -156,8 +156,11 @@ def _refresh_notices(app) -> None:
             app.activity(f"{stamp} fixed: {text}")
     app._notices = current
     band.max_lines = settings.config.ui_notice_lines
-    band.set_notices([(text, theme.ERROR if level == "error" else theme.WARNING)
-                      for level, text in current])
+    lines = [(text, theme.ERROR if level == "error" else theme.WARNING)
+             for level, text in current]
+    if getattr(app.agent, "private", False):
+        lines.insert(0, ("private · nothing is saved · /clear to leave", theme.USER))
+    band.set_notices(lines)
 
 
 def refresh_status_bar(app) -> None:

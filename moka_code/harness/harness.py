@@ -44,6 +44,8 @@ _TOOL_DRAFT_INTERVAL = 0.1
 class Harness:
     # Why the last stream ended ("stop", "tool_calls", "length", ...).
     _last_finish_reason: Optional[str] = None
+    # Private conversation: not saved, not logged, images kept in a temp folder.
+    private = False
 
     def __init__(self, workspace_path: str | None = None,
                  transport: Optional[ToolTransport] = None):
@@ -402,6 +404,12 @@ class Harness:
         self.history = history
         self._last_usage = None
         self.conversation_cost = None
+
+    def set_private(self, on: bool) -> None:
+        """Enter or leave private mode (``/private``; ``/clear`` leaves it)."""
+        self.private = on
+        self.debug_stream.muted = on
+        images.set_private(on)
 
     def clear_history(self):
         """Clear the conversation history for the agent."""

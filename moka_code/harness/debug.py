@@ -14,6 +14,8 @@ class DebugStream:
         self.config = settings.config
         self.log_path = Path("debug_stream.log")
         # Keep file open for performance (only when enabled)
+        # Private mode: nothing reaches the log file.
+        self.muted = False
         self._file = open(self.log_path, "a", encoding="utf-8", buffering=1) if self.config.debug_log_enabled else None
         # Also get Python logger for TUI integration
         self._logger = logging.getLogger("harness")
@@ -33,7 +35,7 @@ class DebugStream:
         entry = f"[{timestamp}] [{direction}] {payload_str}\n"
         
         # Write to the open file handle
-        if self._file is not None:
+        if self._file is not None and not self.muted:
             try:
                 self._file.write(entry)
             except Exception:

@@ -389,3 +389,18 @@ def test_builtin_palettes_are_legible_and_coherent(palette):
     assert error >= 340 or error <= 20                        # red
     assert 25 <= warning <= 66                                # amber / yellow
     assert 70 <= success <= 170                               # green
+
+
+def test_refresh_theme_keeps_user_text_in_the_normal_color():
+    from moka_code.ui.chat_message import Message
+    from moka_code.ui.tui.msg_types import UserMsg
+
+    original = colors.theme.name
+    try:
+        colors.set_theme("terminal")
+        message = Message("hi", msg_type=UserMsg())
+        colors.set_theme("moka")
+        message.refresh_theme()
+        assert message.component.fg == colors.theme.DEFAULT
+    finally:
+        colors.set_theme(original)

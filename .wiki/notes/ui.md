@@ -99,6 +99,18 @@ atomically) is shared by `/export`, `/import` and autosave
   it. Refused while a response is generating.
 - `moka --resume` / `-r` queues `/session` at startup (`chatTUI(resume=True)`).
 
+### Private mode (`/private`)
+
+`/private` sets `Harness.private` (per process, never persisted). While on:
+`save_session` writes nothing (`/session` resume included), the debug log is
+muted (`DebugStream.muted`), and images go to a temp folder
+(`images.set_private`) deleted when the mode ends and at exit. The notice band
+shows `private · nothing is saved · /clear to leave` above any real notices.
+`/clear` is the only way out (it also clears the history, so private turns never
+reach disk). Entering mid-conversation leaves the earlier turns' session file
+as is and says where it is. `/export` stays available (explicit user action);
+provider-side retention is out of moka's hands.
+
 ## Conversation import/export
 
 `/export <file>` writes `{"role": ..., "history": [...]}`; image references
@@ -711,7 +723,7 @@ The package lives in `moka_code/ui/commands/`:
 
 ### Registered Commands
 
-`help`, `clear`, `reload`, `config`, `edit`, `export`, `import`, `compact`,
+`help`, `clear`, `private`, `reload`, `config`, `edit`, `export`, `import`, `compact`,
 `exit`, `stop`, `terminal`, `activity`, `model`, `role`, `sandbox`, `diff`, `theme`
 
 ### Sandbox (`/sandbox`)

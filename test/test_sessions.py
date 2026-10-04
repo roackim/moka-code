@@ -188,3 +188,47 @@ def test_resume_flag_opens_the_picker(tmp_path, monkeypatch):
     asyncio.run(asyncio.wait_for(ui.run(), timeout=5))
 
     assert submitted == ["/session"]
+
+
+# ---------------------------------------------------------------------------
+# /private
+# ---------------------------------------------------------------------------
+
+def _private_ui(tmp_path):
+    from moka_code.harness.harness import Harness
+
+    ui = _ui(tmp_path, _history())
+    ui.agent.private = False
+    ui.agent.debug_stream = SimpleNamespace(muted=False, log=lambda *a: None)
+    ui.agent.set_private = lambda on: Harness.set_private(ui.agent, on)
+    ui.agent.clear_history = lambda: setattr(ui.agent, "history", [])
+    return ui
+
+
+def test_private_mode_saves_nothing_and_clear_leaves_it(tmp_path, monkeypatch):
+    from moka_code.ui.commands.core import cmd_clear, cmd_private
+
+    monkeypatch.setattr(settings.config, "context_sessions", 10)
+    ui = _private_ui(tmp_path)
+
+    asyncio.run(cmd_private(ui, []))
+    ui.save_session()
+    assert ui.agent.debug_stream.muted
+    assert sessions.list_sessions(str(tmp_path)) == []
+
+    asyncio.run(cmd_clear(ui, []))
+    ui.agent.history = _history()
+    ui.save_session()
+    assert not ui.agent.private and not ui.agent.debug_stream.muted
+    assert len(sessions.list_sessions(str(tmp_path))) == 1
+
+
+def test_private_images_live_in_a_temp_folder_removed_on_leaving():
+    from moka_code.harness import images
+
+    images.set_private(True)
+    folder = images.cache_dir()
+    assert "moka-private-" in folder.name and folder.exists()
+
+    images.set_private(False)
+    assert not folder.exists() and "moka-private-" not in images.cache_dir().name

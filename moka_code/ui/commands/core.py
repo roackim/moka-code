@@ -47,8 +47,26 @@ async def cmd_help(ui: ChatUIProtocol, args: List[str], commands):
     ui.show_popup("help", "\n".join(help_lines))
 
 
+async def cmd_private(ui: ChatUIProtocol, args: List[str]):
+    """Stop saving this conversation; /clear ends the mode."""
+    if getattr(ui.agent, "private", False):
+        ui.chat_history_panel.add_message(
+            "Already private. /clear leaves private mode.", msg_type=SysMsg())
+        return
+    ui.agent.set_private(True)
+    text = "Private: nothing is saved or logged from now on. /clear leaves private mode."
+    saved = getattr(ui, "session_path", None)
+    if saved is not None and saved.exists():
+        text += f" Earlier turns remain in {saved}."
+    ui.chat_history_panel.add_message(text, msg_type=SysMsg())
+    if hasattr(ui, "refresh_status_bar"):
+        ui.refresh_status_bar()
+
+
 async def cmd_clear(ui: ChatUIProtocol, args: List[str]):
     ui.chat_history_panel.clear()
+    if hasattr(ui.agent, "set_private"):
+        ui.agent.set_private(False)
     if hasattr(ui.agent, "clear_history"):
         ui.agent.clear_history()
     # The cleared conversation stays saved; what follows is a new session.

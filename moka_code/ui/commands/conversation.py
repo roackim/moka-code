@@ -113,7 +113,10 @@ def load_conversation(ui: ChatUIProtocol, path) -> bool:
         try:
             role = roles.load_role(role_name)
         except KeyError:
-            role = roles.agent_role()
+            try:
+                role = roles.load_role("agent")
+            except (KeyError, OSError, ValueError):
+                role = roles.agent_role()
             role_warning = f"Role '{role_name}' no longer exists — defaulted to 'agent'."
         ui.switch_role(role)
 

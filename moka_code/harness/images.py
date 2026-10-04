@@ -9,11 +9,14 @@ Dimensions come from the file headers (PNG, JPEG, GIF, WebP) — no Pillow.
 """
 from __future__ import annotations
 
+import atexit
 import base64
 import hashlib
 import os
 import re
+import shutil
 import struct
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -36,7 +39,24 @@ class ImageError(ValueError):
     """An image cannot be attached; the message says why."""
 
 
+_private_dir: Optional[Path] = None
+
+
+def set_private(on: bool) -> None:
+    """Private mode keeps images in a temporary folder that is deleted when
+    the mode ends (and at exit) instead of the cache."""
+    global _private_dir
+    if on and _private_dir is None:
+        _private_dir = Path(tempfile.mkdtemp(prefix="moka-private-"))
+        atexit.register(shutil.rmtree, _private_dir, True)
+    elif not on and _private_dir is not None:
+        shutil.rmtree(_private_dir, ignore_errors=True)
+        _private_dir = None
+
+
 def cache_dir() -> Path:
+    if _private_dir is not None:
+        return _private_dir
     base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
     return Path(base) / "moka" / "images"
 
