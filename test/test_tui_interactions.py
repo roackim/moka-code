@@ -63,17 +63,48 @@ def test_app_focus_targets_expose_component_geometry_for_mouse_focus():
     assert ui._last_focus_id == "history"
 
 
-def test_toggle_debug_console_uses_overlay():
+def test_debug_view_is_full_screen_at_the_end_and_copies_the_log():
+    """/debug: the whole log, opened at its end; ``c`` copies all of it."""
+    ui = chatTUI(StubAgent())
+    ui.compositor = FakeCompositor(width=60, height=10)
+    copied = []
+    ui.popup.on_copy = copied.append
+    for n in range(30):
+        ui.debug_panel.log(f"line {n}")
+    ui.debug_panel.log("x" * 150)           # a long line wraps instead of being cut
+
+    ui.show_debug()
+    popup = ui.popup
+
+    assert popup.is_visible and popup in ui.compositor.overlays
+    assert (popup.x, popup.y, popup.width, popup.height) == (0, 0, 60, 10)
+    assert popup._scroll_offset == popup._max_scroll() > 0      # opened at the end
+    assert [a.key for a in popup._box.actions] == ["c", "Esc"]
+
+    assert popup.handle_input("c") is True
+    assert copied[0].splitlines()[0].strip() == "line 0"
+    assert copied[0].splitlines()[-1].strip() == "x" * 150     # copied unwrapped
+
+    popup.handle_input("\x1b[5~")                              # PgUp
+    assert popup._scroll_offset < popup._max_scroll()
+    popup.handle_input("\x1b[H")                               # Home
+    assert popup._scroll_offset == 0
+    popup.handle_input("\x1b[F")                               # End
+    assert popup._scroll_offset == popup._max_scroll()
+
+    popup.handle_input("\x1b")
+    assert not popup.is_visible and popup not in ui.compositor.overlays
+
+
+def test_debug_view_with_an_empty_log_has_nothing_to_copy():
     ui = chatTUI(StubAgent())
     ui.compositor = FakeCompositor()
+    ui.debug_panel.lines.clear()
 
-    ui.toggle_debug_console()
-    assert ui.debug_popup.is_visible is True
-    assert ui.debug_popup in ui.compositor.overlays
+    ui.show_debug()
 
-    ui.toggle_debug_console()
-    assert ui.debug_popup.is_visible is False
-    assert ui.debug_popup not in ui.compositor.overlays
+    assert [a.key for a in ui.popup._box.actions] == ["Esc"]
+    assert ui.popup.handle_input("c") is True       # consumed, nothing copied
 
 
 def test_agent_worker_exits_promptly_on_shutdown():

@@ -268,9 +268,6 @@ class ChatHistoryPanel(TextComponent):
             part.finalize()
             part.get_component().parent = self
             parts.append(part)
-        for attr in ("metrics_tokens", "metrics_tokens_per_second",
-                     "metrics_ttft_ms", "metrics_duration_ms"):
-            setattr(parts[-1], attr, getattr(msg, attr))
 
         focused = self.focused_message_index
         if focused == index:

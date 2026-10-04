@@ -20,8 +20,8 @@ class PopupAction:
         return f"[{self.key}] {self.label}"
 
 
-# Single action for the popup's bottom bar
 _POPUP_CLOSE = PopupAction("Esc", "close")
+_POPUP_COPY = PopupAction("c", "copy")
 
 
 class Popup(Component):
@@ -31,8 +31,10 @@ class Popup(Component):
     Renders via compositor overlay system.
     
     Features:
-    - Bottom action bar with [Esc] close (matches message box style)
-    - Arrow keys and mouse wheel scroll content
+    - Bottom action bar with [Esc] close (matches message box style), plus
+      [c] copy when the content has a text to copy (``on_copy`` is set by the app)
+    - Arrow keys, PgUp/PgDn/Home/End and mouse wheel scroll content (position
+      shown on the top border)
     - Clickable action bar (close button)
     - Configurable left/right content padding
     """
@@ -54,6 +56,10 @@ class Popup(Component):
         self._lines: List[str] = []
         self._scroll_offset = 0
         self._content_pad = 0  # Box borders provide the content spacing.
+        self._fill = False
+        self._copy_text: Optional[str] = None
+        # ``on_copy(text)``: copies ``[c]``'s text (the app confirms it).
+        self.on_copy: Optional[Any] = None
         self._background_focus_scope = None
         self._background_focus_index = None
         
@@ -114,15 +120,25 @@ class Popup(Component):
         if scope is not None and index is not None:
             scope.manager.focus(index)
     
-    def show(self, title: str, content: str, content_padding: int = 0):
-        """Show the popup with the given title and content."""
+    def show(self, title: str, content: str, content_padding: int = 0, *,
+             fill: bool = False, tail: bool = False, copy_text: Optional[str] = None):
+        """Show the popup with the given title and content.
+
+        ``fill``: cover the whole screen; ``tail``: open scrolled to the end;
+        ``copy_text``: adds ``[c] copy`` for that text.
+        """
         self._box.title = title
         self._lines = content.split("\n")
         self._content_pad = max(0, content_padding)
+        self._fill = fill
+        self._copy_text = copy_text
+        self._box.actions = [_POPUP_COPY, _POPUP_CLOSE] if copy_text is not None else [_POPUP_CLOSE]
         self._suspend_background_focus()
         self.is_visible = True
         self._scroll_offset = 0
         self._center_popup()       # sets self.width/height first
+        if tail:
+            self._scroll_offset = self._max_scroll()
         self._update_text()        # now _visible_content_height() is valid
         self._update_compositor_registration()
         if self.compositor:
@@ -149,6 +165,24 @@ class Popup(Component):
         pad = " " * self._content_pad
         self._text.update("\n".join(pad + line for line in visible))
     
+    def _max_scroll(self) -> int:
+        return max(0, len(self._lines) - self._visible_content_height())
+
+    def _scroll_to(self, offset: int) -> bool:
+        """Scroll to ``offset`` (clamped); True when the view moved."""
+        offset = max(0, min(self._max_scroll(), offset))
+        if offset == self._scroll_offset:
+            return False
+        self._scroll_offset = offset
+        self._update_text()
+        return True
+
+    def _copy(self) -> bool:
+        if self._copy_text is None or self.on_copy is None:
+            return False
+        self.on_copy(self._copy_text)
+        return True
+
     def _visible_content_height(self) -> int:
         """Number of content lines the Box interior can display."""
         # Account for both the border and the Box content padding.
@@ -161,7 +195,13 @@ class Popup(Component):
         
         term_w = self.compositor.width
         term_h = self.compositor.height
-        
+
+        if self._fill:
+            self.x = self.y = 0
+            self.width, self.height = term_w, term_h
+            self._box.set_layout(self.x, self.y, self.width, self.height)
+            return
+
         # Width: fit content + horizontal padding + borders
         if self._lines:
             longest = max(len(line) for line in self._lines)
@@ -197,17 +237,21 @@ class Popup(Component):
             if key == '\x1b':  # Escape
                 self.hide()
                 return True
+            page = max(1, self._visible_content_height() - 1)
+            if key == 'c' and self._copy():
+                return True
             if key == '\x1b[A':  # Up
-                if self._scroll_offset > 0:
-                    self._scroll_offset -= 1
-                    self._update_text()
-                    return True
+                self._scroll_to(self._scroll_offset - 1)
             elif key == '\x1b[B':  # Down
-                max_scroll = max(0, len(self._lines) - self._visible_content_height())
-                if self._scroll_offset < max_scroll:
-                    self._scroll_offset += 1
-                    self._update_text()
-                    return True
+                self._scroll_to(self._scroll_offset + 1)
+            elif key == '\x1b[5~':  # PgUp
+                self._scroll_to(self._scroll_offset - page)
+            elif key == '\x1b[6~':  # PgDn
+                self._scroll_to(self._scroll_offset + page)
+            elif key in ('\x1b[H', '\x1b[1~'):  # Home
+                self._scroll_to(0)
+            elif key in ('\x1b[F', '\x1b[4~'):  # End
+                self._scroll_to(self._max_scroll())
         
         # Mouse
         if isinstance(event, MouseEvent):
@@ -221,21 +265,18 @@ class Popup(Component):
                             abs_start = self.x + start
                             abs_end = self.x + end
                             if abs_start <= event.x < abs_end:
-                                self.hide()
+                                if action.key == "c":
+                                    self._copy()
+                                else:
+                                    self.hide()
                                 return True
                 
                 # Mouse scroll
+                step = settings.config.ui_scroll_lines_per_notch * getattr(event, "scroll_delta", 1)
                 if event.button == 64:  # Scroll up
-                    if self._scroll_offset > 0:
-                        self._scroll_offset = max(0, self._scroll_offset - settings.config.ui_scroll_lines_per_notch * event.scroll_delta)
-                        self._update_text()
-                        return True
+                    self._scroll_to(self._scroll_offset - step)
                 elif event.button == 65:  # Scroll down
-                    max_scroll = max(0, len(self._lines) - self._visible_content_height())
-                    if self._scroll_offset < max_scroll:
-                        self._scroll_offset = min(max_scroll, self._scroll_offset + settings.config.ui_scroll_lines_per_notch * event.scroll_delta)
-                        self._update_text()
-                        return True
+                    self._scroll_to(self._scroll_offset + step)
         
         # Consume all input when popup is open
         return True
@@ -251,29 +292,32 @@ class Popup(Component):
         # Box renders borders, title, content, and action bar
         self._box.render(buffer)
         
-        # Overlay scroll indicator on bottom-right of border
-        max_scroll = max(0, len(self._lines) - self._visible_content_height())
-        if max_scroll > 0:
-            bottom_y = self.y + self.height - 1
-            scroll_text = f" {self._scroll_offset + 1}/{len(self._lines)} "
+        # Scroll position on the top border's right end (the bottom border
+        # carries the actions): the last visible line / all lines.
+        if self._max_scroll() > 0:
+            last = min(len(self._lines), self._scroll_offset + self._visible_content_height())
+            scroll_text = f" {last}/{len(self._lines)} "
             sx = self.x + self.width - 1 - len(scroll_text)
             if sx > self.x:
-                buffer.write_str(sx, bottom_y, scroll_text,
-                               fg=self.frame_color, bg=self._box.bg)
+                buffer.write_str(sx, self.y, scroll_text,
+                                 fg=self.frame_color, bg=self._box.bg)
 
 
 class PopupScreen(Screen):
     """Screen lifecycle wrapper for a read-only popup."""
 
-    def __init__(self, popup: Popup, title: str, content: str, content_padding: int = 0):
+    def __init__(self, popup: Popup, title: str, content: str, content_padding: int = 0,
+                 **options):
         super().__init__(popup)
         self.popup = popup
         self.title = title
         self.content = content
         self.content_padding = content_padding
+        self.options = options
 
     def on_enter(self):
-        self.popup.show(self.title, self.content, content_padding=self.content_padding)
+        self.popup.show(self.title, self.content, content_padding=self.content_padding,
+                        **self.options)
 
     def on_leave(self):
         self.popup.hide()

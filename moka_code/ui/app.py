@@ -147,13 +147,13 @@ class chatTUI(ChatActionHandlers):
         ]
         self._focus_scope = FocusScope(self._focus_targets)
         self.debug_panel = DebugLogPanel(max_lines=1000, frame_color=theme.ERROR, content_color=theme.MUTED, left_pad=1, right_pad=0)
-        self.debug_popup = DebugPopup(self.debug_panel)
         # Activity surface: non-conversation output (command status,
         # notices) lives here, not in the transcript.
         self.activity_panel = DebugLogPanel(max_lines=2000, frame_color=theme.WARNING, content_color=theme.MUTED, left_pad=1, right_pad=0)
         self.activity_popup = DebugPopup(self.activity_panel, title="activity")
         self.chat_history_panel.activity_sink = self._on_activity
         self.popup = Popup()
+        self.popup.on_copy = self.copy_text
         setup_tui_logging(self.debug_panel)
         # Left-align the status text (no leading padding).
         self.status_bar = StatusBar(
@@ -366,7 +366,6 @@ class chatTUI(ChatActionHandlers):
         # Modals/overlays cache their colors at construction too.
         self.input_component.refresh_theme()
         self.popup.refresh_theme()
-        self.debug_popup.refresh_theme()
         self.activity_popup.refresh_theme()
 
         self.chat_history_panel.refresh_theme()
@@ -502,13 +501,17 @@ class chatTUI(ChatActionHandlers):
         """Handle execution of commands."""
         self.command_queue.put_nowait(text)
         
-    def toggle_debug_console(self):
-        """Toggle the debug console overlay."""
-        import logging
-        self.debug_popup.set_compositor(self.compositor)
-        self.debug_popup.toggle()
-        logger = logging.getLogger("tui")
-        logger.info("Debug console toggled: visible=%s", self.debug_popup.is_visible)
+    def show_debug(self) -> None:
+        """``/debug``: the log (what the program logged this run) full screen,
+        opened at its end; ``c`` copies all of it, Esc closes."""
+        from moka_code.ui.tui.layout_utils import strip_ansi, wrap_text
+
+        lines = [strip_ansi(line).rstrip() for line in self.debug_panel.lines]
+        width = max(20, (self.compositor.width if self.compositor else 80) - 2)
+        shown = "\n".join(wrap_text(line, width, first_line_padding=False) for line in lines) \
+            if lines else "nothing logged yet"
+        self.show_popup("debug", shown, content_padding=0, fill=True, tail=True,
+                        copy_text="\n".join(lines) if lines else None)
 
     def toggle_activity(self):
         """Toggle the activity overlay (non-conversation output)."""
@@ -607,14 +610,15 @@ class chatTUI(ChatActionHandlers):
             self.compositor._full_redraw = True
             self.compositor.request_render()
 
-    def show_popup(self, title: str, content: str, content_padding: int = 1):
-        """Show a popup overlay with the given title and content."""
+    def show_popup(self, title: str, content: str, content_padding: int = 1, **options):
+        """Show a popup overlay with the given title and content (``options``:
+        ``Popup.show``'s ``fill``, ``tail``, ``copy_text``)."""
         self.popup.set_compositor(self.compositor)
         if self.modal_host is None:
-            self.popup.show(title, content, content_padding=content_padding)
+            self.popup.show(title, content, content_padding=content_padding, **options)
             return
         self.popup_screen = PopupScreen(self.popup, title, content,
-                                        content_padding=content_padding)
+                                        content_padding=content_padding, **options)
         self.modal_host.present_screen(self.popup_screen)
 
     def show_search_modal(self, title, items, descriptions=None, footers=None,

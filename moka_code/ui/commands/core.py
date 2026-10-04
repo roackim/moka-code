@@ -94,17 +94,26 @@ def _apply_theme(ui=None) -> None:
 
 def _reapply_role(ui: ChatUIProtocol) -> List[str]:
     """Load the active role's file again, so an edit applies now (not only after
-    a ``/role`` switch). A file that no longer loads keeps the running role
-    (``validate_roles`` reports it); so does a response still being written.
-    Returns what could not be applied."""
+    a ``/role`` switch). A file that no longer loads keeps the running role in
+    memory (``validate_roles`` reports a bad one, this a missing one); so does a
+    response still being written. Without any role file the conversation starts
+    on the first one that loads. Returns what could not be applied."""
     from moka_code.harness import roles
 
     current = getattr(getattr(ui, "agent", None), "role", None)
     if current is None:
         return []
+    if current.name == roles.NO_ROLE:
+        fresh = roles.default_role()
+        if fresh.name != roles.NO_ROLE:
+            ui.agent.set_role(fresh)
+        return []
     try:
         fresh = roles.load_role(current.name)
-    except (KeyError, OSError, ValueError):
+    except KeyError:
+        return [f"role {current.name}: roles/{current.name}.toml is gone, "
+                "the conversation keeps the role it has"]
+    except (OSError, ValueError):
         return []
     if fresh == current:
         return []
@@ -408,6 +417,14 @@ async def cmd_stop(ui: ChatUIProtocol, args: List[str]):
             "Stop command not supported by this UI.", msg_type=SysMsg())
 
 
+async def cmd_debug(ui: ChatUIProtocol, args: List[str]):
+    if hasattr(ui, "show_debug"):
+        ui.show_debug()
+    else:
+        ui.chat_history_panel.add_message(
+            "Debug view not supported by this UI.", msg_type=SysMsg())
+
+
 async def cmd_activity(ui: ChatUIProtocol, args: List[str]):
     if hasattr(ui, "toggle_activity"):
         ui.toggle_activity()
@@ -417,6 +434,6 @@ async def cmd_activity(ui: ChatUIProtocol, args: List[str]):
 
 
 __all__ = [
-    "cmd_help", "cmd_clear", "cmd_reload", "cmd_config", "cmd_edit",
+    "cmd_debug", "cmd_help", "cmd_clear", "cmd_reload", "cmd_config", "cmd_edit",
     "cmd_compact", "cmd_exit", "cmd_stop", "cmd_activity", "ConfigCommand",
 ]

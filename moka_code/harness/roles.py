@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import toml
 
@@ -86,8 +86,30 @@ def chat_role() -> Role:
     )
 
 
+#: Name of the placeholder role used when no role file loads (see ``no_role``).
+NO_ROLE = "(no role)"
+
+
+def no_role() -> Role:
+    """In-memory placeholder when no role file loads: no tools, no prompt. The
+    notice band says to fix it; nothing here comes from a file."""
+    return Role(name=NO_ROLE, description="no role file loads", tools=_all_tools_no())
+
+
+def default_role() -> Role:
+    """The role a conversation starts on: ``agent``, else the first role file
+    that loads, else the ``no_role`` placeholder."""
+    for name in ["agent", *list_roles()]:
+        try:
+            return load_role(name)
+        except (KeyError, OSError, ValueError):
+            continue
+    return no_role()
+
+
 def builtin_roles() -> dict[str, Role]:
-    """The built-in roles, used as code fallbacks when files are absent."""
+    """The built-in roles: the templates seeded into an empty roles folder.
+    They are never loaded from code: a role is its file."""
     return {
         "agent": agent_role(),
         "chat": chat_role(),
@@ -138,8 +160,7 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
     registered = set(registered_tool_names())
     tools: dict[str, str] = {}
     for key, value in data.items():
-        if key in ("description", "prompt", "disabled", "require_sandbox",
-                   "replay_reasoning_depth"):
+        if key in ("description", "prompt", "require_sandbox", "replay_reasoning_depth"):
             continue
         key = _RETIRED_TOOL_ALIASES.get(key, key)
         if key in _RETIRED_TOOLS:
@@ -201,13 +222,24 @@ def _migrate_role_file(path: Path) -> bool:
     return changed
 
 
+def _is_tombstone(path: Path) -> bool:
+    """The old marker of a deleted built-in: a file holding only ``disabled = true``."""
+    try:
+        return toml.load(path) == {"disabled": True}
+    except (toml.TomlDecodeError, OSError):
+        return False
+
+
 def ensure_roles_dir() -> Path:
-    """Create the roles directory, seed built-ins, and migrate retired keys."""
+    """Create the roles directory, seed the built-ins when it holds no role
+    (first run), and migrate retired keys. A deleted role stays deleted."""
     _ROLES_DIR.mkdir(parents=True, exist_ok=True)
-    for name, role in builtin_roles().items():
-        path = _role_file(name)
-        if not path.exists():
-            path.write_text(_role_template(role), encoding="utf-8")
+    for path in _iter_role_files():
+        if _is_tombstone(path):          # deleting a role now just removes its file
+            path.unlink()
+    if not _iter_role_files():
+        for name, role in builtin_roles().items():
+            _role_file(name).write_text(_role_template(role), encoding="utf-8")
     for path in _iter_role_files():
         _migrate_role_file(path)
     return _ROLES_DIR
@@ -251,42 +283,35 @@ def ensure_role_file(name: str) -> Path:
 
 
 def delete_role(name: str) -> None:
-    """Delete a role file; built-ins are hidden with a tombstone."""
+    """Delete a role file (a running conversation keeps its role in memory)."""
     if name not in list_roles():
         raise KeyError(f"Role not found: {name}")
     if len(list_roles()) <= 1:
         raise ValueError("At least one role must remain")
-    path = _role_file(name)
-    if name in builtin_roles():
-        # Hide the built-in rather than resurrecting it by deleting the file.
-        _ROLES_DIR.mkdir(parents=True, exist_ok=True)
-        path.write_text("disabled = true\n", encoding="utf-8")
-    elif path.exists():
-        path.unlink()
+    _role_file(name).unlink(missing_ok=True)
 
 
 def load_role(name: str) -> Role:
+    """The role in ``roles/<name>.toml``; ``KeyError`` when there is no such file."""
     path = _role_file(name)
-    if path.exists():
-        data = _read_role_file(path)
-        if data.get("disabled"):
-            raise KeyError(f"Role not found: {name}")
-        return _role_from_dict(name, data)
-    builtins = builtin_roles()
-    if name in builtins:
-        return builtins[name]
-    raise KeyError(f"Role not found: {name}")
+    if not path.exists():
+        raise KeyError(f"Role not found: {name}")
+    return _role_from_dict(name, _read_role_file(path))
+
+
+def role_file_stat(name: str) -> Optional[tuple[int, int]]:
+    """``(mtime_ns, size)`` of the role's file, ``None`` when it is gone: the
+    cheap check that tells whether a running role may differ from its file."""
+    try:
+        stat = _role_file(name).stat()
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
 
 
 def list_roles() -> list[str]:
-    names = set(builtin_roles())
-    for path in _iter_role_files():
-        data = _read_role_file(path)
-        if data.get("disabled"):
-            names.discard(path.stem)
-        else:
-            names.add(path.stem)
-    return sorted(names)
+    """The names of the role files."""
+    return [path.stem for path in _iter_role_files()]
 
 
 def validate_roles() -> list[str]:
@@ -297,8 +322,6 @@ def validate_roles() -> list[str]:
             data = _read_role_file(path)
         except ValueError as exc:
             errors.append(str(exc))
-            continue
-        if data.get("disabled"):
             continue
         try:
             _role_from_dict(path.stem, data)

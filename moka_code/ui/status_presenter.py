@@ -110,6 +110,15 @@ def notices(agent) -> list[tuple[str, str]]:
             errors.append(f"{name} states no context window for {endpoint.selected_model} "
                           "→ server broken, or moka reads the wrong route")
     role = getattr(agent, "role", None)
+    role_problem = getattr(agent, "role_problem", None)
+    problem = role_problem() if callable(role_problem) else None
+    if problem == "none":
+        errors.append("no role file loads → /config role agent")
+    elif problem == "gone":
+        warnings.append(f"role {role.name}: its file is gone, running from memory "
+                        f"→ /config role {role.name}")
+    elif problem == "changed":
+        warnings.append(f"role {role.name} changed on disk → /reload")
     depth = getattr(role, "replay_reasoning_depth", None)
     if endpoint is not None and depth is not None:
         needed = endpoint.min_replay_depth(bool(getattr(agent, "tool_schemas", None)))

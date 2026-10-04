@@ -47,19 +47,14 @@ whether a real server reports a non-zero `cached_tokens` itself.
 
 ## Code health
 
-**H1. Dead-code leftovers** · to decide
-`vulture moka_code --min-confidence 60` went from 87 hits (2026-09-30) to 15
-(2026-10-04); the unambiguous ones are deleted. What is left, on purpose:
-- *Metrics display*: `Message.update_metrics` is fed on every `Usage` event but
-  nothing shows it (`get_metrics_string`, `should_show_metrics` have no caller),
-  so `ui.show_metrics`, `metrics_show_tokens`, `metrics_show_speed` and
-  `metrics_show_ttft` do nothing. Delete the whole chain (and retire the keys),
-  or show it again (status bar?). Needs a decision.
-- *Debug console*: `DebugLogPanel` / `DebugPopup` / `TuiLogHandler` are built and
-  fed, but no command or key opens them (`chatTUI.toggle_debug_console` is
-  reachable only from a test). Delete, or give it a way in.
+**H1. Dead-code leftovers** · kept on purpose
+`vulture moka_code --min-confidence 60` went from 87 hits (2026-09-30) to a few
+(2026-10-05); the unambiguous ones are deleted (the metrics display and the
+unreachable debug console too). What is left, on purpose. Note vulture misses
+`getattr`/`setattr` uses: run the tests after every removal:
 - *Test seams*: `chat_message._tool_summary` and `Message.get_formatted` (the
-  tool-line tests read the lines through them), `SandboxProcess.start_count`.
+  tool-line tests read the lines through them), `SandboxProcess.start_count`. Also unread now: `events.Usage.tokens_per_second`, `ttft_ms`,
+  `duration_ms` (the event still refreshes the status bar and carries token counts).
 - *Toolkit* (`ui/tui/`: `Button`, `Checkbox`, `Navigator`, `Vsplit`, …): kept on
   purpose (principles: do not delete the TUI toolkit).
 - *False positives*: the `@tool` functions in `tools.py`, theme palette keys read
@@ -74,14 +69,6 @@ reads it) and the toolkit's own legacy modes (`KeyEvent` string compatibility,
 **H3. fallback / legacy / back-compat mentions** · to audit
 `grep -rin "fallback\|fall back\|legacy\|back-compat" moka_code`. P4–P6, U4–U7
 and H2 are checked; the rest are unreviewed.
-
-**H4. Built-in roles as code fallbacks** · checked (2026-10-04), kept
-`harness/roles.py` `load_role`: an unknown name raises `KeyError`; only
-`agent` / `chat` come from code when their file is missing, and
-`ensure_roles_dir()` re-seeds both at startup, so it is reached only when the
-file is deleted during a session. `agent` is the permissive role (every tool
-`yes`). Removing the fallback means seeding or failing instead; a design
-decision, not a cleanup.
 
 **H5. Tests written from the implementation** · to audit
 Four tests asserted behaviour the user had rejected (fixed 2026-09-30:

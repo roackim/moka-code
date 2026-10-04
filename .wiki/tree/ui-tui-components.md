@@ -24,7 +24,7 @@ See [notes/ui.md](../notes/ui.md) for the component model overview.
 | `theme_preview.py` | `ThemePreview` — top-center overlay showing the live palette as swatches while picking a theme |
 | `popup.py` | `Popup` + `PopupScreen` — centered overlay popup on `Box` + `TextComponent` |
 | `debug_panel.py` | `DebugLogPanel` — capped, auto-scrolling log display |
-| `debug_popup.py` | `DebugPopup` — compositor overlay for the debug console and activity surface |
+| `debug_popup.py` | `DebugPopup` — compositor overlay for the activity surface |
 | `table_view.py` | `TableView` — sized/measured columns, scrolling, clipping, row selection |
 | `markdown.py` | `Markdown` parser + `MarkdownComponent`; block/inline parsers; `StyledSegment`; table rendering via `AsciiTable`; append-only commit path (`find_commit_line`, `_committed_*`) and open-tail plain rendering for streaming |
 

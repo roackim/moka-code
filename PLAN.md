@@ -193,6 +193,13 @@ llama.cpp and DeepSeek ✅ (2026-10-01, see Decisions).
   Anthropic messages — and its public `/v1/models` states no context
   window; unchecked with an API key).
 - llama.cpp router mode: whether `/props` answers per model (unverified).
+- [ ] Warn when a hand-edited file differs from what is running (extends the
+  role warning, `Harness.role_problem`): `ui`, `context`, `debug`, `styles`,
+  `servers` and `themes`, plus the active role only. At each load record every
+  file's `(mtime_ns, size)`; the notice band says `config changed on disk: ui.toml
+  → /reload` (or `gone`). Skip `state.toml` (moka writes it) and non-active roles
+  (read fresh on switch); `/config` edits reload themselves, so no warning there.
+  Warns only, applies nothing (principle 2). Decided 2026-10-05: not built yet.
 
 ## Open questions
 

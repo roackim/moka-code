@@ -24,6 +24,10 @@ os.environ["XDG_STATE_HOME"] = os.path.join(_SANDBOX_HOME, "state")
 
 import pytest
 
+from moka_code.harness import roles as _roles
+
+_roles.ensure_roles_dir()    # what main() does at startup: roles are files, never code
+
 from moka_code.harness.harness import Harness
 from moka_code.harness.llm_status import AgentState
 from moka_code.harness.permissions import PermissionGate

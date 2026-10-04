@@ -208,15 +208,15 @@ Centered overlay popups for commands that benefit from floating display rather t
 - Input interception: when popup is visible, the `EventRouter` overlay-priority
     path routes input to the popup before normal focus handling
 - Auto-sizing: `max_width_ratio` / `max_height_ratio` control popup dimensions relative to terminal
-- Currently used by: `/help` (command list)
+- Currently used by: `/help` (command list) and `/debug` (`show(fill=True, tail=True, copy_text=...)`: `[c] copy` appears only when there is a text to copy)
 
 ## No In-App Forms
 
 The interactive form stack (`form.py`, `form_popup.py`, `field_models.py`,
 `form_schema.py`, `role_editor_model.py`, `config_overlay.py`, `input/basic.py`)
 was removed. Configuration is edited as files: `/config <section>` and
-`/config role <name>` open the file in `$EDITOR` and reload. Interactive UI is
-reserved for permission approval and destructive confirmation; see
+`/config role <name>` open the file in `$EDITOR` and reload. Pickers and viewers
+are fine, in-app editing of settings is not; see
 [notes/principles.md](./principles.md).
 
 ## Foreground programs (`ui/external_editor.py`)
@@ -286,13 +286,18 @@ Ctrl+C is read as a raw `\x03` byte by the compositor's input loop
 promptly and cleanly. `main.py` also swallows a stray `KeyboardInterrupt` so a
 mis-timed interrupt never prints a traceback.
 
-## Debug Panel
+## Debug view (`/debug`)
 
-The debug console is a `DebugLogPanel` (extends `TextComponent`) wrapped in a
-`DebugPopup` compositor overlay. `TuiLogHandler` feeds it log entries and
+`TuiLogHandler` feeds what the program logs into a `DebugLogPanel` (a ring of
+1000 lines, in memory only). `/debug` (`chatTUI.show_debug`) shows it in the
+`Popup` full screen (`fill`), opened at its end (`tail`), long lines wrapped:
+`[c] copy` copies the whole log (unwrapped, no colour), `[Esc] close`;
+↑/↓, PgUp/PgDn, Home/End and the wheel scroll, the position (`25/25`) sits on
+the top border. It is a snapshot taken when opened. The file log
+(`debug_stream.log`) is separate: `debug.toml` `log_enabled`.
+
 `ChatHistoryPanel.activity_sink` routes `SysMsg*` to the activity overlay
-(`/activity`). There is no user-facing debug-panel command; logging is enabled
-via `debug.toml` (`log_enabled`).
+(`/activity`, a live strip that lets input through).
 
 ## Buffer (`tui/buffer.py`)
 
@@ -587,7 +592,7 @@ Non-conversation output (shell commands/results, command status, errors, role
 changes, generation-stopped notices) must not live in the transcript.
 `ChatHistoryPanel.add_message` routes `SysMsg`/`SysMsgError`/`SysMsgWarning` to
 `activity_sink` when set; the app's sink appends to the **activity overlay**
-(a `DebugPopup`-style overlay toggled by `/activity`) and flashes its first
+(a `DebugPopup` overlay toggled by `/activity`) and flashes its first
 line, colored by level, on the hint row above the input (`chatTUI.notify` →
 `flash_hint`, auto-expiring; the status bar keeps its fields). The returned
 message is detached (not appended). Explicit `ui.activity(text)` writes to the
@@ -724,7 +729,7 @@ The package lives in `moka_code/ui/commands/`:
 ### Registered Commands
 
 `help`, `clear`, `private`, `reload`, `config`, `edit`, `export`, `import`, `compact`,
-`exit`, `stop`, `terminal`, `activity`, `model`, `role`, `sandbox`, `diff`, `theme`
+`exit`, `stop`, `terminal`, `activity`, `debug`, `model`, `role`, `sandbox`, `diff`, `theme`
 
 ### Sandbox (`/sandbox`)
 
@@ -777,6 +782,11 @@ from a hand-rolled `get_completions`.
 ### Roles
 
 - `/role` opens a picker (the active role tagged `active`); `/role <name>` switches directly.
+- A role is its file: nothing comes from code. The running role is kept in memory;
+  the notice band says when its file is `gone` (running from memory) or `changed on
+  disk → /reload` (`Harness.role_problem`, gated by a `stat`). At startup the
+  conversation takes `agent`, else the first role that loads; with none, a no-tool
+  placeholder and an error notice (`no role file loads → /config role agent`).
 - `/config role <name>` creates/opens `roles/<name>.toml` in `$EDITOR` and reloads;
   `/config role delete <name> confirm` removes it.
 

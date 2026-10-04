@@ -215,7 +215,8 @@ permission engine.
   `Harness.sandbox_required()` gates `chat()` (yields an `Error`) and the UI
   refuses normal submissions. Activating a sandbox lifts it automatically.
 - Built-in roles `agent` (all tools `yes`) and `chat` (all tools `no`) are
-	seeded as files by `ensure_roles_dir()`; a code fallback exists for both.
+	seeded as files by `ensure_roles_dir()` only into an empty roles folder
+	(first run); there is no code fallback: a deleted role stays deleted.
 - `ensure_role_file(name)` writes a template listing every registered tool with
 	value `no` (all disabled) when the file is missing; `delete_role(name)` unlinks, refusing to remove
 	the last role. `load_role` / `list_roles` read one file per role at
@@ -223,7 +224,9 @@ permission engine.
 - `validate_roles()` reports unknown tool names and values other than
 	`no`/`ask`/`yes` as `roles/<name>.toml: ...`, surfaced by `/reload` and
 	`/config role`.
-- Built-in `agent`/`chat` files override the code fallback. A role change is
+- `default_role()` picks the starting role (`agent`, else the first that loads, else
+	the `(no role)` placeholder); `Harness.role_problem()` reports how the running role
+	(kept in memory) differs from its file. A role change is
 	represented by one system history notice; consecutive notices are collapsed.
 
 ### `context_builder.py`

@@ -33,7 +33,7 @@ architecture overview.
 - **Action surface**: a collapsible `ActionBar` above the input shows the
   selected message's actions, or input prefixes (`/`, `@`, `$`) when focused.
 - **Activity overlay**: `SysMsg*` is routed to the activity surface (a
-  `DebugPopup`) instead of the transcript; `/activity` toggles it.
+  `DebugPopup`) instead of the transcript; `/activity` toggles it; `/debug` shows the log full screen.
 - **Clipboard**: `ui/clipboard.py` is the single owner (native
   `xclip`/`xsel`/`wl-copy`, then OSC 52). VTE terminals ignore OSC 52.
   Reading (Ctrl+V) uses `wl-paste`, `xclip`, then `xsel`; no OSC 52 read.

@@ -33,7 +33,7 @@ class ChatUIProtocol(Protocol):
     chat_history_panel: Any
     compositor: Any
 
-    def show_popup(self, title: str, content: str, content_padding: int = 1) -> None: ...
+    def show_popup(self, title: str, content: str, content_padding: int = 1, **options) -> None: ...
 
 
 class Command:

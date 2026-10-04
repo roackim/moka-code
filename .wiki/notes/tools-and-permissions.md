@@ -125,10 +125,13 @@ name; the body is `description` / `prompt` plus one `<tool> = "no" | "ask" |
 user can comment/uncomment or edit values — the "all options visible" style of
 `servers.toml`.
 
-Built-in roles (`agent`, `chat`) are seeded as files on first run by
-`ensure_roles_dir()`; a code fallback exists for both. `ensure_role_file(name)`
-writes a template from the registry (all tools `no`) when the file is missing;
-`delete_role(name)` unlinks the file, refusing to remove the last role.
+Built-in roles (`agent`, `chat`) are seeded as files on first run (an empty
+roles folder) by `ensure_roles_dir()`. A role is its file: there is no code
+fallback, so deleting `agent.toml` never brings the permissive built-in back.
+The running conversation keeps its role in memory and the notice band warns when
+the file is gone or changed. `ensure_role_file(name)` writes a template from the
+registry (all tools `no`) when the file is missing; `delete_role(name)` unlinks
+the file, refusing to remove the last role.
 
 `ensure_roles_dir()` also migrates retired tool keys in existing role files,
 preserving comments and everything else: `patch → edit`, `run_command → bash`,

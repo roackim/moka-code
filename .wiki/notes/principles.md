@@ -35,10 +35,10 @@ Moka is a thin runtime over hand-editable configuration:
 4. **Hard core/UI boundary.** `harness/` imports no `ui/`; the UI consumes
    events. This keeps the TUI replaceable.
 
-5. **Features must earn their place.** No new features or UI surfaces unless
-   explicitly asked. Prefer headless features configured from files over new
-   interactive surfaces. Interactive UI is reserved for permission approval and
-   destructive confirmation.
+5. **Features must earn their place.** No new features unless explicitly asked.
+   Settings live in config files, never in forms or in-app editors. Pickers
+   (choosing among existing values) and viewers (showing output) are fine; they
+   never edit configuration. Prefer headless features configured from files.
 
 6. **The loop and the prompt are minimal and data-driven.** Stop adding tools.
    Make the agent loop and the system prompt small; move tunable strings to

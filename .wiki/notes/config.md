@@ -16,7 +16,7 @@ activity panel. Nothing else reads the old location.
 
 | File | Contents | Shape |
 |------|----------|-------|
-| `ui.toml` | theme, padding, metrics, fps | flat keys |
+| `ui.toml` | theme, padding, fps | flat keys |
 | `context.toml` | context building | flat keys |
 | `debug.toml` | debug logging | flat keys |
 | `styles.toml` | `[markdown_styles.*]` / `[syntax_highlight.*]` | tables |
@@ -187,15 +187,16 @@ variables.
 (`/compact` input: reasoning left out; each tool call one line, no output;
 both default on), `context_diff_context` (`context.diff_context`: lines around
 each change in `/diff`, `"function"` or `"all"`, default 3);
-`ui_theme`, `ui_box_style`, `ui_show_metrics`,
+`ui_theme`, `ui_box_style`,
 `ui_status_bar_fields`, `ui_max_input_height` (input box caps + scrolls past
 this many wrapped lines), `ui_stream_smoothing` / `ui_smooth_target_fps`
 (streamed-text reveal smoothing), `target_fps`, and the rest of the `ui_*`
 attrs, including `ui_thought_min_tokens` (reasoning shorter than this gets
 no transcript line; 0 = show all). `spinner_fps` is retired (`_RETIRED_UI`): tool and thinking lines show
 ticking elapsed time instead of a spinner. `context.format` (the project tree was
-never sent to the model) and `ui.debug_console_height` (the console is never shown)
-are retired too. Colour keys (`sandbox_*_color`) are validated at load: a palette
+never sent to the model) and `ui.debug_console_height` (the console is never shown) and the per-message
+metrics keys (`show_metrics`, `metrics_show_*`; nothing displayed them) are
+retired too. Colour keys (`sandbox_*_color`) are validated at load: a palette
 name or `#rrggbb`, else a load error and the default is kept.
 
 The `sandbox` status-bar field is composed from `ui_sandbox_glyph` +

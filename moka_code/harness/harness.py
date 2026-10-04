@@ -56,14 +56,12 @@ class Harness:
         import os
         self.workspace = workspace_path or os.getcwd()
 
-        # The user's agent role file, not the built-in: its settings apply from
-        # the first turn. A file that does not load falls back to the built-in
-        # (``validate_roles`` reports it on /reload).
-        from moka_code.harness.roles import agent_role, load_role
-        try:
-            self.role = load_role("agent")
-        except (KeyError, OSError, ValueError):
-            self.role = agent_role()
+        # The conversation's role lives in memory. It starts as the user's
+        # ``agent`` file, else the first role file that loads; with none, a
+        # placeholder without tools (the notice band says so).
+        from moka_code.harness import roles
+        self.role = roles.default_role()
+        self._role_stat = roles.role_file_stat(self.role.name)
 
         # Permission gate turns the role's per-tool setting into a decision.
         self._permission_gate = PermissionGate(role=self.role)
@@ -105,12 +103,39 @@ class Harness:
 
         if not isinstance(role, Role):
             raise TypeError("role must be a Role")
+        from moka_code.harness import roles
+
         previous_name = getattr(self, "role", role).name
         self.role = role
+        self._role_stat = roles.role_file_stat(role.name)
         self._permission_gate.set_role(role)
         self._rebuild_tools()
         self.debug_stream.log("ROLE", {"name": role.name, "tools": sorted(role.enabled_tool_names())})
         self._record_role_change(previous_name, role.name)
+
+    def role_problem(self) -> Optional[str]:
+        """How the running role (kept in memory) differs from its file: ``"none"``
+        (no role file loads), ``"gone"`` (the file was deleted), ``"changed"``
+        (the file now says something else; ``/reload`` applies it), else ``None``.
+        A ``stat`` is the gate, so a status refresh costs next to nothing; a
+        file touched without changing the role is not a difference."""
+        from moka_code.harness import roles
+
+        name = self.role.name
+        if name == roles.NO_ROLE:
+            return "none"
+        stat = roles.role_file_stat(name)
+        if stat is None:
+            return "gone"
+        if stat != self._role_stat:
+            try:
+                fresh = roles.load_role(name)
+            except (KeyError, OSError, ValueError):
+                return "changed"        # /reload says why it does not load
+            if fresh != self.role:
+                return "changed"
+            self._role_stat = stat
+        return None
 
     def set_sandbox(self, spec) -> None:
         """Swap the execution transport (None/``none`` → in-process).

@@ -81,7 +81,7 @@ def test_new_role_file_defaults_to_all_disabled(tmp_path, monkeypatch):
     assert ensure_role_file("scratch") == path      # an existing file is left alone
 
 
-def test_role_lifecycle_and_tombstones(tmp_path, monkeypatch):
+def test_role_lifecycle_and_last_role_is_kept(tmp_path, monkeypatch):
     monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
 
     ensure_roles_dir()
@@ -241,3 +241,131 @@ def test_role_template_layout_and_uncommentable_settings():
     assert loaded["require_sandbox"] is True and loaded["replay_reasoning_depth"] == 1
     assert "require_sandbox = true\n" in roles_module._role_template(
         Role(name="x", require_sandbox=True))
+
+
+# --- roles are files; the running one lives in memory ----------------------
+
+def _roles_in(tmp_path, monkeypatch):
+    monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
+    return tmp_path / "roles"
+
+
+def test_a_missing_role_file_is_not_replaced_by_a_built_in(tmp_path, monkeypatch):
+    """The built-in ``agent`` (every tool ``yes``) never comes back from code."""
+    folder = _roles_in(tmp_path, monkeypatch)
+    ensure_roles_dir()
+    (folder / "agent.toml").unlink()
+
+    with pytest.raises(KeyError):
+        load_role("agent")
+    assert "agent" not in list_roles()
+    ensure_roles_dir()                      # another startup: still deleted
+    assert not (folder / "agent.toml").exists() and list_roles() == ["chat"]
+
+
+def test_built_ins_are_seeded_only_into_an_empty_folder(tmp_path, monkeypatch):
+    folder = _roles_in(tmp_path, monkeypatch)
+    ensure_roles_dir()
+    assert sorted(list_roles()) == ["agent", "chat"]
+
+    for path in folder.glob("*.toml"):
+        path.unlink()
+    ensure_roles_dir()
+    assert sorted(list_roles()) == ["agent", "chat"]
+
+
+def test_an_old_deleted_built_in_marker_is_cleaned_up(tmp_path, monkeypatch):
+    folder = _roles_in(tmp_path, monkeypatch)
+    folder.mkdir()
+    (folder / "agent.toml").write_text("disabled = true\n", encoding="utf-8")
+    (folder / "mine.toml").write_text('description = "m"\nprompt = ""\n', encoding="utf-8")
+
+    ensure_roles_dir()
+
+    assert list_roles() == ["mine"]
+
+
+def test_default_role_is_agent_else_the_first_that_loads_else_a_placeholder(tmp_path, monkeypatch):
+    folder = _roles_in(tmp_path, monkeypatch)
+    ensure_roles_dir()
+    assert roles_module.default_role().name == "agent"
+
+    (folder / "agent.toml").unlink()
+    (folder / "aaa.toml").write_text('read = "maybe"\n', encoding="utf-8")     # does not load
+    (folder / "bbb.toml").write_text('description = "b"\nprompt = ""\n', encoding="utf-8")
+    assert roles_module.default_role().name == "bbb"
+
+    for path in folder.glob("*.toml"):
+        path.unlink()
+    placeholder = roles_module.default_role()
+    assert placeholder.name == roles_module.NO_ROLE
+    assert placeholder.enabled_tool_names() == set()
+
+
+def _harness_on(tmp_path, monkeypatch):
+    from moka_code.harness.harness import Harness
+
+    folder = _roles_in(tmp_path, monkeypatch)
+    ensure_roles_dir()
+    harness = Harness(workspace_path=str(tmp_path))
+    return harness, folder
+
+
+def test_running_role_reports_how_it_differs_from_its_file(tmp_path, monkeypatch):
+    harness, folder = _harness_on(tmp_path, monkeypatch)
+    assert harness.role.name == "agent" and harness.role_problem() is None
+
+    path = folder / "agent.toml"
+    path.write_text(path.read_text(encoding="utf-8") + "\n# a comment\n", encoding="utf-8")
+    assert harness.role_problem() is None           # touched, same role: no warning
+
+    path.write_text(path.read_text(encoding="utf-8").replace('bash  = "yes"', 'bash  = "no"'),
+                    encoding="utf-8")
+    assert harness.role_problem() == "changed"
+    assert harness.role.permission_for("bash") == "yes"     # memory is untouched
+
+    path.unlink()
+    assert harness.role_problem() == "gone"
+    assert harness.role.permission_for("bash") == "yes"     # still running from memory
+
+
+def test_the_band_names_a_gone_or_changed_role(tmp_path, monkeypatch):
+    from moka_code.ui.status_presenter import notices
+
+    harness, folder = _harness_on(tmp_path, monkeypatch)
+    texts = lambda: [t for _, t in notices(harness)]
+    assert not any("role agent" in t for t in texts())
+
+    path = folder / "agent.toml"
+    path.write_text('description = "other"\nprompt = ""\n', encoding="utf-8")
+    assert "role agent changed on disk → /reload" in texts()
+
+    path.unlink()
+    assert any("role agent: its file is gone, running from memory" in t for t in texts())
+
+
+def test_reload_leaves_the_placeholder_once_a_role_loads(tmp_path, monkeypatch):
+    from moka_code.ui.commands.core import _reapply_role
+    from moka_code.ui.status_presenter import notices
+
+    folder = _roles_in(tmp_path, monkeypatch)
+    folder.mkdir()
+    from moka_code.harness.harness import Harness
+    harness = Harness(workspace_path=str(tmp_path))
+    assert harness.role.name == roles_module.NO_ROLE
+    assert ("error", "no role file loads → /config role agent") in notices(harness)
+
+    ensure_roles_dir()
+    ui = type("UI", (), {"agent": harness})()
+    assert _reapply_role(ui) == [] and harness.role.name == "agent"
+
+
+def test_reload_says_when_the_running_roles_file_is_gone(tmp_path, monkeypatch):
+    from moka_code.ui.commands.core import _reapply_role
+
+    harness, folder = _harness_on(tmp_path, monkeypatch)
+    (folder / "agent.toml").unlink()
+    ui = type("UI", (), {"agent": harness})()
+
+    assert "roles/agent.toml is gone" in _reapply_role(ui)[0]
+    assert harness.role.name == "agent"

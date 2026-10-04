@@ -4,7 +4,7 @@ Configuration is split into small, single-concern files under
 ``~/.config/moka/`` so each one stays focused and easy to edit with
 ``/config <section>`` or ``/edit``:
 
-- ``ui.toml`` — theme, padding, metrics, fps (flat keys)
+- ``ui.toml`` — theme, padding, fps (flat keys)
 - ``context.toml`` — context building (flat keys)
 - ``debug.toml`` — debug logging (flat keys)
 - ``styles.toml`` — ``[markdown_styles.*]`` / ``[syntax_highlight.*]``
@@ -139,13 +139,9 @@ DEFAULT_UI_TOML = """\
 # scroll_touchpad_event_threshold = 2
 # scroll_alt_multiplier = 3.0
 
-## Metrics under the answer
+## Live usage
 
-# show_metrics = true
-# metrics_show_tokens = false
-# metrics_show_speed = true
-# metrics_show_ttft = false
-# metrics_refresh_interval = 0.1
+# metrics_refresh_interval = 0.1         # seconds between usage updates while streaming
 
 ## Status bar and notices
 
@@ -305,10 +301,6 @@ _UI_SPEC: Dict[str, tuple[str, str]] = {
     "scroll_touchpad_speed": ("ui_scroll_touchpad_speed", "float"),
     "scroll_touchpad_event_threshold": ("ui_scroll_touchpad_event_threshold", "int"),
     "scroll_alt_multiplier": ("ui_scroll_alt_multiplier", "float"),
-    "show_metrics": ("ui_show_metrics", "bool"),
-    "metrics_show_tokens": ("ui_metrics_show_tokens", "bool"),
-    "metrics_show_speed": ("ui_metrics_show_speed", "bool"),
-    "metrics_show_ttft": ("ui_metrics_show_ttft", "bool"),
     "metrics_refresh_interval": ("ui_metrics_refresh_interval", "float"),
     "status_bar_fields": ("ui_status_bar_fields", "str_list"),
     "notice_lines": ("ui_notice_lines", "int"),
@@ -341,7 +333,10 @@ _DEBUG_SPEC: Dict[str, tuple[str, str]] = {
 # Keys removed from a flat section but kept here so existing user files can be
 # cleaned up on startup. Add a key here when you delete it from its ``*_SPEC``
 # and ``DEFAULT_*_TOML`` (see "Adding or deprecating a config key" in AGENTS.md).
-_RETIRED_UI: set[str] = {"spinner_fps", "debug_console_height"}  # spinner: elapsed-time labels; console: never shown
+_RETIRED_UI: set[str] = {  # nothing read these: spinner (elapsed-time labels), console, per-message metrics
+    "spinner_fps", "debug_console_height",
+    "show_metrics", "metrics_show_tokens", "metrics_show_speed", "metrics_show_ttft",
+}
 # preserve_reasoning_traces: reasoning is no longer sent back (PLAN.md step 2).
 _RETIRED_CONTEXT: set[str] = {"preserve_reasoning_traces", "format"}  # format: the project tree was never sent
 _RETIRED_DEBUG: set[str] = set()
@@ -584,10 +579,6 @@ class Config:
         self.ui_scroll_touchpad_speed: float = 0.1
         self.ui_scroll_touchpad_event_threshold: int = 2
         self.ui_scroll_alt_multiplier: float = 3.0
-        self.ui_show_metrics: bool = True
-        self.ui_metrics_show_tokens: bool = False
-        self.ui_metrics_show_speed: bool = True
-        self.ui_metrics_show_ttft: bool = False
         self.ui_metrics_refresh_interval: float = 0.1
         self.ui_status_bar_fields: list[str] = ["endpoint_model", "role", "context", "cost", "sandbox"]
         self.ui_notice_lines: int = 2

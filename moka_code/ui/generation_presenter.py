@@ -339,21 +339,7 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                 app.pending_permission_prompt = None
 
             elif isinstance(event, events.Usage):
-                # Update message metrics (for live display in footer).
-                # Only update for thinking/content messages, not tool messages;
-                # while a tool call drafts, the response's text message keeps
-                # receiving them.
-                metrics_msg = (
-                    current_msg if current_msg_type in (ThinkingMsg, AssistantMsg)
-                    else response_text_msg
-                )
-                if metrics_msg is not None:
-                    metrics_msg.update_metrics(
-                        tokens=event.tokens,
-                        tokens_per_second=event.tokens_per_second,
-                        ttft_ms=event.ttft_ms,
-                        duration_ms=event.duration_ms,
-                    )
+                # Usage arrived: the status bar's context and cost follow it.
                 app.refresh_status_bar()
 
             elif isinstance(event, events.Error):
