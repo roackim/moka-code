@@ -273,7 +273,7 @@ Identical for every provider, not overridden:
 7. **One identity for stored output.** Each assistant entry records
    `origin = {type, model}` from the endpoint's `type` and selected model.
 8. **One request builder.** `Harness._request_messages()` builds every request
-   (`chat`, `get_current_context`) from history; nothing keeps a second list.
+   (`chat`) from history; nothing keeps a second list.
 
 ---
 

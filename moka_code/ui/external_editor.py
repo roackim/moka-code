@@ -22,7 +22,6 @@ from __future__ import annotations
 import asyncio
 import os
 import shlex
-import shutil
 import signal
 import subprocess
 from pathlib import Path
@@ -38,14 +37,12 @@ _WAIT_POLL = 0.05
 
 
 def resolve_editor() -> List[str]:
-    """Command used to edit a file: ``$VISUAL``, ``$EDITOR``, then a fallback."""
+    """Command used to edit a file: ``$VISUAL``, then ``$EDITOR``; empty when
+    neither is set (never guessed: the setup note says to export one)."""
     for variable in ("VISUAL", "EDITOR"):
         value = os.environ.get(variable)
         if value:
             return shlex.split(value)
-    for candidate in ("nano", "vim", "vi"):
-        if shutil.which(candidate):
-            return [candidate]
     return []
 
 

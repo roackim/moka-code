@@ -114,3 +114,20 @@ def test_template_help_lines_use_double_hash(section):
     for line in template.splitlines():
         if line.startswith("#") and not line.startswith("##") and line != "#":
             assert _SETTING_LINE.match(line), f"{section}: help line needs ##: {line!r}"
+
+
+def test_keys_that_did_nothing_are_cleaned_from_existing_files(tmp_path):
+    """``context.format`` (the project tree was never sent) and
+    ``ui.debug_console_height`` (the console is never shown) are retired."""
+    (tmp_path / "ui.toml").write_text(
+        'theme = "terminal"\ndebug_console_height = 12\n', encoding="utf-8")
+    (tmp_path / "context.toml").write_text(
+        'format = "flat"\nmax_files = 50\n', encoding="utf-8")
+
+    config = _config(tmp_path)
+    config.sync_section_files()
+
+    assert "debug_console_height" not in (tmp_path / "ui.toml").read_text(encoding="utf-8")
+    context = (tmp_path / "context.toml").read_text(encoding="utf-8")
+    assert "format" not in context and "max_files = 50" in context
+    assert config.reload() == []

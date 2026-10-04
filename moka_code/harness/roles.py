@@ -165,19 +165,6 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
     )
 
 
-def _role_to_dict(role: Role) -> dict[str, Any]:
-    data: dict[str, Any] = {
-        "description": role.description,
-        "prompt": role.prompt,
-    }
-    if role.require_sandbox:
-        data["require_sandbox"] = True
-    if role.replay_reasoning_depth != 1:
-        data["replay_reasoning_depth"] = role.replay_reasoning_depth
-    data.update(role.tools)
-    return data
-
-
 def _migrate_role_file(path: Path) -> bool:
     """Rename/drop retired tool keys in a role file, preserving everything else.
 
@@ -248,20 +235,6 @@ def _role_template(role: Role) -> str:
         f"## request. 0 = none, 1 = the current turn (tool loop), N = last N turns, 999 = all.\n"
         f"# replay_reasoning_depth = 1\n"
     )
-
-
-def create_role(name: str) -> Role:
-    """Create a role file from the tool registry (the only programmatic writer).
-
-    A new role has every tool disabled; the user opts tools in explicitly.
-    """
-    name = _validate_name(name)
-    if name in list_roles() or _role_file(name).exists():
-        raise ValueError(f"Role already exists: {name}")
-    role = Role(name=name, description="", prompt=DEFAULT_ROLE_PROMPT, tools=_all_tools_no())
-    _ROLES_DIR.mkdir(parents=True, exist_ok=True)
-    _role_file(name).write_text(_role_template(role), encoding="utf-8")
-    return role
 
 
 def ensure_role_file(name: str) -> Path:

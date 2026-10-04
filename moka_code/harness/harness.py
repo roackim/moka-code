@@ -10,7 +10,6 @@ from typing import AsyncGenerator, Any, Dict, List, Optional, Tuple
 
 from moka_code.harness.llm_status import AgentState
 from moka_code.harness.debug import get_debug_stream
-from moka_code.harness.context_builder import build_harness_context
 from moka_code.harness.compaction import COMPACTION_MARKER_PREFIX, transcript
 from moka_code.harness.elision import elide
 from moka_code.harness import events, images
@@ -85,8 +84,6 @@ class Harness:
         # USD spent on this conversation, when the provider reports costs
         # (None until one does, so local servers show nothing).
         self.conversation_cost: Optional[float] = None
-        self.project_context = build_harness_context(self.workspace)
-        self.debug_stream.log("CONTEXT", "Project context built")
         # Cache for the @ file picker listing (invalidated on workspace change).
         self._file_list_cache: list[str] = []
         self._file_list_cache_key: tuple = ()
@@ -193,30 +190,6 @@ class Harness:
             return
         self._add_message_to_history("system", content)
 
-    def switch_workspace(self, new_path: str) -> list[str]:
-        """Change the workspace directory and rebuild project context.
-
-        Returns a list of warning strings (may be empty).
-        Raises ValueError if the path does not exist or is not a directory.
-        """
-        resolved = Path(new_path).expanduser().resolve()
-        if not resolved.exists():
-            raise ValueError(f"Path does not exist: {resolved}")
-        if not resolved.is_dir():
-            raise ValueError(f"Not a directory: {resolved}")
-
-        self.workspace = str(resolved)
-        os.chdir(self.workspace)
-
-        # Rebuild project context and invalidate the @ file picker cache.
-        self.project_context = build_harness_context(self.workspace)
-        self._file_list_cache = []
-        self._file_list_cache_key = ()
-        self.debug_stream.log("WORKSPACE", f"Workspace changed to: {self.workspace}")
-
-        # No git-repo warning: the file tree is built regardless of git status.
-        return []
-
     def switch_server(self, new_endpoint: Optional[Endpoint]) -> None:
         """Switch to a different LLM endpoint at runtime (``None``: none).
 
@@ -290,25 +263,6 @@ class Harness:
             api.append(msg)
         return api
 
-    def _get_tool_output(self, ref: str) -> Optional[str]:
-        """
-        Get a previous tool output by reference.
-        
-        Args:
-            ref: Reference string (currently only "@" for last bash output)
-            
-        Returns:
-            Tool output or None if not found
-        """
-        if ref == "@":
-            # Get last bash output
-            for name, result in reversed(self.tool_output_history):
-                if name == "bash":
-                    return result
-            return None
-        
-        return None
-
     def _add_message_to_history(self, role: str, content: Optional[str], **kwargs) -> str:
         """Add a message to history with a unique ID.
         
@@ -366,18 +320,6 @@ class Harness:
         self._permission_gate.clear_pending()
         self.state = AgentState.IDLE
 
-    def stop_tool(self) -> bool:
-        """Terminate the currently-running shell command (bash tool), if any.
-
-        Returns True if a running command was stopped.
-        """
-        bash_tool = self.tools_map.get("bash")
-        if bash_tool is not None:
-            cancel = getattr(bash_tool, "cancel_active_run", None)
-            if callable(cancel):
-                return cancel()
-        return False
-
     async def _wait_for_user_input(self, prompt: str) -> str:
         """Wait for the user to provide text via the UI."""
         return await self._permission_gate.wait_for_user_input(prompt)
@@ -389,9 +331,6 @@ class Harness:
     def _build_permission_prompt(self, tool_name: str, args: dict) -> str:
         """Build a human-readable permission prompt for a tool call."""
         return PermissionGate.build_prompt(tool_name, args)
-
-    def get_state(self) -> AgentState:
-        return self.state
 
     def _add_cost(self, usage: Optional[TokenUsage]) -> None:
         """Add a request's reported cost to the conversation total."""
@@ -420,42 +359,6 @@ class Harness:
         self._last_usage = None
         self.debug_stream.log("CLEAR", "Conversation history cleared")
     
-    def delete_messages_after_id(self, message_id: str, inclusive: bool = True) -> bool:
-        """Delete all messages after (and optionally including) the message with given ID.
-        
-        Args:
-            message_id: The ID of the message to delete from
-            inclusive: If True, delete the message with this ID too. If False, keep it.
-            
-        Returns:
-            True if message was found and deletion occurred, False otherwise
-        """
-        for i, msg in enumerate(self.history):
-            if msg.get("id") == message_id:
-                # Delete messages
-                if inclusive:
-                    self.history = self.history[:i]
-                else:
-                    self.history = self.history[:i+1]
-                
-                self.debug_stream.log("DELETE_AFTER_ID", f"Deleted messages after ID {message_id} (inclusive={inclusive})")
-                return True
-        return False
-    
-    def get_message_by_id(self, message_id: str) -> Optional[Dict[str, Any]]:
-        """Get a message by its ID.
-        
-        Args:
-            message_id: The ID of the message to find
-            
-        Returns:
-            The message dict if found, None otherwise
-        """
-        for msg in self.history:
-            if msg.get("id") == message_id:
-                return msg
-        return None
-
     def list_files_and_folders(self) -> List[str]:
         """Returns a bounded list of files/folders for the @ file picker.
 
@@ -569,21 +472,8 @@ class Harness:
     def _request_messages(self) -> List[Dict[str, Any]]:
         """The exact message list the next request sends: the role's system
         prompt, then the effective history as API messages. The one place a
-        request is built (``chat`` and ``get_current_context`` both use it)."""
+        request is built."""
         return self._system_messages() + self._api_history()
-
-    async def get_current_context(self) -> List[Dict[str, Any]]:
-        """The exact message list that would be sent to the LLM now, without
-        modifying state (for debugging and inspecting what the model sees)."""
-        return self._request_messages()
-
-    async def get_system_prompt(self) -> str:
-        """Return the exact system prompt that would be sent on the next turn.
-
-        The system prompt is the active role's ``prompt`` (empty when unset),
-        so switching roles is reflected here.
-        """
-        return (getattr(getattr(self, "role", None), "prompt", "") or "").strip()
 
     @staticmethod
     def _assemble_tool_calls(buffer: Dict) -> list:
@@ -1179,7 +1069,6 @@ class Harness:
                 msg["origin"] = {"type": self.endpoint.type,
                                  "model": self.endpoint.selected_model}
                 self.history.append(msg)
-                self._last_assistant_message_id = assistant_msg_id
 
                 # If no tools, we're done
                 if not tool_calls_list:

@@ -76,7 +76,6 @@ class MetricsState:
                 completion_tokens=self.completion_tokens,
                 total_tokens=self.total_usage_tokens,
                 reasoning_tokens=self.reasoning_tokens,
-                estimated=self.completion_tokens is None,
             )
         return None
 
@@ -95,5 +94,4 @@ class MetricsState:
             completion_tokens=self.completion_tokens,
             total_tokens=self.total_usage_tokens,
             reasoning_tokens=self.reasoning_tokens,
-            estimated=self.completion_tokens is None,
         )

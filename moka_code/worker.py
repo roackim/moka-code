@@ -496,6 +496,10 @@ def bash_sync(command: str, *, cwd: Path | str, timeout: int = 30) -> str:
         raise ToolError(f"Command execution failed: {e}")
 
 
+#: Seconds a finished command's output pumps get to drain (see :func:`bash`).
+_DRAIN_GRACE = 1.0
+
+
 async def bash(
     command: str,
     *,
@@ -547,6 +551,10 @@ async def bash(
 
         try:
             await asyncio.wait_for(proc.wait(), timeout=timeout)
+            # wait() can return before the pumps have consumed what is already
+            # buffered: let them finish, or the last output is dropped. The
+            # grace only bounds a pump that never ends.
+            await asyncio.wait(pumps, timeout=_DRAIN_GRACE)
         except asyncio.TimeoutError:
             kill_process_group(proc)
             await proc.wait()

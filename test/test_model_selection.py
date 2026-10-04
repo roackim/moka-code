@@ -231,3 +231,50 @@ def test_a_server_that_cannot_be_listed_is_reported_even_when_not_active(cfg, mo
     asyncio.run(refresh_catalog(["ds"]))
     assert cfg.config.discovery_errors == {}
     assert not any("cannot be listed" in t for _, t in notices(agent))
+
+
+def test_server_without_a_selected_model_is_an_error_notice(cfg):
+    """ISSUES U7: the status bar's ``?`` always comes with its fix."""
+    from moka_code.ui.status_presenter import notices
+
+    cfg.config.servers["o"] = {"type": "llamacpp", "base_url": "http://o/v1"}
+    agent = SimpleNamespace(endpoint=LlamaCpp(name="o", base_url="http://o/v1"), role=None)
+
+    assert ("error", "o: no model selected → /model") in notices(agent)
+
+
+def test_unknown_theme_is_reported(cfg, monkeypatch):
+    """ISSUES U5: a typo in ``ui.theme`` (or a vanished saved theme) is named."""
+    from moka_code.ui.tui.colors import theme_problems
+
+    monkeypatch.setattr(cfg.config, "ui_theme", "nrod")
+    monkeypatch.setattr(cfg.config, "active_theme", "gone")
+    assert theme_problems() == ["ui.toml: theme 'nrod' is not a theme (using terminal)",
+                                "state.toml: active_theme 'gone' is not a theme (using terminal)"]
+
+    monkeypatch.setattr(cfg.config, "ui_theme", "nord")
+    monkeypatch.setattr(cfg.config, "active_theme", None)
+    assert theme_problems() == []
+
+
+def _openrouter_models(monkeypatch, enabled, catalog_ids):
+    from moka_code.harness.providers import OpenRouter
+
+    server = OpenRouter(name="or", models=enabled)
+
+    async def catalog():
+        return [{"id": cid, "context_length": 1000} for cid in catalog_ids]
+
+    monkeypatch.setattr(server, "_catalog", catalog)
+    return asyncio.run(server.list_models())
+
+
+def test_openrouter_bare_id_matches_one_model(monkeypatch):
+    models = _openrouter_models(monkeypatch, ["flash"], ["a/flash", "b/other"])
+    assert [m.id for m in models] == ["a/flash"]
+
+
+def test_openrouter_bare_id_matching_two_models_is_an_error(monkeypatch):
+    """ISSUES P5: never a silent pick between ``a/flash`` and ``b/flash``."""
+    with pytest.raises(RuntimeError, match="matches a/flash, b/flash → write the full id"):
+        _openrouter_models(monkeypatch, ["flash"], ["a/flash", "b/flash"])

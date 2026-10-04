@@ -930,21 +930,6 @@ class ChatHistoryPanel(TextComponent):
         
         return new_message
     
-    def remove_last_message(self):
-        """Remove the last message from the chat history."""
-        if self.messages:
-            self.messages.pop()
-            # Keep focus valid: drop it if the focused message was removed.
-            if self.focused_message_index is not None:
-                if not (0 <= self.focused_message_index < len(self.messages)):
-                    self.focused_message_index = None
-                else:
-                    self.messages[self.focused_message_index].set_focused(True)
-            self._notify_selection_changed()
-            self._message_height_cache.clear()
-            self._request_repaint()
-
-    
     def remove_message_by_index(self, index: int):
         """Remove a message by its index.
         
@@ -1105,19 +1090,6 @@ class ChatHistoryPanel(TextComponent):
                 refresh()
         self._request_repaint()
 
-    def restore_messages(self, messages: list) -> None:
-        """Restore message objects and rebuild the panel's layout state."""
-        self.messages = list(messages)
-        for message in self.messages:
-            message.get_component().parent = self
-        self.focused_message_index = None
-        self.selection.clear()
-        self._message_height_cache.clear()
-        self.scroll_offset = 0
-        self.auto_scroll = True
-        self.anchored_start_y = None
-        self._request_repaint()
-        
     # def resize(self, new_width: int):
     #     """Resize the panel and reformat all messages.
         

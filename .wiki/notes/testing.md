@@ -16,6 +16,12 @@ Tests live in `test/`. Run with pytest from the project root.
 
 ## Shared Fixtures
 
+`test/conftest.py` points `MOKA_CONFIG_DIR` and the XDG cache/state dirs at a
+temporary folder *before* moka is imported, so the suite never reads or writes
+your own config, sessions or image cache. Tests wait for a subprocess with
+`conftest.wait_until(...)`, never a guessed `sleep` (a loaded machine starts
+processes late).
+
 `test/conftest.py` provides reusable test infrastructure:
 - `NoopDebugStream`, `FakeServer`, `StubReadTool`, `StubAgent` — stub classes
 - `harness_stub(tmp_path, stub_read_tool)` — fixture for tool-execution tests (bypasses `Harness.__init__`)

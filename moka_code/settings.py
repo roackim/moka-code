@@ -24,7 +24,7 @@ import os
 import re
 import toml
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Optional
 
 from moka_code.harness.providers import REGISTRY
 
@@ -104,19 +104,9 @@ def migrate_legacy_config_dir() -> Optional[str]:
     return f"pico-chat is now moka: moved your configuration from {old} to {new}."
 
 
-def get_section_path(section: str) -> Path:
-    """Path to one config section file (e.g. ``ui`` -> ``ui.toml``)."""
-    return get_config_dir() / CONFIG_FILES[section]
-
-
 def get_roles_dir() -> Path:
     """Directory of one-file-per-role definitions."""
     return get_config_dir() / ROLES_DIRNAME
-
-
-def get_role_path(name: str) -> Path:
-    """Path to ``roles/<name>.toml``."""
-    return get_roles_dir() / f"{name}.toml"
 
 
 def get_state_path() -> Path:
@@ -133,12 +123,11 @@ DEFAULT_UI_TOML = """\
 
 ## Look
 
-# theme = "terminal"                    # "terminal" | "pastel"
+# theme = "terminal"                    # built-in or [themes.<name>] of themes.toml (/theme)
 # use_bg_color = false                  # paint the theme background
 # app_global_padding = 0
 # msg_h_padding = 1
 # msg_v_margin = 1                      # blank lines between turns (assistant output is continuous)
-# debug_console_height = 10
 # max_input_height = 8                  # input grows with wrapped lines, then scrolls
 # box_style = "square"                  # "square" | "double" | "rounded" | "ascii"
 # box_style_focused = "square"
@@ -184,9 +173,8 @@ DEFAULT_CONTEXT_TOML = """\
 ## Apply with /reload, or /config context.
 ## A line starting with # is a setting to uncomment; ## is help.
 
-## Project context
+## @ file picker
 
-# format = "tree"                       # "tree" (token-saving) | "flat"
 # max_files = 500
 # max_depth = 4
 # ignore_gitignore = false
@@ -310,7 +298,6 @@ _UI_SPEC: Dict[str, tuple[str, str]] = {
     "app_global_padding": ("ui_app_global_padding", "int"),
     "msg_h_padding": ("ui_msg_h_padding", "int"),
     "msg_v_margin": ("ui_msg_v_margin", "int"),
-    "debug_console_height": ("ui_debug_console_height", "int"),
     "max_input_height": ("ui_max_input_height", "int"),
     "box_style": ("ui_box_style", "str"),
     "box_style_focused": ("ui_box_style_focused", "str"),
@@ -327,8 +314,8 @@ _UI_SPEC: Dict[str, tuple[str, str]] = {
     "notice_lines": ("ui_notice_lines", "int"),
     "sandbox_glyph": ("ui_sandbox_glyph", "str"),
     "sandbox_prefix": ("ui_sandbox_prefix", "str"),
-    "sandbox_active_color": ("ui_sandbox_active_color", "str"),
-    "sandbox_inactive_color": ("ui_sandbox_inactive_color", "str"),
+    "sandbox_active_color": ("ui_sandbox_active_color", "color"),
+    "sandbox_inactive_color": ("ui_sandbox_inactive_color", "color"),
     "thought_min_tokens": ("ui_thought_min_tokens", "int"),
     "show_banner": ("ui_show_banner", "bool"),
     "stream_smoothing": ("ui_stream_smoothing", "bool"),
@@ -337,7 +324,6 @@ _UI_SPEC: Dict[str, tuple[str, str]] = {
 }
 
 _CONTEXT_SPEC: Dict[str, tuple[str, str]] = {
-    "format": ("context_format", "context_format"),
     "max_files": ("context_max_files", "int"),
     "max_depth": ("context_max_depth", "int"),
     "ignore_gitignore": ("context_ignore_gitignore", "bool"),
@@ -355,9 +341,9 @@ _DEBUG_SPEC: Dict[str, tuple[str, str]] = {
 # Keys removed from a flat section but kept here so existing user files can be
 # cleaned up on startup. Add a key here when you delete it from its ``*_SPEC``
 # and ``DEFAULT_*_TOML`` (see "Adding or deprecating a config key" in AGENTS.md).
-_RETIRED_UI: set[str] = {"spinner_fps"}  # spinner replaced by elapsed-time labels
+_RETIRED_UI: set[str] = {"spinner_fps", "debug_console_height"}  # spinner: elapsed-time labels; console: never shown
 # preserve_reasoning_traces: reasoning is no longer sent back (PLAN.md step 2).
-_RETIRED_CONTEXT: set[str] = {"preserve_reasoning_traces"}
+_RETIRED_CONTEXT: set[str] = {"preserve_reasoning_traces", "format"}  # format: the project tree was never sent
 _RETIRED_DEBUG: set[str] = set()
 
 # Flat sections that can be synced line-by-line against their template. Each
@@ -501,10 +487,18 @@ def _coerce_theme_color(value: Any) -> Optional[str]:
     return "must be a hex string, an ANSI code, or a table"
 
 
+#: Palette names a setting may name instead of a ``#rrggbb`` (the theme's keys).
+_COLOR_NAMES = _THEME_PALETTE | {"TOOL", "HEADING", "EMPHASIS", "CODE"}
+
+
 def _coerce(kind: str, value: Any) -> tuple[Any, Optional[str]]:
     """Return ``(coerced, None)`` or ``(None, error)`` for one config value."""
     if kind == "str":
         return (value, None) if isinstance(value, str) else (None, "must be a string")
+    if kind == "color":
+        if isinstance(value, str) and (value in _COLOR_NAMES or re.fullmatch(r"#[0-9a-fA-F]{6}", value)):
+            return value, None
+        return None, f"must be a palette name ({', '.join(sorted(_COLOR_NAMES))}) or #rrggbb"
     if kind == "bool":
         return (value, None) if isinstance(value, bool) else (None, "must be a boolean")
     if kind == "int":
@@ -538,10 +532,6 @@ def _coerce(kind: str, value: Any) -> tuple[Any, Optional[str]]:
                                            and value >= 0):
             return value, None
         return None, "must be a number of lines, 'function' or 'all'"
-    if kind == "context_format":
-        if value not in ("tree", "flat"):
-            return None, "must be 'tree' or 'flat'"
-        return value, None
     return value, None
 
 
@@ -582,7 +572,6 @@ class Config:
         self.active_theme: Optional[str] = None
 
         # UI settings.
-        self.ui_debug_console_height: int = 10
         self.ui_max_input_height: int = 8
         self.ui_use_bg_color: bool = False
         self.ui_theme: str = "terminal"
@@ -616,7 +605,6 @@ class Config:
         self.debug_log_enabled: bool = False
 
         # Context building.
-        self.context_format: Literal["tree", "flat"] = "tree"
         self.context_max_files: int = 500
         self.context_max_depth: int = 4
         self.context_ignore_gitignore: bool = False
@@ -747,10 +735,6 @@ class Config:
             if _sync_flat_file(self.section_file(section), template, retired):
                 changed.append(section)
         return changed
-
-    def ensure_config_files(self) -> list[Path]:
-        """Create every missing section file from its commented template."""
-        return [self.ensure_section_file(section) for section in CONFIG_FILES]
 
     # -- read helpers --------------------------------------------------------
 

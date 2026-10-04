@@ -122,7 +122,9 @@ def reload_and_apply(ui: ChatUIProtocol, title: str | None = None) -> None:
     from moka_code import settings
     from moka_code.harness import roles
 
-    errors = settings.reload_config() + roles.validate_roles()
+    from moka_code.ui.tui.colors import theme_problems
+
+    errors = settings.reload_config() + roles.validate_roles() + theme_problems()
     _apply_theme(ui)
     errors += _reapply_role(ui)
     reapply_endpoint(ui)

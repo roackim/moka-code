@@ -66,6 +66,13 @@ def test_resolve_editor_prefers_visual_then_editor(monkeypatch):
     assert resolve_editor() == ["nano"]
 
 
+def test_resolve_editor_never_guesses(monkeypatch):
+    """ISSUES U4: with neither variable set, no editor is picked."""
+    monkeypatch.delenv("VISUAL", raising=False)
+    monkeypatch.delenv("EDITOR", raising=False)
+    assert resolve_editor() == []
+
+
 def test_edit_file_invokes_editor(monkeypatch, tmp_path):
     monkeypatch.delenv("VISUAL", raising=False)
     monkeypatch.setenv("EDITOR", "my-editor")
@@ -137,7 +144,6 @@ def test_config_command_unknown_section_reports_error(monkeypatch):
 def test_config_command_without_editor_reports_error(monkeypatch):
     monkeypatch.delenv("VISUAL", raising=False)
     monkeypatch.delenv("EDITOR", raising=False)
-    monkeypatch.setattr("moka_code.ui.external_editor.shutil.which", lambda _name: None)
     ui = _UI()
 
     asyncio.run(cmd_config(ui, ["ui"]))

@@ -31,7 +31,6 @@ class Param:
 class ChatUIProtocol(Protocol):
     agent: Any
     chat_history_panel: Any
-    input_panel: Any
     compositor: Any
 
     def show_popup(self, title: str, content: str, content_padding: int = 1) -> None: ...

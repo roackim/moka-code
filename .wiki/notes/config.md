@@ -31,8 +31,7 @@ activity panel. Nothing else reads the old location.
 [tools-and-permissions.md](./tools-and-permissions.md)).
 
 Missing files are created from fully commented templates
-(`settings.DEFAULT_CONFIG_TEMPLATES`) by `Config.ensure_section_file()` /
-`ensure_config_files()`. In every template a single `#` marks a setting to
+(`settings.DEFAULT_CONFIG_TEMPLATES`) by `Config.ensure_section_file()`. In every template a single `#` marks a setting to
 uncomment (a bare `#` spaces a block of settings) and `##` marks help
 (guarded by `test_template_help_lines_use_double_hash`; role files, from `roles._role_template`: description, prompt, tools, then a `## Technical settings` block, guarded by `test_role_template_layout_and_uncommentable_settings`). The built-in role files (`agent.toml`, `chat.toml`)
 are seeded by `roles.ensure_roles_dir()` on startup.
@@ -180,7 +179,7 @@ selection, shown red with a notice. Failed discoveries are recorded in
 the active one, a warning for the others), as are unset `api_key_env`
 variables.
 
-**Context / ui:** `context_format`, `context_max_files`,
+**Context / ui:** `context_max_files`,
 `context_max_depth`, `context_ignore_gitignore`,
 `context_max_image_mb` (`context.max_image_mb`, largest attachable image),
 `context_sessions` (`context.sessions`, conversations saved per project; 0 = off),
@@ -194,7 +193,10 @@ this many wrapped lines), `ui_stream_smoothing` / `ui_smooth_target_fps`
 (streamed-text reveal smoothing), `target_fps`, and the rest of the `ui_*`
 attrs, including `ui_thought_min_tokens` (reasoning shorter than this gets
 no transcript line; 0 = show all). `spinner_fps` is retired (`_RETIRED_UI`): tool and thinking lines show
-ticking elapsed time instead of a spinner.
+ticking elapsed time instead of a spinner. `context.format` (the project tree was
+never sent to the model) and `ui.debug_console_height` (the console is never shown)
+are retired too. Colour keys (`sandbox_*_color`) are validated at load: a palette
+name or `#rrggbb`, else a load error and the default is kept.
 
 The `sandbox` status-bar field is composed from `ui_sandbox_glyph` +
 `ui_sandbox_prefix` + the runtime name; it is green (`ui_sandbox_active_color`)

@@ -34,16 +34,6 @@ class FakeMessage:
         return self.component
 
 
-def test_chat_history_restores_messages_through_panel_boundary():
-    panel = ChatHistoryPanel()
-    messages = [FakeMessage(), FakeMessage()]
-
-    panel.restore_messages(messages)
-
-    assert panel.messages == messages
-    assert all(message.component.parent is panel for message in messages)
-
-
 def test_cached_hit_test_rebuilds_after_cache_invalidation():
     """Scrolling invalidates the line-map cache; a subsequent hit test must
     rebuild it rather than crashing on a None cache (regression)."""

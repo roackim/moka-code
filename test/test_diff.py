@@ -53,11 +53,11 @@ def test_changes_lists_modified_deleted_untracked_with_stats(tmp_path):
     root = _repo(tmp_path)
     _dirty(root)
 
-    found = {c.path: (c.status, c.stats()) for c in changes.changes(str(root))}
+    found = {c.path: (c.status, c.added, c.removed) for c in changes.changes(str(root))}
 
     assert found == {
-        "a.py": ("M", "+2 −1"), "gone.txt": ("D", "+0 −1"),
-        "new.md": ("??", "+2 −0"), "sp ace.txt": ("M", "+1 −0")}
+        "a.py": ("M", 2, 1), "gone.txt": ("D", 0, 1),
+        "new.md": ("??", 2, 0), "sp ace.txt": ("M", 1, 0)}
 
 
 def test_a_clean_repo_has_no_changes_and_a_plain_folder_is_not_a_repo(tmp_path):
@@ -84,9 +84,11 @@ def test_binary_files_are_listed_without_line_counts(tmp_path):
     (root / "blob.bin").write_bytes(b"\0\1\2")
     (root / "a.py").write_bytes(b"\0binary now")
 
-    stats = {c.path: c.stats() for c in changes.changes(str(root))}
+    found = {c.path: c for c in changes.changes(str(root))}
 
-    assert stats["blob.bin"] == "binary" and stats["a.py"] == "binary"
+    # None: binary, no line counts
+    assert (found["blob.bin"].added, found["blob.bin"].removed) == (None, None)
+    assert (found["a.py"].added, found["a.py"].removed) == (None, None)
 
 
 def test_a_workspace_inside_the_repo_sees_only_its_own_changes(tmp_path):
@@ -103,7 +105,8 @@ def test_a_workspace_inside_the_repo_sees_only_its_own_changes(tmp_path):
     text = changes.diff_text(str(root / "pkg"))
 
     assert found == {"in.py": "M", "new.py": "??"}
-    assert {c.path: c.stats() for c in changes.changes(str(root / "pkg"))}["in.py"] == "+1 −0"
+    in_py = {c.path: c for c in changes.changes(str(root / "pkg"))}["in.py"]
+    assert (in_py.added, in_py.removed) == (1, 0)
     assert "in.py" in text and "new.py" in text and "a.py" not in text
 
 

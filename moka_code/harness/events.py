@@ -103,7 +103,6 @@ class Usage:
     completion_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
     reasoning_tokens: Optional[int] = None
-    estimated: bool = True
 
 
 @dataclass
@@ -115,7 +114,6 @@ class Error:
 @dataclass
 class Done:
     """The generation stream has finished."""
-    stop_reason: str = "end_turn"
 
 
 Event = Union[

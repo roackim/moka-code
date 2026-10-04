@@ -76,9 +76,6 @@ class _AppFocusTarget:
         self.focused = focused
         self._on_focus(focused)
 
-    def set_component(self, component):
-        self._component = component
-
     def handle_input(self, event):
         return self._handle_input(event)
 
@@ -157,7 +154,7 @@ class chatTUI(ChatActionHandlers):
         self.activity_popup = DebugPopup(self.activity_panel, title="activity")
         self.chat_history_panel.activity_sink = self._on_activity
         self.popup = Popup()
-        self.log_handler = setup_tui_logging(self.debug_panel)
+        setup_tui_logging(self.debug_panel)
         # Left-align the status text (no leading padding).
         self.status_bar = StatusBar(
             fields=settings.config.ui_status_bar_fields,
@@ -182,7 +179,7 @@ class chatTUI(ChatActionHandlers):
         self._hint_flash_until = 0.0
         self._hint_flash = ("", None)
         self.refresh_setup_notes()
-        self.chat_history_panel.on_selection_changed = self._update_mode_line
+        self.chat_history_panel.on_selection_changed = self._update_action_strip
         self.chat_history_panel.on_hint = self.flash_hint
         self.chat_history_panel.on_copy = self.copy_text
         self.input_component.on_change = self._update_action_strip
@@ -196,7 +193,6 @@ class chatTUI(ChatActionHandlers):
         self._stop_requested = False
         self.active_tool_messages = {}
         self.pending_permission_prompt = None
-        self._active_user_input = None
         self._active_user_msg = None
         # Images pasted into the input draft, by their ``[image #N]`` number.
         self._pasted_images = {}
@@ -324,6 +320,7 @@ class chatTUI(ChatActionHandlers):
         startup and after every reload."""
         from moka_code.harness import roles
         from moka_code.ui.external_editor import resolve_editor
+        from moka_code.ui.tui.colors import theme_problems
 
         sections = {name: section for section, name in settings.CONFIG_FILES.items()}
         notes = []
@@ -331,6 +328,7 @@ class chatTUI(ChatActionHandlers):
             section = sections.get(error.split(":", 1)[0])
             notes.append(("error", f"{error} → /config {section}" if section else error))
         notes += [("error", f"{error} → /config role") for error in roles.validate_roles()]
+        notes += [("error", f"{problem} → /theme") for problem in theme_problems()]
         if not resolve_editor():
             notes.append(("warning", "no $VISUAL or $EDITOR (config files open in it) → export EDITOR=…"))
         if self._migration_notice:
@@ -424,7 +422,6 @@ class chatTUI(ChatActionHandlers):
                     user_msg.set_title("user")
                     user_msg.set_frame_color(theme.USER)
 
-                self._active_user_input = user_input
                 self._active_user_msg = user_msg
                 self._stop_requested = False
                 self.current_generation_task = asyncio.create_task(
@@ -446,7 +443,6 @@ class chatTUI(ChatActionHandlers):
                 self.chat_history_panel.add_message(str(error), msg_type=SysMsgError())
             finally:
                 self.current_generation_task = None
-                self._active_user_input = None
                 self._active_user_msg = None
                 self.save_session()
 
@@ -611,9 +607,6 @@ class chatTUI(ChatActionHandlers):
             self.compositor._full_redraw = True
             self.compositor.request_render()
 
-    # Back-compat alias for the old mode-line hook name.
-    _update_mode_line = _update_action_strip
-
     def show_popup(self, title: str, content: str, content_padding: int = 1):
         """Show a popup overlay with the given title and content."""
         self.popup.set_compositor(self.compositor)
@@ -768,7 +761,6 @@ class chatTUI(ChatActionHandlers):
         self._focus_scope.manager.focus(target_index)
         
         is_input_focused = (self._last_focus_id == "input")
-        is_history_focused = (self._last_focus_id == "history")
         
         # Auto-scroll to bottom when input field is focused
         if is_input_focused:

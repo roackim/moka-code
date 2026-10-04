@@ -7,7 +7,20 @@ test_permissions.py, test_compaction.py, and test_ui_permission_submit.py.
 from __future__ import annotations
 
 import asyncio
+import atexit
+import os
+import shutil
+import tempfile
 from typing import Optional
+
+# The suite never reads or writes the user's own folders. ``settings.config``
+# and the roles folder are resolved when moka is first imported, so this must
+# run before any ``moka_code`` import (ISSUES H7).
+_SANDBOX_HOME = tempfile.mkdtemp(prefix="moka-test-")
+atexit.register(shutil.rmtree, _SANDBOX_HOME, True)
+os.environ["MOKA_CONFIG_DIR"] = os.path.join(_SANDBOX_HOME, "config")
+os.environ["XDG_CACHE_HOME"] = os.path.join(_SANDBOX_HOME, "cache")
+os.environ["XDG_STATE_HOME"] = os.path.join(_SANDBOX_HOME, "state")
 
 import pytest
 
@@ -23,6 +36,16 @@ def _no_discovery_errors_leak(monkeypatch):
     from moka_code import settings
 
     monkeypatch.setattr(settings.config, "discovery_errors", {})
+
+
+async def wait_until(predicate, timeout: float = 5.0) -> None:
+    """Wait for *predicate* instead of sleeping a guessed time: a loaded
+    machine starts subprocesses late (ISSUES H6)."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not predicate():
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError("condition not reached in time")
+        await asyncio.sleep(0.01)
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +153,6 @@ def harness_stub_compaction():
     harness.state = AgentState.IDLE
     harness.history = []
     harness.workspace = "."
-    harness.project_context = "Project Root: .\nFiles:"
     harness.endpoint = FakeServer()
     return harness
 

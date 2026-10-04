@@ -126,9 +126,9 @@ user can comment/uncomment or edit values — the "all options visible" style of
 `servers.toml`.
 
 Built-in roles (`agent`, `chat`) are seeded as files on first run by
-`ensure_roles_dir()`; a code fallback exists for both. `create_role(name)` writes
-a template from the registry (all tools `no`); `delete_role(name)` unlinks the
-file, refusing to remove the last role.
+`ensure_roles_dir()`; a code fallback exists for both. `ensure_role_file(name)`
+writes a template from the registry (all tools `no`) when the file is missing;
+`delete_role(name)` unlinks the file, refusing to remove the last role.
 
 `ensure_roles_dir()` also migrates retired tool keys in existing role files,
 preserving comments and everything else: `patch → edit`, `run_command → bash`,

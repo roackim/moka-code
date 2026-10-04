@@ -235,6 +235,17 @@ def available_themes() -> dict:
     return themes
 
 
+def theme_problems() -> list:
+    """Chosen themes that do not exist (they fall back to ``terminal``)."""
+    known = available_themes()
+    problems = []
+    for where, name in (("ui.toml: theme", settings.config.ui_theme),
+                        ("state.toml: active_theme", settings.config.active_theme)):
+        if name and name not in known:
+            problems.append(f"{where} '{name}' is not a theme (using terminal)")
+    return problems
+
+
 def theme_names() -> list:
     """Selectable theme names (built-ins + user-defined)."""
     return sorted(available_themes())

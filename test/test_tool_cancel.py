@@ -4,6 +4,8 @@ import asyncio
 import pytest
 from moka_code.harness.tools import ShellTool, MinimalToolset, ToolError
 
+from conftest import wait_until
+
 def asyncio_run(coro):
     return asyncio.run(coro)
 
@@ -21,8 +23,7 @@ def test_cancel_active_run_kills_command(tmp_path):
     async def scenario():
         # Launch a long-running command.
         task = asyncio.create_task(tool.run_async("sleep 30"))
-        await asyncio.sleep(0.2)  # let the subprocess start
-        assert tool._active_proc is not None
+        await wait_until(lambda: tool._active_proc is not None)
         stopped = tool.cancel_active()
         assert stopped is True
         try:
@@ -39,7 +40,7 @@ def test_run_async_no_active_proc_when_cancelled(tmp_path):
 
     async def scenario():
         task = asyncio.create_task(tool.run_async("sleep 30"))
-        await asyncio.sleep(0.2)
+        await wait_until(lambda: tool._active_proc is not None)
         tool.cancel_active()
         try:
             await asyncio.wait_for(task, timeout=5)
@@ -57,7 +58,7 @@ def test_minimal_toolset_run_async_and_cancel(tmp_path):
 
     async def scenario():
         task = asyncio.create_task(ts.run_async("sleep 30"))
-        await asyncio.sleep(0.2)
+        await wait_until(lambda: ts.shell_tool._active_proc is not None)
         assert ts.cancel_active_run() is True
         try:
             await asyncio.wait_for(task, timeout=5)

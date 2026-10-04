@@ -146,7 +146,7 @@ the catalog's `images`, filled by `list_models()` (llama.cpp `/props`
 provider fills it from its own fields) and `MetricsState`.
 
 ### `llm_status.py`
-`AgentState` enum: `UNCONNECTED`, `IDLE`, `THINKING`, `ANSWERING`.
+`AgentState` enum: `IDLE`, `THINKING`, `ANSWERING`.
 
 ### `tools.py`
 Tool **schemas** and host-side bindings. The tool *bodies* live in
@@ -216,8 +216,8 @@ permission engine.
   refuses normal submissions. Activating a sandbox lifts it automatically.
 - Built-in roles `agent` (all tools `yes`) and `chat` (all tools `no`) are
 	seeded as files by `ensure_roles_dir()`; a code fallback exists for both.
-- `create_role(name)` writes a template listing every registered tool with
-	value `no` (all disabled); `delete_role(name)` unlinks, refusing to remove
+- `ensure_role_file(name)` writes a template listing every registered tool with
+	value `no` (all disabled) when the file is missing; `delete_role(name)` unlinks, refusing to remove
 	the last role. `load_role` / `list_roles` read one file per role at
 	`~/.config/moka/roles/<name>.toml`.
 - `validate_roles()` reports unknown tool names and values other than
@@ -227,18 +227,14 @@ permission engine.
 	represented by one system history notice; consecutive notices are collapsed.
 
 ### `context_builder.py`
-`build_harness_context()` — builds the project file-tree context string.
-- Builds the file tree regardless of git status (outside a git repo there is no `.gitignore`, so the whole directory is listed — this keeps the `@` file picker working everywhere)
-- `list_files_bounded()` — breadth-first, depth/max-files-bounded walk used by the `@` file picker so it stays responsive on huge trees (e.g. `$HOME`); respects `.gitignore` unless `ignore_gitignore` is set
-- Injects current date and time
-- Note: the result is stored on `Harness.project_context` but is **not** sent to
-  the model — the system prompt is the active role's `prompt` only.
+`list_files_bounded()` — breadth-first, depth/max-files-bounded walk used by the `@` file picker so it stays responsive on huge trees (e.g. `$HOME`); respects `.gitignore` unless `ignore_gitignore` is set. It lists the whole directory outside a git repo too, so the picker works everywhere. `get_ignore_spec()` loads `.gitignore`.
+- No project tree or date is put in the prompt: the system prompt is the active role's `prompt` only (the earlier `build_harness_context` result was never sent, and was removed with `context.format`).
 
 ### System prompt
 
 There is no `system_prompt.py`. The entire system message is the active role's
 `prompt` field (empty → no system message). `Harness._system_messages()` builds
-it; `Harness.get_system_prompt()` returns it. It is edited as a role file
+it. It is edited as a role file
 (`roles/<name>.toml`), never in code.
 
 ### `debug.py`

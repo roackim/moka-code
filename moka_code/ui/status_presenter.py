@@ -97,6 +97,8 @@ def notices(agent) -> list[tuple[str, str]]:
         if conn == "error":
             url = getattr(endpoint, "_original_base_url", "") or endpoint.base_url
             errors.append(f"{name} unreachable ({url}) → start it, or /config servers")
+        elif not getattr(endpoint, "selected_model", None):
+            errors.append(f"{name}: no model selected → /model")
         elif (settings.config.models_by_server.get(name) == []
               and name not in settings.config.stale_servers):
             errors.append(f"{name} lists no models → /config servers")

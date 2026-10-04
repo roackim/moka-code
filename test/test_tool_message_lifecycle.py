@@ -133,29 +133,6 @@ def test_tool_message_exposes_only_non_destructive_actions():
     assert all(a in (MsgAction.OUTPUT, MsgAction.COPY) for a in actions)
 
 
-def test_harness_stop_tool_kills_bash(tmp_path):
-    """Harness.stop_tool() terminates the active command."""
-    import asyncio
-    from moka_code.harness.harness import Harness
-    from moka_code.harness.tools import MinimalToolset
-
-    h = Harness.__new__(Harness)
-    ts = MinimalToolset(tmp_path)
-    bash_tool = _StubBashTool(ts)
-    h.tools_map = {"bash": bash_tool}
-
-    async def scenario():
-        task = asyncio.create_task(ts.run_async("sleep 30"))
-        await asyncio.sleep(0.2)
-        assert h.stop_tool() is True
-        try:
-            await asyncio.wait_for(task, timeout=5)
-        except asyncio.TimeoutError:
-            raise AssertionError("stop_tool did not terminate the command")
-
-    asyncio.run(scenario())
-
-
 def test_bash_tool_schema_name_is_bash():
     """The LLM-facing tool name is 'bash'."""
     from moka_code.harness.tools import create_toolset

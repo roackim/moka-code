@@ -24,12 +24,6 @@ class Change:
     added: Optional[int] = None     # None: binary or too large to count
     removed: Optional[int] = None
 
-    def stats(self) -> str:
-        if self.added is None or self.removed is None:
-            return "binary"
-        return f"+{self.added} −{self.removed}"
-
-
 def _git(workspace: str, *args: str) -> Optional[subprocess.CompletedProcess]:
     """Run git in ``workspace``; ``None`` when git is missing or too slow."""
     try:

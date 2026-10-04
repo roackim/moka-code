@@ -99,7 +99,6 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
             chat.remove_message(current_msg)
         else:
             current_msg.finalize()
-            current_msg.update_actions()
         current_msg = None
         current_msg_type = None
 

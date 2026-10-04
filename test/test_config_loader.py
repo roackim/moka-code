@@ -14,7 +14,7 @@ def _write(path, data):
 def test_section_files_apply(tmp_path):
     _write(tmp_path / "ui.toml",
            {"theme": "pastel", "msg_h_padding": 2, "status_bar_fields": ["role"]})
-    _write(tmp_path / "context.toml", {"format": "flat", "max_files": 50})
+    _write(tmp_path / "context.toml", {"max_files": 50})
     _write(tmp_path / "debug.toml", {"log_enabled": True})
     _write(tmp_path / "servers.toml", {
         "servers": {
@@ -28,7 +28,6 @@ def test_section_files_apply(tmp_path):
     assert config.ui_theme == "pastel"
     assert config.ui_msg_h_padding == 2
     assert config.ui_status_bar_fields == ["role"]
-    assert config.context_format == "flat"
     assert config.context_max_files == 50
     assert config.debug_log_enabled is True
     assert config.servers["local"]["base_url"] == "http://localhost:8080/v1"
@@ -36,7 +35,7 @@ def test_section_files_apply(tmp_path):
 
 def test_invalid_values_are_reported_and_do_not_apply(tmp_path):
     _write(tmp_path / "ui.toml", {"theme": "dark", "msg_h_padding": "wide", "bogus": 1})
-    _write(tmp_path / "context.toml", {"format": "spiral"})
+    _write(tmp_path / "context.toml", {"max_files": "many"})
     _write(tmp_path / "servers.toml", {
         "servers": {"local": {"type": "wat", "base_url": 5}},
     })
@@ -45,12 +44,12 @@ def test_invalid_values_are_reported_and_do_not_apply(tmp_path):
 
     assert config.ui_theme == "dark"
     assert config.ui_msg_h_padding == 1  # default kept
-    assert config.context_format == "tree"  # default kept
+    assert config.context_max_files == 500  # default kept
 
     joined = "\n".join(config.load_errors)
     assert "ui.toml: unknown key 'bogus'" in joined
     assert "ui.toml: msg_h_padding must be an integer" in joined
-    assert "context.toml: format must be 'tree' or 'flat'" in joined
+    assert "context.toml: max_files must be an integer" in joined
     assert "servers.toml: [servers.local].type unknown server type 'wat'" in joined
     assert "servers.toml: [servers.local].base_url must be a string" in joined
 
@@ -160,8 +159,8 @@ def test_default_templates_are_valid_and_error_free(tmp_path):
 def test_ensure_files_write_templates(tmp_path):
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
-    created = config.ensure_config_files()
-    config.ensure_config_files()  # idempotent, does not clobber
+    created = [config.ensure_section_file(section) for section in settings.CONFIG_FILES]
+    [config.ensure_section_file(section) for section in settings.CONFIG_FILES]  # idempotent
 
     assert {path.name for path in created} == set(settings.CONFIG_FILES.values())
     assert (tmp_path / "ui.toml").exists()
@@ -339,3 +338,15 @@ def test_servers_template_uncommented_is_a_working_config(tmp_path):
 
     assert config.load_errors == []
     assert sorted(s["type"] for s in config.servers.values()) == sorted(settings.REGISTRY)
+
+
+def test_a_bad_color_is_reported_and_keeps_the_default(tmp_path):
+    """ISSUES U6: a typo in a color setting is not silently ignored."""
+    _write(tmp_path / "ui.toml", {"sandbox_active_color": "grene",
+                                  "sandbox_inactive_color": "#ff8800"})
+
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+
+    assert any("sandbox_active_color must be a palette name" in e for e in config.load_errors)
+    assert config.ui_sandbox_active_color == "SUCCESS"
+    assert config.ui_sandbox_inactive_color == "#ff8800"

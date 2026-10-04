@@ -421,7 +421,6 @@ class Message:
 
         # Steering / queue state
         self.is_queued: bool = False   # UserMsg waiting while generation is active
-        self.is_paused: bool = False   # AssistantMsg/ThinkingMsg cancelled via pause action
         
         # Generation metrics
         self.metrics_tokens: int = 0
@@ -491,14 +490,6 @@ class Message:
         if not self.inline_actions:
             return []
         return self.get_active_actions()
-    
-    def update_actions(self):
-        """Update the box's actions list based on current state.
-        
-        Note: This is now a no-op since Box pulls actions dynamically from parent_msg.
-        Kept for backward compatibility.
-        """
-        pass
     
     def set_title(self, title: str):
         """Update the title of the message box."""

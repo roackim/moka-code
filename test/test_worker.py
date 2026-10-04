@@ -101,3 +101,17 @@ def test_bash_sync_formats_output(tmp_path):
 def test_bash_timeout_cleans_up(tmp_path):
     with pytest.raises(ToolError, match="timed out"):
         _run(bash("sleep 30", cwd=tmp_path, timeout=1))
+
+
+def test_bash_keeps_the_output_written_just_before_exit(tmp_path):
+    """The output pumps must drain after the process exits: with many commands
+    in flight, buffered output used to be dropped (ISSUES H6). Only fails on a
+    loaded machine; run it under CPU load to see the old behaviour."""
+    async def many():
+        return await asyncio.gather(*[
+            bash("printf 'a\\nb\\nc\\n'; echo err >&2", cwd=tmp_path) for _ in range(150)
+        ])
+
+    for result in _run(many()):
+        assert "a\nb\nc" in result and "err" in result
+

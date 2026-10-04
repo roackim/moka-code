@@ -69,15 +69,16 @@ class OpenRouter(OpenAICompatible):
                 return by_id[eid]
             # Accept a bare id (no provider namespace) by suffix match, so
             # ``deepseek-v4-flash`` resolves ``deepseek/deepseek-v4-flash``.
-            # Prefer non-alias entries (ids not prefixed with ``~``).
+            # Real entries win over ``~`` aliases; more than one match is an
+            # error (never a silent pick).
             suffix = "/" + eid
-            fallback = None
-            for cid, info in by_id.items():
-                if cid.endswith(suffix):
-                    if not cid.startswith("~"):
-                        return info
-                    fallback = fallback or info
-            return fallback or {}
+            found = [cid for cid in by_id if cid.endswith(suffix)]
+            real = [cid for cid in found if not cid.startswith("~")]
+            found = real or found
+            if len(found) > 1:
+                raise RuntimeError(
+                    f"models entry '{eid}' matches {', '.join(sorted(found))} → write the full id")
+            return by_id[found[0]] if found else {}
 
         result = []
         for eid in enabled:

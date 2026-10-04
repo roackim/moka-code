@@ -9,6 +9,7 @@ import sys
 
 import pytest
 
+from conftest import wait_until
 from moka_code.harness.tools import InProcessTransport, MinimalToolset
 from moka_code.sandbox import (
     ContainerSpec,
@@ -299,7 +300,7 @@ def test_transport_cancel_kills_the_worker(tmp_path):
             task = asyncio.create_task(
                 transport.execute("bash", {"command": "sleep 30"})
             )
-            await asyncio.sleep(0.5)
+            await wait_until(lambda: transport.process.running)
             assert transport.cancel_active("bash") is True
             with pytest.raises(SandboxError):
                 await asyncio.wait_for(task, timeout=5)

@@ -8,7 +8,7 @@ from moka_code.harness.roles import (
     agent_role,
     builtin_roles,
     chat_role,
-    create_role,
+    ensure_role_file,
     delete_role,
     ensure_roles_dir,
     load_role,
@@ -70,16 +70,15 @@ def test_saved_role_round_trip(tmp_path, monkeypatch):
     assert loaded.tools == role.tools
 
 
-def test_create_role_defaults_to_all_disabled(tmp_path, monkeypatch):
+def test_new_role_file_defaults_to_all_disabled(tmp_path, monkeypatch):
     monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
 
-    role = create_role("scratch")
+    path = ensure_role_file("scratch")
 
-    assert role.enabled_tool_names() == set()
-    assert (tmp_path / "roles" / "scratch.toml").exists()
+    assert path == tmp_path / "roles" / "scratch.toml"
+    assert load_role("scratch").enabled_tool_names() == set()
     assert "scratch" in list_roles()
-    with pytest.raises(ValueError):
-        create_role("scratch")
+    assert ensure_role_file("scratch") == path      # an existing file is left alone
 
 
 def test_role_lifecycle_and_tombstones(tmp_path, monkeypatch):
