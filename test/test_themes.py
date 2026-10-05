@@ -129,6 +129,65 @@ def test_refresh_theme_recolors_existing_message():
         colors.set_theme(original)
 
 
+def test_refresh_theme_recolors_markdown_segments():
+    """Markdown element colors are resolved at parse time; a theme switch must
+    re-resolve them, not just the message's default fg/bg."""
+    from moka_code.ui.chat_message import Message
+    from moka_code.ui.tui.msg_types import AssistantMsg
+
+    original = colors.theme.name
+    try:
+        colors.set_theme("terminal")
+        message = Message("# Title\nplain **bold** `code`\n",
+                          msg_type=AssistantMsg(), render_markdown=True)
+        seg = {s.text: s for s in message.component._parsed_lines[0]}
+        assert seg["T"].fg is colors.terminal.HEADING
+
+        colors.set_theme("moka")
+        message.refresh_theme()
+        seg = {s.text: s for s in message.component._parsed_lines[0]}
+        assert seg["T"].fg is colors.theme.HEADING            # heading follows theme
+        assert seg["T"].fg is not colors.terminal.HEADING
+    finally:
+        colors.set_theme(original)
+
+
+def test_markdown_component_refresh_theme_keeps_layout():
+    """Re-resolving colors re-parses but must not change the wrapping."""
+    from moka_code.ui.tui.components.markdown import MarkdownComponent
+
+    original = colors.theme.name
+    try:
+        colors.set_theme("terminal")
+        comp = MarkdownComponent("# Title\n" + "word " * 40)
+        comp.set_layout(0, 0, 30, 20)
+        before = [[s.text for s in line] for line in comp._wrapped_lines]
+        colors.set_theme("moka")
+        comp.refresh_theme()
+        after = [[s.text for s in line] for line in comp._wrapped_lines]
+        assert after == before
+    finally:
+        colors.set_theme(original)
+
+
+def test_refresh_theme_recolors_input_text():
+    """The typed text is drawn with the cached content color, which the theme
+    switch must re-resolve (the input is refreshed like the debug panels)."""
+    from moka_code.ui.app import chatTUI
+    from conftest import StubAgent
+
+    original = colors.theme.name
+    try:
+        colors.set_theme("terminal")
+        ui = chatTUI(StubAgent())                      # built under terminal
+        colors.set_theme("moka")
+        ui.refresh_theme()
+        assert ui.input_component.content_color is colors.theme.DEFAULT
+        assert ui.input_component.bg is colors.theme.get_bg()
+    finally:
+        colors.set_theme(original)
+
+
 def test_refresh_theme_forces_full_redraw():
     from moka_code.ui.app import chatTUI
     from conftest import StubAgent

@@ -1,5 +1,6 @@
-[ ] /private cmd : make hte conversation private, no cache no save etc.
-[ ] usr message text wrong color ? should be like input field
+[ ] /diff -> sort all 'new' file to bottom, and sort them by recency of modification or creation
+[x] /private cmd : make hte conversation private, no cache no save etc.
+[x] usr message text wrong color ? should be like input field
 [x] still a bug with the deepseek warning 'deepseek needs reasoning sent back for all turn(s), role agent sends 1 → replay_reasoning_depth'
     it triggers on start EVEN if not true !! (configured 999 !!!)
 

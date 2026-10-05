@@ -917,6 +917,18 @@ class MarkdownComponent(Component):
         self._dirty_from_line = None
         self.mark_changed()
 
+    def refresh_theme(self) -> None:
+        """Re-resolve markdown colors from the active theme.
+
+        Element colors (headings, emphasis, code, quotes, links…) are resolved
+        from ``markdown_styles`` — theme names and hex strings — when the text
+        is parsed, so a theme switch must re-parse the source to pick up the new
+        palette. The text and wrap width are unchanged, so the layout is kept.
+        """
+        self._do_parse_and_wrap(self._raw_text)
+        self._dirty_from_line = None
+        self.mark_changed()
+
     def update(self, text: str, append: bool = False):
         """Update with new markdown text.
 

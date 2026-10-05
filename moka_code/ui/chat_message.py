@@ -519,6 +519,10 @@ class Message:
             self.component.fg = content_color if content_color is not None else theme.DEFAULT
         if hasattr(self.component, "bg"):
             self.component.bg = theme.get_bg()
+        # Markdown element colors are resolved when the text is parsed, so the
+        # styled spans keep the previous palette until the source is re-parsed.
+        if hasattr(self.component, "refresh_theme"):
+            self.component.refresh_theme()
 
         gutter_color = getattr(self.type, "gutter_color", None)
         if gutter_color is None:

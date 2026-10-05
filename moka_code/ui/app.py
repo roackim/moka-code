@@ -343,6 +343,7 @@ class chatTUI(ChatActionHandlers):
         compositor to repaint every cell (cached frame content is stale).
         """
         self.input_component.frame_color = theme.USER
+        self.input_component.content_color = theme.DEFAULT
         self.input_component.bg = theme.get_bg()
         self.input_box.fg = theme.USER
         self.input_box.bg = theme.get_bg()
