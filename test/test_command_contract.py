@@ -13,10 +13,10 @@ from types import SimpleNamespace
 from moka_code.harness.roles import Role
 from moka_code.ui.commands.registry import COMMANDS
 
-# Parameters that take free text (a new file name): the only ones without
+# Parameters that take free text (a new file or sandbox name): the only ones without
 # suggestions. Adding a parameter without completions fails until it is
 # listed here on purpose.
-FREE_TEXT = {("export", "FILENAME")}
+FREE_TEXT = {("export", "FILENAME"), ("new", "NAME"), ("copy", "NEW_NAME")}
 
 
 def _leaves(command, path=()):

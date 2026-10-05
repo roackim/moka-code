@@ -147,6 +147,18 @@ def notices(agent) -> list[tuple[str, str]]:
     problem = getattr(agent, "sandbox_problem", None)
     if problem:
         warnings.append(problem)
+    drift = getattr(agent, "sandbox_drift", None)
+    drift = drift() if callable(drift) else None
+    sandbox_name = getattr(agent, "sandbox_name", None)
+    if drift == "gone":
+        warnings.append(f"sandbox {sandbox_name}: its file is gone, still running from "
+                        "memory → /sandbox stop")
+    elif drift == "changed":
+        warnings.append(f"sandbox {sandbox_name} changed on disk → /reload")
+    stale = getattr(agent, "sandbox_stale", None)
+    if callable(stale) and stale():
+        warnings.append(f"sandbox {sandbox_name}: its image is older than its dockerfile "
+                        f"→ /sandbox build {sandbox_name}")
     return [("error", text) for text in errors] + [("warning", text) for text in warnings]
 
 

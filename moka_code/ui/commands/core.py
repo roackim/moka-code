@@ -11,6 +11,7 @@ commands that own a subcommand tree.
 from __future__ import annotations
 
 import logging
+import os
 from typing import List
 
 from moka_code.ui.tui.components.menu import sort_items
@@ -128,16 +129,42 @@ def reload_and_apply(ui: ChatUIProtocol, title: str | None = None) -> None:
     """Reload everything hand-edited and apply it: config files, roles (the
     active one too), theme, endpoint; then report. The one path behind
     ``/reload`` and every ``/config`` edit."""
-    from moka_code import settings
+    from moka_code import projects, settings
     from moka_code.harness import roles
 
     from moka_code.ui.tui.colors import theme_problems
 
-    errors = settings.reload_config() + roles.validate_roles() + theme_problems()
+    workspace = getattr(getattr(ui, "agent", None), "workspace", None) or os.getcwd()
+    errors = (settings.reload_config() + roles.validate_roles()
+              + projects.validate_sandboxes(workspace) + theme_problems())
     _apply_theme(ui)
     errors += _reapply_role(ui)
+    errors += _reapply_sandbox(ui)
     reapply_endpoint(ui)
     _report_reload(ui, errors, title)
+
+
+def _reapply_sandbox(ui: ChatUIProtocol) -> List[str]:
+    """Resolve the project's active sandbox again, so an edit to its file (or its
+    deletion) applies now. A response still being written keeps the running one.
+    Returns what could not be applied."""
+    from moka_code import projects
+
+    agent = getattr(ui, "agent", None)
+    if agent is None or not hasattr(agent, "set_sandbox"):
+        return []
+    project = projects.load_project(getattr(agent, "workspace", None) or os.getcwd())
+    fresh = projects.active_spec(project)
+    if fresh == getattr(getattr(agent, "transport", None), "spec", None):
+        track = getattr(agent, "track_sandbox", None)
+        if callable(track):
+            track(project.active)       # a touched file is not a difference; an image may be rebuilt
+        return []
+    is_generating = getattr(ui, "is_generating", None)
+    if callable(is_generating) and is_generating():
+        return ["the sandbox changed on disk; run /reload once the response is done"]
+    agent.set_sandbox(fresh, project.active)
+    return []
 
 
 async def cmd_reload(ui: ChatUIProtocol, args: List[str]):
@@ -171,7 +198,7 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
 
         descriptions = {
             **settings.CONFIG_FILES,
-            "sandbox": "projects/<name>.toml  (per-project sandboxes)",
+            "sandbox": "sandboxes/<name>.toml  (global) · projects/<project>/sandboxes/  (local)",
             "role": "roles/<name>.toml  (create/edit a role)",
         }
         sections = config_section_completions()
@@ -187,7 +214,7 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
 
     section = args[0].lower()
     if section == "sandbox":
-        await _config_sandbox(ui)
+        await _config_sandbox(ui, args[1:])
         return
     if section == "role":
         await _config_role(ui, args[1:])
@@ -212,9 +239,9 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
     reload_and_apply(ui, "config")
 
 
-async def _config_sandbox(ui: ChatUIProtocol):
-    """Open the current project's sandbox file and apply its active entry."""
-    await open_project_sandbox(ui)
+async def _config_sandbox(ui: ChatUIProtocol, args: List[str]):
+    """Open a sandbox's file (a picker without a name) and apply the active entry."""
+    await open_project_sandbox(ui, args[0] if args else None)
 
 
 class ConfigCommand(Command):

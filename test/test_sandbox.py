@@ -133,6 +133,36 @@ def test_build_argv_bubblewrap_network_opt_in(tmp_path):
     assert "--unshare-net" not in argv
 
 
+def test_build_argv_bubblewrap_clears_host_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "secret")
+    monkeypatch.setenv("LANG", "C.UTF-8")
+
+    argv = build_argv(ContainerSpec("bubblewrap"), tmp_path, worker="/w/worker.py")
+
+    assert "--clearenv" in argv
+    assert "secret" not in argv and "DEEPSEEK_API_KEY" not in argv
+    assert argv[argv.index("HOME") + 1] == "/tmp"
+    assert argv[argv.index("LANG") + 1] == "C.UTF-8"
+
+
+def test_build_argv_bubblewrap_mounts_proc_and_dev_and_unshares(tmp_path):
+    argv = build_argv(ContainerSpec("bubblewrap"), tmp_path, worker="/w/worker.py")
+
+    assert argv[argv.index("--proc") + 1] == "/proc"
+    assert argv[argv.index("--dev") + 1] == "/dev"
+    for flag in ("--unshare-ipc", "--unshare-uts", "--unshare-cgroup-try"):
+        assert flag in argv
+
+
+def test_build_argv_bubblewrap_run_args_apply_last(tmp_path):
+    spec = ContainerSpec("bubblewrap", run_args=("--setenv", "HOME", "/mine"))
+
+    argv = build_argv(spec, tmp_path, worker="/w/worker.py")
+
+    # After every moka-set flag (so it wins) and before the command.
+    assert argv.index("--chdir") < argv.index("/mine") < argv.index("--")
+
+
 # --- SandboxProcess (integration with the real worker) ---------------------
 
 def test_process_starts_lazily_and_serves_requests(tmp_path):
@@ -429,3 +459,35 @@ def test_build_transport_spec_container(tmp_path):
     transport = _build_transport(ContainerSpec("bubblewrap"), str(tmp_path))
 
     assert isinstance(transport, SandboxTransport)
+
+
+# --- image build time --------------------------------------------------------
+
+def _inspect(monkeypatch, stdout, returncode=0):
+    import subprocess
+
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, returncode, stdout, ""))
+
+
+def test_image_created_reads_an_rfc3339_time_with_nanoseconds(monkeypatch):
+    from moka_code.sandbox import image_created
+
+    _inspect(monkeypatch, '[{"Created": "2026-10-05T12:00:00.123456789Z"}]')
+
+    spec = ContainerSpec("podman", "img", dockerfile="/x/Containerfile")
+    assert image_created(spec) == 1791201600.123456
+
+
+def test_image_created_is_none_when_unknown(monkeypatch):
+    from moka_code.sandbox import image_created
+
+    spec = ContainerSpec("podman", "img", dockerfile="/x/Containerfile")
+    _inspect(monkeypatch, "", returncode=1)                       # not built
+    assert image_created(spec) is None
+    _inspect(monkeypatch, "not json")
+    assert image_created(spec) is None
+    _inspect(monkeypatch, '[{"Created": "2026-10-05T12:00:00Z"}]')
+    assert image_created(ContainerSpec("podman", "img")) is None  # nothing to build
+    assert image_created(ContainerSpec("bubblewrap")) is None

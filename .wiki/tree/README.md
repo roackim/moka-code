@@ -43,14 +43,15 @@ logs go to stderr), serialized one at a time. Requests are
   `asyncio.run(serve())`. See [notes/tools-and-permissions.md](../notes/tools-and-permissions.md).
 
 ### `projects.py`
-Per-project settings, stored in the user config (never in the repo) at
-`~/.config/moka/projects/<name>.toml` (name = workspace directory name).
-- `ensure_project_file()` seeds a thorough commented template (per-type examples
-  incl. `run_args`); `load_project()` parses named `[sandboxes.<id>]` entries +
-  `active`; `set_active()` persists the selection without destroying comments;
-  `active_spec()` → `ContainerSpec`.
+The sandbox registry, stored in the user config (never in the repo): one file per
+sandbox, global (`~/.config/moka/sandboxes/<name>.toml`) or local
+(`projects/<dirname>_<hash>/sandboxes/<name>.toml`); the project's
+`project.toml` holds `path` + `active`. Names are unique across both scopes.
+- `load_project()` merges both scopes and reports bad files/collisions;
+  `validate_sandboxes()`; `active_spec()` → `ContainerSpec`; `set_active()`;
+  `create_sandbox()` / `copy_sandbox()`; `sandbox_file_stat()` (reload notice).
 - Entries: `type` (podman/docker/bubblewrap), `description`, `image`,
-  `dockerfile`, `network`, `timeout`, `run_args`.
+  `dockerfile` (relative to the sandbox file), `network`, `timeout`, `run_args`.
 
 ### `sandbox.py`
 Host-side sandbox launcher and JSONL client (no `ui/` imports, no policy).

@@ -1,74 +1,65 @@
-# Default & shipped sandboxes — deferred
+# Default & shipped sandboxes
 
-**Status:** deferred (captured, not scheduled). Depends on the sandbox registry
-redesign: global + local scopes, **one file per sandbox**, `copy`-only
-(no inheritance). Nothing here should be built before that lands.
-**See also:** `plans/sandbox_registry.md` (the redesign + full handoff).
+**Status:** the `bubblewrap` argv is **done (uncommitted)**. What remains —
+shipping it as a seeded, pickable sandbox — is deferred and depends on the
+sandbox registry redesign (one file per sandbox, global + local scopes,
+`copy`-only, names unique across scopes).
+**See also:** `plans/sandbox_registry.md`.
 
-## Purpose
+## Role of bubblewrap (decided)
 
-Once sandboxes are named, per-file artifacts with a **global** library and
-**local** (per-project) scopes, moka can **ship one or more ready-to-use
-sandboxes** so a fresh install has a working, pickable `bubblewrap` (and,
-possibly, container templates) with **no user config at all** — the same way
-roles seed a built-in `agent`.
+- **Linux hosts only.** No Windows/macOS support is planned.
+- **Guard against accidents** (stray writes outside the workspace, leaked
+  secrets) for **simple agentic usage** — bash, `python3`, coreutils. It is not
+  aimed at containing hostile code.
+- **It does not grow.** When a project needs tooling that is hard to set up under
+  bwrap (`git`/`node`/`pixi` under `$HOME`, specific versions, system packages),
+  the answer is **podman/docker**, not more bwrap mounts. That is the moment a
+  project "outgrows" bwrap.
+- `run_args` is the only escape hatch (e.g. `--ro-bind ~/.pixi ~/.pixi`). No
+  `read_only` / `writable` keys, no variant sandboxes.
 
-This file captures the substance we want that default to carry: concrete
-improvements to the `bubblewrap` invocation, found while working on the
-registry redesign.
+## What the default does (landed)
 
-## Findings that motivate it
+`moka_code/sandbox.py::_bubblewrap_argv`:
 
-Probed the current `bubblewrap` default (bwrap 0.12.0). It is essentially a
-**bare OS**:
+- **Curated read-only roots:** `/usr /lib /lib64 /bin /etc` (those that exist),
+  plus the interpreter prefix if it lives outside them. No `$HOME`, so
+  `~/.ssh`, `~/.config/moka`, other repos are unreadable — no secret masking needed.
+- **Writable:** `/workspace` (cwd) and `/tmp` (tmpfs). `HOME` and `TMPDIR` are
+  `/tmp`, so the scratch home is **ephemeral**.
+- **`/proc` and `/dev`** mounted.
+- **Clean env:** `--clearenv`; only `HOME`, `TMPDIR`, a fixed `PATH`, and
+  `TERM`/`LANG`/`LC_ALL` (if set) pass. Host API keys and venv paths no longer leak.
+- **Network off** unless `network = true`.
+- **Namespaces:** `--unshare-pid/-ipc/-uts/-cgroup-try` (+ `-net`); user-ns is not
+  unshared (uid-mapping surprises).
+- **`run_args` apply last** so the user overrides every default.
 
-- **The host environment is inherited wholesale.** `env` inside the sandbox
-  shows `DEEPSEEK_API_KEY` / `OPENROUTER_API_KEY` in the clear; `HOME` points at
-  an unbound path (does not exist); `PATH` carries dangling host entries
-  (`~/.pixi/bin`, `/envs/apps/bin`); `PYTHONPATH` / `VIRTUAL_ENV` /
-  `LD_LIBRARY_PATH` leak in. (The `bash` transport spawns with no `env=`, so
-  nothing is filtered.)
-- **`/proc` is absent** — bwrap only synthesises a minimal `/dev`.
-- **Only `python3` resolves** — no `git`, `node`, `pytest`, `pixi`. The sandbox
-  can't run the project, so users fall back to running bare (no sandbox).
+## Decided and dropped
 
-## Target default: "bare mode, minus writes outside the workspace"
+- Whole-host read-only (`--ro-bind / /`) and secret masking — reads stay
+  restricted; costless for simple usage.
+- Persistent scratch home — can be added later via `run_args`/`writable` only if
+  a real need appears.
+- `read_only` / `writable` keys, `bwrap-full` / `bwrap-system` variants.
 
-The goal is a sandbox that feels like running bare (all tools work) but where
-only the workspace can change — so it is actually chosen over no sandbox.
+## Landed: the seeded default
 
-- **Breadth** (_decide_): whole-host read-only (`--ro-bind / /`) vs a curated
-  set of toolchain roots. Lean: whole-host ro — maximal flexibility, simplest
-  mental model — with the network off and the obvious secrets masked.
-- **Writable**: workspace rw, plus a writable scratch `HOME` / `TMPDIR`.
-  _Decide_: ephemeral tmpfs vs a persistent per-project scratch (builds warm).
-- **`/proc`** mounted; rely on bwrap's own `/dev`.
-- **Clean minimal env**: set `HOME`/`PATH`/`TMPDIR`, drop secrets. (Also removes
-  the API-key leak for free.)
-- **`run_args` applied last** so the user always overrides moka (today they are
-  inserted early and get stomped).
-- **Network off by default** (already the case), trivially enabled.
-- **Mask obvious secrets** (`~/.ssh`, `~/.aws`, `~/.config/gh`) when binding `/`
-  read-only.
-- **Modest namespace hardening**: add `--unshare-ipc/-uts/-cgroup`; keep
-  `--unshare-pid`; skip `--unshare-user` for now (uid-mapping surprises).
-- **New structured keys** `read_only = [...]` / `writable = [...]` alongside the
-  raw `run_args` escape hatch, so common mounts don't need bwrap flags.
+`main()` → `projects.seed_default_sandbox()` writes `~/.config/moka/sandboxes/bubblewrap.toml`
+(a commented starter) on first run, i.e. when the global `sandboxes/` folder does not
+exist; deleting it later stays deleted. Skipped if the name is taken for the current project.
 
-## Open questions (for when this is picked up)
+## Remaining
 
-- whole-host-read-only vs curated toolchain roots.
-- ephemeral vs persistent scratch home/caches.
-- shipped-sandbox namespace/prefix; one `bubblewrap` or a small set
-  (`bwrap-full`, `bwrap-system`, …).
-- ship container (podman/docker) starter sandboxes too?
-- role linkage: `require_sandbox = "global/<name>"` to demand a specific
-  confined variant.
+- ~~Make "outgrown bwrap → use a container" discoverable~~ — done as docs only
+  (the starter file and `.wiki/notes/sandbox.md`); no failure-message heuristics.
+- Container starter files are **not** shipped: `/sandbox new <scope> podman|docker`
+  is one command, and seeding both would clutter the picker where they are not installed.
+- Role linkage `require_sandbox = "<name>"` — deferred, no concrete need yet.
+- Namespace/prefix for the shipped name — mostly moot (names are unique across scopes).
 
-## Touch points when picked up
+## Touch points
 
-- `moka_code/sandbox.py` — `_bubblewrap_argv`, `_STANDARD_PREFIXES`, and the
-  process spawn (env handling).
-- `test/test_sandbox.py`, `test/test_foreground_handoff.py` — assert the argv.
-- `.wiki/notes/sandbox.md`, `.wiki/notes/security.md`.
-- Seed paths follow the registry redesign (`~/.config/moka/sandboxes/<name>.toml`).
+- `moka_code/sandbox.py`, `test/test_sandbox.py`, `test/test_foreground_handoff.py`
+- `.wiki/notes/sandbox.md`, `.wiki/notes/security.md`

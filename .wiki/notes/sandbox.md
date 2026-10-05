@@ -77,8 +77,12 @@ Containers (`podman`/`docker`): `run -i --rm -w /workspace --read-only
 
 bubblewrap: binds `/usr`, `/lib`, `/lib64`, `/bin`, `/etc` read-only, creates
 `/opt` (`--dir` — bwrap's root is **empty**), binds the worker there and the
-workspace at `/workspace`, `--tmpfs /tmp`, `--unshare-net`/`--unshare-pid`,
-`--die-with-parent`.
+workspace at `/workspace`, `--tmpfs /tmp`, `--proc /proc`, `--dev /dev`,
+`--unshare-net`/`--unshare-pid`/`-ipc`/`-uts`/`-cgroup-try`, `--die-with-parent`.
+The environment is cleared (`--clearenv`): only `HOME`/`TMPDIR` (= the `/tmp`
+tmpfs), a fixed `PATH`, and `TERM`/`LANG`/`LC_ALL` (if set on the host) are
+passed, so host API keys and venv paths do not leak in. `run_args` are appended
+**last** (just before the command), so they override moka's defaults.
 
 **Interpreter requirements.** The image must provide `python3` (worker.py needs
 only the stdlib). Containers call `python3` (present on `python:*` and after the
@@ -90,16 +94,73 @@ out-of-tree interpreter it binds that prefix. Worker stderr is surfaced in the
 failure message (and to the debug stream), so a bad image or missing interpreter
 is diagnosable.
 
-## Project store & selection (`moka_code/projects.py`)
+## Role of bubblewrap
 
-Sandboxes are **per project**, stored in the user config at
-`~/.config/moka/projects/<name>.toml` (`<name>` = workspace directory
-name). `load_project()` parses named `[sandboxes.<id>]` entries + `active`;
-`active_spec()` → `ContainerSpec`; `set_active()` rewrites the `active` line
-without destroying comments; `ensure_project_file()` seeds the commented
-template. See [config.md](./config.md).
+Linux hosts only. A zero-setup guard against accidents (stray writes outside the
+workspace, leaked secrets) for **simple agentic usage** — bash, `python3`,
+coreutils; not a boundary against hostile code. It does not grow: when a project
+needs tooling that is hard to set up under bwrap (`git`/`node`/`pixi` under `$HOME`,
+specific versions, system packages), use a **podman/docker** sandbox
+(`/sandbox new <scope> podman`). The bubblewrap starter file says so, and
+`run_args` is the only escape hatch (e.g. `--ro-bind ~/.pixi ~/.pixi`).
 
-`get_harness()` activates the project's active sandbox at startup.
+## Registry & selection (`moka_code/projects.py`)
+
+**One TOML file per sandbox**, in the user config (never in the repo), in one of
+two scopes:
+
+```
+~/.config/moka/
+├── sandboxes/<name>.toml                    # global: usable from any project
+└── projects/<dirname>_<hash>/
+    ├── project.toml                         # path = "<resolved>", active = "<name>"
+    └── sandboxes/<name>.toml                # local: this project's own
+```
+
+- A project's folder is `<workspace dir name>_<4 hex of a hash of the resolved
+  path>`, so same-named workspaces never share locals. A moved repo gets a new
+  folder (its locals and `active` stay behind).
+- **Names are unique across both scopes** (`[A-Za-z0-9_-]`, starting with a letter
+  or digit; files starting with `_` or `.` are ignored). A name present in both
+  scopes is an error (banner + `/reload`) and **neither entry is usable** until one
+  is renamed. Scope is only a display tag (`global · name — description`).
+- `copy`-only: no inheritance. Divergence = copy, then edit.
+- Locals live in the user config, not the workspace, on purpose: the agent can write
+  the workspace and must not be able to loosen its own sandbox.
+- `load_project()` merges both scopes (+ `active`) and reports bad files, unknown
+  keys and collisions; `validate_sandboxes()` returns just those errors;
+  `active_spec()` → `ContainerSpec`; `set_active()` writes `project.toml`;
+  `create_sandbox()` / `copy_sandbox()` write new files (a copy is a plain file copy,
+  so comments survive, and a relative Containerfile beside the source comes along).
+- A relative `dockerfile` resolves **next to the sandbox file**, and the build
+  context is the Containerfile's folder (not the workspace).
+
+`get_harness()` activates the project's active sandbox at startup. A deleted or
+renamed active sandbox is simply no longer active (with an error notice).
+
+**First run.** `main()` calls `seed_default_sandbox()`: when the global
+`sandboxes/` folder does not exist yet, it writes the default `bubblewrap` there (a
+commented starter), unless that name is already taken for the current project.
+Deleting the file later stays deleted; edits are kept.
+
+**Moved repo.** A moved or renamed workspace hashes to a new project folder, leaving
+its locals and `active` behind. While the new project has no local sandbox, the
+banner warns about a same-named project folder whose recorded `path` is gone and
+that holds sandboxes, with the `mkdir -p … && mv …/sandboxes …/` command that moves
+them (`moved_project_notes()`).
+
+**Stale image.** For a container with a `dockerfile`, the harness reads the image's
+build time (`sandbox.image_created()`, from `image inspect`) when the sandbox is
+activated, after `/sandbox build` and on `/reload`. The band warns **"sandbox <name>:
+its image is older than its dockerfile → /sandbox build <name>"** while the
+Containerfile's mtime is newer (`sandbox_stale()`, a `stat` per refresh).
+`/reload` does not rebuild — moka never builds implicitly.
+
+**Reload.** The harness remembers the active sandbox's name and file `stat`
+(`sandbox_drift()`): the notice band says **"sandbox <name> changed on disk →
+/reload"** (or that its file is gone). `/reload` re-resolves the active sandbox and
+applies it (deferred while a response is being written). A running container keeps
+its old config until stop/start. See [config.md](./config.md).
 
 ## Command surface (`/sandbox`)
 
@@ -108,11 +169,13 @@ completion come from the framework (see [ui.md](./ui.md)):
 
 | Subcommand | Behavior |
 |---|---|
-| `/sandbox` | list subcommands |
-| `/sandbox config` | open the project file (alias of `/config sandbox`) |
-| `/sandbox start [id]` | activate; no id lists sandboxes (id/type/description); missing image offers *Build now* / *Cancel* |
-| `/sandbox build <id>` | build the image (streams to activity; does not activate) |
-| `/sandbox init <podman\|docker> [base]` | write a starter `Containerfile`/`Dockerfile` (bases: `python`→`python:3.12-slim`, `debian`→`debian:stable-slim`, `ubuntu`) |
+| `/sandbox` | opens the `start` picker when a sandbox exists (like `/model`, `/role`); otherwise, and for an unknown subcommand, lists the subcommands |
+| `/sandbox config [name]` | open that sandbox's file; no name opens a picker (alias of `/config sandbox [name]`) |
+| `/sandbox new <global\|local> <type> [name]` | create a file from a type-specific starter (name defaults to the type), then open it |
+| `/sandbox copy <name> <global\|local> <new-name>` | copy a sandbox into the other (or same) scope |
+| `/sandbox start [name]` | activate; no name opens a picker (tagged `global`/`local`); missing image offers *Build now* / *Cancel* |
+| `/sandbox build <name>` | build the image (streams to activity; does not activate) |
+| `/sandbox init <name> [base]` | write `<name>.Containerfile`/`.Dockerfile` next to the sandbox's file (bases: `python`→`python:3.12-slim`, `debian`→`debian:stable-slim`, `ubuntu`) |
 | `/sandbox stop` | deactivate (back to in-process) |
 | `/sandbox terminal` | shell inside the active sandbox (same mounts/network/limits as the tools); `exit` returns |
 

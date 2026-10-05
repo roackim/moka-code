@@ -23,7 +23,8 @@ activity panel. Nothing else reads the old location.
 | `servers.toml` | one `[servers.<name>]` table per server | tables |
 | `themes.toml` | one `[themes.<name>]` palette per theme | tables |
 | `roles/<name>.toml` | one role per file; file name is the role name | role body |
-| `projects/<name>.toml` | per-project sandboxes; `<name>` = workspace directory name | tables |
+| `sandboxes/<name>.toml` | one global sandbox per file; file name is the sandbox name | sandbox body |
+| `projects/<dirname>_<hash>/` | one project: `project.toml` (path + active) and `sandboxes/<name>.toml` (locals) | sandbox body |
 | `state.toml` | last server/model, active theme, effort | machine-written |
 
 `state.toml` is disposable: deleting it only loses cached selections.
@@ -43,21 +44,23 @@ line for any spec key missing from the file (at its template-relative position)
 and removes lines whose key is in that section's `_RETIRED_*` set. Only keys
 named by the template or a registered retirement are touched; user values,
 comments, and ordering are preserved, and the file is written only when the text
-changes. Structured files (`styles`, `servers`, `theme`, and per-project
-`projects/<name>.toml`) hold user-authored tables and are never synced. See
+changes. Structured files (`styles`, `servers`, `theme`, and the sandbox files)
+hold user-authored tables and are never synced. See
 "Adding or deprecating a config key" in `AGENTS.md`.
 
-### Project files (sandboxes)
+### Sandbox files
 
-`~/.config/moka/projects/<name>.toml` holds a project's sandbox
-definitions, keyed by the workspace **directory name** (`projects.project_name`)
-and loaded/managed by `projects.py`. The file is self-describing
-(`path = "<resolved workspace>"`), lists named `[sandboxes.<id>]` tables
-(`type` = podman/docker/bubblewrap plus `description`, `image`, `dockerfile`,
-`network`, `timeout`, `run_args`) and an `active = "<id>"` selection. Missing
-files are seeded from a thorough commented template; `set_active()` updates the
-`active` line in place, preserving comments. moka never writes into the
-repository. See [sandbox.md](./sandbox.md).
+One file per sandbox: `~/.config/moka/sandboxes/<name>.toml` (global) or
+`~/.config/moka/projects/<dirname>_<hash>/sandboxes/<name>.toml` (local to a
+project; `<hash>` = 4 hex of a hash of the resolved workspace path). A file holds
+`type` (podman/docker/bubblewrap) plus `description`, `image`, `dockerfile`,
+`network`, `timeout`, `run_args`; unknown keys are reported. The project's
+`project.toml` holds `path = "<resolved workspace>"` and the `active = "<name>"`
+selection (machine-written by `set_active()`). New files come from
+`/sandbox new` (a commented starter per type) or `/sandbox copy`; names are unique
+across both scopes. The default `bubblewrap` is seeded as a global on first run
+(when `sandboxes/` does not exist yet). moka never writes into the repository. See
+[sandbox.md](./sandbox.md).
 
 ## Loader (`settings.py`)
 
@@ -121,8 +124,8 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 
 - `/config <section>` opens the section file in `$VISUAL`/`$EDITOR` and reloads
   on exit; no argument lists the sections. `section` is one of `ui`, `context`,
-  `debug`, `styles`, `servers`, `theme`, plus `sandbox` (the current project's
-  file) and `role`.
+  `debug`, `styles`, `servers`, `theme`, plus `sandbox [name]` (one sandbox's file;
+  a picker without a name) and `role`.
 - `/sandbox config` is the equivalent shortcut; `/sandbox` manages the sandbox
   lifecycle (see [sandbox.md](./sandbox.md)).
 - `/edit <path>` opens any file.

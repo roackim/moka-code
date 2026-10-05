@@ -171,12 +171,16 @@ def theme_descriptions() -> Dict[str, str]:
     }
 
 
-async def open_project_sandbox(ui: ChatUIProtocol) -> None:
-    """Open the current project's sandbox file and apply its active entry.
+async def open_project_sandbox(ui: ChatUIProtocol, name: Optional[str] = None) -> None:
+    """Open one sandbox's file (a picker when ``name`` is None) and re-apply the
+    active sandbox.
 
     Shared by ``/config sandbox`` and ``/sandbox config``.
     """
+    import asyncio
+
     from moka_code import projects
+    from moka_code.ui.commands.sandbox import describe_sandbox
     from moka_code.ui.external_editor import open_editor, resolve_editor
     from moka_code.ui.tui.msg_types import SysMsg, SysMsgError
 
@@ -189,13 +193,36 @@ async def open_project_sandbox(ui: ChatUIProtocol) -> None:
             msg_type=SysMsgError(), title="config")
         return
 
-    path = projects.ensure_project_file(workspace)
-    await open_editor(ui, path)
+    project = projects.load_project(workspace)
+    if name is None:
+        if not project.sandboxes:
+            ui.chat_history_panel.add_message(
+                "No sandboxes yet → /sandbox new <global|local> <type>",
+                msg_type=SysMsgError(), title="config")
+            return
+        descriptions = {n: describe_sandbox(e) for n, e in project.sandboxes.items()}
+
+        def _as_text() -> None:
+            ui.chat_history_panel.add_message(
+                "\n".join(f"{n.ljust(14)} {d}" for n, d in sorted(descriptions.items())),
+                msg_type=SysMsg(), title="config")
+
+        pick(ui, "Sandbox", sorted(project.sandboxes),
+             lambda choice: asyncio.ensure_future(open_project_sandbox(ui, choice)),
+             descriptions=descriptions, headless=_as_text)
+        return
+
+    entry = project.sandboxes.get(name)
+    if entry is None or entry.file is None:
+        ui.chat_history_panel.add_message(
+            f"Unknown sandbox '{name}'.", msg_type=SysMsgError(), title="config")
+        return
+    await open_editor(ui, entry.file)
 
     errors: list[str] = []
     project = projects.load_project(workspace, errors)
     if not errors and agent is not None and hasattr(agent, "set_sandbox"):
-        agent.set_sandbox(projects.active_spec(project))
+        agent.set_sandbox(projects.active_spec(project), project.active)
 
     if errors:
         ui.chat_history_panel.add_message(

@@ -5,7 +5,7 @@ There is **no security layer inside moka**: no command parsing, no allowlist,
 no path confinement. The safety model is deliberately minimal and explicit.
 
 Moka can *optionally* launch an external sandbox (a per-project `/sandbox`
-selection, see below) so the tool bodies run in a container or `bubblewrap`
+selection of a global or local sandbox file, see below) so the tool bodies run in a container or `bubblewrap`
 instead of in-process. That is transport, not policy: the isolation is the
 runtime's, and the user names the backend explicitly.
 
@@ -30,7 +30,7 @@ is `no` / `ask` / `yes`, and the user picks it explicitly — nothing is inferre
 | Situation | Boundary | Tool settings |
 |---|---|---|
 | bare moka, in-process tools | none | `ask` on `write` / `edit` / `bash` |
-| `/sandbox start <id>` active | the container / `bubblewrap` | `yes` (the mount is the wall) |
+| `/sandbox start <name>` active | the container / `bubblewrap` | `yes` (the mount is the wall) |
 | moka run inside the user's own container | the container | `yes` |
 
 See `plans/sandbox_worker.md` for the design (supersedes
@@ -49,7 +49,8 @@ Sandboxes are per project, declared in the user config and selected with
   mounted.
 - **bubblewrap** binds only system dirs; it uses the system `python3` and
   creates `/opt` (`--dir`) because bwrap's root is empty. `run_args` bind
-  sources must already exist on the host.
+  sources must already exist on the host. The host environment is cleared, so
+  API keys in moka's own env are not visible to tools; `run_args` apply last.
 - Worker stderr is surfaced in the failure message (and to the debug stream),
   so a bad image or missing interpreter is diagnosable rather than opaque.
 - Approval (`ask`) still gates host-side before dispatch; secrets and LLM calls

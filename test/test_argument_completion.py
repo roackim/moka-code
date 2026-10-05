@@ -39,25 +39,26 @@ def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_pa
     workspace = tmp_path / "proj"
     workspace.mkdir()
     monkeypatch.chdir(workspace)
-    project = tmp_path / "projects" / "proj.toml"
-    project.parent.mkdir(parents=True)
-    project.write_text(
-        '[sandboxes.dev]\ntype = "podman"\ndescription = "toolchain"\n'
-        '[sandboxes.tight]\ntype = "bubblewrap"\n',
-        encoding="utf-8",
-    )
+    from moka_code import projects
+
+    local = projects.scope_dir("local", workspace)
+    local.mkdir(parents=True)
+    (local / "dev.toml").write_text(
+        'type = "podman"\ndescription = "toolchain"\n', encoding="utf-8")
+    (local / "tight.toml").write_text('type = "bubblewrap"\n', encoding="utf-8")
 
     comp = ArgumentCompletion(SelectionMenu(), COMMANDS)
 
     comp.update("/sandbox ", len("/sandbox "))
-    assert set(comp.menu.items) == {"config", "build", "start", "stop", "terminal", "init"}
+    assert set(comp.menu.items) == {
+        "config", "new", "copy", "build", "start", "stop", "terminal", "init"}
 
     comp.update("/sandbox init ", len("/sandbox init "))
-    assert set(comp.menu.items) == {"podman", "docker"}
+    assert set(comp.menu.items) == {"dev", "tight"}
 
     comp.update("/sandbox start ", len("/sandbox start "))
     assert set(comp.menu.items) == {"dev", "tight"}
-    assert comp.menu.item_descriptions.get("dev") == "toolchain"
+    assert comp.menu.item_descriptions.get("dev") == "local · toolchain"
 
 
 def test_config_role_completion_uses_role_descriptions(monkeypatch):

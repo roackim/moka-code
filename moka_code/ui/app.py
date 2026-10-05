@@ -2,6 +2,7 @@
 moka TUI Application.
 """
 
+import os
 import sys
 import asyncio
 import atexit
@@ -318,6 +319,7 @@ class chatTUI(ChatActionHandlers):
         """Recompute the setup problems shown with the banner: config and role
         file errors, a missing editor, the one-time migration note. Called at
         startup and after every reload."""
+        from moka_code import projects
         from moka_code.harness import roles
         from moka_code.ui.external_editor import resolve_editor
         from moka_code.ui.tui.colors import theme_problems
@@ -328,6 +330,10 @@ class chatTUI(ChatActionHandlers):
             section = sections.get(error.split(":", 1)[0])
             notes.append(("error", f"{error} → /config {section}" if section else error))
         notes += [("error", f"{error} → /config role") for error in roles.validate_roles()]
+        workspace = getattr(getattr(self, "agent", None), "workspace", None) or os.getcwd()
+        notes += [("error", f"{error} → /sandbox config")
+                  for error in projects.validate_sandboxes(workspace)]
+        notes += [("warning", note) for note in projects.moved_project_notes(workspace)]
         notes += [("error", f"{problem} → /theme") for problem in theme_problems()]
         if not resolve_editor():
             notes.append(("warning", "no $VISUAL or $EDITOR (config files open in it) → export EDITOR=…"))

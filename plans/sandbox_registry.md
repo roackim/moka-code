@@ -5,8 +5,10 @@ and exactly where it lives in the tree.
 
 **Status at handoff:**
 - ✅ **Done (uncommitted):** `replay_reasoning_depth` default `1 → 999`.
-- 🟡 **Designed, not implemented:** the sandbox registry redesign (global /
-  local scopes, one file per sandbox, `copy`-only). This document.
+- ✅ **Implemented (uncommitted, suite green):** the sandbox registry (global /
+  local scopes, one file per sandbox, `copy`-only), `new`/`copy`/`config [name]`,
+  collision error, drift notice + `/reload`, moved-repo notice, stale-image notice,
+  seeded default `bubblewrap`, bare `/sandbox` opens the picker.
 - ⏸️ **Deferred:** shipping default sandboxes + improved `bubblewrap`
   invocation → `plans/sandbox_defaults.md`.
 
@@ -91,12 +93,17 @@ standalone (no deps) — all correct.
 - **Verb is `copy`.**
 - **One file per sandbox.**
 - **Two scopes:** `global` (shared library) and `local` (one project).
-- **No shadowing.** The picker shows *both* when names overlap, tagged
-  `global` / `local`.
-- **Names unique within a scope.** The **only** permitted collision is one
-  global + one local with the same name.
-- **References are scope-qualified:** `global/<name>`, `local/<name>`, so an
-  ambiguous bare name is never used.
+- **Names unique across both scopes** (global + local). No shadowing, no
+  same-name exception. References are therefore **bare names** (`active = "<name>"`);
+  scope is only a display tag (`global` / `local`) in the picker and status line.
+- **Collision = error.** If a name exists in both scopes (e.g. a global is added
+  that matches a local), show an **error banner** in the notice band naming both
+  files. Both entries are **unusable** until one is renamed; if `active` points at
+  that name, nothing is active. Unrelated sandboxes are unaffected.
+- **Locals live under `~/.config`, not in the workspace — deliberately.** The
+  agent can write the workspace, so a workspace-resident sandbox config would let
+  it loosen its own sandbox. Cost (accepted): locals can't be versioned/shared
+  with the repo.
 
 ### B4. File layout
 
@@ -105,15 +112,19 @@ standalone (no deps) — all correct.
 ├── sandboxes/
 │   └── <name>.toml                      # GLOBAL sandboxes
 └── projects/
-    └── <proj>/
-        ├── <proj>.toml                  # project meta: path + active
+    └── <name>_<hash>/
+        ├── project.toml                 # project meta: path + active
         └── sandboxes/
             └── <name>.toml              # LOCAL sandboxes (for this project)
 ```
 
-- `<proj>` = workspace directory name (unchanged — see §F #3).
-- The project meta `projects/<proj>/<proj>.toml` holds `path = "<resolved>"` and
-  `active = "global/<name>"` or `active = "local/<name>"`.
+- `<name>_<hash>`: `<name>` = workspace directory name, `<hash>` = **first 4 hex
+  chars of a hash of the `realpath` of the workspace**. Fixes same-name
+  collisions between projects; `<name>` is only for readability.
+- `project.toml` holds `path = "<resolved>"` and `active = "<name>"`.
+- **Moves/renames:** a moved repo gets a new hash, orphaning its locals and
+  `active`. At startup, if a project dir's `path` no longer exists, raise a notice
+  (ideally with a hint to re-link). No auto-migration.
 - **`active` is per-project** (a single global state file cannot hold it).
 
 ### B5. Naming rules
@@ -127,16 +138,14 @@ standalone (no deps) — all correct.
 
 - `/sandbox` — **picker** of all sandboxes (globals + this project's locals),
   each **tagged `global`/`local`**, active one marked.
-- `/sandbox config [scope/name]` — open that **one** file; no arg → picker
-  first.
-- `/sandbox copy <src> <new-name> [--global]` — write a new file in the target
-  scope (unique-name checked there). Default target scope = **local**.
-  `src` must be scope-qualified when the name exists in both scopes.
-- `/sandbox new <scope> <type>` — create from scratch, `type ∈
-  {bubblewrap, podman, docker}`; starter content per type (bare bwrap file vs
-  commented container template).
-- `start` / `stop` / `build` / `init` / `terminal` — resolve through
-  `(scope, name)`.
+- `/sandbox config [name]` — open that **one** file; no arg → picker first.
+- `/sandbox copy <src> <global|local> <new-name>` — write a new file in the
+  target scope; name must be unique across **both** scopes. (Scope is a plain
+  argument, not a `--global` flag.)
+- `/sandbox new <global|local> <type>` — create from scratch, `type ∈
+  {bubblewrap, podman, docker}`; type-specific starter content (bare bwrap file
+  vs commented container template, like roles).
+- `start` / `stop` / `build` / `init` / `terminal` — resolve by bare name.
 - **Display order:** scope **before** description, in the picker **and** the
   status line: `global · <name> — <description>` /
   `local · <name> — <description>`.
@@ -157,7 +166,7 @@ standalone (no deps) — all correct.
 Two different changes, two different notices:
 
 - **Sandbox file edited** (`run_args`/`image`/`network`/…) → mtime check (mirror
-  `roles.role_file_stat`) → notice **"<scope>/<name> changed on disk → /reload"**.
+  `roles.role_file_stat`) → notice **"<name> changed on disk → /reload"**.
   `/reload` re-resolves the spec; if a worker is live, defer to idle.
 - **Containerfile edited after the image was built** → `/reload` does **not**
   help (moka never builds implicitly) → distinct notice
@@ -180,14 +189,24 @@ Two different changes, two different notices:
 
 - **Deferred:** shipping default sandboxes + improved `bubblewrap` defaults →
   `plans/sandbox_defaults.md`.
-- **Deferred:** project identity beyond the directory name (resolved-path /
-  ancestor lookup) — "ok for now, maybe later".
-- **Deferred:** role → named sandbox linkage (`require_sandbox = "global/<name>"`)
+- **Deferred:** role → named sandbox linkage (`require_sandbox = "<name>"`)
   — "maybe later".
-- **Open (unsure):** Containerfile location — tentatively
-  `projects/<proj>/Containerfile` (or `Dockerfile`), with the sandbox's
-  `dockerfile = "Containerfile"` resolved relative to the project dir.
-- **Open:** whether shipped/global entries share one namespace with user names.
+- **Decided — Containerfile:** `dockerfile = "x"` resolves **relative to the
+  directory of the sandbox file** (`~/.config/moka/sandboxes/` for globals, the
+  project dir's `sandboxes/` for locals). Non-`.toml` files there are ignored by
+  the registry, so `<name>.Containerfile` can sit beside `<name>.toml`.
+- **Decided — build context:** the **directory containing the Containerfile**
+  (default `podman/docker build` behaviour), **not the workspace**. The workspace
+  is bind-mounted at runtime, not baked in, and a global's image is shared across
+  projects so its context must not vary per project. No `context` key unless a
+  real use case appears. **Behaviour change:** today `build_argv`
+  (`moka_code/sandbox.py` ~l.242-248) resolves `dockerfile` against the workspace
+  and passes the workspace as context.
+- **Decided — project identity:** `<name>_<4hex hash of realpath>` (§B4); path
+  mismatch → notice.
+- **Open:** whether shipped/global entries share one namespace with user names
+  (now moot-ish: names are unique across scopes anyway — a shipped name just
+  reserves it).
 
 ---
 
@@ -225,7 +244,7 @@ a `--proc /proc` `run_arg`).
 
 | Area | Files |
 |---|---|
-| Registry read/write | `moka_code/projects.py` (rework), new helpers for scope/name |
+| Registry read/write | `moka_code/projects.py` (rework), new helpers for name → (scope, path) |
 | Spec + argv | `moka_code/sandbox.py` (`ContainerSpec`, `build_argv`, `_bubblewrap_argv`) |
 | Commands/UI | `moka_code/ui/commands/sandbox.py`, `moka_code/ui/commands/core.py` (`cmd_config`), `status_presenter.py` |
 | Harness wiring | `moka_code/harness/harness.py` (`_build_transport`, `set_sandbox`, `sandbox_required`) |
@@ -247,24 +266,22 @@ sandbox; `pixi` is not.)
 
 ## F. Open questions still to answer
 
-1. **Containerfile location** for container sandboxes under the per-file layout
-   (§B11) — tentatively `projects/<proj>/Containerfile`.
+1. ~~Containerfile location~~ — decided (§B11).
 2. **Validation surfacing** details (§B10) — assume the roles-style approach.
-3. **Project identity** — keep directory-name keying for now (collisions /
-   renames remain possible).
+3. ~~Project identity~~ — decided (§B4); re-link UX for moved repos still open.
 4. **Namespace for shipped globals** — reserved prefix vs shared with users.
-5. **Command spelling** — confirm `new`/`copy`/`config` and the `--global` flag.
+5. ~~Command spelling~~ — decided (§B6): `new`/`copy`/`config`, scope as an argument.
 
 ---
 
 ## G. Suggested order of implementation
 
-1. New registry layer in `projects.py`: `(scope, name)` → path, list, load, save,
-   copy, new, delete, validate; resolve `active = "scope/name"`.
-2. Project meta file (`projects/<proj>/<proj>.toml`) read/write for `path` +
+1. New registry layer in `projects.py`: name → path (scope derived from location), list, load, save,
+   copy, new, delete, validate; resolve `active = "<name>"`; detect cross-scope collisions (error banner).
+2. Project meta file (`projects/<name>_<hash>/project.toml`) read/write for `path` +
    `active`.
 3. Rework `/sandbox` commands: picker (tagged scope), `config`, `copy`, `new`;
-   thread `(scope, name)` through `start`/`build`/`init`/`stop`/`terminal`.
+   resolve by bare name in `start`/`build`/`init`/`stop`/`terminal`.
 4. Rebuild/notice semantics (§B8) + `validate_sandboxes()` surfaced by `/reload`.
 5. Update docs + tests; delete old flat-file handling.
 6. Only then: `plans/sandbox_defaults.md` (default `bubblewrap`, new keys).

@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import re
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -111,6 +114,11 @@ def _container_argv(spec: ContainerSpec, workspace: str, worker: str,
 
 _STANDARD_PREFIXES = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc")
 
+#: Host variables worth keeping inside bwrap; everything else (API keys,
+#: HOME/PATH/VIRTUAL_ENV pointing at unbound paths) is dropped.
+_BUBBLEWRAP_PASSTHROUGH_ENV = ("TERM", "LANG", "LC_ALL")
+_BUBBLEWRAP_PATH = "/usr/local/bin:/usr/bin:/bin"
+
 
 def _bubblewrap_interpreter() -> str:
     """A Python that exists inside the bwrap namespace.
@@ -131,10 +139,21 @@ def _bubblewrap_argv(spec: ContainerSpec, workspace: str, worker: str,
         "bwrap",
         "--die-with-parent",
         "--unshare-pid",
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--unshare-cgroup-try",
+        # Start from nothing: the host environment (API keys, venv paths) must
+        # not leak in. /tmp is a tmpfs, so it doubles as the scratch HOME.
+        "--clearenv",
+        "--setenv", "HOME", "/tmp",
+        "--setenv", "TMPDIR", "/tmp",
+        "--setenv", "PATH", _BUBBLEWRAP_PATH,
     ]
+    for name in _BUBBLEWRAP_PASSTHROUGH_ENV:
+        if name in os.environ:
+            argv += ["--setenv", name, os.environ[name]]
     if not spec.network:
         argv.append("--unshare-net")
-    argv += list(spec.run_args)
     for path in ("/usr", "/lib", "/lib64", "/bin", "/etc"):
         if Path(path).exists():
             argv += ["--ro-bind", path, path]
@@ -154,7 +173,11 @@ def _bubblewrap_argv(spec: ContainerSpec, workspace: str, worker: str,
         "--ro-bind", worker, "/opt/worker.py",
         "--bind", workspace, "/workspace",
         "--tmpfs", "/tmp",
+        "--proc", "/proc",
+        "--dev", "/dev",
         "--chdir", "/workspace",
+        # Last, so the user can override anything above.
+        *spec.run_args,
         "--", *(command or [interpreter, "/opt/worker.py"]),
     ]
     return argv
@@ -233,6 +256,26 @@ def image_present(spec: ContainerSpec) -> bool:
     return proc.returncode == 0
 
 
+def image_created(spec: ContainerSpec) -> Optional[float]:
+    """When ``spec``'s image was built (epoch seconds); ``None`` when it has no
+    image to build or the runtime cannot say (not built yet, runtime missing)."""
+    if spec.runtime not in CONTAINER_RUNTIMES or not spec.image or not spec.dockerfile:
+        return None
+    try:
+        proc = subprocess.run(
+            [spec.runtime, "image", "inspect", spec.image],
+            capture_output=True, text=True, timeout=15,
+        )
+        if proc.returncode != 0:
+            return None
+        created = json.loads(proc.stdout)[0]["Created"]
+        # RFC 3339 with nanoseconds; fromisoformat takes at most microseconds.
+        created = re.sub(r"(\.\d{6})\d+", r"\1", created)
+        return datetime.fromisoformat(created).timestamp()
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError, TypeError):
+        return None
+
+
 def build_command(spec: ContainerSpec, workspace: str | Path) -> Optional[list[str]]:
     """The explicit image-build command, or None when there is nothing to build.
 
@@ -241,11 +284,13 @@ def build_command(spec: ContainerSpec, workspace: str | Path) -> Optional[list[s
     """
     if spec.runtime not in CONTAINER_RUNTIMES or not spec.image or not spec.dockerfile:
         return None
-    workspace = Path(workspace).resolve()
     dockerfile = Path(spec.dockerfile)
     if not dockerfile.is_absolute():
-        dockerfile = workspace / dockerfile
-    return [spec.runtime, "build", "-t", spec.image, "-f", str(dockerfile), str(workspace)]
+        dockerfile = Path(workspace).resolve() / dockerfile
+    # The context is the Containerfile's folder, not the workspace: the workspace
+    # is mounted at run time, and a shared image must not depend on the project.
+    return [spec.runtime, "build", "-t", spec.image, "-f", str(dockerfile),
+            str(dockerfile.parent)]
 
 
 async def run_build(

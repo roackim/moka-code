@@ -21,7 +21,7 @@ class _Agent:
         self.workspace = str(workspace)
         self.specs = []
 
-    def set_sandbox(self, spec):
+    def set_sandbox(self, spec, name=None):
         self.specs.append(spec)
 
 
@@ -61,22 +61,18 @@ def _sandbox_cmd():
 
 
 def _project(config_dir, workspace, active=None):
-    p = config_dir / "projects" / f"{workspace.name}.toml"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f'path = "{workspace}"']
+    """Two local sandboxes: ``dev`` (podman) and ``tight`` (bubblewrap)."""
+    directory = projects.scope_dir("local", workspace)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "dev.toml").write_text(
+        'type = "podman"\n'
+        'description = "project toolchain"\n'
+        'image = "img"\n'
+        'dockerfile = "Containerfile"\n', encoding="utf-8")
+    (directory / "tight.toml").write_text('type = "bubblewrap"\n', encoding="utf-8")
     if active:
-        lines.append(f'active = "{active}"')
-    lines += [
-        "[sandboxes.dev]",
-        'type = "podman"',
-        'description = "project toolchain"',
-        'image = "img"',
-        'dockerfile = "Containerfile"',
-        "[sandboxes.tight]",
-        'type = "bubblewrap"',
-    ]
-    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return p
+        projects.set_active(workspace, active)
+    return directory
 
 
 def _ready(monkeypatch):
@@ -103,7 +99,8 @@ def test_sandbox_is_a_command_tree():
     cmd = _sandbox_cmd()
 
     assert cmd.has_subcommands()
-    assert set(cmd.get_completions(0)) == {"config", "build", "start", "stop", "terminal", "init"}
+    assert set(cmd.get_completions(0)) == {
+        "config", "new", "copy", "build", "start", "stop", "terminal", "init"}
 
 
 def test_start_completes_sandbox_ids_and_descriptions(monkeypatch, tmp_path):
@@ -114,19 +111,33 @@ def test_start_completes_sandbox_ids_and_descriptions(monkeypatch, tmp_path):
 
     assert offset == 1
     assert start.get_completions(0) == ["dev", "tight"]
-    assert start.get_descriptions(0)["dev"] == "project toolchain"
-    assert start.get_descriptions(0)["tight"] == "bubblewrap"
+    # Scope first, then the description (or the type).
+    assert start.get_descriptions(0)["dev"] == "local · project toolchain"
+    assert start.get_descriptions(0)["tight"] == "local · bubblewrap"
 
 
-def test_init_completes_runtimes_then_bases(monkeypatch, tmp_path):
+def test_init_completes_names_then_bases(monkeypatch, tmp_path):
     _workdir(tmp_path, monkeypatch)
     cmd = _sandbox_cmd()
 
     init, offset = cmd.resolve_command(["init"])
 
     assert offset == 1
-    assert init.get_completions(0) == ["podman", "docker"]
+    assert init.get_completions(0) == ["dev", "tight"]
     assert init.get_completions(1) == ["python", "debian", "ubuntu"]
+
+
+def test_new_and_copy_complete_scopes_and_types(monkeypatch, tmp_path):
+    _workdir(tmp_path, monkeypatch)
+    cmd = _sandbox_cmd()
+
+    new, _ = cmd.resolve_command(["new"])
+    copy, _ = cmd.resolve_command(["copy"])
+
+    assert new.get_completions(0) == ["global", "local"]
+    assert new.get_completions(1) == ["podman", "docker", "bubblewrap"]
+    assert copy.get_completions(0) == ["dev", "tight"]
+    assert copy.get_completions(1) == ["global", "local"]
 
 
 def test_subcommand_descriptions_exposed():
@@ -134,7 +145,8 @@ def test_subcommand_descriptions_exposed():
 
     descriptions = get_subcommand_descriptions("sandbox")
 
-    assert set(descriptions) == {"config", "build", "start", "stop", "terminal", "init"}
+    assert set(descriptions) == {
+        "config", "new", "copy", "build", "start", "stop", "terminal", "init"}
     assert "sandbox" in descriptions["start"].lower() or descriptions["start"]
 
 
@@ -146,6 +158,34 @@ def test_bare_sandbox_lists_subcommands(tmp_path):
     assert "start" in ui.popups[-1]
 
 
+def test_bare_sandbox_opens_the_picker_when_there_is_something_to_pick(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch, active="dev")
+    _ready(monkeypatch)
+    ui = _UI(workspace, with_modal=True)
+
+    async def scenario():
+        await _sandbox_cmd().execute(ui, [])
+        assert ui.modal["title"] == "Sandboxes"
+        assert ui.modal["items"] == ["dev", "tight"]
+        ui.modal["on_accept"]("tight")
+        await asyncio.gather(
+            *[t for t in asyncio.all_tasks() if t is not asyncio.current_task()])
+
+    asyncio.run(scenario())
+
+    assert projects.load_project(workspace).active == "tight"
+    assert not any("Subcommands" in text for text in ui.popups)   # the picker, not the help
+
+
+def test_unknown_subcommand_lists_options_even_with_sandboxes(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    ui = _UI(workspace, with_modal=True)
+
+    _run(ui, ["nope"])
+
+    assert ui.modal is None and "start" in ui.popups[-1]
+
+
 def test_unknown_subcommand_lists_options(tmp_path):
     ui = _UI(tmp_path)
     _run(ui, ["nope"])
@@ -154,13 +194,14 @@ def test_unknown_subcommand_lists_options(tmp_path):
 
 def test_config_opens_project_file(tmp_path, monkeypatch):
     called = []
-    async def _open(ui):
-        called.append(True)
+    async def _open(ui, name=None):
+        called.append(name)
 
     monkeypatch.setattr("moka_code.ui.commands.sandbox.open_project_sandbox", _open)
     ui = _UI(tmp_path)
     _run(ui, ["config"])
-    assert called == [True]
+    _run(ui, ["config", "dev"])
+    assert called == [None, "dev"]
 
 
 def test_start_without_id_lists_sandboxes(monkeypatch, tmp_path):
@@ -168,6 +209,7 @@ def test_start_without_id_lists_sandboxes(monkeypatch, tmp_path):
     ui = _UI(workspace)
     _run(ui, ["start"])
     assert "active: dev" in ui.popups[-1]
+    assert "local  · dev" in ui.popups[-1]
     assert "project toolchain" in ui.popups[-1]
 
 
@@ -269,6 +311,9 @@ def test_build_runs_without_activating(monkeypatch, tmp_path):
     _run(ui, ["build", "dev"])
 
     assert calls and calls[0][0] == "podman"
+    directory = projects.scope_dir("local", workspace)
+    # Containerfile and context are next to the sandbox file, not in the workspace.
+    assert calls[0][-3:] == ["-f", str(directory / "Containerfile"), str(directory)]
     assert any("step 1" in line for line in ui.activity_lines)
     assert ui.agent.specs == []
     assert projects.load_project(workspace).active is None
@@ -296,40 +341,116 @@ def test_build_requires_id(monkeypatch, tmp_path):
 
 # --- init / quit -----------------------------------------------------------
 
-def test_init_podman_writes_containerfile(monkeypatch, tmp_path):
+def test_init_writes_a_containerfile_next_to_the_sandbox(monkeypatch, tmp_path):
     workspace = _workdir(tmp_path, monkeypatch)
     ui = _UI(workspace)
-    _run(ui, ["init", "podman", "debian"])
-    text = (workspace / "Containerfile").read_text()
+    _run(ui, ["init", "dev", "debian"])
+    path = projects.scope_dir("local", workspace) / "dev.Containerfile"
+    text = path.read_text()
     assert "FROM debian:stable-slim" in text
     assert "install -y --no-install-recommends python3" in text
     assert "WORKDIR /workspace" in text
-    assert "Wrote Containerfile" in ui.chat_history_panel.messages[-1]
+    assert "Wrote dev.Containerfile" in ui.chat_history_panel.messages[-1]
+    assert not (workspace / "Containerfile").exists()
 
 
 def test_init_docker_writes_dockerfile(monkeypatch, tmp_path):
     workspace = _workdir(tmp_path, monkeypatch)
+    projects.create_sandbox(workspace, "local", "docker", "dk")
     ui = _UI(workspace)
-    _run(ui, ["init", "docker"])
-    assert (workspace / "Dockerfile").exists()
-    assert (workspace / "Dockerfile").read_text().startswith("# Built by moka")
-    assert "FROM python:3.12-slim" in (workspace / "Dockerfile").read_text()
-    assert not (workspace / "Containerfile").exists()
+    _run(ui, ["init", "dk"])
+    path = projects.scope_dir("local", workspace) / "dk.Dockerfile"
+    assert path.read_text().startswith("# Built by moka")
+    assert "FROM python:3.12-slim" in path.read_text()
 
 
 def test_init_rejects_bubblewrap(monkeypatch, tmp_path):
     workspace = _workdir(tmp_path, monkeypatch)
     ui = _UI(workspace)
-    _run(ui, ["init", "bubblewrap"])
-    assert "supports podman, docker" in ui.chat_history_panel.messages[-1]
+    _run(ui, ["init", "tight"])
+    assert "needs a podman or docker sandbox" in ui.chat_history_panel.messages[-1]
+
+
+def test_init_unknown_sandbox(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    ui = _UI(workspace)
+    _run(ui, ["init", "ghost"])
+    assert "Unknown sandbox 'ghost'" in ui.chat_history_panel.messages[-1]
 
 
 def test_init_refuses_overwrite(monkeypatch, tmp_path):
     workspace = _workdir(tmp_path, monkeypatch)
-    (workspace / "Containerfile").write_text("FROM x\n")
+    existing = projects.scope_dir("local", workspace) / "dev.Containerfile"
+    existing.write_text("FROM x\n")
     ui = _UI(workspace)
-    _run(ui, ["init", "podman"])
+    _run(ui, ["init", "dev"])
     assert "already exists" in ui.chat_history_panel.messages[-1]
+    assert existing.read_text() == "FROM x\n"
+
+
+# --- new / copy ------------------------------------------------------------
+
+def test_new_creates_a_file_and_opens_it(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    opened = []
+
+    async def _open(ui, name=None):
+        opened.append(name)
+
+    monkeypatch.setattr("moka_code.ui.commands.sandbox.open_project_sandbox", _open)
+    ui = _UI(workspace)
+    _run(ui, ["new", "global", "bubblewrap", "box"])
+
+    assert (tmp_path / "sandboxes" / "box.toml").exists()
+    assert opened == ["box"]
+    assert "Created global sandbox 'box'" in ui.chat_history_panel.messages[-1]
+
+
+def test_new_name_defaults_to_the_type(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+
+    async def _open(ui, name=None):
+        pass
+
+    monkeypatch.setattr("moka_code.ui.commands.sandbox.open_project_sandbox", _open)
+    _run(_UI(workspace), ["new", "local", "bubblewrap"])
+
+    assert (projects.scope_dir("local", workspace) / "bubblewrap.toml").exists()
+
+
+def test_new_errors(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    ui = _UI(workspace)
+
+    _run(ui, ["new", "local"])
+    assert "Usage: /sandbox new" in ui.chat_history_panel.messages[-1]
+    _run(ui, ["new", "nowhere", "bubblewrap"])
+    assert "Scope must be global or local" in ui.chat_history_panel.messages[-1]
+    _run(ui, ["new", "global", "bubblewrap", "dev"])      # dev is a local: names are shared
+    assert "already exists" in ui.chat_history_panel.messages[-1]
+
+
+def test_copy_into_global(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    ui = _UI(workspace)
+    _run(ui, ["copy", "tight", "global", "shared"])
+
+    assert (tmp_path / "sandboxes" / "shared.toml").exists()
+    assert "Copied 'tight' to global sandbox 'shared'" in ui.chat_history_panel.messages[-1]
+
+
+def test_copy_errors(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    ui = _UI(workspace)
+
+    _run(ui, ["copy", "tight"])
+    assert "Usage: /sandbox copy" in ui.chat_history_panel.messages[-1]
+    _run(ui, ["copy", "ghost", "local", "x"])
+    assert "Sandbox not found: ghost" in ui.chat_history_panel.messages[-1]
+    _run(ui, ["copy", "tight", "local", "dev"])
+    assert "already exists" in ui.chat_history_panel.messages[-1]
+    _run(ui, ["copy", "tight", "nowhere", "x"])
+    assert "Scope must be global or local" in ui.chat_history_panel.messages[-1]
 
 
 def test_stop_deactivates(monkeypatch, tmp_path):

@@ -77,6 +77,12 @@ class Harness:
 
         # Why the active sandbox is not ready (shown on the UI's notice band).
         self.sandbox_problem: str | None = None
+        # The active sandbox's name and its file's stat, to tell when the running
+        # one may differ from its file (see ``sandbox_drift``).
+        self.sandbox_name: str | None = None
+        self._sandbox_stat: tuple[int, int] | None = None
+        # When the active container's image was built (see ``sandbox_stale``).
+        self._image_built: float | None = None
         # (tool name, task) while a tool runs; see _abort_tool_calls.
         self._running_tool = None
         # USD spent on this conversation, when the provider reports costs
@@ -137,7 +143,7 @@ class Harness:
             self._role_stat = stat
         return None
 
-    def set_sandbox(self, spec) -> None:
+    def set_sandbox(self, spec, name: str | None = None) -> None:
         """Swap the execution transport (None/``none`` → in-process).
 
         Tears down the old worker (best effort, synchronously) and rebuilds the
@@ -153,12 +159,57 @@ class Harness:
         )
         self._wire_sandbox_stderr()
         self._rebuild_tools()
-        self.sandbox_problem = _sandbox_problem(spec)
+        self.sandbox_problem = _sandbox_problem(spec, name)
+        self.track_sandbox(name)
         runtime = getattr(spec, "runtime", "none")
         self.debug_stream.log("SANDBOX", runtime)
         if getattr(self, "_sandbox_runtime", "none") != runtime:
             self._sandbox_runtime = runtime
             self._record_sandbox_change(runtime)
+
+    def track_sandbox(self, name: str | None) -> None:
+        """Remember what the running sandbox was built from: its file's stat and,
+        for a container, when its image was built. Called on every activation, after
+        ``/sandbox build`` and on ``/reload``."""
+        from moka_code import projects
+        from moka_code.sandbox import image_created
+
+        self.sandbox_name = name
+        self._sandbox_stat = projects.sandbox_file_stat(self.workspace, name) if name else None
+        spec = getattr(self.transport, "spec", None)
+        self._image_built = image_created(spec) if name and spec is not None else None
+
+    def sandbox_stale(self) -> bool:
+        """True when the running container's dockerfile is newer than its image:
+        ``/reload`` does not help (moka never builds implicitly), ``/sandbox build``
+        does. A ``stat`` of the dockerfile is the whole cost."""
+        spec = getattr(self.transport, "spec", None)
+        if self._image_built is None or spec is None or not spec.dockerfile:
+            return False
+        try:
+            return (Path(self.workspace) / spec.dockerfile).stat().st_mtime > self._image_built
+        except OSError:
+            return False
+
+    def sandbox_drift(self) -> Optional[str]:
+        """How the running sandbox differs from its file: ``"gone"`` (deleted),
+        ``"changed"`` (it now says something else; ``/reload`` applies it), else
+        ``None``. A ``stat`` is the gate, so a status refresh costs next to nothing;
+        a file touched without changing the sandbox is not a difference."""
+        name = self.sandbox_name
+        if not name:
+            return None
+        from moka_code import projects
+
+        stat = projects.sandbox_file_stat(self.workspace, name)
+        if stat is None:
+            return "gone"
+        if stat == self._sandbox_stat:
+            return None
+        entry = projects.load_project(self.workspace).sandboxes.get(name)
+        if entry is None or entry.to_spec() != getattr(self.transport, "spec", None):
+            return "changed"        # /reload says why it does not load
+        return None
 
     def _record_sandbox_change(self, runtime: str) -> None:
         """Record a sandbox change as a system notice (not a user turn)."""
@@ -1154,6 +1205,7 @@ def get_harness(config_path: str | None = None) -> Harness:
         transport = _build_transport(spec, workspace)
         _harness = Harness(workspace, transport=transport)
         _harness._sandbox_runtime = getattr(spec, "runtime", "none")
+        _harness.track_sandbox(getattr(project, "active", None))
         _harness.sandbox_problem = _sandbox_problem(spec, getattr(project, "active", None))
     return _harness
 

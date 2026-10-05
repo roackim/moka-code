@@ -33,11 +33,12 @@ def main():
     # Initialize harness first
     print("Initializing moka...")
     from moka_code.harness import roles
-    from moka_code import settings
+    from moka_code import projects, settings
 
     # Before anything creates ~/.config/moka: carry the pre-rename config over.
     migration_notice = settings.migrate_legacy_config_dir()
     roles.ensure_roles_dir()
+    projects.seed_default_sandbox(os.getcwd())
     # Insert commented lines for newly added config keys (and drop retired ones)
     # in existing files, then reload so the fresh file is what the app sees.
     settings.sync_config_files()
