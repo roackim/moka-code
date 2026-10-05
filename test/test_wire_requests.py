@@ -522,3 +522,108 @@ def test_deepseek_sends_every_turns_reasoning_content_even_empty(fake, tmp_path,
 def test_deepseek_minimum_replay_depth_is_all_turns_with_tools():
     endpoint = make_endpoint(DEEPSEEK)
     assert (endpoint.min_replay_depth(True), endpoint.min_replay_depth(False)) == (999, 0)
+
+
+# -- openai-compatible (re-added 2026-10-06) ----------------------------------------------
+
+OPENAI_COMPATIBLE = {"type": "openai-compatible", "base_url": "http://h/v1"}
+
+
+def test_openai_compatible_needs_a_base_url():
+    with pytest.raises(ValueError, match="need a base_url"):
+        build("srv", {"type": "openai-compatible"})
+
+
+def test_openai_compatible_sends_the_standard_request(fake):
+    """Same body as llama.cpp: the selected model, ``include_usage``, a flat
+    ``reasoning_effort`` only when one is chosen."""
+    chat_route(fake)
+    run_chat(make_endpoint({**OPENAI_COMPATIBLE, "api_key": "K"}, effort="low"), HISTORY, TOOLS)
+
+    [request] = fake.requests
+    assert (request.method, request.url) == ("POST", "http://h/v1/chat/completions")
+    assert request.headers["authorization"] == "Bearer K"
+    assert request.body == {
+        "model": "m", "messages": HISTORY, "tools": TOOLS, "reasoning_effort": "low",
+        "stream": True, "stream_options": {"include_usage": True}}
+
+
+def test_openai_compatible_default_effort_sends_no_field(fake):
+    chat_route(fake)
+    run_chat(make_endpoint(OPENAI_COMPATIBLE), SIMPLE)
+    assert "reasoning_effort" not in chat_body(fake)
+
+
+def test_openai_compatible_reads_the_facts_the_models_route_states(fake):
+    """No ``/props``: only ``/models`` is asked, and its stated facts are used."""
+    fake.on("GET", "/models", wire.json_response(wire.OPENROUTER_MODELS))
+    assert learn(make_endpoint(OPENAI_COMPATIBLE)) == {
+        "deepseek/deepseek-v4.1-flash": (1048576, True, ["low", "high", "max"]),
+        "qwen/qwen3.8-omni-flash": (1000000, True, [])}
+    assert fake.calls() == [("GET", "/v1/models")]
+
+
+def test_openai_compatible_reports_only_what_the_server_states(fake):
+    """A bare OpenAI-style entry states no window: ``None`` (the error notice for
+    the selected model), never a default or a config key."""
+    fake.on("GET", "/models", wire.json_response(
+        {"object": "list", "data": [{"id": "m", "object": "model", "owned_by": "x"}]}))
+    assert learn(make_endpoint(OPENAI_COMPATIBLE)) == {"m": (None, None, [])}
+    assert fake.calls() == [("GET", "/v1/models")]
+
+
+@pytest.mark.parametrize("depth, expected", [
+    (0, [None, None]),
+    (1, [None, "why I call"]),
+    (999, ["old thought", "why I call"]),
+])
+def test_openai_compatible_sends_reasoning_content_by_depth(fake, tmp_path, monkeypatch, depth, expected):
+    messages = _tool_loop_request(
+        fake, tmp_path, monkeypatch, make_endpoint(OPENAI_COMPATIBLE), depth,
+        _two_turns({"type": "openai-compatible", "model": "m"}))
+    assistant = [m for m in messages if m["role"] == "assistant"]
+    assert [m.get("reasoning_content") for m in assistant] == expected
+    assert all("reasoning" not in m and "origin" not in m for m in messages)
+
+
+def test_openai_compatible_sends_the_field_even_when_the_model_gave_no_reasoning(fake, tmp_path, monkeypatch):
+    history = _two_turns({"type": "openai-compatible", "model": "m"})
+    history[3].pop("reasoning")
+    messages = _tool_loop_request(
+        fake, tmp_path, monkeypatch, make_endpoint(OPENAI_COMPATIBLE), 1, history)
+    caller = next(m for m in messages if m.get("tool_calls"))
+    assert caller["reasoning_content"] == ""
+
+
+# -- an error inside the stream (a server that already sent its 200) ---------------------
+
+IN_STREAM_ERROR = (
+    'data: {"object":"chat.completion.chunk","error":{"message":"context too long",'
+    '"type":"invalid_request_error","code":400},"choices":[{"index":0,'
+    '"delta":{"content":""},"finish_reason":"error"}]}\n\ndata: [DONE]\n\n')
+
+
+@pytest.mark.parametrize("table", [LLAMACPP, OPENAI_COMPATIBLE, OPENROUTER])
+def test_an_error_in_the_stream_reaches_the_user_and_is_not_retried(fake, table):
+    """A gateway that answered ``200`` early (keep-alives while the backend is busy)
+    can only report a later failure in the stream. It must surface with the
+    server's message; ending the reply quietly would hide it, and a retry would
+    repeat the same failure."""
+    fake.on("POST", "/chat/completions",
+            wire.text_response(": keepalive\n\n" + IN_STREAM_ERROR, 200, "text/event-stream"))
+
+    with pytest.raises(RuntimeError, match="srv: context too long"):
+        run_chat(make_endpoint(table), SIMPLE)
+
+    assert len(fake.sent("POST", "/chat/completions")) == 1
+
+
+def test_keepalive_comment_lines_are_ignored(fake):
+    fake.on("POST", "/chat/completions", wire.text_response(
+        ": keepalive\n\n: keepalive\n\n"
+        'data: {"choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n\n'
+        "data: [DONE]\n\n", 200, "text/event-stream"))
+
+    text, _usages = run_chat(make_endpoint(OPENAI_COMPATIBLE), SIMPLE)
+
+    assert text == "Hi"

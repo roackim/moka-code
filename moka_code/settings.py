@@ -436,7 +436,7 @@ _RETIRED_SERVER_KEYS = {
     "enabled_models": "'models = [...]'",
     "model_providers": "[servers.<name>.providers_by_model]",
 }
-_RETIRED_SERVER_TYPES = {"openai", "openai-compatible"}
+_RETIRED_SERVER_TYPES = {"openai"}
 _SERVER_STR_KEYS = {"type", "base_url", "api_key", "api_key_env"}
 _SERVER_INT_KEYS = {"retry_attempts"}
 _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}

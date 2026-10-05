@@ -3,9 +3,9 @@
 > **Status:** built (`PLAN.md` steps 1, 2a, 2b and 2c, 2026-10-01). This page
 > describes what exists. Nothing has run against a real DeepSeek key.
 
-A *provider* is a server family moka can talk to: llama.cpp, OpenRouter and
-DeepSeek (Ollama was removed on 2026-10-01, §9.11; the catch-all `openai-compatible`
-type on 2026-10-01, §9.12). Their differences used to be about two dozen `type == ...` branches
+A *provider* is a server family moka can talk to: llama.cpp, OpenRouter,
+DeepSeek and `openai-compatible` (a server that states its own facts in `/models`,
+re-added 2026-10-06, §9.15). Ollama was removed on 2026-10-01, §9.11. Their differences used to be about two dozen `type == ...` branches
 spread over `endpoint.py`, `endpoint_discovery.py`, `endpoint_openai.py`,
 `settings.py` and `unserved_model`. This page defines the one seam that
 replaced them, and what each side promises the other.
@@ -68,6 +68,7 @@ Common keys (all providers): `type`, `base_url` (per the rule above),
 | `llamacpp` | optional, default `http://localhost:8080/v1` | — |
 | `openrouter` | forbidden, fixed `https://openrouter.ai/api/v1` | `models`, `providers`, `providers_by_model` |
 | `deepseek` | forbidden, fixed `https://api.deepseek.com` | — |
+| `openai-compatible` | **required** | — |
 
 Every provider sends the selected `model` id exactly as listed. There is no
 "one served model wins" mode: llama.cpp ignores `model` in single-model mode
@@ -109,7 +110,7 @@ base_url = "http://localhost:8080/v1"
   showing only what a server needs. The advanced keys are listed once in the
   header, not under every provider.
 - **Old shapes are reported, never aliased:** a per-model `models` table, a
-  `type` named `openai` or `openai-compatible` (no longer supported), a
+  `type` named `openai` (no longer supported; `openai-compatible` is a type again), a
   `max_context` key, or a missing `type` gives a load error, and that server
   is skipped (the
   mechanism of `_RETIRED_SERVER_KEYS`). moka never rewrites `servers.toml`.
@@ -237,6 +238,11 @@ a `status` and `architecture.input_modalities`; whether `/props` answers per
 model there is unverified (⚠), so a missing `/props` answer means unknown
 context and images, never a failure.
 
+`openai-compatible` (S2 `/models` only, no `/props`; S4 `context_length`; S5
+`architecture.input_modalities`; S6 `reasoning.supported_efforts`; S7 flat
+`reasoning_effort`; S8 as llama.cpp; S9 `reasoning_content`, sent even when empty;
+S11 `include_usage`) is the llama.cpp column without `/props` and `timings`.
+
 ---
 
 ## 5. What stays in the base class
@@ -287,6 +293,7 @@ listed, not fixed.
 | 503 (model loading) | retried with backoff, then raised with the body | — |
 | network error / timeout | retried (whole request) up to `retry_attempts` | may repeat output already shown |
 | other 4xx / 5xx | raised as an HTTP status error | the server's body is not shown |
+| `{"error": {...}}` inside the stream (a server that already sent its `200`, e.g. a gateway with keep-alives; OpenRouter's mid-stream errors) | raised as `RuntimeError("<server>: <message>")`, never retried (`_raise_stream_error`, 2026-10-06) | a stream that just ends (server died) is not detected |
 | server unreachable at refresh | last list kept, marked stale | — |
 | model not listed any more | selection kept; status bar red, error notice | — |
 
@@ -385,6 +392,15 @@ Everything else is identical.
     2026-09-30 every turn was replayed for every model; from then until 2b
     nothing was.
 
+15. **`openai-compatible` re-added** (2026-10-06, the user's request, for the
+    metallama gateway and similar): a concrete class that inherits everything
+    (`providers/openai_server.py`), `base_url` required, no `/props`, no default
+    URL. **The context window is read from `/models` `context_length` only**
+    (decided 2026-10-06: no config key, no default, so a server that states none
+    gets the §9.12 error notice and the server must add the field). This reverses
+    the removal in §9.12 for the type only: `max_context` stays a load error and a
+    server without its own facts is still not guessed at.
+
 14. **DeepSeek added** (2026-10-01, `PLAN.md` 2c; docs read 2026-10-01, no
     real key yet): own `/models` reader, minimum replay depth, no `thinking`
     field.
@@ -440,7 +456,7 @@ window).
 
 | # | Question | Rule | Status |
 |---|---|---|---|
-| A1 | `type` string | one class, one `type`; no catch-all type for "any server" | ✅ |
+| A1 | `type` string | one class, one `type`; the one generic type, `openai-compatible`, requires the server to state its own facts (§9.15) | ✅ |
 | A2 | Base URL | `fixed_url` (forbidden in the table), `default_url` (optional) or required | ✅ |
 | A3 | Auth | `api_key` / `api_key_env`; a keyless server has no key line; a set `api_key_env` whose variable is unset is an error notice | ✅ |
 | A4 | Keys beyond the common ones | `extra_keys`; anything else is a load error | ✅ |

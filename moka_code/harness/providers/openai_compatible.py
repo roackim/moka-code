@@ -198,6 +198,18 @@ class OpenAICompatible(Endpoint):
         async for data in self._sse_objects(messages, tools):
             yield self._chunk(data)
 
+    def _raise_stream_error(self, data: Dict[str, Any]) -> None:
+        """An error carried in the stream itself (``{"error": {...}}`` with
+        ``finish_reason: "error"``): a server that already committed a ``200``
+        (an early response with keep-alives, or a mid-stream failure) can only say
+        it there. Raised with the server's own message, never retried: ending the
+        reply quietly would hide it."""
+        error = data.get("error") if isinstance(data, dict) else None
+        if not error:
+            return
+        message = error.get("message") if isinstance(error, dict) else str(error)
+        raise RuntimeError(f"{self.name}: {message or error}")
+
     async def _sse_objects(
         self,
         messages: list[Dict[str, Any]],
@@ -241,6 +253,7 @@ class OpenAICompatible(Endpoint):
             )
             count = 0
             async for data in iter_sse_objects(response):
+                self._raise_stream_error(data)
                 if count == 0:
                     logger.info(
                         "[llm] first token after %.0fms (headers->first)",

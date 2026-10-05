@@ -16,7 +16,8 @@ against the provider's current docs before they are built on.
   effort) lives in the instance. Contract: `.wiki/notes/providers.md`.
 - **One class per API, no catch-all (2026-10-01).** `OpenAICompatible` is
   abstract: shared chat-completions code, not a `type` (the
-  `openai-compatible` type goes). Every supported server has its own
+  `openai-compatible` type goes; **re-added 2026-10-06** as a concrete class that
+  requires the server to state its facts in `/models`, `providers.md` §9.15). Every supported server has its own
   subclass, which reads its facts from its documented routes and sends its
   documented fields. A server without a subclass is not supported (Ollama,
   plain OpenAI, the user's proxy until it has one).

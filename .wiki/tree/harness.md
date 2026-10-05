@@ -107,6 +107,9 @@ tables from it.
   SSE `/chat/completions` → `Chunk`s; `parse_usage`; `_extra_payload` hook;
   `stated_efforts` (`reasoning.supported_efforts`, weakest first by
   `EFFORT_WORDS`) and `stated_images` (`architecture.input_modalities`)
+- `openai_server.py` — `OpenAICompatibleServer(OpenAICompatible)`: `type =
+  "openai-compatible"`, `base_url` required, nothing else of its own (no `/props`);
+  the context window comes only from `/models` `context_length`
 - `llamacpp.py` — `LlamaCpp(OpenAICompatible)`: default URL; `list_models` adds context and
   vision from `/props` (unknown if it does not answer),
   cache count from `timings.cache_n` when usage has none
