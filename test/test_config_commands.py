@@ -244,12 +244,12 @@ def _editing(monkeypatch, path, text):
 
 def test_editing_the_active_role_applies_when_the_editor_closes(monkeypatch, tmp_path):
     ui, path = _role_ui(monkeypatch, tmp_path)
-    assert ui.agent.role.replay_reasoning_depth == 1
-    _editing(monkeypatch, path, "\nreplay_reasoning_depth = 999\n")
+    assert ui.agent.role.replay_reasoning_depth == 999
+    _editing(monkeypatch, path, "\nreplay_reasoning_depth = 3\n")
 
     asyncio.run(cmd_config(ui, ["role", "agent"]))
 
-    assert ui.agent.role.replay_reasoning_depth == 999
+    assert ui.agent.role.replay_reasoning_depth == 3
     assert any("Config reloaded." in m for m in ui.chat_history_panel.messages)
 
 
@@ -268,15 +268,15 @@ def test_a_role_file_that_no_longer_loads_keeps_the_running_role(monkeypatch, tm
 
     asyncio.run(cmd_config(ui, ["role", "agent"]))
 
-    assert ui.agent.role.replay_reasoning_depth == 1
+    assert ui.agent.role.replay_reasoning_depth == 999
     assert any("replay_reasoning_depth" in m for m in ui.chat_history_panel.messages)
 
 
 def test_a_role_change_waits_for_the_running_response_and_says_so(monkeypatch, tmp_path):
     ui, path = _role_ui(monkeypatch, tmp_path, generating=True)
-    _editing(monkeypatch, path, "\nreplay_reasoning_depth = 999\n")
+    _editing(monkeypatch, path, "\nreplay_reasoning_depth = 3\n")
 
     asyncio.run(cmd_config(ui, ["role", "agent"]))
 
-    assert ui.agent.role.replay_reasoning_depth == 1
+    assert ui.agent.role.replay_reasoning_depth == 999
     assert any("run /reload once the response is done" in m for m in ui.chat_history_panel.messages)

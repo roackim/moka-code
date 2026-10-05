@@ -48,8 +48,8 @@ against the provider's current docs before they are built on.
 - **Replay depth is a role setting (2026-10-01).** `replay_reasoning_depth`
   in the role file: 0 = none, 1 = the current turn (the tool loop in
   progress), N = the last N turns, capped at what exists (999 = all).
-  Default 1. A turn is one user message and everything the model does until
-  its answer. moka sends what is configured, never more or less.
+  Default 999 (all). A turn is one user message and everything the model does
+  until its answer. moka sends what is configured, never more or less.
 - **Provider minimum depth (2026-10-01).** A provider may document a minimum
   (DeepSeek: all turns whenever `tools` is sent, else HTTP 400;
   `guides/thinking_mode`, read 2026-10-01). A role below it gets a
@@ -142,7 +142,7 @@ llama.cpp and DeepSeek ✅ (2026-10-01, see Decisions).
    `reasoning_details`), `origin = {type, model}`. No compatibility for old
    sessions (decided 2026-10-01). ✅ One request builder
    (`Harness._request_messages`), the parallel `messages` list deleted. ✅
-2. `replay_reasoning_depth` in role files (see Decisions), default 1,
+2. `replay_reasoning_depth` in role files (see Decisions), default 999 (all),
    commented line in the role template. ✅
 3. `replay(entry)` per provider, with its documented field (see Decisions).
    OpenRouter: `reasoning_details` when `origin` is this server and model,

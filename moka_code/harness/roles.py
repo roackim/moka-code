@@ -44,8 +44,9 @@ class Role:
     require_sandbox: bool = False
     #: How many turns of the model's reasoning are sent back with each request:
     #: 0 = none, 1 = the current turn (the tool loop in progress), N = the last
-    #: N turns, capped at what exists (999 = all).
-    replay_reasoning_depth: int = 1
+    #: N turns, capped at what exists. 999 is the "all turns" convention and the
+    #: default: a provider may document it as its minimum (``min_replay_depth``).
+    replay_reasoning_depth: int = 999
 
     def enabled_tool_names(self) -> set[str]:
         """Tool names the model is allowed to see (anything but ``no``)."""
@@ -173,7 +174,7 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
                 + " / ".join(TOOL_VALUES)
             )
         tools[key] = value
-    depth = data.get("replay_reasoning_depth", 1)
+    depth = data.get("replay_reasoning_depth", 999)
     if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
         raise ValueError(f"roles/{name}.toml: replay_reasoning_depth must be an integer >= 0")
     return Role(
@@ -264,8 +265,9 @@ def _role_template(role: Role) -> str:
         f"## require_sandbox: true locks the conversation unless a sandbox is active.\n"
         f"{sandbox}\n"
         f"## replay_reasoning_depth: turns of the model's reasoning sent back with each\n"
-        f"## request. 0 = none, 1 = the current turn (tool loop), N = last N turns, 999 = all.\n"
-        f"# replay_reasoning_depth = 1\n"
+        f"## request. 0 = none, 1 = the current turn (tool loop), N = last N turns,\n"
+        f"## 999 = all (the default).\n"
+        f"# replay_reasoning_depth = 999\n"
     )
 
 

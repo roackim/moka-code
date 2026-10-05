@@ -55,15 +55,17 @@ prompt + effective history, from the last compaction marker). `_to_api_message`
 keeps only `role`, `content`, `tool_calls`, `tool_call_id` and image parts;
 moka's `id`, `source`, `origin`, `reasoning*` never leave as such.
 
-**Which entries:** the role's `replay_reasoning_depth` (default 1; a role file
-sets it, a new role's template shows it commented). A *turn* is one user message
-(not a tool's returned images) and what the model does until its answer.
+**Which entries:** the role's `replay_reasoning_depth` (default 999 = all; a
+role file sets it, a new role's template shows it commented). A *turn* is one
+user message (not a tool's returned images) and what the model does until its
+answer.
 
 | Depth | Assistant entries that carry reasoning |
 |---|---|
 | 0 | none |
 | 1 | the current turn: the tool loop in progress |
-| N | the last N turns, capped at what exists (999 = all) |
+| N | the last N turns, capped at what exists |
+| 999 | all turns (the convention; also the default) |
 
 The compaction marker is never a turn. moka sends what is configured, never
 more or less, whatever the model needs.

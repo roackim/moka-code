@@ -198,20 +198,20 @@ def test_require_sandbox_defaults_false():
 
 
 def test_replay_reasoning_depth(tmp_path, monkeypatch):
-    """2b (2026-10-01): default 1, a file can set it, bad values are errors,
-    and the template shows the default as a commented line."""
+    """2b (2026-10-01): default 999 ("all"), a file can set it, bad values are
+    errors, and the template shows the default as a commented line."""
     monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
     (tmp_path / "roles").mkdir()
-    assert Role(name="x").replay_reasoning_depth == 1
+    assert Role(name="x").replay_reasoning_depth == 999
     template = roles_module._role_template(Role(name="t", tools={"read": "yes"}))
-    assert "\n# replay_reasoning_depth = 1\n" in template
+    assert "\n# replay_reasoning_depth = 999\n" in template
     (tmp_path / "roles" / "t.toml").write_text(template, encoding="utf-8")
-    assert load_role("t").replay_reasoning_depth == 1
+    assert load_role("t").replay_reasoning_depth == 999
 
     (tmp_path / "roles" / "t.toml").write_text(
-        template + "replay_reasoning_depth = 999\n", encoding="utf-8")
+        template + "replay_reasoning_depth = 3\n", encoding="utf-8")
     loaded = load_role("t")
-    assert loaded.replay_reasoning_depth == 999
+    assert loaded.replay_reasoning_depth == 3
     assert "replay_reasoning_depth" not in loaded.tools
     assert validate_roles() == []
 
@@ -235,10 +235,10 @@ def test_role_template_layout_and_uncommentable_settings():
     assert 'read = "yes"\nbash = "ask"\n' in template
     assert template.index("## Technical settings") > template.index('bash = "ask"')
     assert [l for l in template.splitlines() if l.startswith("# ")] == [
-        "# require_sandbox = true", "# replay_reasoning_depth = 1"]
+        "# require_sandbox = true", "# replay_reasoning_depth = 999"]
     uncommented = re.sub(r"^# ", "", template, flags=re.M)
     loaded = toml.loads(uncommented)
-    assert loaded["require_sandbox"] is True and loaded["replay_reasoning_depth"] == 1
+    assert loaded["require_sandbox"] is True and loaded["replay_reasoning_depth"] == 999
     assert "require_sandbox = true\n" in roles_module._role_template(
         Role(name="x", require_sandbox=True))
 

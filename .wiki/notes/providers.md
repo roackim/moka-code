@@ -492,8 +492,9 @@ a table or a guess)
 What the harness does, for every provider: stores `reasoning`,
 `reasoning_native` and `origin` on each assistant entry; sends back what the
 role's `replay_reasoning_depth` allows (0 = none, 1 = the current turn, N = the
-last N turns, capped at what exists; default 1; a turn is one user message and
-what the model does until its answer); builds every request from history in one
+last N turns, capped at what exists; default 999 = all; a turn is one user
+message and what the model does until its answer); builds every request from
+history in one
 place; never parses, moves or rewrites reasoning. No compatibility for
 sessions saved before step 2b.
 

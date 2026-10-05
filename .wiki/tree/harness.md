@@ -208,7 +208,7 @@ lines, `"function"` or `"all"`), untracked files via
 `Role` — the single source of truth for a conversation's operating mode: a
 `description`, a `prompt`, a `tools: dict[str, str]` mapping each registered
 tool to exactly one of `no` / `ask` / `yes`, and `require_sandbox` (bool,
-default false) and `replay_reasoning_depth` (int ≥ 0, default 1: how many turns
+default false) and `replay_reasoning_depth` (int ≥ 0, default 999 = all: how many turns
 of reasoning are sent back, `notes/reasoning-traces.md`). There is no
 permission engine.
 - `require_sandbox = true` locks the conversation while no sandbox is active:
