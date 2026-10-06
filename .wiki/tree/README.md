@@ -51,11 +51,11 @@ sandbox, global (`~/.config/moka/sandboxes/<name>.toml`) or local
   `validate_sandboxes()`; `active_spec()` → `ContainerSpec`; `set_active()`;
   `create_sandbox()` / `copy_sandbox()`; `sandbox_file_stat()` (reload notice).
 - Entries: `type` (podman/docker/bubblewrap), `description`, `image`,
-  `dockerfile` (relative to the sandbox file), `network`, `timeout`, `run_args`.
+  `dockerfile` (relative to the sandbox file), `network`, `run_args`.
 
 ### `sandbox.py`
 Host-side sandbox launcher and JSONL client (no `ui/` imports, no policy).
-- `ContainerSpec` — runtime + image + `network`/`timeout`/`run_args`/`dockerfile`
+- `ContainerSpec` — runtime + image + `network`/`run_args`/`dockerfile`
   (built from a project entry).
 - `build_argv(spec, workspace, worker)` — build the runtime command line
   (`--network=none`, read-only rootfs, caps dropped, workspace + `worker.py`

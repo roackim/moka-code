@@ -211,8 +211,9 @@ lines, `"function"` or `"all"`), untracked files via
 `Role` — the single source of truth for a conversation's operating mode: a
 `description`, a `prompt`, a `tools: dict[str, str]` mapping each registered
 tool to exactly one of `no` / `ask` / `yes`, and `require_sandbox` (bool,
-default false) and `replay_reasoning_depth` (int ≥ 0, default 999 = all: how many turns
-of reasoning are sent back, `notes/reasoning-traces.md`). There is no
+default false), `replay_reasoning_depth` (int ≥ 0, default 999 = all: how many turns
+of reasoning are sent back, `notes/reasoning-traces.md`) and `tool_timeout` (seconds a
+`bash` command may run, default 300, 0 or less = no limit; sent by the harness with each call). There is no
 permission engine.
 - `require_sandbox = true` locks the conversation while no sandbox is active:
   `Harness.sandbox_required()` gates `chat()` (yields an `Error`) and the UI

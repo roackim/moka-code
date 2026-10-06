@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
 
 from moka_code.worker import (
+    DEFAULT_TOOL_TIMEOUT,
     ToolError,
     bash as _worker_bash,
     bash_sync as _worker_bash_sync,
@@ -79,11 +80,11 @@ class ShellTool:
         # Handle to the currently-running command (for stop/cancellation).
         self._active_proc: Optional["asyncio.subprocess.Process"] = None
 
-    def run(self, command: str, timeout: int = 30) -> str:
+    def run(self, command: str, timeout: float = DEFAULT_TOOL_TIMEOUT) -> str:
         """Execute shell command in workspace (blocking)."""
         return _worker_bash_sync(command, cwd=self.workspace, timeout=timeout)
 
-    async def run_async(self, command: str, timeout: int = 30, on_output=None) -> str:
+    async def run_async(self, command: str, timeout: float = DEFAULT_TOOL_TIMEOUT, on_output=None) -> str:
         """Cancellable async version of :meth:`run`.
 
         Delegates to :func:`moka_code.worker.bash` and records the spawned
@@ -160,11 +161,11 @@ class MinimalToolset:
         """Replace an exact text block in a file."""
         return self.file_tools.edit(path, search, replace)
 
-    def run(self, command: str, timeout: int = 30) -> str:
+    def run(self, command: str, timeout: float = DEFAULT_TOOL_TIMEOUT) -> str:
         """Execute shell command"""
         return self.shell_tool.run(command, timeout)
 
-    async def run_async(self, command: str, timeout: int = 30, on_output=None) -> str:
+    async def run_async(self, command: str, timeout: float = DEFAULT_TOOL_TIMEOUT, on_output=None) -> str:
         """Execute shell command asynchronously (cancellable)."""
         return await self.shell_tool.run_async(command, timeout, on_output=on_output)
 
@@ -426,9 +427,12 @@ def _edit_tool(toolset: MinimalToolset, path: str, search: str, replace: str) ->
         return str(e)
 
 
-async def _bash_tool_async(toolset: MinimalToolset, command: str, on_output=None) -> str:
+async def _bash_tool_async(toolset: MinimalToolset, command: str, on_output=None,
+                           timeout: float = DEFAULT_TOOL_TIMEOUT) -> str:
+    # ``timeout`` is the harness's (the role's ``tool_timeout``), never the model's:
+    # it is not in the tool schema.
     try:
-        return await toolset.run_async(command, on_output=on_output)
+        return await toolset.run_async(command, timeout=timeout, on_output=on_output)
     except ToolError as e:
         return str(e)
 
@@ -451,9 +455,10 @@ async def _bash_tool_async(toolset: MinimalToolset, command: str, on_output=None
     },
     async_handler=_bash_tool_async,
 )
-def _bash_tool(toolset: MinimalToolset, command: str) -> str:
+def _bash_tool(toolset: MinimalToolset, command: str,
+               timeout: float = DEFAULT_TOOL_TIMEOUT) -> str:
     try:
-        return toolset.run(command)
+        return toolset.run(command, timeout)
     except ToolError as e:
         return str(e)
 

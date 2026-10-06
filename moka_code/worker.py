@@ -474,7 +474,18 @@ def kill_process_group(proc) -> None:
             pass
 
 
-def bash_sync(command: str, *, cwd: Path | str, timeout: int = 30) -> str:
+#: Seconds a ``bash`` command may run when the caller states no limit. The
+#: harness always states one: the role's ``tool_timeout`` (same default). Zero or
+#: less means no limit.
+DEFAULT_TOOL_TIMEOUT = 300
+
+
+def limit_seconds(timeout: float) -> Optional[float]:
+    """``timeout`` as a wait limit: ``None`` (wait for ever) when it is 0 or less."""
+    return timeout if timeout > 0 else None
+
+
+def bash_sync(command: str, *, cwd: Path | str, timeout: float = DEFAULT_TOOL_TIMEOUT) -> str:
     """Execute a shell command synchronously (blocking)."""
     try:
         result = subprocess.run(
@@ -483,7 +494,7 @@ def bash_sync(command: str, *, cwd: Path | str, timeout: int = 30) -> str:
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=timeout,
+            timeout=limit_seconds(timeout),
         )
         return _format_output(
             result.stdout.rstrip() if result.stdout else "",
@@ -491,7 +502,7 @@ def bash_sync(command: str, *, cwd: Path | str, timeout: int = 30) -> str:
             result.returncode,
         )
     except subprocess.TimeoutExpired:
-        raise ToolError(f"Command timed out after {timeout}s")
+        raise ToolError(f"Command timed out after {timeout:g}s (the role's tool_timeout)")
     except Exception as e:
         raise ToolError(f"Command execution failed: {e}")
 
@@ -504,7 +515,7 @@ async def bash(
     command: str,
     *,
     cwd: Path | str,
-    timeout: int = 30,
+    timeout: float = DEFAULT_TOOL_TIMEOUT,
     on_spawn: Optional[Callable[[object], None]] = None,
     on_output: Optional[Callable[[str, str], None]] = None,
 ) -> str:
@@ -550,7 +561,7 @@ async def bash(
         ]
 
         try:
-            await asyncio.wait_for(proc.wait(), timeout=timeout)
+            await asyncio.wait_for(proc.wait(), timeout=limit_seconds(timeout))
             # wait() can return before the pumps have consumed what is already
             # buffered: let them finish, or the last output is dropped. The
             # grace only bounds a pump that never ends.
@@ -558,7 +569,7 @@ async def bash(
         except asyncio.TimeoutError:
             kill_process_group(proc)
             await proc.wait()
-            raise ToolError(f"Command timed out after {timeout}s")
+            raise ToolError(f"Command timed out after {timeout:g}s (the role's tool_timeout)")
         except asyncio.CancelledError:
             kill_process_group(proc)
             raise
@@ -714,6 +725,8 @@ __all__ = [
     "edit",
     "bash",
     "bash_sync",
+    "DEFAULT_TOOL_TIMEOUT",
+    "limit_seconds",
     "kill_process_group",
     "handle_request",
     "serve",

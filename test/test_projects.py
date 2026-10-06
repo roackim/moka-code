@@ -85,7 +85,7 @@ def test_load_merges_global_and_local_with_scope_tags(config_dir, workspace):
     _write("global", workspace, "shared", 'type = "bubblewrap"\n')
     _write("local", workspace, "dev",
            'type = "podman"\ndescription = "toolchain"\nimage = "img"\n'
-           "network = true\ntimeout = 30.0\n"
+           "network = true\n"
            'run_args = ["--userns=keep-id"]\ndockerfile = "Containerfile"\n')
     projects.set_active(workspace, "dev")
 
@@ -99,7 +99,6 @@ def test_load_merges_global_and_local_with_scope_tags(config_dir, workspace):
     assert spec.runtime == "podman"
     assert spec.image == "img"
     assert spec.network is True
-    assert spec.timeout == 30.0
     assert spec.run_args == ("--userns=keep-id",)
 
 
@@ -126,6 +125,19 @@ def test_a_name_in_both_scopes_is_an_error_and_unusable(config_dir, workspace):
     assert project.active is None                          # nothing active
     assert any("'dev' exists in both global and local" in e for e in errors)
     assert not any("is not defined" in e for e in errors)  # one error, not two
+
+
+def test_a_sandbox_timeout_key_is_retired_and_the_entry_skipped(config_dir, workspace):
+    """The limit on a tool call moved to the role (``tool_timeout``)."""
+    _write("local", workspace, "old", 'type = "bubblewrap"\ntimeout = 30.0\n')
+    _write("local", workspace, "fine", 'type = "bubblewrap"\n')
+
+    errors: list[str] = []
+    project = projects.load_project(workspace, errors)
+
+    assert "old" not in project.sandboxes and "fine" in project.sandboxes
+    assert any("local sandbox 'old': 'timeout' is retired → tool_timeout in the role file" in e
+               for e in errors)
 
 
 def test_hidden_files_are_ignored(config_dir, workspace):

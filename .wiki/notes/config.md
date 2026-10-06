@@ -54,7 +54,8 @@ One file per sandbox: `~/.config/moka/sandboxes/<name>.toml` (global) or
 `~/.config/moka/projects/<dirname>_<hash>/sandboxes/<name>.toml` (local to a
 project; `<hash>` = 4 hex of a hash of the resolved workspace path). A file holds
 `type` (podman/docker/bubblewrap) plus `description`, `image`, `dockerfile`,
-`network`, `timeout`, `run_args`; unknown keys are reported. The project's
+`network`, `run_args`; unknown keys are reported, and the retired `timeout` is
+too (the limit on a tool call is the role's `tool_timeout`). The project's
 `project.toml` holds `path = "<resolved workspace>"` and the `active = "<name>"`
 selection (machine-written by `set_active()`). New files come from
 `/sandbox new` (a commented starter per type) or `/sandbox copy`; names are unique

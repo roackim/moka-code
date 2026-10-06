@@ -115,3 +115,9 @@ def test_bash_keeps_the_output_written_just_before_exit(tmp_path):
     for result in _run(many()):
         assert "a\nb\nc" in result and "err" in result
 
+
+
+def test_bash_timeout_of_zero_or_less_means_no_limit(tmp_path):
+    for no_limit in (0, -1):
+        assert "ok" in _run(bash("sleep 0.3; echo ok", cwd=tmp_path, timeout=no_limit))
+        assert "ok" in bash_sync("sleep 0.3; echo ok", cwd=tmp_path, timeout=no_limit)

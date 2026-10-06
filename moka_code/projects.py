@@ -43,13 +43,15 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 #: Files whose stem starts with one of these are ignored (hidden/meta).
 _HIDDEN_PREFIXES = ("_", ".")
 _SANDBOX_KEYS = frozenset(
-    {"type", "description", "image", "dockerfile", "network", "timeout", "run_args"}
+    {"type", "description", "image", "dockerfile", "network", "run_args"}
 )
+#: Retired keys -> what replaces them. A sandbox still using one is reported and
+#: skipped (moka never rewrites a user's file).
+_RETIRED_SANDBOX_KEYS = {"timeout": "tool_timeout in the role file"}
 
 _COMMON_KEYS = """\
 # description = ""            # shown in the sandbox picker
 # network     = false         # allow sandbox networking (default: off)
-# timeout     = 120.0         # per tool call, seconds
 """
 
 _BUBBLEWRAP_TEMPLATE = """\
@@ -105,7 +107,6 @@ class SandboxEntry:
     image: Optional[str] = None
     dockerfile: Optional[str] = None
     network: bool = False
-    timeout: float = 120.0
     run_args: list[str] = field(default_factory=list)
     file: Optional[Path] = None
 
@@ -118,7 +119,6 @@ class SandboxEntry:
             runtime=self.type,
             image=self.image,
             network=self.network,
-            timeout=self.timeout,
             run_args=tuple(self.run_args),
             dockerfile=dockerfile,
         )
@@ -214,6 +214,11 @@ def _parse_entry(path: Path, scope: str, errors: list[str]) -> Optional[SandboxE
     if stype not in SANDBOX_TYPES:
         errors.append(f"{source}: type must be one of {', '.join(SANDBOX_TYPES)}")
         return None
+    retired = sorted(set(data) & set(_RETIRED_SANDBOX_KEYS))
+    if retired:
+        for key in retired:
+            errors.append(f"{source}: '{key}' is retired → {_RETIRED_SANDBOX_KEYS[key]}")
+        return None
     unknown = sorted(set(data) - _SANDBOX_KEYS)
     if unknown:
         errors.append(f"{source}: unknown key(s) {', '.join(unknown)}")
@@ -222,11 +227,6 @@ def _parse_entry(path: Path, scope: str, errors: list[str]) -> Optional[SandboxE
     if not isinstance(run_args, list) or not all(isinstance(a, str) for a in run_args):
         errors.append(f"{source}: run_args must be a list of strings")
         run_args = []
-
-    timeout = data.get("timeout", 120.0)
-    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
-        errors.append(f"{source}: timeout must be a positive number")
-        timeout = 120.0
 
     image = data.get("image")
     dockerfile = data.get("dockerfile")
@@ -239,7 +239,6 @@ def _parse_entry(path: Path, scope: str, errors: list[str]) -> Optional[SandboxE
         image=image if isinstance(image, str) else None,
         dockerfile=dockerfile if isinstance(dockerfile, str) else None,
         network=bool(data.get("network", False)),
-        timeout=float(timeout),
         run_args=[str(a) for a in run_args],
         file=path,
     )

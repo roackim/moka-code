@@ -51,11 +51,11 @@ time).
   the request over JSONL. `RegisteredTool.execute(on_output=..., **args)`
   delegates to the transport.
 - `moka_code/sandbox.py` owns the launcher and client:
-  - `ContainerSpec` (runtime/image/network/timeout/run_args/dockerfile) and
+  - `ContainerSpec` (runtime/image/network/run_args/dockerfile) and
     `build_argv()`;
   - `SandboxProcess` — the process + JSONL client: lazy start, id-correlated
-    request/response, interim `stream` frames to `on_output`, wall-clock
-    timeout, respawn after a crash, graceful `stop()`, sync `kill()`;
+    request/response, interim `stream` frames to `on_output`, a request limit
+    (see below), respawn after a crash, graceful `stop()`, sync `kill()`;
   - `SandboxTransport` — the `ToolTransport` adapter (`is_sandbox = True`);
     tool-level failures return as result strings (parity with in-process),
     transport failures propagate;
@@ -93,6 +93,21 @@ for a pipx/pixi/venv run lives outside the bound dirs; if it must use an
 out-of-tree interpreter it binds that prefix. Worker stderr is surfaced in the
 failure message (and to the debug stream), so a bad image or missing interpreter
 is diagnosable.
+
+## Tool-call timeout
+
+One explicit setting: the role's **`tool_timeout`** (seconds, default 300; a role
+file's `# tool_timeout = 300` line). **0 or less (`0`, `-1`) means no limit**: the
+command runs until it ends or `/stop`, and the sandbox's request limit is lifted too. The harness sends it with every `bash` call
+(`Harness._execute_tool_calls`, like `max_image_bytes` for `read`), so it applies in
+bare and sandbox mode alike and the model cannot change it (it is not in the tool
+schema; a `timeout` the model sends anyway is overwritten). The worker's `bash`
+enforces it and ends the command with "Command timed out after Ns (the role's
+tool_timeout)". The sandbox file has **no** `timeout` key (retired: a file that still
+has one is reported and skipped). The sandbox's request limit only catches a hung
+worker: a bash call's `tool_timeout` + 10 s, `DEFAULT_REQUEST_TIMEOUT` (120 s) for
+other tools. The server's own `timeout` (`servers.toml`, default 30 s) is a different
+thing: waiting on the model's HTTP response.
 
 ## Role of bubblewrap
 

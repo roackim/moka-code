@@ -41,7 +41,7 @@ def test_spec_enabled_flag():
     assert ContainerSpec("none").enabled is False
     assert ContainerSpec("podman").enabled is True
     assert ContainerSpec(
-        "podman", "img", network=True, timeout=30.0,
+        "podman", "img", network=True,
         run_args=("--userns=keep-id",), dockerfile="Containerfile",
     ).enabled is True
 
@@ -249,6 +249,59 @@ def test_process_timeout_stops_the_worker(tmp_path):
             with pytest.raises(SandboxTimeoutError, match="timed out"):
                 await proc.request("bash", {"command": "sleep 30"})
             assert proc.running is False
+        finally:
+            await proc.stop()
+
+    _run(scenario())
+
+
+def test_a_bash_commands_own_timeout_is_enforced_by_the_worker(tmp_path):
+    """The command's limit (the role's ``tool_timeout``) ends it with a normal
+    tool result; the worker is not restarted. The request limit only catches a
+    worker that hangs, so it is the command's plus slack, not the 1 s default."""
+    proc = SandboxProcess(_worker_command(), cwd=str(tmp_path), timeout=1.0)
+
+    async def scenario():
+        try:
+            with pytest.raises(SandboxError, match="timed out after 1s") as raised:
+                await proc.request("bash", {"command": "sleep 30", "timeout": 1})
+            # The worker's own tool error, not the request limit: nothing restarted.
+            assert not isinstance(raised.value, SandboxTimeoutError)
+            assert proc.running and proc.start_count == 1
+        finally:
+            await proc.stop()
+
+    _run(scenario())
+
+
+def test_the_request_limit_follows_the_commands_timeout_plus_slack(tmp_path):
+    from moka_code import sandbox as sandbox_module
+
+    proc = SandboxProcess(_worker_command(), cwd=str(tmp_path), timeout=0.2)
+
+    async def scenario():
+        try:
+            # A 0.2 s request limit would kill this 0.5 s command; the command's
+            # own 5 s timeout (+ slack) lets it finish.
+            result = await proc.request("bash", {"command": "sleep 0.5; echo ok", "timeout": 5})
+            assert "ok" in result and proc.start_count == 1
+        finally:
+            await proc.stop()
+
+    assert sandbox_module._BASH_SLACK > 0
+    _run(scenario())
+
+
+def test_no_command_limit_means_no_request_limit_either(tmp_path):
+    proc = SandboxProcess(_worker_command(), cwd=str(tmp_path), timeout=0.2)
+
+    async def scenario():
+        try:
+            for no_limit in (0, -1):
+                result = await proc.request(
+                    "bash", {"command": "sleep 0.5; echo ok", "timeout": no_limit})
+                assert "ok" in result
+            assert proc.start_count == 1
         finally:
             await proc.stop()
 

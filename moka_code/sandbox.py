@@ -29,6 +29,12 @@ from typing import Callable, Optional, Sequence
 
 DEFAULT_IMAGE = "python:3.12-slim"
 
+#: Wall-clock limit on a worker request that states no command timeout
+#: (read/write/edit), and the slack added to a bash command's own ``timeout``
+#: (the worker kills the command itself; this only catches a hung worker).
+DEFAULT_REQUEST_TIMEOUT = 120.0
+_BASH_SLACK = 10.0
+
 CONTAINER_RUNTIMES = ("podman", "docker")
 HOST_RUNTIMES = ("bubblewrap",)
 #: Friendly base names offered by ``/sandbox init``.
@@ -63,15 +69,14 @@ class SandboxProcessError(SandboxError):
 class ContainerSpec:
     """Where (and how) tools run for a project's active sandbox.
 
-    ``runtime="none"`` means in-process.  ``network``/``timeout``/``run_args``
-    come from the project file's sandbox entry; ``dockerfile`` is remembered
+    ``runtime="none"`` means in-process.  ``network``/``run_args``
+    come from the sandbox's file; ``dockerfile`` is remembered
     for the image-preflight step (moka never builds implicitly).
     """
 
     runtime: str
     image: Optional[str] = None
     network: bool = False
-    timeout: float = 120.0
     run_args: tuple[str, ...] = ()
     dockerfile: Optional[str] = None
 
@@ -367,7 +372,7 @@ class SandboxProcess:
         command: Sequence[str],
         *,
         cwd: str | None = None,
-        timeout: float = 120.0,
+        timeout: float = DEFAULT_REQUEST_TIMEOUT,
         on_stderr: Optional[Callable[[str], None]] = None,
     ):
         self.command = list(command)
@@ -397,7 +402,7 @@ class SandboxProcess:
         return cls(
             command,
             cwd=cwd,
-            timeout=timeout if timeout is not None else spec.timeout,
+            timeout=timeout if timeout is not None else DEFAULT_REQUEST_TIMEOUT,
             on_stderr=on_stderr,
         )
 
@@ -457,13 +462,19 @@ class SandboxProcess:
             await self.stop()
             raise SandboxProcessError(f"worker is not accepting requests: {e}")
 
+        # A bash command carries its own limit (the role's ``tool_timeout``, enforced
+        # by the worker); the request limit only catches a worker that hangs.
+        limit: Optional[float] = self.timeout
+        if tool == "bash" and isinstance(args.get("timeout"), (int, float)):
+            # 0 or less: no limit on the command, so none on the request either.
+            limit = args["timeout"] + _BASH_SLACK if args["timeout"] > 0 else None
         try:
             return await asyncio.wait_for(
-                self._read_response(request_id, on_output), timeout=self.timeout
+                self._read_response(request_id, on_output), timeout=limit
             )
         except asyncio.TimeoutError:
             await self.stop()
-            raise SandboxTimeoutError(f"worker timed out after {self.timeout:g}s")
+            raise SandboxTimeoutError(f"worker timed out after {limit:g}s")
         except SandboxError:
             raise
         except Exception as e:  # pragma: no cover - defensive
@@ -623,6 +634,7 @@ class SandboxTransport:
 
 __all__ = [
     "DEFAULT_IMAGE",
+    "DEFAULT_REQUEST_TIMEOUT",
     "CONTAINER_RUNTIMES",
     "HOST_RUNTIMES",
     "CONTAINERFILE_BASES",

@@ -19,6 +19,8 @@ from typing import Any, Optional
 
 import toml
 
+from moka_code.worker import DEFAULT_TOOL_TIMEOUT
+
 #: The only valid per-tool values.
 TOOL_VALUES = ("no", "ask", "yes")
 
@@ -47,6 +49,10 @@ class Role:
     #: N turns, capped at what exists. 999 is the "all turns" convention and the
     #: default: a provider may document it as its minimum (``min_replay_depth``).
     replay_reasoning_depth: int = 999
+    #: Seconds a ``bash`` command may run before it is killed; 0 or less = no limit.
+    #: The harness sends it with every call (the model cannot set it), in bare and
+    #: sandbox mode.
+    tool_timeout: float = DEFAULT_TOOL_TIMEOUT
 
     def enabled_tool_names(self) -> set[str]:
         """Tool names the model is allowed to see (anything but ``no``)."""
@@ -161,7 +167,8 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
     registered = set(registered_tool_names())
     tools: dict[str, str] = {}
     for key, value in data.items():
-        if key in ("description", "prompt", "require_sandbox", "replay_reasoning_depth"):
+        if key in ("description", "prompt", "require_sandbox", "replay_reasoning_depth",
+                   "tool_timeout"):
             continue
         key = _RETIRED_TOOL_ALIASES.get(key, key)
         if key in _RETIRED_TOOLS:
@@ -177,6 +184,10 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
     depth = data.get("replay_reasoning_depth", 999)
     if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
         raise ValueError(f"roles/{name}.toml: replay_reasoning_depth must be an integer >= 0")
+    timeout = data.get("tool_timeout", DEFAULT_TOOL_TIMEOUT)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+        raise ValueError(
+            f"roles/{name}.toml: tool_timeout must be a number of seconds (0 or less = no limit)")
     return Role(
         name=name,
         description=str(data.get("description", "")),
@@ -184,6 +195,7 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
         tools=tools,
         require_sandbox=bool(data.get("require_sandbox", False)),
         replay_reasoning_depth=depth,
+        tool_timeout=timeout,
     )
 
 
@@ -267,7 +279,10 @@ def _role_template(role: Role) -> str:
         f"## replay_reasoning_depth: turns of the model's reasoning sent back with each\n"
         f"## request. 0 = none, 1 = the current turn (tool loop), N = last N turns,\n"
         f"## 999 = all (the default).\n"
-        f"# replay_reasoning_depth = 999\n"
+        f"# replay_reasoning_depth = 999\n\n"
+        f"## tool_timeout: seconds a bash command may run before it is killed (bare and\n"
+        f"## sandbox alike); 0 or -1 = no limit. The model cannot change it.\n"
+        f"# tool_timeout = {DEFAULT_TOOL_TIMEOUT}\n"
     )
 
 

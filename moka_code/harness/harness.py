@@ -900,8 +900,12 @@ class Harness:
 
                 # ``read`` may return an image; the limit is the harness's,
                 # never the model's.
-                run_args = ({**args, "max_image_bytes": images.max_bytes()}
-                            if tool_name == "read" else args)
+                run_args = args
+                if tool_name == "read":
+                    run_args = {**args, "max_image_bytes": images.max_bytes()}
+                elif tool_name == "bash":
+                    # Likewise the limit on a command is the role's, never the model's.
+                    run_args = {**args, "timeout": self.role.tool_timeout}
 
                 async def _run_tool():
                     result = func.execute(on_output=_on_output, **run_args)

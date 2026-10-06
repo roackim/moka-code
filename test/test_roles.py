@@ -197,6 +197,38 @@ def test_require_sandbox_defaults_false():
     assert Role(name="x").require_sandbox is False
 
 
+def test_tool_timeout(tmp_path, monkeypatch):
+    """The limit on a bash command is explicit in the role: 300 s by default, a file
+    can set it (0 or less = no limit), bad values are errors, and the template shows
+    the default."""
+    monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
+    (tmp_path / "roles").mkdir()
+    assert Role(name="x").tool_timeout == 300
+    template = roles_module._role_template(Role(name="t", tools={"read": "yes"}))
+    assert "\n# tool_timeout = 300\n" in template
+    (tmp_path / "roles" / "t.toml").write_text(template, encoding="utf-8")
+    assert load_role("t").tool_timeout == 300
+
+    (tmp_path / "roles" / "t.toml").write_text(template + "tool_timeout = 900\n", encoding="utf-8")
+    loaded = load_role("t")
+    assert loaded.tool_timeout == 900 and "tool_timeout" not in loaded.tools
+    assert validate_roles() == []
+    (tmp_path / "roles" / "t.toml").write_text(template + "tool_timeout = 2.5\n", encoding="utf-8")
+    assert load_role("t").tool_timeout == 2.5
+
+    for no_limit in ("0", "-1"):                  # 0 or less: no limit
+        (tmp_path / "roles" / "t.toml").write_text(
+            template + f"tool_timeout = {no_limit}\n", encoding="utf-8")
+        assert load_role("t").tool_timeout == int(no_limit)
+    assert "0 or -1 = no limit" in template
+
+    for bad in ("true", '"long"', "[1]"):
+        (tmp_path / "roles" / "t.toml").write_text(
+            template + f"tool_timeout = {bad}\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="tool_timeout"):
+            load_role("t")
+
+
 def test_replay_reasoning_depth(tmp_path, monkeypatch):
     """2b (2026-10-01): default 999 ("all"), a file can set it, bad values are
     errors, and the template shows the default as a commented line."""
@@ -235,10 +267,11 @@ def test_role_template_layout_and_uncommentable_settings():
     assert 'read = "yes"\nbash = "ask"\n' in template
     assert template.index("## Technical settings") > template.index('bash = "ask"')
     assert [l for l in template.splitlines() if l.startswith("# ")] == [
-        "# require_sandbox = true", "# replay_reasoning_depth = 999"]
+        "# require_sandbox = true", "# replay_reasoning_depth = 999", "# tool_timeout = 300"]
     uncommented = re.sub(r"^# ", "", template, flags=re.M)
     loaded = toml.loads(uncommented)
     assert loaded["require_sandbox"] is True and loaded["replay_reasoning_depth"] == 999
+    assert loaded["tool_timeout"] == 300
     assert "require_sandbox = true\n" in roles_module._role_template(
         Role(name="x", require_sandbox=True))
 

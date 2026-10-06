@@ -111,9 +111,10 @@ def test_harness_emits_tool_output_events(tmp_path):
     harness.state = AgentState.IDLE
     harness.history = []
     harness.workspace = str(tmp_path)
+    harness.role = Role(name="t", tools={"bash": "yes"})
     transport = InProcessTransport(MinimalToolset(tmp_path))
     harness.tools_map = {"bash": create_toolset(tmp_path, transport=transport)["bash"]}
-    harness._permission_gate = PermissionGate(role=Role(name="t", tools={"bash": "yes"}))
+    harness._permission_gate = PermissionGate(role=harness.role)
 
     tool_call = {
         "id": "call_1",
@@ -129,6 +130,61 @@ def test_harness_emits_tool_output_events(tmp_path):
     assert outputs[0].id == "call_1"
     assert outputs[0].stream == "stdout"
     assert any("streamed" in e.data for e in outputs)
+
+
+def _bash_call(command, **extra):
+    return {"id": "call_1", "function": {
+        "name": "bash", "arguments": json.dumps({"command": command, **extra})}}
+
+
+def _bare_harness(tmp_path, tool_timeout):
+    harness = Harness.__new__(Harness)
+    harness.debug_stream = NoopDebugStream()
+    harness.state = AgentState.IDLE
+    harness.history = []
+    harness.workspace = str(tmp_path)
+    harness.role = Role(name="t", tools={"bash": "yes"}, tool_timeout=tool_timeout)
+    transport = InProcessTransport(MinimalToolset(tmp_path))
+    harness.tools_map = {"bash": create_toolset(tmp_path, transport=transport)["bash"]}
+    harness._permission_gate = PermissionGate(role=harness.role)
+    return harness
+
+
+def test_a_bash_command_is_limited_by_the_roles_tool_timeout(tmp_path):
+    harness = _bare_harness(tmp_path, tool_timeout=0.5)
+
+    events, _messages = run_harness_tool_call(harness, _bash_call("sleep 5"))
+
+    result = events[-1]
+    assert "Command timed out after 0.5s (the role's tool_timeout)" in result.output
+
+
+def test_the_model_cannot_raise_the_limit(tmp_path):
+    """``timeout`` is not in the tool schema; a model that sends one anyway is
+    overridden by the role's."""
+    harness = _bare_harness(tmp_path, tool_timeout=0.5)
+
+    events, _messages = run_harness_tool_call(harness, _bash_call("sleep 5", timeout=999))
+
+    assert "timed out after 0.5s" in events[-1].output
+
+
+def test_zero_or_less_means_no_limit(tmp_path):
+    """0 is not "time out at once": the command runs to its end."""
+    for no_limit in (0, -1):
+        harness = _bare_harness(tmp_path, tool_timeout=no_limit)
+
+        events, _messages = run_harness_tool_call(harness, _bash_call("sleep 0.3; echo done"))
+
+        assert "done" in events[-1].output and "timed out" not in events[-1].output
+
+
+def test_a_command_within_the_limit_completes(tmp_path):
+    harness = _bare_harness(tmp_path, tool_timeout=30)
+
+    events, _messages = run_harness_tool_call(harness, _bash_call("echo done"))
+
+    assert "done" in events[-1].output
 
 
 def test_sandbox_required_locks_chat(tmp_path):
