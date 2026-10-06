@@ -1,6 +1,7 @@
 """``type = "llamacpp"``: OpenAI-compatible, plus ``/props`` and a default URL."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import replace
 from typing import Any, Dict, Optional
@@ -28,7 +29,8 @@ class LlamaCpp(OpenAICompatible):
 """
 
     def _props_url(self) -> str:
-        return self.base_url.replace("/v1", "/props")
+        base = self.base_url.rstrip("/")
+        return base.removesuffix("/v1") + "/props"
 
     def _usage(self, data: Dict[str, Any]) -> Optional[TokenUsage]:
         usage = super()._usage(data)
@@ -39,32 +41,38 @@ class LlamaCpp(OpenAICompatible):
                 usage = replace(usage, cached_prompt_tokens=cache_n)
         return usage
 
-    async def _props(self) -> Optional[Dict[str, Any]]:
-        """``/props``; ``None`` when it does not answer (unknown, not a failure)."""
+    async def _props(self, model_id: str) -> Optional[Dict[str, Any]]:
+        """``/props`` of one model; ``None`` when it does not answer (unknown,
+        not a failure). In router mode ``?model=`` picks the model and
+        ``autoload=false`` keeps a listing from loading the unloaded ones (README,
+        "Using multiple models"); a model that is not loaded then has no answer."""
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(self._props_url(), timeout=self.timeout)
+                response = await client.get(
+                    self._props_url(), params={"model": model_id, "autoload": "false"},
+                    timeout=self.timeout)
                 response.raise_for_status()
                 return response.json()
         except Exception as e:
-            logger.debug("Failed to query /props endpoint: %s", e)
+            logger.debug("Failed to query /props for %s: %s", model_id, e)
             return None
 
     async def list_models(self) -> list[ModelInfo]:
-        """``/models``, plus the context window and vision ``/props`` states
-        (⚠ in router mode, whether ``/props`` answers per model is unverified:
-        its answer is applied to every listed model)."""
+        """``/models``, plus the context window and vision each model's
+        ``/props`` states (⚠ ``?model=`` on a single-model server is unverified:
+        an unanswered ``/props`` leaves the facts unknown)."""
         models = await super().list_models()
-        props = await self._props()
+        answers = await asyncio.gather(*(self._props(model.id) for model in models))
+        return [self._with_props(model, props) for model, props in zip(models, answers)]
+
+    @staticmethod
+    def _with_props(model: ModelInfo, props: Optional[Dict[str, Any]]) -> ModelInfo:
         if props is None:
-            return models
+            return model
         n_ctx = (props.get("default_generation_settings") or {}).get("n_ctx")
         vision = (props.get("modalities") or {}).get("vision")
-        return [
-            replace(
-                model,
-                context_window=n_ctx if isinstance(n_ctx, int) and n_ctx > 0 else model.context_window,
-                images=vision if isinstance(vision, bool) else model.images,
-            )
-            for model in models
-        ]
+        return replace(
+            model,
+            context_window=n_ctx if isinstance(n_ctx, int) and n_ctx > 0 else model.context_window,
+            images=vision if isinstance(vision, bool) else model.images,
+        )

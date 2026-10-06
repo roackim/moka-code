@@ -140,6 +140,17 @@ def test_a_503_is_retried_with_the_same_request(fake):
     assert first.body == second.body and text == "Hi"
 
 
+def test_an_http_error_carries_the_servers_body(fake):
+    """A rejected effort says which levels are allowed (metallama's 400): the
+    body is in the error, never just the status line."""
+    body = ('{"error": {"message": "reasoning effort \'xhigh\' is not allowed",'
+            ' "allowed_efforts": ["low", "medium", "high"]}}')
+    fake.on("POST", "/chat/completions", wire.text_response(body, 400, "application/json"))
+    with pytest.raises(Exception, match=r"HTTP 400: .*allowed_efforts.*low"):
+        run_chat(make_endpoint(LLAMACPP, effort="xhigh"), SIMPLE)
+    assert len(fake.sent("POST", "/chat/completions")) == 1      # a 400 is not retried
+
+
 @pytest.mark.parametrize("table, cached", [(LLAMACPP, 0), (LLAMACPP, 0)])
 def test_llamacpp_cache_counts_as_reported(fake, table, cached):
     """§9 (2026-10-01): only llama.cpp reads ``timings.cache_n``, and only when
@@ -323,6 +334,27 @@ def test_llamacpp_learns_context_and_vision_from_props(fake):
     fake.on("GET", "/props", wire.json_response(wire.LLAMACPP_PROPS))
     assert learn(make_endpoint(LLAMACPP)) == {
         "../models/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf": (1024, False, [])}
+
+
+def test_llamacpp_asks_props_per_model_without_loading_any(fake):
+    """README "Using multiple models": in router mode ``/props`` takes
+    ``?model=``; ``autoload=false`` keeps a listing from loading the others.
+    Each model gets its own answer, and a model without one stays unknown."""
+    models = {"object": "list", "data": [{"id": "a"}, {"id": "b"}, {"id": "off"}]}
+    props = {"a": 4096, "b": 8192}
+
+    def answer(request):
+        n_ctx = props.get(request.url.params["model"])
+        if n_ctx is None:
+            return wire.httpx.Response(404, json={"error": {"message": "not loaded"}})
+        return wire.httpx.Response(200, json={"default_generation_settings": {"n_ctx": n_ctx}})
+    fake.on("GET", "/models", wire.json_response(models))
+    fake.on("GET", "/props", answer)
+    assert learn(make_endpoint(LLAMACPP)) == {
+        "a": (4096, None, []), "b": (8192, None, []), "off": (None, None, [])}
+    queries = sorted((r.url.split("/props")[1] for r in fake.sent("GET", "/props")))
+    assert queries == ["?model=a&autoload=false", "?model=b&autoload=false",
+                       "?model=off&autoload=false"]
 
 
 def test_llamacpp_reports_only_what_the_server_states(fake):

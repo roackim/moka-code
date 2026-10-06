@@ -403,11 +403,16 @@ class Endpoint:
 
     @staticmethod
     async def _raise_for_status(response: httpx.Response) -> None:
-        """Raise on an HTTP error; a 503's message is the server's body."""
-        if response.status_code == 503:
-            body = (await response.aread()).decode(errors="replace")
-            raise httpx.HTTPStatusError(body, request=response.request, response=response)
-        response.raise_for_status()
+        """Raise on an HTTP error, carrying the server's own body: it says what
+        was wrong (a rejected effort lists the allowed ones)."""
+        if response.status_code < 400:
+            return
+        body = (await response.aread()).decode(errors="replace").strip()
+        if len(body) > 500:
+            body = body[:500] + "…"
+        raise httpx.HTTPStatusError(
+            f"HTTP {response.status_code}: {body}" if body else f"HTTP {response.status_code}",
+            request=response.request, response=response)
 
     def effort_payload(self) -> dict[str, Any]:
         """The chosen effort in this server's request field (``{}`` if none).

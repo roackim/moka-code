@@ -234,9 +234,12 @@ Slot labels are row ids only (gaps in the numbering are historical).
 
 The context window is required (no `max_context`): a selected model whose
 listing states none is an error notice. llama.cpp router mode lists several models on `/models`, each with
-a `status` and `architecture.input_modalities`; whether `/props` answers per
-model there is unverified (⚠), so a missing `/props` answer means unknown
-context and images, never a failure.
+a `status` and `architecture.input_modalities`; `/props` is asked once per
+listed model with `?model=<id>&autoload=false` (README, "Using multiple
+models"; `autoload=false` so a listing never loads a model). Checked on
+metallama's `/llamacpp` 2026-10-06; ⚠ on a single-model llama-server
+`?model=` is unverified. A missing `/props` answer means unknown context and
+images, never a failure.
 
 `openai-compatible` (S2 `/models` only, no `/props`; S4 `context_length`; S5
 `architecture.input_modalities`; S6 `reasoning.supported_efforts`; S7 flat
@@ -292,14 +295,13 @@ listed, not fixed.
 |---|---|---|
 | 503 (model loading) | retried with backoff, then raised with the body | — |
 | network error / timeout | retried (whole request) up to `retry_attempts` | may repeat output already shown |
-| other 4xx / 5xx | raised as an HTTP status error | the server's body is not shown |
+| other 4xx / 5xx | raised as `HTTP <status>: <server body>` (body cut at 500 characters), not retried | — |
 | `{"error": {...}}` inside the stream (a server that already sent its `200`, e.g. a gateway with keep-alives; OpenRouter's mid-stream errors) | raised as `RuntimeError("<server>: <message>")`, never retried (`_raise_stream_error`, 2026-10-06) | a stream that just ends (server died) is not detected |
 | server unreachable at refresh | last list kept, marked stale | — |
 | model not listed any more | selection kept; status bar red, error notice | — |
 
-Errors are still `httpx` exceptions. A neutral error type (status + server
-message), so that showing the server's body is a one-place change, was not
-introduced with `stream` (open).
+Errors are still `httpx` exceptions, their message carrying the server's body
+(`Endpoint._raise_for_status`).
 
 ---
 
@@ -520,7 +522,7 @@ sessions saved before step 2b.
 |---|---|---|---|
 | F1 | Connection check route | `GET /models` by default; override only if it does not exist | ✅ |
 | F2 | Retries | base class: 503 and network errors; the provider adds none | ✅ |
-| F3 | Error body | the server's body is not shown yet (§7 gap) | open |
+| F3 | Error body | carried in the error message (`HTTP <status>: <body>`) | ✅ |
 
 ### 11.2 Proof and docs
 
