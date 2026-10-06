@@ -327,8 +327,9 @@ def _set_effort(ui: ChatUIProtocol, endpoint, effort: Optional[str]) -> None:
 
 
 async def effort_command(ui: ChatUIProtocol, args: List[str]):
-    """``/effort <level>`` sets the current model's reasoning effort; bare
-    ``/effort`` opens a picker. See :func:`_effort_choices`."""
+    """``/effort <level>`` sets the current model's reasoning effort, sent as
+    typed (a level the server does not take is its error); bare ``/effort``
+    opens a picker. See :func:`_effort_choices`."""
     from moka_code.harness.endpoint import refresh_catalog
 
     endpoint = getattr(ui.agent, "endpoint", None)
@@ -341,25 +342,21 @@ async def effort_command(ui: ChatUIProtocol, args: List[str]):
     if server in settings.config.servers:
         await refresh_catalog([server])     # levels come from the live server
     choices, current = _effort_choices(server, model)
-    if not choices:
-        unreachable = (server in settings.config.stale_servers
-                       or server not in settings.config.models_by_server)
-        ui.chat_history_panel.add_message(
-            (f"Could not reach {server} to detect its effort levels. " if unreachable else "")
-            + f"No reasoning effort detected for {model or 'this model'}.",
-            msg_type=SysMsgError(), title="effort")
-        return
 
     def apply(level):
         _set_effort(ui, endpoint, None if level == _DEFAULT_EFFORT else level)
 
     if args:
-        if args[0] not in choices:
-            ui.chat_history_panel.add_message(
-                f"Unknown effort '{args[0]}'. Levels: {', '.join(choices)}.",
-                msg_type=SysMsgError(), title="effort")
-            return
-        apply(args[0])
+        apply(args[0])      # as typed, never checked against the levels: the server decides
+        return
+    if not choices:
+        unreachable = (server in settings.config.stale_servers
+                       or server not in settings.config.models_by_server)
+        ui.chat_history_panel.add_message(
+            (f"Could not reach {server} to detect its effort levels. " if unreachable else "")
+            + f"No reasoning effort detected for {model or 'this model'}; "
+            "/effort <level> sends it anyway.",
+            msg_type=SysMsgError(), title="effort")
         return
 
     show = getattr(ui, "show_search_modal", None)

@@ -97,8 +97,9 @@ def test_effort_command_sets_and_persists(monkeypatch):
     asyncio.run(models.effort_command(ui, ["default"]))
     assert endpoint.effort is None
 
-    asyncio.run(models.effort_command(ui, ["max"]))
-    assert "Unknown effort" in messages[-1]
+    asyncio.run(models.effort_command(ui, ["xhigh"]))     # not stated: still sent
+    assert endpoint.effort == "xhigh"
+    assert settings.config.get_effort("s", "m") == "xhigh"
 
 
 def test_effort_command_without_levels_explains(monkeypatch):
@@ -106,6 +107,15 @@ def test_effort_command_without_levels_explains(monkeypatch):
     ui, messages = _ui(_endpoint("llamacpp"))
     asyncio.run(models.effort_command(ui, []))
     assert "No reasoning effort detected" in messages[-1]
+
+
+def test_effort_argument_is_sent_when_the_server_states_no_levels(monkeypatch):
+    _config(monkeypatch, {"s": {"type": "llamacpp", "base_url": "http://s/v1"}})
+    endpoint = _endpoint("llamacpp")
+    ui, _ = _ui(endpoint)
+    asyncio.run(models.effort_command(ui, ["xhigh"]))
+    assert endpoint.effort_payload() == {"reasoning_effort": "xhigh"}
+    assert settings.config.get_effort("s", "m") == "xhigh"
 
 
 def test_effort_inline_menu_and_picker_mark_the_active_level(monkeypatch):

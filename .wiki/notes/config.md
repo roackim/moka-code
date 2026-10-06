@@ -106,6 +106,7 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   which a provider fills only from a stated list (OpenRouter-format
   `reasoning.supported_efforts`; any OpenAI-compatible server's `/models` may
   carry it; never guessed), gives the levels; `/effort` rediscovers the active server first.
+  `/effort <level>` is sent as typed even when the server states no levels or not that one (the server's error is the check); the picker needs stated levels.
   While the server is undiscovered, a saved level is sent as-is; the chosen level is saved per server/model in `state.toml`
   (`[effort.<server>]`; nothing without a selected model) and sent verbatim as
   `reasoning_effort` (llamacpp, deepseek) or `reasoning.effort` (openrouter) —
