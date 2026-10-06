@@ -292,14 +292,14 @@ class Endpoint:
     def replay(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         """The fields that send a stored assistant entry's reasoning back,
         in this server's own field (``{}`` when it takes none). The harness
-        calls it only for the entries its role's replay depth allows."""
+        calls it only when its role preserves thinking."""
         return {}
 
-    def min_replay_depth(self, has_tools: bool) -> int:
-        """The fewest turns of reasoning this server's docs say must be sent
-        back (999 = all); 0 when it documents none. A role below it gets a
-        warning, nothing else (the configured depth is still sent)."""
-        return 0
+    def needs_preserved_thinking(self, has_tools: bool) -> bool:
+        """Whether this server's docs say earlier reasoning must be sent back.
+        A role that does not preserve thinking gets a warning, nothing else
+        (what the role says is still sent)."""
+        return False
 
     # -- discovery (implemented by each provider) ----------------------------
 

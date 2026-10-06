@@ -4,10 +4,10 @@
 
 > **Status** (2026-10-01, `PLAN.md` step 2b): reasoning is stored as the model
 > produced it and sent back in the provider's own field, as deep as the role's
-> `replay_reasoning_depth` allows. `content` is never parsed: inline `<think>`
+> `preserve_thinking` says (all or none). `content` is never parsed: inline `<think>`
 > tags stay in the answer. DeepSeek (2c) is the first provider with a documented
-> minimum depth (`Endpoint.min_replay_depth`: all turns whenever tools are sent;
-> a role below it gets a warning in the notice band).
+> minimum depth (`Endpoint.needs_preserved_thinking`: whenever tools are sent;
+> a role with `preserve_thinking = false` gets a warning in the notice band).
 
 ---
 
@@ -55,20 +55,13 @@ prompt + effective history, from the last compaction marker). `_to_api_message`
 keeps only `role`, `content`, `tool_calls`, `tool_call_id` and image parts;
 moka's `id`, `source`, `origin`, `reasoning*` never leave as such.
 
-**Which entries:** the role's `replay_reasoning_depth` (default 999 = all; a
-role file sets it, a new role's template shows it commented). A *turn* is one
-user message (not a tool's returned images) and what the model does until its
-answer.
-
-| Depth | Assistant entries that carry reasoning |
-|---|---|
-| 0 | none |
-| 1 | the current turn: the tool loop in progress |
-| N | the last N turns, capped at what exists |
-| 999 | all turns (the convention; also the default) |
-
-The compaction marker is never a turn. moka sends what is configured, never
-more or less, whatever the model needs.
+**Which entries:** the role's `preserve_thinking` (bool, default `true`, written
+uncommented in a new role's template). `true`: every assistant entry carries its
+reasoning; `false`: none does. Nothing in between (decided 2026-10-07): a window
+(the last N turns) drops the oldest turn's reasoning from the start of the prompt
+every turn, so the server's prefix cache misses on nearly the whole context. The
+compaction marker is never given reasoning. moka sends what is configured,
+whatever the model needs.
 
 **In which field** (`Endpoint.replay(entry)`, fixed per provider from its docs,
 never configurable):
@@ -87,8 +80,10 @@ only to the same model, but the signed case was never exercised.
 
 ## Configuration
 
-`replay_reasoning_depth` in the role file only. There is no server or global
-key (`preserve_reasoning` was removed 2026-09-30). llama.cpp still needs
+`preserve_thinking` in the role file only. There is no server or global
+key (`preserve_reasoning` was removed 2026-09-30). The old
+`replay_reasoning_depth` is reported as an error naming its replacement, never
+aliased. llama.cpp still needs
 `--reasoning-preserve` (default on) for earlier turns to reach the prompt.
 
 ---
@@ -110,4 +105,4 @@ tool-call turn on a real model; a rejection names the offending block. Images
 - [providers.md](./providers.md) — the provider contract (`replay`, slot S9)
 - [architecture.md](../notes/architecture.md) — data flow
 - [config.md](../notes/config.md) — configuration reference
-- `harness.py` — `_request_messages`, `_replay_start`, `_api_history`, `chat()`
+- `harness.py` — `_request_messages`, `_api_history`, `chat()`

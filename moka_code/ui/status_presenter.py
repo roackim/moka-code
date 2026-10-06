@@ -119,14 +119,12 @@ def notices(agent) -> list[tuple[str, str]]:
                         f"→ /config role {role.name}")
     elif problem == "changed":
         warnings.append(f"role {role.name} changed on disk → /reload")
-    depth = getattr(role, "replay_reasoning_depth", None)
-    if endpoint is not None and depth is not None:
-        needed = endpoint.min_replay_depth(bool(getattr(agent, "tool_schemas", None)))
-        if depth < needed:
-            warnings.append(
-                f"{name} needs reasoning sent back for {'all' if needed >= 999 else needed} "
-                f"turn(s), role {role.name} sends {depth} → replay_reasoning_depth "
-                f"(/config role {role.name})")
+    preserve = getattr(role, "preserve_thinking", None)
+    if (endpoint is not None and preserve is False
+            and endpoint.needs_preserved_thinking(bool(getattr(agent, "tool_schemas", None)))):
+        warnings.append(
+            f"{name} needs reasoning sent back, role {role.name} sends none "
+            f"→ preserve_thinking (/config role {role.name})")
     # Every configured server, not only the active one: a server that cannot
     # be listed would otherwise fail without a word (the active one's own
     # problems are reported above).

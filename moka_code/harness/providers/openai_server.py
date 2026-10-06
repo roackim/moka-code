@@ -1,5 +1,5 @@
 """``type = "openai-compatible"``: any server that speaks the chat-completions API
-and states its own facts in ``/models`` (a gateway, vLLM, LM Studio, ...)."""
+and states its own facts in ``/models`` (a proxy, vLLM, LM Studio, ...)."""
 from __future__ import annotations
 
 from moka_code.harness.providers.openai_compatible import OpenAICompatible
@@ -17,11 +17,9 @@ class OpenAICompatibleServer(OpenAICompatible):
 
     type = "openai-compatible"
     template = """\
-## Any OpenAI-compatible server. Its /models must state each model's
-## context_length (and may state architecture.input_modalities and
-## reasoning.supported_efforts); base_url is required.
-# [servers.gateway]
+## Any OpenAI-compatible server.
+# [servers.custom]
 # type = "openai-compatible"
 # base_url = "http://localhost:8000/v1"
-# api_key_env = "GATEWAY_API_KEY"
+# api_key_env = "CUSTOM_API_KEY"
 """

@@ -313,28 +313,18 @@ class Harness:
             msg["content"] = images.api_content(msg.get("content"), entry["images"])
         return msg
 
-    def _replay_start(self, history: List[Dict[str, Any]]) -> int:
-        """Index of the first entry whose reasoning is sent back: the start of
-        the last N turns (N = the role's ``replay_reasoning_depth``), capped at
-        what exists. A turn starts at a user message (not a tool's images)."""
-        depth = getattr(getattr(self, "role", None), "replay_reasoning_depth", 0)
-        starts = [i for i, m in enumerate(history)
-                  if m.get("role") == "user" and m.get("source") != "tool"]
-        if depth <= 0 or not starts:
-            return len(history)
-        return starts[max(len(starts) - depth, 0)]
-
     def _api_history(self) -> List[Dict[str, Any]]:
-        """The effective history as API messages, with the reasoning the role
-        sends back (the provider's own field, ``Endpoint.replay``)."""
-        history = self._get_effective_history()
-        start = self._replay_start(history)
+        """The effective history as API messages, with the reasoning sent back
+        when the role preserves thinking (the provider's own field,
+        ``Endpoint.replay``)."""
         endpoint = getattr(self, "endpoint", None)
-        replay = endpoint.replay if endpoint is not None else None
+        preserve = getattr(getattr(self, "role", None), "preserve_thinking", False)
+        replay = endpoint.replay if endpoint is not None and preserve else None
         api = []
-        for i, entry in enumerate(history):
+        for entry in self._get_effective_history():
             msg = self._to_api_message(entry)
-            if replay and i >= start and entry.get("role") == "assistant":
+            if (replay and entry.get("role") == "assistant"
+                    and not self._is_compaction_message(entry)):
                 msg.update(replay(entry))
             api.append(msg)
         return api

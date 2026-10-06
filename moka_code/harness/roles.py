@@ -44,11 +44,11 @@ class Role:
     #: When True the role only runs while a sandbox is active; otherwise the
     #: conversation is locked (no LLM turns) until one is selected.
     require_sandbox: bool = False
-    #: How many turns of the model's reasoning are sent back with each request:
-    #: 0 = none, 1 = the current turn (the tool loop in progress), N = the last
-    #: N turns, capped at what exists. 999 is the "all turns" convention and the
-    #: default: a provider may document it as its minimum (``min_replay_depth``).
-    replay_reasoning_depth: int = 999
+    #: Whether the model's earlier reasoning is sent back with each request:
+    #: all of it or none (a window in between moves the start of the reasoning
+    #: every turn and so breaks the server's prompt cache). A provider may
+    #: require it (``needs_preserved_thinking``).
+    preserve_thinking: bool = True
     #: Seconds a ``bash`` command may run before it is killed; 0 or less = no limit.
     #: The harness sends it with every call (the model cannot set it), in bare and
     #: sandbox mode.
@@ -153,6 +153,11 @@ def _iter_role_files():
     )
 
 
+# Role keys that were replaced: reported, never aliased (a depth of 0 must not
+# silently become "all").
+_RETIRED_ROLE_KEYS = {"replay_reasoning_depth": "preserve_thinking = true|false"}
+
+
 def _read_role_file(path: Path) -> dict[str, Any]:
     try:
         return toml.load(path)
@@ -167,9 +172,11 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
     registered = set(registered_tool_names())
     tools: dict[str, str] = {}
     for key, value in data.items():
-        if key in ("description", "prompt", "require_sandbox", "replay_reasoning_depth",
+        if key in ("description", "prompt", "require_sandbox", "preserve_thinking",
                    "tool_timeout"):
             continue
+        if key in _RETIRED_ROLE_KEYS:
+            raise ValueError(f"roles/{name}.toml: {key} is replaced by {_RETIRED_ROLE_KEYS[key]}")
         key = _RETIRED_TOOL_ALIASES.get(key, key)
         if key in _RETIRED_TOOLS:
             continue
@@ -181,9 +188,9 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
                 + " / ".join(TOOL_VALUES)
             )
         tools[key] = value
-    depth = data.get("replay_reasoning_depth", 999)
-    if isinstance(depth, bool) or not isinstance(depth, int) or depth < 0:
-        raise ValueError(f"roles/{name}.toml: replay_reasoning_depth must be an integer >= 0")
+    preserve = data.get("preserve_thinking", True)
+    if not isinstance(preserve, bool):
+        raise ValueError(f"roles/{name}.toml: preserve_thinking must be true or false")
     timeout = data.get("tool_timeout", DEFAULT_TOOL_TIMEOUT)
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
         raise ValueError(
@@ -194,7 +201,7 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
         prompt=str(data.get("prompt", "")),
         tools=tools,
         require_sandbox=bool(data.get("require_sandbox", False)),
-        replay_reasoning_depth=depth,
+        preserve_thinking=preserve,
         tool_timeout=timeout,
     )
 
@@ -276,10 +283,10 @@ def _role_template(role: Role) -> str:
         f"## Technical settings\n\n"
         f"## require_sandbox: true locks the conversation unless a sandbox is active.\n"
         f"{sandbox}\n"
-        f"## replay_reasoning_depth: turns of the model's reasoning sent back with each\n"
-        f"## request. 0 = none, 1 = the current turn (tool loop), N = last N turns,\n"
-        f"## 999 = all (the default).\n"
-        f"# replay_reasoning_depth = 999\n\n"
+        f"## preserve_thinking: send the model's earlier reasoning back with each request\n"
+        f"## (true), or none of it (false). Nothing in between: a window changes the start\n"
+        f"## of the prompt every turn and defeats the server's cache.\n"
+        f"preserve_thinking = true\n\n"
         f"## tool_timeout: seconds a bash command may run before it is killed (bare and\n"
         f"## sandbox alike); 0 or -1 = no limit. The model cannot change it.\n"
         f"# tool_timeout = {DEFAULT_TOOL_TIMEOUT}\n"

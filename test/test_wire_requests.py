@@ -428,16 +428,16 @@ def test_llamacpp_reads_openrouter_shaped_facts(fake):
 
 # -- reasoning sent back (§9.13, PLAN.md 2b, 2026-10-01) --------------------------------
 
-def _tool_loop_request(fake, tmp_path, monkeypatch, endpoint, depth, history):
+def _tool_loop_request(fake, tmp_path, monkeypatch, endpoint, preserve, history):
     """The body of the request a conversation sends after ``history``, built by
-    the harness for a role with this replay depth."""
+    the harness for a role that preserves thinking or not."""
     from unittest.mock import patch
     from moka_code.harness.harness import Harness
     from moka_code.harness.roles import Role
 
     with patch("moka_code.harness.harness.get_active_endpoint", return_value=endpoint):
         harness = Harness(workspace_path=str(tmp_path))
-    harness.role = Role(name="t", replay_reasoning_depth=depth)
+    harness.role = Role(name="t", preserve_thinking=preserve)
     harness.history = history
     chat_route(fake)
     run_chat(endpoint, harness._request_messages())
@@ -458,17 +458,15 @@ def _two_turns(first_origin):
     ]
 
 
-@pytest.mark.parametrize("depth, expected", [
-    (0, [None, None]),
-    (1, [None, "why I call"]),
-    (2, ["old thought", "why I call"]),
-    (999, ["old thought", "why I call"]),
+@pytest.mark.parametrize("preserve, expected", [
+    (False, [None, None]),
+    (True, ["old thought", "why I call"]),
 ])
-def test_llamacpp_sends_reasoning_content_by_depth(fake, tmp_path, monkeypatch, depth, expected):
+def test_llamacpp_sends_reasoning_content_when_preserved(fake, tmp_path, monkeypatch, preserve, expected):
     """llama.cpp accepts ``reasoning_content`` on assistant messages (tools/server/
-    README.md and PR #18994, read 2026-10-01); the role's depth picks the turns."""
+    README.md and PR #18994, read 2026-10-01); the role's ``preserve_thinking`` says whether."""
     endpoint = make_endpoint(LLAMACPP)
-    messages = _tool_loop_request(fake, tmp_path, monkeypatch, endpoint, depth,
+    messages = _tool_loop_request(fake, tmp_path, monkeypatch, endpoint, preserve,
                                   _two_turns({"type": "llamacpp", "model": "m"}))
     assistant = [m for m in messages if m["role"] == "assistant"]
     assert [m.get("reasoning_content") for m in assistant] == expected
@@ -480,7 +478,7 @@ def test_llamacpp_sends_the_field_even_when_the_model_gave_no_reasoning(fake, tm
     the same reason (the chat template renders it either way)."""
     history = _two_turns({"type": "llamacpp", "model": "m"})
     history[3].pop("reasoning")
-    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(LLAMACPP), 1, history)
+    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(LLAMACPP), True, history)
     caller = next(m for m in messages if m.get("tool_calls"))
     assert caller["reasoning_content"] == ""
 
@@ -495,7 +493,7 @@ def test_openrouter_sends_native_blocks_only_to_their_model(fake, tmp_path, monk
         entry["reasoning_native"] = native
     history[3]["origin"] = {"type": "openrouter", "model": "m"}
     history[1]["origin"] = {"type": "openrouter", "model": "other/model"}
-    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(OPENROUTER), 2, history)
+    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(OPENROUTER), True, history)
     first, second = [m for m in messages if m["role"] == "assistant"]
     assert (first.get("reasoning"), "reasoning_details" in first) == ("old thought", False)
     assert second["reasoning_details"] == native and "reasoning" not in second
@@ -507,8 +505,9 @@ def test_openrouter_sends_nothing_when_the_model_gave_no_reasoning(fake, tmp_pat
     would be a value the model never produced. ⚠ DeepSeek behind OpenRouter
     requires the field (its docs); unverified without a key (ISSUES)."""
     history = _two_turns({"type": "openrouter", "model": "m"})
+    history[1].pop("reasoning")
     history[3].pop("reasoning")
-    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(OPENROUTER), 1, history)
+    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(OPENROUTER), True, history)
     assert all(not {"reasoning", "reasoning_details", "reasoning_content"} & m.keys() for m in messages)
 
 
@@ -556,14 +555,14 @@ def test_deepseek_sends_every_turns_reasoning_content_even_empty(fake, tmp_path,
     for a step that gave none too."""
     history = _two_turns({"type": "deepseek", "model": "m"})
     history[1].pop("reasoning")
-    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(DEEPSEEK), 999, history)
+    messages = _tool_loop_request(fake, tmp_path, monkeypatch, make_endpoint(DEEPSEEK), True, history)
     assert [m["reasoning_content"] for m in messages if m["role"] == "assistant"] == [
         "", "why I call"]
 
 
-def test_deepseek_minimum_replay_depth_is_all_turns_with_tools():
+def test_deepseek_needs_preserved_thinking_with_tools():
     endpoint = make_endpoint(DEEPSEEK)
-    assert (endpoint.min_replay_depth(True), endpoint.min_replay_depth(False)) == (999, 0)
+    assert (endpoint.needs_preserved_thinking(True), endpoint.needs_preserved_thinking(False)) == (True, False)
 
 
 # -- openai-compatible (re-added 2026-10-06) ----------------------------------------------
@@ -614,14 +613,13 @@ def test_openai_compatible_reports_only_what_the_server_states(fake):
     assert fake.calls() == [("GET", "/v1/models")]
 
 
-@pytest.mark.parametrize("depth, expected", [
-    (0, [None, None]),
-    (1, [None, "why I call"]),
-    (999, ["old thought", "why I call"]),
+@pytest.mark.parametrize("preserve, expected", [
+    (False, [None, None]),
+    (True, ["old thought", "why I call"]),
 ])
-def test_openai_compatible_sends_reasoning_content_by_depth(fake, tmp_path, monkeypatch, depth, expected):
+def test_openai_compatible_sends_reasoning_content_when_preserved(fake, tmp_path, monkeypatch, preserve, expected):
     messages = _tool_loop_request(
-        fake, tmp_path, monkeypatch, make_endpoint(OPENAI_COMPATIBLE), depth,
+        fake, tmp_path, monkeypatch, make_endpoint(OPENAI_COMPATIBLE), preserve,
         _two_turns({"type": "openai-compatible", "model": "m"}))
     assistant = [m for m in messages if m["role"] == "assistant"]
     assert [m.get("reasoning_content") for m in assistant] == expected
@@ -632,7 +630,7 @@ def test_openai_compatible_sends_the_field_even_when_the_model_gave_no_reasoning
     history = _two_turns({"type": "openai-compatible", "model": "m"})
     history[3].pop("reasoning")
     messages = _tool_loop_request(
-        fake, tmp_path, monkeypatch, make_endpoint(OPENAI_COMPATIBLE), 1, history)
+        fake, tmp_path, monkeypatch, make_endpoint(OPENAI_COMPATIBLE), True, history)
     caller = next(m for m in messages if m.get("tool_calls"))
     assert caller["reasoning_content"] == ""
 

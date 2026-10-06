@@ -22,10 +22,10 @@ class DeepSeek(OpenAICompatible):
 # api_key_env = "DEEPSEEK_API_KEY"
 """
 
-    def min_replay_depth(self, has_tools: bool) -> int:
+    def needs_preserved_thinking(self, has_tools: bool) -> bool:
         """With ``tools``, every earlier turn's ``reasoning_content`` must go
         back or the API answers HTTP 400 (``guides/thinking_mode``)."""
-        return 999 if has_tools else 0
+        return has_tools
 
     async def list_models(self) -> list[ModelInfo]:
         """``GET /models`` (``api/list-models``): ``context_window``,

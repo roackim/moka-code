@@ -115,7 +115,7 @@ tables from it.
   cache count from `timings.cache_n` when usage has none
 - `deepseek.py` — `DeepSeek(OpenAICompatible)`: fixed URL; own `/models` reader
   (`context_window`, `input_modalities`, `effort.supported_levels`);
-  `min_replay_depth` 999 with tools
+  `needs_preserved_thinking` with tools
 - `openrouter.py` — `OpenRouter(OpenAICompatible)`: fixed URL; `models`
   (list) is the whitelist; `providers` (server default) and
   `providers_by_model` (per-model replacement) are strict ordered whitelists sent as
@@ -211,8 +211,8 @@ lines, `"function"` or `"all"`), untracked files via
 `Role` — the single source of truth for a conversation's operating mode: a
 `description`, a `prompt`, a `tools: dict[str, str]` mapping each registered
 tool to exactly one of `no` / `ask` / `yes`, and `require_sandbox` (bool,
-default false), `replay_reasoning_depth` (int ≥ 0, default 999 = all: how many turns
-of reasoning are sent back, `notes/reasoning-traces.md`) and `tool_timeout` (seconds a
+default false), `preserve_thinking` (bool, default true: all earlier reasoning is sent back, or none;
+`notes/reasoning-traces.md`) and `tool_timeout` (seconds a
 `bash` command may run, default 300, 0 or less = no limit; sent by the harness with each call). There is no
 permission engine.
 - `require_sandbox = true` locks the conversation while no sandbox is active:

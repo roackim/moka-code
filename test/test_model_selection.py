@@ -167,32 +167,32 @@ def test_reload_rebuilds_endpoint_when_server_definition_changes(cfg, monkeypatc
 
 
 
-def test_minimum_replay_depth_is_a_warning_from_live_state(cfg):
-    """2b (2026-10-01): a role below the provider's documented minimum gets a
+def test_needed_preserved_thinking_is_a_warning_from_live_state(cfg):
+    """A role that sends no reasoning to a provider that needs it gets a
     warning, from live state (a model or server switch re-evaluates it)."""
     from types import SimpleNamespace
     from moka_code.harness.roles import Role
     from moka_code.ui.status_presenter import notices
 
     class Strict(LlamaCpp):
-        def min_replay_depth(self, has_tools):
-            return 999 if has_tools else 0
+        def needs_preserved_thinking(self, has_tools):
+            return has_tools
 
     cfg.config.servers["s"] = {"type": "llamacpp", "base_url": "http://s/v1"}
     cfg.config.models_by_server["s"] = [{"id": "m", "context_window": 8192}]
     endpoint = Strict(name="s", base_url="http://s/v1", model="m")
 
-    def warnings(depth, tools):
+    def warnings(preserve, tools):
         agent = SimpleNamespace(endpoint=endpoint, tool_schemas=tools,
-                                role=Role(name="r", replay_reasoning_depth=depth))
+                                role=Role(name="r", preserve_thinking=preserve))
         return [t for level, t in notices(agent) if level == "warning"]
 
-    assert "all turn(s), role r sends 1" in warnings(1, [{"x": 1}])[0]
-    assert warnings(999, [{"x": 1}]) == []
-    assert warnings(1, None) == []                      # no tools sent: no minimum
+    assert "role r sends none" in warnings(False, [{"x": 1}])[0]
+    assert warnings(True, [{"x": 1}]) == []
+    assert warnings(False, None) == []                  # no tools sent: not needed
     other = LlamaCpp(name="s", base_url="http://s/v1", model="m")
     endpoint = other                                    # switching server re-evaluates
-    assert warnings(1, [{"x": 1}]) == []
+    assert warnings(False, [{"x": 1}]) == []
 
 
 def test_a_server_that_cannot_be_listed_is_reported_even_when_not_active(cfg, monkeypatch):

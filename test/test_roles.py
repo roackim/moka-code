@@ -229,29 +229,34 @@ def test_tool_timeout(tmp_path, monkeypatch):
             load_role("t")
 
 
-def test_replay_reasoning_depth(tmp_path, monkeypatch):
-    """2b (2026-10-01): default 999 ("all"), a file can set it, bad values are
-    errors, and the template shows the default as a commented line."""
+def test_preserve_thinking(tmp_path, monkeypatch):
+    """Default true, a file can set it, a non-boolean is an error, the template
+    writes it uncommented, and the old depth key is reported, not aliased."""
     monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
     (tmp_path / "roles").mkdir()
-    assert Role(name="x").replay_reasoning_depth == 999
+    assert Role(name="x").preserve_thinking is True
     template = roles_module._role_template(Role(name="t", tools={"read": "yes"}))
-    assert "\n# replay_reasoning_depth = 999\n" in template
+    assert "\npreserve_thinking = true\n" in template
     (tmp_path / "roles" / "t.toml").write_text(template, encoding="utf-8")
-    assert load_role("t").replay_reasoning_depth == 999
+    assert load_role("t").preserve_thinking is True
 
     (tmp_path / "roles" / "t.toml").write_text(
-        template + "replay_reasoning_depth = 3\n", encoding="utf-8")
+        template.replace("preserve_thinking = true", "preserve_thinking = false"), encoding="utf-8")
     loaded = load_role("t")
-    assert loaded.replay_reasoning_depth == 3
-    assert "replay_reasoning_depth" not in loaded.tools
+    assert loaded.preserve_thinking is False
+    assert "preserve_thinking" not in loaded.tools
     assert validate_roles() == []
 
-    for bad in ("-1", "true", '"all"', "1.5"):
+    for bad in ("3", '"all"', "1.5"):
         (tmp_path / "roles" / "t.toml").write_text(
-            template + f"replay_reasoning_depth = {bad}\n", encoding="utf-8")
-        with pytest.raises(ValueError, match="replay_reasoning_depth"):
+            template.replace("preserve_thinking = true", f"preserve_thinking = {bad}"), encoding="utf-8")
+        with pytest.raises(ValueError, match="preserve_thinking"):
             load_role("t")
+
+    (tmp_path / "roles" / "t.toml").write_text(
+        template + "replay_reasoning_depth = 0\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="replay_reasoning_depth is replaced by preserve_thinking"):
+        load_role("t")
 
 
 def test_role_template_layout_and_uncommentable_settings():
@@ -267,10 +272,10 @@ def test_role_template_layout_and_uncommentable_settings():
     assert 'read = "yes"\nbash = "ask"\n' in template
     assert template.index("## Technical settings") > template.index('bash = "ask"')
     assert [l for l in template.splitlines() if l.startswith("# ")] == [
-        "# require_sandbox = true", "# replay_reasoning_depth = 999", "# tool_timeout = 300"]
+        "# require_sandbox = true", "# tool_timeout = 300"]
     uncommented = re.sub(r"^# ", "", template, flags=re.M)
     loaded = toml.loads(uncommented)
-    assert loaded["require_sandbox"] is True and loaded["replay_reasoning_depth"] == 999
+    assert loaded["require_sandbox"] is True and loaded["preserve_thinking"] is True
     assert loaded["tool_timeout"] == 300
     assert "require_sandbox = true\n" in roles_module._role_template(
         Role(name="x", require_sandbox=True))

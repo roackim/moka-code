@@ -28,7 +28,7 @@ Endpoint                      contract + per-server config and state
 │  ├─ OpenRouter              type "openrouter": fixed URL, model whitelist,
 │  │                          provider routing
    └─ DeepSeek                type "deepseek": fixed URL, own /models shape,
-                              minimum replay depth
+                              needs preserved thinking
 
 REGISTRY = {"llamacpp": LlamaCpp, "openrouter": OpenRouter, "deepseek": DeepSeek}
 ```
@@ -188,19 +188,19 @@ Pure mapping of the instance's chosen `effort` to this server's request field.
 checked against `efforts` (an incomplete catalog must not drop a user choice;
 the server decides).
 
-### `min_replay_depth(has_tools) -> int`
+### `needs_preserved_thinking(has_tools) -> bool`
 
-The fewest turns of reasoning the server's docs say must be sent back (999 =
-all); the base class returns 0. The notice band warns when the active role's
-`replay_reasoning_depth` is below it (from live state, so also after a model or
-server switch); the configured depth is still sent. Only DeepSeek overrides it (999 whenever
-`tools` is sent).
+Whether the server's docs say earlier reasoning must be sent back; the base class
+returns `False`. The notice band warns when the active role has
+`preserve_thinking = false` and this is true (from live state, so also after a
+model or server switch); the role's setting is still sent. Only DeepSeek
+overrides it (`True` whenever `tools` is sent).
 
 ### `replay(entry) -> dict`
 
 The fields that send a stored assistant entry's reasoning back, in this
 server's own field (`{}` when it takes none; the base class). The harness calls
-it only for the entries its role's `replay_reasoning_depth` allows
+it only when its role has `preserve_thinking`
 (`reasoning-traces.md`); the provider decides the field and what to do when the
 model produced no reasoning. `OpenAICompatible`: `reasoning_content`, sent even
 when empty (llama.cpp). `OpenRouter`: `reasoning_details` when `entry.origin`
@@ -228,7 +228,7 @@ Slot labels are row ids only (gaps in the numbering are historical).
 | S6 efforts | `reasoning.supported_efforts` if the server advertises it, else none known | `reasoning.supported_efforts` only | `/models` `effort.supported_levels` |
 | S7 field | `reasoning_effort` | `reasoning.effort` | `reasoning_effort` (no `thinking` field) |
 | S8 reasoning out | `reasoning_content` \| `reasoning` \| `reasoning_details[].text` | same, plus `reasoning_details` assembled into `reasoning_native` | `reasoning_content` |
-| S9 reasoning in | `reasoning_content`, sent even when empty | `reasoning_details` (same model) else `reasoning`; nothing when empty | `reasoning_content`, always (HTTP 400 if missing with `tools`); minimum depth 999 with `tools` |
+| S9 reasoning in | `reasoning_content`, sent even when empty | `reasoning_details` (same model) else `reasoning`; nothing when empty | `reasoning_content`, always (HTTP 400 if missing with `tools`); needs preserved thinking with `tools` |
 | S11 usage | `include_usage`; cache from `timings.cache_n` | `include_usage`, `cost` | `include_usage`; `prompt_tokens_details.cached_tokens`, `completion_tokens_details.reasoning_tokens` |
 | S13 extras | — | `providers` / `providers_by_model` routing, `allow_fallbacks: false` | — |
 
@@ -391,9 +391,10 @@ Everything else is identical.
     failed listing (stale), not a list of models without facts.
 
 13. **Reasoning is sent back** (2026-10-01, `PLAN.md` 2b): per role
-    (`replay_reasoning_depth`), in the provider's own field (`replay`). Before
-    2026-09-30 every turn was replayed for every model; from then until 2b
-    nothing was.
+    (`preserve_thinking`: all or none since 2026-10-07, replacing the depth
+    `replay_reasoning_depth`, whose window broke the server's prompt cache), in the
+    provider's own field (`replay`). Before 2026-09-30 every turn was replayed for
+    every model; from then until 2b nothing was.
 
 15. **`openai-compatible` re-added** (2026-10-06, the user's request, for the
     metallama gateway and similar): a concrete class that inherits everything
@@ -405,7 +406,7 @@ Everything else is identical.
     server without its own facts is still not guessed at.
 
 14. **DeepSeek added** (2026-10-01, `PLAN.md` 2c; docs read 2026-10-01, no
-    real key yet): own `/models` reader, minimum replay depth, no `thinking`
+    real key yet): own `/models` reader, needs preserved thinking, no `thinking`
     field.
 
 ---
@@ -505,14 +506,12 @@ a table or a guess)
 | E1 | The documented field(s) to send reasoning back in | fixed per provider from its docs, never configurable (llama.cpp, DeepSeek: `reasoning_content`; OpenRouter: `reasoning_details` or `reasoning`) | ✅ |
 | E2 | Text or native | native only back to the model that produced it (`origin = {type, model}`); other models get the text | ✅ |
 | E3 | When there is no reasoning | decided per provider, in its own `replay()` (llama.cpp, DeepSeek: field sent empty; OpenRouter: nothing); unverified cases go to ISSUES | ✅ |
-| E4 | Minimum depth | `min_replay_depth(has_tools)`, default 0; DeepSeek: all turns whenever `tools` is sent (else HTTP 400). A role below it gets a warning in the notice band, from live state (so also after a model or server switch); the configured depth is still sent | ✅ |
+| E4 | Must reasoning be sent back | `needs_preserved_thinking(has_tools)`, default `False`; DeepSeek: whenever `tools` is sent (else HTTP 400). A role with `preserve_thinking = false` gets a warning in the notice band, from live state (so also after a model or server switch); the role's setting is still sent | ✅ |
 | E5 | Signed or encrypted reasoning (OpenAI, Anthropic, Gemini) | not supported for now | — |
 
 What the harness does, for every provider: stores `reasoning`,
-`reasoning_native` and `origin` on each assistant entry; sends back what the
-role's `replay_reasoning_depth` allows (0 = none, 1 = the current turn, N = the
-last N turns, capped at what exists; default 999 = all; a turn is one user
-message and what the model does until its answer); builds every request from
+`reasoning_native` and `origin` on each assistant entry; sends back all of it or
+none, as the role's `preserve_thinking` says (default `true`); builds every request from
 history in one
 place; never parses, moves or rewrites reasoning. No compatibility for
 sessions saved before step 2b.

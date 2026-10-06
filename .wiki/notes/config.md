@@ -79,7 +79,7 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 - Every `/config` edit (any section, `role`, `theme`) and `/reload` go through
   one path, `core.reload_and_apply`: reload the config files, validate the role
   files, apply the theme, **reload the active role from disk** (so an edited
-  `replay_reasoning_depth` or tool list applies at once; a file that no longer
+  `preserve_thinking` or tool list applies at once; a file that no longer
   loads keeps the running role and is reported; a running response defers it,
   with a message to `/reload`), rebuild the endpoint if needed, then refresh the
   notices. Nothing is watched.

@@ -72,10 +72,10 @@ def _history_with_two_turns():
     return harness
 
 
-def _with_depth(harness, depth, endpoint=None):
+def _with_preserve(harness, preserve=True, endpoint=None):
     from moka_code.harness.roles import Role
 
-    harness.role = Role(name="t", replay_reasoning_depth=depth)
+    harness.role = Role(name="t", preserve_thinking=preserve)
     if endpoint is not None:
         harness.endpoint = endpoint
     return harness
@@ -89,28 +89,26 @@ def _sent_reasoning(harness):
 
 
 def test_api_messages_never_carry_moka_fields():
-    api = _with_depth(_history_with_two_turns(), 999)._api_history()
+    api = _with_preserve(_history_with_two_turns())._api_history()
 
     assert all("reasoning" not in m and "reasoning_native" not in m and "origin" not in m for m in api)
     assert all("id" not in m and "source" not in m for m in api)
 
 
-def test_replay_depth_counts_turns_not_tool_images():
-    """2b (2026-10-01): 0 = none; 1 = the current turn (the user message in
-    ``u2`` and what follows, though the tool's images are a user entry too);
-    N = the last N turns; capped at what exists. Sent even when empty."""
+def test_preserve_thinking_sends_all_the_reasoning_or_none():
+    """All or none (2026-10-07): a window in between moves the start of the
+    reasoning every turn and breaks the server's prompt cache. Sent even when
+    empty."""
     harness = _history_with_two_turns()
     harness.history[1].pop("reasoning")          # the old answer had none
-    assert _sent_reasoning(_with_depth(harness, 0)) == {}
-    assert _sent_reasoning(_with_depth(harness, 1)) == {"a2": "why I call"}
-    assert _sent_reasoning(_with_depth(harness, 2)) == {"a1": "", "a2": "why I call"}
-    assert _sent_reasoning(_with_depth(harness, 999)) == {"a1": "", "a2": "why I call"}
+    assert _sent_reasoning(_with_preserve(harness, False)) == {}
+    assert _sent_reasoning(_with_preserve(harness, True)) == {"a1": "", "a2": "why I call"}
 
 
 def test_replay_skips_the_compaction_marker_and_what_precedes_a_turn():
     from moka_code.harness.harness import COMPACTION_MARKER_PREFIX
 
-    harness = _with_depth(_history_with_two_turns(), 999)
+    harness = _with_preserve(_history_with_two_turns())
     harness.history.insert(0, {"id": "m", "role": "assistant",
                                "content": COMPACTION_MARKER_PREFIX + "\nsummary"})
     assert "m" not in _sent_reasoning(harness)
@@ -121,7 +119,7 @@ def test_no_endpoint_or_no_role_sends_nothing():
     harness = _history_with_two_turns()
     assert _sent_reasoning(harness) == {}                       # no role
     harness.endpoint = None
-    assert _sent_reasoning(_with_depth(harness, 999)) == {}
+    assert _sent_reasoning(_with_preserve(harness)) == {}
 
 
 def test_openrouter_replays_native_blocks_only_to_their_model():
