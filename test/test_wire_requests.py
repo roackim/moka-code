@@ -357,6 +357,16 @@ def test_llamacpp_asks_props_per_model_without_loading_any(fake):
                        "?model=off&autoload=false"]
 
 
+def test_llamacpp_props_carries_the_api_key(fake):
+    """``/props`` needs the key on a server started with ``--api-key``: it goes
+    through the endpoint's own client, like every other request."""
+    fake.on("GET", "/models", wire.json_response(wire.LLAMACPP_MODELS))
+    fake.on("GET", "/props", wire.json_response(wire.LLAMACPP_PROPS))
+    learn(make_endpoint({**LLAMACPP, "api_key": "sekret"}))
+    [props] = fake.sent("GET", "/props")
+    assert props.headers["authorization"] == "Bearer sekret"
+
+
 def test_llamacpp_reports_only_what_the_server_states(fake):
     """llama.cpp's ``/models`` lists no context length or modalities: unknown
     (``None``), never invented."""

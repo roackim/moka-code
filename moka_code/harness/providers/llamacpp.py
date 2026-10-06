@@ -6,8 +6,6 @@ import logging
 from dataclasses import replace
 from typing import Any, Dict, Optional
 
-import httpx
-
 from moka_code.harness.endpoint import ModelInfo
 from moka_code.harness.providers.openai_compatible import OpenAICompatible
 from moka_code.harness.usage import TokenUsage
@@ -47,12 +45,11 @@ class LlamaCpp(OpenAICompatible):
         ``autoload=false`` keeps a listing from loading the unloaded ones (README,
         "Using multiple models"); a model that is not loaded then has no answer."""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    self._props_url(), params={"model": model_id, "autoload": "false"},
-                    timeout=self.timeout)
-                response.raise_for_status()
-                return response.json()
+            # The endpoint's own client: its API key and proxy rules apply.
+            response = await self.client.get(
+                self._props_url(), params={"model": model_id, "autoload": "false"})
+            response.raise_for_status()
+            return response.json()
         except Exception as e:
             logger.debug("Failed to query /props for %s: %s", model_id, e)
             return None

@@ -236,9 +236,10 @@ The context window is required (no `max_context`): a selected model whose
 listing states none is an error notice. llama.cpp router mode lists several models on `/models`, each with
 a `status` and `architecture.input_modalities`; `/props` is asked once per
 listed model with `?model=<id>&autoload=false` (README, "Using multiple
-models"; `autoload=false` so a listing never loads a model). Checked on
-metallama's `/llamacpp` 2026-10-06; ⚠ on a single-model llama-server
-`?model=` is unverified. A missing `/props` answer means unknown context and
+models"; `autoload=false` so a listing never loads a model). Checked 2026-10-06 on
+metallama's `/llamacpp` and on a single-model llama-server (build b10454, which
+ignores `?model=` and `autoload`). `/props` goes through the endpoint's own
+client, so its API key and proxy rules apply. A missing `/props` answer means unknown context and
 images, never a failure.
 
 `openai-compatible` (S2 `/models` only, no `/props`; S4 `context_length`; S5
