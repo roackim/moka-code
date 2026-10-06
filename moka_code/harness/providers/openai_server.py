@@ -17,7 +17,7 @@ class OpenAICompatibleServer(OpenAICompatible):
 
     type = "openai-compatible"
     template = """\
-## Any OpenAI-compatible server.
+## OpenAI-compatible server.
 # [servers.custom]
 # type = "openai-compatible"
 # base_url = "http://localhost:8000/v1"
