@@ -100,7 +100,8 @@ def test_sandbox_is_a_command_tree():
 
     assert cmd.has_subcommands()
     assert set(cmd.get_completions(0)) == {
-        "config", "new", "copy", "build", "start", "stop", "terminal", "init"}
+        "config", "path", "new", "copy", "build", "start", "restart", "stop",
+        "terminal", "init"}
 
 
 def test_start_completes_sandbox_ids_and_descriptions(monkeypatch, tmp_path):
@@ -146,7 +147,8 @@ def test_subcommand_descriptions_exposed():
     descriptions = get_subcommand_descriptions("sandbox")
 
     assert set(descriptions) == {
-        "config", "new", "copy", "build", "start", "stop", "terminal", "init"}
+        "config", "path", "new", "copy", "build", "start", "restart", "stop",
+        "terminal", "init"}
     assert "sandbox" in descriptions["start"].lower() or descriptions["start"]
 
 
@@ -202,6 +204,30 @@ def test_config_opens_project_file(tmp_path, monkeypatch):
     _run(ui, ["config"])
     _run(ui, ["config", "dev"])
     assert called == [None, "dev"]
+
+
+def test_path_prints_the_active_sandbox_file(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch, active="dev")
+    ui = _UI(workspace)
+
+    _run(ui, ["path"])
+
+    expected = projects.scope_dir("local", workspace) / "dev.toml"
+    assert str(expected) in ui.chat_history_panel.messages[-1]
+
+
+def test_path_takes_a_name_and_reports_unknown_and_none(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    ui = _UI(workspace)
+
+    _run(ui, ["path", "tight"])
+    assert "tight.toml" in ui.chat_history_panel.messages[-1]
+
+    _run(ui, ["path", "ghost"])
+    assert "Unknown sandbox 'ghost'" in ui.chat_history_panel.messages[-1]
+
+    _run(ui, ["path"])              # no active sandbox, no name
+    assert "No active sandbox" in ui.chat_history_panel.messages[-1]
 
 
 def test_start_without_id_lists_sandboxes(monkeypatch, tmp_path):
@@ -459,6 +485,36 @@ def test_stop_deactivates(monkeypatch, tmp_path):
     _run(ui, ["stop"])
     assert ui.agent.specs[-1] is None
     assert projects.load_project(workspace).active is None
+
+
+def test_restart_rebuilds_the_active_sandbox(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch, active="dev")
+    ui = _UI(workspace)
+
+    _run(ui, ["restart"])
+
+    assert ui.agent.specs[-1].runtime == "podman"
+    assert projects.load_project(workspace).active == "dev"     # unchanged
+    assert "restarted" in ui.chat_history_panel.messages[-1]
+
+
+def test_restart_without_an_active_sandbox_does_nothing(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    ui = _UI(workspace)
+
+    _run(ui, ["restart"])
+
+    assert ui.agent.specs == []
+    assert "No active sandbox" in ui.chat_history_panel.messages[-1]
+
+
+def test_restart_rejects_arguments(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch, active="dev")
+    ui = _UI(workspace)
+
+    _run(ui, ["restart", "dev"])
+
+    assert "Usage: /sandbox restart" in ui.chat_history_panel.messages[-1]
 
 
 def test_next_sandbox_command_cycles_through_none(monkeypatch, tmp_path):

@@ -51,7 +51,8 @@ def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_pa
 
     comp.update("/sandbox ", len("/sandbox "))
     assert set(comp.menu.items) == {
-        "config", "new", "copy", "build", "start", "stop", "terminal", "init"}
+        "config", "path", "new", "copy", "build", "start", "restart", "stop",
+        "terminal", "init"}
 
     comp.update("/sandbox init ", len("/sandbox init "))
     assert set(comp.menu.items) == {"dev", "tight"}

@@ -83,6 +83,10 @@ class Harness:
         self._sandbox_stat: tuple[int, int] | None = None
         # When the active container's image was built (see ``sandbox_stale``).
         self._image_built: float | None = None
+        # The sandbox notice already given to the model, ``(runtime, instructions)``
+        # (None until one is recorded): lets ``set_sandbox``/``/reload`` avoid
+        # re-announcing an unchanged sandbox (see ``_record_sandbox_change``).
+        self._sandbox_announced: tuple[str, str] | None = None
         # (tool name, task) while a tool runs; see _abort_tool_calls.
         self._running_tool = None
         # USD spent on this conversation, when the provider reports costs
@@ -162,10 +166,13 @@ class Harness:
         self.sandbox_problem = _sandbox_problem(spec, name)
         self.track_sandbox(name)
         runtime = getattr(spec, "runtime", "none")
+        instructions = getattr(spec, "instructions", "") or ""
+        self._sandbox_runtime = runtime
         self.debug_stream.log("SANDBOX", runtime)
-        if getattr(self, "_sandbox_runtime", "none") != runtime:
-            self._sandbox_runtime = runtime
-            self._record_sandbox_change(runtime)
+        # Announce the new environment to the model (see _record_sandbox_change);
+        # turning the sandbox off is announced only if one was announced before.
+        if runtime != "none" or getattr(self, "_sandbox_announced", None) is not None:
+            self._record_sandbox_change(runtime, instructions)
 
     def track_sandbox(self, name: str | None) -> None:
         """Remember what the running sandbox was built from: its file's stat and,
@@ -211,10 +218,35 @@ class Harness:
             return "changed"        # /reload says why it does not load
         return None
 
-    def _record_sandbox_change(self, runtime: str) -> None:
-        """Record a sandbox change as a system notice (not a user turn)."""
+    @staticmethod
+    def _sandbox_notice(runtime: str, instructions: str = "") -> str:
+        """The system notice that tells the model where tools now run."""
         content = f"[Sandbox: {runtime}]"
-        if self.history and self.history[-1].get("content") == content:
+        instructions = (instructions or "").strip()
+        if instructions:
+            content += f"\n{instructions}"
+        return content
+
+    @staticmethod
+    def _is_sandbox_notice(message: Dict[str, Any]) -> bool:
+        return (message.get("role") == "system"
+                and str(message.get("content", "")).startswith("[Sandbox: "))
+
+    def _record_sandbox_change(self, runtime: str, instructions: str = "",
+                               force: bool = False) -> None:
+        """Record the running sandbox as a system notice (not a user turn).
+
+        Announce only when the environment actually changed (``force`` re-emits,
+        e.g. after compaction dropped it), and keep a single notice for
+        consecutive sandbox changes (like ``_record_role_change``).
+        """
+        state = (runtime, instructions or "")
+        if not force and state == getattr(self, "_sandbox_announced", None):
+            return
+        self._sandbox_announced = state
+        content = self._sandbox_notice(runtime, instructions)
+        if self.history and self._is_sandbox_notice(self.history[-1]):
+            self.history[-1]["content"] = content
             return
         self._add_message_to_history("system", content)
 
@@ -518,6 +550,13 @@ class Harness:
 
         compaction_id = self._add_message_to_history("assistant", compact_message)
         self.debug_stream.log("COMPACT", f"Inserted compaction marker {compaction_id} over {len(effective_history)} messages")
+
+        # Compaction replaces the messages before the marker; re-emit the active
+        # sandbox's notice (with its instructions) so the model still knows where
+        # tools run. ``none`` is not re-emitted: no sandbox is not news.
+        announced = getattr(self, "_sandbox_announced", None)
+        if announced and announced[0] != "none":
+            self._record_sandbox_change(announced[0], announced[1], force=True)
 
         return {
             "ok": True,
@@ -1201,6 +1240,11 @@ def get_harness(config_path: str | None = None) -> Harness:
         _harness._sandbox_runtime = getattr(spec, "runtime", "none")
         _harness.track_sandbox(getattr(project, "active", None))
         _harness.sandbox_problem = _sandbox_problem(spec, getattr(project, "active", None))
+        # A conversation that starts in a sandbox must tell the model so (the
+        # notice otherwise only appears when the sandbox changes).
+        if getattr(spec, "enabled", False):
+            _harness._record_sandbox_change(
+                spec.runtime, getattr(spec, "instructions", "") or "")
     return _harness
 
 

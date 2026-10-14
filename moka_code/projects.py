@@ -43,7 +43,7 @@ _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 #: Files whose stem starts with one of these are ignored (hidden/meta).
 _HIDDEN_PREFIXES = ("_", ".")
 _SANDBOX_KEYS = frozenset(
-    {"type", "description", "image", "dockerfile", "network", "run_args"}
+    {"type", "description", "image", "dockerfile", "network", "run_args", "instructions"}
 )
 #: Retired keys -> what replaces them. A sandbox still using one is reported and
 #: skipped (moka never rewrites a user's file).
@@ -52,6 +52,7 @@ _RETIRED_SANDBOX_KEYS = {"timeout": "tool_timeout in the role file"}
 _COMMON_KEYS = """\
 # description = ""            # shown in the sandbox picker
 # network     = false         # allow sandbox networking (default: off)
+# instructions = ""           # sent to the model with the [Sandbox: …] notice
 """
 
 _BUBBLEWRAP_TEMPLATE = """\
@@ -108,6 +109,7 @@ class SandboxEntry:
     dockerfile: Optional[str] = None
     network: bool = False
     run_args: list[str] = field(default_factory=list)
+    instructions: Optional[str] = None
     file: Optional[Path] = None
 
     def to_spec(self) -> ContainerSpec:
@@ -121,6 +123,7 @@ class SandboxEntry:
             network=self.network,
             run_args=tuple(self.run_args),
             dockerfile=dockerfile,
+            instructions=self.instructions or "",
         )
 
 
@@ -231,6 +234,7 @@ def _parse_entry(path: Path, scope: str, errors: list[str]) -> Optional[SandboxE
     image = data.get("image")
     dockerfile = data.get("dockerfile")
     description = data.get("description")
+    instructions = data.get("instructions")
     return SandboxEntry(
         name=name,
         scope=scope,
@@ -240,6 +244,7 @@ def _parse_entry(path: Path, scope: str, errors: list[str]) -> Optional[SandboxE
         dockerfile=dockerfile if isinstance(dockerfile, str) else None,
         network=bool(data.get("network", False)),
         run_args=[str(a) for a in run_args],
+        instructions=instructions if isinstance(instructions, str) else None,
         file=path,
     )
 

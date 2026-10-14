@@ -37,6 +37,39 @@ def test_compact_history_inserts_new_marker_and_becomes_effective_start(harness_
     assert effective[0]["id"] == result["message_id"]
 
 
+def test_compaction_reeimits_the_active_sandbox_notice(harness_stub_compaction):
+    """The marker replaces earlier messages; the model must still be told where
+    tools run, so the active sandbox notice is re-emitted after it."""
+    harness = harness_stub_compaction
+    harness._record_sandbox_change("bubblewrap", "No network.")
+    harness.history += [
+        {"id": "u1", "role": "user", "content": "first"},
+        {"id": "a1", "role": "assistant", "content": "first answer"},
+    ]
+
+    result = asyncio.run(harness.compact_history())
+
+    assert result["ok"] is True
+    effective = harness._get_effective_history()
+    assert effective[0]["content"].startswith(COMPACTION_MARKER_PREFIX)
+    assert effective[1]["content"] == "[Sandbox: bubblewrap]\nNo network."
+
+
+def test_compaction_does_not_reemit_a_cleared_sandbox(harness_stub_compaction):
+    harness = harness_stub_compaction
+    harness._record_sandbox_change("bubblewrap", "")
+    harness._record_sandbox_change("none")
+    harness.history += [
+        {"id": "u1", "role": "user", "content": "first"},
+        {"id": "a1", "role": "assistant", "content": "first answer"},
+    ]
+
+    asyncio.run(harness.compact_history())
+
+    assert not any("[Sandbox:" in str(m.get("content"))
+                   for m in harness._get_effective_history())
+
+
 def test_deleting_compaction_marker_restores_full_history_behavior(harness_stub_compaction):
     harness = harness_stub_compaction
     harness.history = [

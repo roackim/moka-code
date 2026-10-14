@@ -51,7 +51,7 @@ time).
   the request over JSONL. `RegisteredTool.execute(on_output=..., **args)`
   delegates to the transport.
 - `moka_code/sandbox.py` owns the launcher and client:
-  - `ContainerSpec` (runtime/image/network/run_args/dockerfile) and
+  - `ContainerSpec` (runtime/image/network/run_args/dockerfile/instructions) and
     `build_argv()`;
   - `SandboxProcess` — the process + JSONL client: lazy start, id-correlated
     request/response, interim `stream` frames to `on_output`, a request limit
@@ -177,6 +177,16 @@ Containerfile's mtime is newer (`sandbox_stale()`, a `stat` per refresh).
 applies it (deferred while a response is being written). A running container keeps
 its old config until stop/start. See [config.md](./config.md).
 
+**Model notice and `instructions`.** When the active sandbox changes — and when a
+conversation starts already sandboxed — the harness appends a `system` notice
+`[Sandbox: <runtime>]` to history (consecutive changes collapse to the last one,
+and the active notice is re-emitted after `/compact`, whose marker replaces earlier
+messages). An optional `instructions` key in the sandbox file is appended verbatim
+under the notice, so the model knows the environment (`/workspace`, network off,
+…). The notice is a history entry, **not** the role's system prompt: the sandbox can
+change mid-conversation and changing the system prompt would invalidate the
+provider's prompt cache.
+
 ## Command surface (`/sandbox`)
 
 A verb-first `Command` **tree** (registry), so dispatch and positional
@@ -186,9 +196,11 @@ completion come from the framework (see [ui.md](./ui.md)):
 |---|---|
 | `/sandbox` | opens the `start` picker when a sandbox exists (like `/model`, `/role`); otherwise, and for an unknown subcommand, lists the subcommands |
 | `/sandbox config [name]` | open that sandbox's file; no name opens a picker (alias of `/config sandbox [name]`) |
+| `/sandbox path [name]` | print (and copy) that sandbox's file path (defaults to the active one), to edit it outside the TUI |
 | `/sandbox new <global\|local> <type> [name]` | create a file from a type-specific starter (name defaults to the type), then open it |
 | `/sandbox copy <name> <global\|local> <new-name>` | copy a sandbox into the other (or same) scope |
 | `/sandbox start [name]` | activate; no name opens a picker (tagged `global`/`local`); missing image offers *Build now* / *Cancel* |
+| `/sandbox restart` | re-read the active sandbox's file and rebuild its worker (no full `/reload`) |
 | `/sandbox build <name>` | build the image (streams to activity; does not activate) |
 | `/sandbox init <name> [base]` | write `<name>.Containerfile`/`.Dockerfile` next to the sandbox's file (bases: `python`→`python:3.12-slim`, `debian`→`debian:stable-slim`, `ubuntu`) |
 | `/sandbox stop` | deactivate (back to in-process) |

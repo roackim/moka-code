@@ -17,14 +17,16 @@ from moka_code.ui.tui.msg_types import SysMsg, SysMsgError, SysMsgWarning
 from .base import ChatUIProtocol, open_project_sandbox, open_shell, pick
 
 
-SUBCOMMANDS = ("config", "new", "copy", "build", "start", "stop", "terminal", "init")
+SUBCOMMANDS = ("config", "path", "new", "copy", "build", "start", "restart", "stop", "terminal", "init")
 
 _SUBCOMMAND_DESCRIPTIONS = {
     "config": "Edit a sandbox's file (picker when no name given)",
+    "path": "Print (and copy) a sandbox's file path",
     "new": "Create a sandbox: new <global|local> <type> [name]",
     "copy": "Copy a sandbox: copy <name> <global|local> <new-name>",
     "build": "Build a sandbox image from its dockerfile",
     "start": "Activate a sandbox (picker when no name given)",
+    "restart": "Restart the active sandbox (re-reads its file)",
     "stop": "Deactivate and run tools in-process",
     "terminal": "Open a shell inside the active sandbox",
     "init": "Write a starter Containerfile / Dockerfile next to a sandbox",
@@ -248,6 +250,42 @@ async def sandbox_config(ui: ChatUIProtocol, args: List[str]) -> None:
     await open_project_sandbox(ui, args[0] if args else None)
 
 
+async def sandbox_path(ui: ChatUIProtocol, args: List[str]) -> None:
+    """Print (and copy) a sandbox's file path, so it can be edited outside the
+    TUI while the session keeps running. Defaults to the active sandbox."""
+    from moka_code import projects
+
+    workspace = _workspace(ui)
+    errors: list[str] = []
+    project = projects.load_project(workspace, errors)
+    _report_errors(ui, errors)
+
+    name = args[0] if args else project.active
+    if not name:
+        ui.chat_history_panel.add_message(
+            "No active sandbox. Usage: /sandbox path [name].",
+            msg_type=SysMsgError(), title="sandbox")
+        return
+    entry = project.sandboxes.get(name)
+    if entry is None or entry.file is None:
+        available = ", ".join(sorted(project.sandboxes)) or "(none)"
+        ui.chat_history_panel.add_message(
+            f"Unknown sandbox '{name}'. Available: {available}",
+            msg_type=SysMsgError(), title="sandbox")
+        return
+
+    message = f"Sandbox '{name}' file: {entry.file}"
+    try:
+        from moka_code.ui.clipboard import copy_to_clipboard
+
+        method = copy_to_clipboard(str(entry.file))
+        if method:
+            message += f"\n(copied path via {method})"
+    except Exception:  # pragma: no cover - clipboard is best effort
+        pass
+    ui.chat_history_panel.add_message(message, msg_type=SysMsg(), title="sandbox")
+
+
 def _report_errors(ui: ChatUIProtocol, errors: List[str]) -> None:
     if errors:
         ui.chat_history_panel.add_message(
@@ -306,6 +344,44 @@ async def sandbox_copy(ui: ChatUIProtocol, args: List[str]) -> None:
     ui.chat_history_panel.add_message(
         f"Copied '{source}' to {scope} sandbox '{path.stem}': {path}",
         msg_type=SysMsg(), title="sandbox")
+
+
+async def sandbox_restart(ui: ChatUIProtocol, args: List[str]) -> None:
+    """Restart the active sandbox: re-read its file and rebuild its worker,
+    without the full ``/reload`` (config, roles, theme, endpoint untouched)."""
+    from moka_code import projects
+
+    if args:
+        ui.chat_history_panel.add_message(
+            "Usage: /sandbox restart", msg_type=SysMsgError(), title="sandbox")
+        return
+    if not _warn_if_busy(ui):
+        return
+    agent = getattr(ui, "agent", None)
+    if agent is None or not hasattr(agent, "set_sandbox"):
+        ui.chat_history_panel.add_message(
+            "Sandbox switching is unavailable.", msg_type=SysMsgError(), title="sandbox")
+        return
+
+    workspace = _workspace(ui)
+    errors: list[str] = []
+    project = projects.load_project(workspace, errors)
+    _report_errors(ui, errors)
+    name = project.active
+    spec = projects.active_spec(project)
+    if not name or spec is None:
+        ui.chat_history_panel.add_message(
+            "No active sandbox to restart." if not name else
+            f"Active sandbox '{name}' is no longer defined; nothing restarted.",
+            msg_type=SysMsgError(), title="sandbox")
+        return
+
+    agent.set_sandbox(spec, name)
+    ui.chat_history_panel.add_message(
+        f"Sandbox '{name}' restarted ({spec.runtime}).",
+        msg_type=SysMsg(), title="sandbox")
+    if hasattr(ui, "refresh_status_bar"):
+        ui.refresh_status_bar()
 
 
 async def sandbox_stop(ui: ChatUIProtocol, _args: List[str]) -> None:
@@ -448,9 +524,11 @@ __all__ = [
     "describe_sandbox",
     "sandbox_help",
     "sandbox_config",
+    "sandbox_path",
     "sandbox_new",
     "sandbox_copy",
     "sandbox_start",
+    "sandbox_restart",
     "sandbox_build",
     "sandbox_init",
     "sandbox_stop",

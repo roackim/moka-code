@@ -206,6 +206,30 @@ def test_container_starter_names_its_containerfile(config_dir, workspace):
     assert 'dev.Dockerfile' in projects.sandbox_template("docker", "dev")
 
 
+def test_instructions_load_and_reach_the_spec(config_dir, workspace):
+    _write("local", workspace, "box",
+           'type = "bubblewrap"\ninstructions = "No network; /workspace is the repo."\n')
+
+    entry = projects.load_project(workspace).sandboxes["box"]
+
+    assert entry.instructions == "No network; /workspace is the repo."
+    assert entry.to_spec().instructions == "No network; /workspace is the repo."
+
+
+def test_missing_instructions_reach_the_spec_as_empty(config_dir, workspace):
+    _write("local", workspace, "box", 'type = "bubblewrap"\n')
+
+    entry = projects.load_project(workspace).sandboxes["box"]
+
+    assert entry.instructions is None
+    assert entry.to_spec().instructions == ""
+
+
+def test_starters_mention_instructions(config_dir):
+    assert "# instructions" in projects.sandbox_template("bubblewrap", "box")
+    assert "# instructions" in projects.sandbox_template("podman", "dev")
+
+
 def test_create_global_goes_to_the_global_dir(config_dir, workspace):
     path = projects.create_sandbox(workspace, "global", "bubblewrap", "box")
 

@@ -50,6 +50,8 @@ from .sandbox import (
     sandbox_id_completions,
     sandbox_id_descriptions,
     sandbox_init,
+    sandbox_path,
+    sandbox_restart,
     sandbox_stop,
     sandbox_terminal,
     sandbox_scope_completions,
@@ -109,12 +111,18 @@ COMMANDS: Dict[str, Command] = {
                             params=[Param("NAME", completions=role_name_completions,
                                           descriptions=role_descriptions)]),
     "sandbox":      Command(
-                        "sandbox", "Sandboxes: pick one, or config, new, copy, build, start, stop, terminal, init",
+                        "sandbox", "Sandboxes: pick one, or config, path, new, copy, build, start, restart, stop, terminal, init",
                         handler=sandbox_help,
                         subcommands={
                             "config": Command(
                                 "sandbox config", "Edit a sandbox's file (picker when no name given)",
                                 handler=sandbox_config,
+                                params=[Param("NAME", required=False,
+                                              completions=sandbox_id_completions,
+                                              descriptions=sandbox_id_descriptions)]),
+                            "path": Command(
+                                "sandbox path", "Print (and copy) a sandbox's file path",
+                                handler=sandbox_path,
                                 params=[Param("NAME", required=False,
                                               completions=sandbox_id_completions,
                                               descriptions=sandbox_id_descriptions)]),
@@ -147,6 +155,9 @@ COMMANDS: Dict[str, Command] = {
                                 params=[Param("NAME", required=False,
                                               completions=sandbox_id_completions,
                                               descriptions=sandbox_id_descriptions)]),
+                            "restart": Command(
+                                "sandbox restart", "Restart the active sandbox (re-reads its file)",
+                                handler=sandbox_restart),
                             "init": Command(
                                 "sandbox init", "Write a starter Containerfile / Dockerfile next to a sandbox",
                                 handler=sandbox_init,

@@ -79,6 +79,10 @@ class ContainerSpec:
     network: bool = False
     run_args: tuple[str, ...] = ()
     dockerfile: Optional[str] = None
+    #: Environment note sent to the model with the sandbox notice (never the
+    #: system prompt: the sandbox can change mid-conversation and would then
+    #: invalidate the provider's prompt cache).
+    instructions: str = ""
 
     @property
     def enabled(self) -> bool:
