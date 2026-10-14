@@ -353,12 +353,24 @@ class Harness:
         preserve = getattr(getattr(self, "role", None), "preserve_thinking", False)
         replay = endpoint.replay if endpoint is not None and preserve else None
         api = []
+        # Role/sandbox notices are stored as ``system`` entries but sent folded
+        # into the next user message: a mid-history system message breaks
+        # templates (Qwen: "System message must be at the beginning").
+        notices: List[str] = []
         for entry in self._get_effective_history():
+            if entry.get("role") == "system":
+                notices.append(str(entry.get("content") or ""))
+                continue
+            if notices and entry.get("role") == "user":
+                entry = {**entry, "content": "\n\n".join(notices + [entry.get("content") or ""])}
+                notices = []
             msg = self._to_api_message(entry)
             if (replay and entry.get("role") == "assistant"
                     and not self._is_compaction_message(entry)):
                 msg.update(replay(entry))
             api.append(msg)
+        if notices:
+            api.append({"role": "user", "content": "\n\n".join(notices)})
         return api
 
     def _add_message_to_history(self, role: str, content: Optional[str], **kwargs) -> str:

@@ -105,3 +105,19 @@ def test_get_harness_announces_a_sandbox_active_at_startup(tmp_path, monkeypatch
     harness = harness_module.get_harness(str(workspace))
 
     assert harness.history[0]["content"].startswith("[Sandbox: bubblewrap]")
+
+
+def test_notices_are_sent_folded_into_the_next_user_message():
+    harness = _bare()
+
+    harness._record_sandbox_change("bubblewrap")
+    harness._add_message_to_history("user", "hello")
+    harness._add_message_to_history("assistant", "hi")
+    harness._record_role_change("chat", "agent")
+    harness._add_message_to_history("user", "again")
+
+    api = harness._api_history()
+
+    assert [m["role"] for m in api] == ["user", "assistant", "user"]
+    assert api[0]["content"] == "[Sandbox: bubblewrap]\n\nhello"
+    assert api[2]["content"] == "[Role changed from chat to agent]\n\nagain"
