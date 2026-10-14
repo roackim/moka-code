@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -65,6 +66,26 @@ async def conversation_export(ui: ChatUIProtocol, args: List[str]):
         msg_type=SysMsg(), title="conversation")
 
 
+async def _stop_before_import(ui: ChatUIProtocol) -> bool:
+    """``/import`` implies ``/stop``: cancel a running turn and wait for its
+    worker to finish (its ``finally`` autosaves) before the history is replaced,
+    so the two never race on the session file. False when the turn would not
+    stop in time (the caller must not replace the history)."""
+    if not getattr(ui, "is_generating", lambda: False)():
+        return True
+    stop = getattr(ui, "stop_generation", None)
+    if callable(stop):
+        stop()
+    for _ in range(400):  # bounded (~2 s): give the turn time to unwind (tool abort)
+        if getattr(ui, "current_generation_task", None) is None:
+            return True
+        await asyncio.sleep(0.005)
+    ui.chat_history_panel.add_message(
+        "Could not stop the current response; /import was not applied. Try again.",
+        msg_type=SysMsgError(), title="conversation")
+    return False
+
+
 async def conversation_import(ui: ChatUIProtocol, args: List[str]):
     if not args:
         ui.chat_history_panel.add_message(
@@ -74,6 +95,8 @@ async def conversation_import(ui: ChatUIProtocol, args: List[str]):
     filename = args[0]
     if not filename.endswith(".json"):
         filename += ".json"
+    if not await _stop_before_import(ui):
+        return
     if load_conversation(ui, filename):
         # An imported conversation continues as a new session.
         new_session = getattr(ui, "new_session", None)
@@ -254,6 +277,13 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
                 ui.chat_history_panel.add_message(
                     f"Tool result: {content[:200]}{'...' if len(content) > 200 else ''}",
                     msg_type=SysMsg())
+        elif role == "system" and content:
+            # Role and sandbox changes are stored as system notices (they are
+            # part of what the model was told). Show them on replay too, as a
+            # generic notice, so a resumed conversation doesn't look as if the
+            # role/sandbox never changed.
+            ui.chat_history_panel.add_message(
+                content, msg_type=SysMsg(), title="notice", harness_message_ids=ids)
 
 
 __all__ = [

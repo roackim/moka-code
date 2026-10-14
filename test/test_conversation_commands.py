@@ -231,9 +231,55 @@ def test_import_splits_answers_like_live_ones(tmp_path):
     assert kinds == ["text", "code"]
 
 
+def test_import_rebuilds_system_notices(tmp_path):
+    """Role/sandbox change notices stored in history are shown on replay, not
+    silently dropped (they are how a resumed conversation shows what changed)."""
+    from moka_code.ui.commands.conversation import _rebuild_ui_from_history
+
+    ui = FakeUI()
+    _rebuild_ui_from_history(ui, [
+        {"id": "u", "role": "user", "content": "q"},
+        {"id": "s", "role": "system", "content": "[Role changed from agent to chat]"},
+        {"id": "s2", "role": "system", "content": "[Sandbox: bubblewrap]"},
+        {"id": "a", "role": "assistant", "content": "a"},
+    ])
+
+    texts = [m.text for m in ui.chat_history_panel.messages]
+    assert "[Role changed from agent to chat]" in texts
+    assert "[Sandbox: bubblewrap]" in texts
+
+
+def test_import_stops_a_running_generation_first(tmp_path):
+    """``/import`` implies ``/stop``: a running turn is cancelled before the
+    history is replaced (so the two cannot race on the session file)."""
+    ui = FakeUI()
+    stopped = []
+
+    class _Task:
+        def done(self):
+            return False
+
+    ui.current_generation_task = _Task()
+    ui.is_generating = lambda: ui.current_generation_task is not None
+
+    def _stop():
+        stopped.append(True)
+        ui.current_generation_task = None
+
+    ui.stop_generation = _stop
+    filename = tmp_path / "convo.json"
+    filename.write_text(json.dumps({"role": "default", "history": [{"role": "user", "content": "x"}]}))
+
+    asyncio.run(conversation_import(ui, [str(filename)]))
+
+    assert stopped == [True]
+    assert ui.agent.history == [{"role": "user", "content": "x"}]
+
+
 def test_conversation_import_shows_inline_think_tags_verbatim(tmp_path):
     """Decided 2026-09-30 (PLAN.md mode A off): content is never parsed; an
     older export with inline tags imports as one answer, tags included."""
+
     from moka_code.ui.tui.msg_types import AssistantMsg, ThinkingMsg
 
     ui = FakeUI()
