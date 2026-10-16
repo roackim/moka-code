@@ -423,10 +423,11 @@ class chatTUI(ChatActionHandlers):
                     self.stop_generation()
                     return
                 user_input, user_msg, attached = get_task.result()
+                if getattr(user_msg, "cancelled", False):
+                    continue    # unqueued (edited or cancelled) while it waited
                 if getattr(user_msg, "is_queued", False):
-                    user_msg.is_queued = False
-                    user_msg.set_title("user")
-                    user_msg.set_frame_color(theme.USER)
+                    user_msg.set_queued(None)
+                    self._renumber_queued()
 
                 self._active_user_msg = user_msg
                 self._stop_requested = False
@@ -497,12 +498,17 @@ class chatTUI(ChatActionHandlers):
     def _enqueue_message(self, text: str, message: Message, attached=()) -> None:
         """Queue a message (with its image references) and apply queued presentation."""
         if self.is_generating() and message is not self._active_user_msg:
-            message.is_queued = True
-            message.set_title("user (queued)")
-            message.set_frame_color(theme.MUTED)
+            message.set_queued(1)
+            self._renumber_queued()
 
         self._ensure_worker()
         self.message_queue.put_nowait((text, message, list(attached)))
+
+    def _renumber_queued(self) -> None:
+        """Number the waiting messages in the order they will be sent."""
+        waiting = [m for m in self.chat_history_panel.messages if getattr(m, "is_queued", False)]
+        for position, message in enumerate(waiting, start=1):
+            message.set_queued(position)
 
     def on_command_submit(self, text: str):
         """Handle execution of commands."""
@@ -557,6 +563,8 @@ class chatTUI(ChatActionHandlers):
             MsgAction.OUTPUT: self.handle_output_action,
             MsgAction.ALLOW: self.handle_allow_action,
             MsgAction.DENY: self.handle_deny_action,
+            MsgAction.EDIT: self.handle_edit_queued_action,
+            MsgAction.CANCEL: self.handle_cancel_queued_action,
         }
         handler = handlers.get(action)
         if handler:
@@ -755,7 +763,9 @@ class chatTUI(ChatActionHandlers):
             self._pasted_images = {}
 
             # Create user message and queue it
-            user_msg = self.chat_history_panel.add_user_message(text, attached)
+            user_msg = self.chat_history_panel.add_user_message(
+                text, attached, queued=self.is_generating())
+            user_msg.draft = (text, list(attached))     # what [e] puts back in the input
 
             self._enqueue_message(unmention(text), user_msg, attached)
             

@@ -263,10 +263,13 @@ state directly; there is no `ConversationRuntime`, `TabView`, or `TabBar`.
 **One generation at a time.** A single `agent_worker` serves `message_queue`:
 `run()` records it in `worker_task`, so `_ensure_worker()` never starts a
 second one (two workers on one queue used to run generations concurrently). A
-message sent while the model answers is queued (`is_queued`, "user (queued)")
-and **stays last**: `ChatHistoryPanel.new_message(append=True)` inserts new
-lines above trailing queued messages, so the running generation's tool lines
-and text never land below a queued question. **`/stop`** cancels only the
+message sent while the model answers is queued (`Message.set_queued(n)`: dashed
+muted gutter, title `queued #n`, numbered in send order) and **stays last**:
+`ChatHistoryPanel.new_message(append=True)` inserts new lines above trailing
+queued messages, so the running generation's tool lines and text never land below
+a queued question. A selected queued message offers `[e]` edit (unqueue, text and
+images back in the input, replacing any draft) and `[x]` cancel; the worker skips
+an unqueued entry (`message.cancelled`). **`/stop`** cancels only the
 running generation (`stop_generation` sets `_stop_requested`; the worker keeps
 serving the queue). The presenter then `aclose()`s the harness stream so
 `Harness._abort_tool_calls` runs at once: it kills the running tool

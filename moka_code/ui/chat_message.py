@@ -473,7 +473,26 @@ class Message:
         The exposed set is deliberately small (copy/output/permission); actions
         that alter or remove conversation state live behind commands.
         """
+        if self.is_queued:
+            return [MsgAction.EDIT, MsgAction.CANCEL, MsgAction.COPY]
         return list(self.type.actions)
+
+    def set_queued(self, position: Optional[int]) -> None:
+        """Mark this user message as waiting in the queue (``position`` 1 is next),
+        or, with ``None``, as picked up: dashed muted gutter and a numbered title
+        while it waits."""
+        self.is_queued = position is not None
+        if self.is_queued:
+            self.set_title(f"queued #{position}")
+            self.box.gutter = "╎"
+            self.box.gutter_color = theme.MUTED
+            self.set_frame_color(theme.MUTED)
+        else:
+            self.set_title(self.type.title)
+            self.box.gutter = getattr(self.type, "gutter", "▸")
+            self.box.gutter_color = getattr(self.type, "gutter_color", None) or getattr(
+                theme, self.type.frame_color, theme.DEFAULT)
+            self.set_frame_color(getattr(theme, self.type.frame_color, theme.DEFAULT))
 
     def inline_action_items(self):
         """Actions the Box should render inline, or [] when opted out.
@@ -525,7 +544,9 @@ class Message:
             self.component.refresh_theme()
 
         gutter_color = getattr(self.type, "gutter_color", None)
-        if gutter_color is None:
+        if self.is_queued:
+            gutter_color = theme.MUTED
+        elif gutter_color is None:
             gutter_color = frame_color
         elif isinstance(gutter_color, str):
             gutter_color = getattr(theme, gutter_color, frame_color)

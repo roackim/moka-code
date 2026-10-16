@@ -172,3 +172,34 @@ class ChatActionHandlers:
         else:
             logger.warning("Output action called on non-tool message")
 
+
+    def _unqueue(self, message) -> bool:
+        """Take a waiting user message out of the queue (the worker skips it).
+        False when it was already picked up."""
+        if not getattr(message, "is_queued", False):
+            return False
+        message.cancelled = True
+        message.set_queued(None)
+        self.chat_history_panel.remove_message(message)
+        self._renumber_queued()
+        self._update_action_strip()
+        return True
+
+    def handle_cancel_queued_action(self, message):
+        """Drop a queued message before it is sent."""
+        if self._unqueue(message):
+            self.flash_hint("queued message cancelled")
+
+    def handle_edit_queued_action(self, message):
+        """Unqueue a message and put its text back in the input, replacing the
+        draft there, until the user sends it again."""
+        draft = getattr(message, "draft", None)
+        if draft is None or not self._unqueue(message):
+            return
+        text, attached = draft
+        for image in attached:
+            self._pasted_images[image["n"]] = image
+        self.input_component.buffer.text = text
+        self.input_component.buffer.cursor_pos = len(text)
+        self.input_component._on_text_changed()
+        self._set_app_focus("input")

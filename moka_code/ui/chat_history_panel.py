@@ -854,7 +854,7 @@ class ChatHistoryPanel(TextComponent):
         # markdown would misinterpret it and break trailing-newline stripping.
         return isinstance(msg_type, AssistantMsg) and not isinstance(msg_type, ThinkingMsg)
 
-    def new_message(self, message: str, *, msg_type: MsgType = None, title: str = None, frame_color: RGB = None, content_color: RGB = None, left_margin: int = 0, right_margin: int = 0, harness_message_ids: list = None, append=False) -> Message:
+    def new_message(self, message: str, *, msg_type: MsgType = None, title: str = None, frame_color: RGB = None, content_color: RGB = None, left_margin: int = 0, right_margin: int = 0, harness_message_ids: list = None, append=False, queued: bool = False) -> Message:
         """Create a new message. If append is True, add it to the chat history. Return the Message object for further manipulation.
         
         Args:
@@ -902,7 +902,8 @@ class ChatHistoryPanel(TextComponent):
             # running generation's lines go above them until they are picked
             # up, so a queued question never lands mid-answer.
             index = len(self.messages)
-            while index > 0 and getattr(self.messages[index - 1], "is_queued", False):
+            # (a message that is itself queued goes after the others: send order)
+            while not queued and index > 0 and getattr(self.messages[index - 1], "is_queued", False):
                 index -= 1
             self.messages.insert(index, new_message)
             if self.focused_message_index is not None and self.focused_message_index >= index \
@@ -1019,7 +1020,8 @@ class ChatHistoryPanel(TextComponent):
         except ValueError:
             pass
 
-    def add_user_message(self, text: str, attached=(), harness_message_ids: list = None) -> Message:
+    def add_user_message(self, text: str, attached=(), harness_message_ids: list = None,
+                         queued: bool = False) -> Message:
         """Add a user message; its attached images are listed under the text
         (``▣ image #N · name · W×H · size``). ``c`` copies only the text."""
         from moka_code.harness import images
@@ -1028,13 +1030,14 @@ class ChatHistoryPanel(TextComponent):
         lines = [images.describe(image) + ("" if images.available(image) else " · unavailable")
                  for image in attached]
         shown = "\n".join([text.rstrip(), *lines]) if lines else text
-        msg = self.add_message(shown, msg_type=UserMsg(), harness_message_ids=harness_message_ids)
+        msg = self.add_message(shown, msg_type=UserMsg(), harness_message_ids=harness_message_ids,
+                               queued=queued)
         msg.component.highlighter = reference_spans
         if lines:
             msg.copy_text = text
         return msg
 
-    def add_message(self, message: str, msg_type: MsgType = None, title: str = None, frame_color: RGB = None, content_color: RGB = None, left_margin: int = 0, right_margin: int = 0, harness_message_ids: list = None) -> Message:
+    def add_message(self, message: str, msg_type: MsgType = None, title: str = None, frame_color: RGB = None, content_color: RGB = None, left_margin: int = 0, right_margin: int = 0, harness_message_ids: list = None, queued: bool = False) -> Message:
         """Add a message to chat history and update UI.
         
         Args:
@@ -1065,7 +1068,7 @@ class ChatHistoryPanel(TextComponent):
                                     left_margin=left_margin, right_margin=right_margin,
                                     harness_message_ids=harness_message_ids, append=False)
 
-        return self.new_message(message, msg_type=msg_type, title=title, frame_color=frame_color, content_color=content_color, left_margin=left_margin, right_margin=right_margin, harness_message_ids=harness_message_ids, append=True)
+        return self.new_message(message, msg_type=msg_type, title=title, frame_color=frame_color, content_color=content_color, left_margin=left_margin, right_margin=right_margin, harness_message_ids=harness_message_ids, append=True, queued=queued)
 
 
     def clear(self):

@@ -159,3 +159,75 @@ def test_escape_while_generating_stops_it(monkeypatch):
 
     ui = asyncio.run(scenario())
     assert any("Generation stopped" in line for line in ui.activity_panel.lines)
+
+
+def _queue_two(monkeypatch, scenario_body):
+    started = []
+    gate = asyncio.Event
+
+    async def chat(text, attached=None):
+        started.append(text)
+        yield events.Start(message_id=text, role="assistant")
+        yield events.Token(text=f"answer to {text}")
+        if text == "first":
+            await asyncio.sleep(0.3)
+        yield events.Done()
+
+    async def scenario():
+        ui = _ui(monkeypatch, chat)
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        ui.on_user_submit("first")
+        await asyncio.sleep(0.05)
+        ui.on_user_submit("second")
+        ui.on_user_submit("third")
+        queued = [m for m in ui.chat_history_panel.messages if m.is_queued]
+        await scenario_body(ui, queued)
+        await asyncio.sleep(0.6)
+        ui.worker_task.cancel()
+        return ui
+
+    return asyncio.run(scenario()), started
+
+
+def test_queued_messages_are_numbered_and_dashed(monkeypatch):
+    async def body(ui, queued):
+        assert [m.title for m in queued] == ["queued #1", "queued #2"]
+        assert all(m.box.gutter == "╎" for m in queued)
+
+    ui, started = _queue_two(monkeypatch, body)
+    assert started == ["first", "second", "third"]
+    sent = [m for m in ui.chat_history_panel.messages if m.base_text in ("second", "third")]
+    assert all(m.title == "user" and m.box.gutter == "▌" for m in sent)
+
+
+def test_cancel_drops_a_queued_message_and_renumbers(monkeypatch):
+    async def body(ui, queued):
+        ui.handle_cancel_queued_action(queued[0])
+        assert queued[1].title == "queued #1"
+
+    ui, started = _queue_two(monkeypatch, body)
+    assert started == ["first", "third"]
+    assert "second" not in _texts(ui)
+
+
+def test_edit_unqueues_and_fills_the_input_replacing_the_draft(monkeypatch):
+    async def body(ui, queued):
+        ui.input_component.buffer.text = "a draft"
+        ui.handle_edit_queued_action(queued[0])
+        assert ui.input_component.buffer.text == "second"
+        assert ui._last_focus_id == "input"
+
+    ui, started = _queue_two(monkeypatch, body)
+    assert started == ["first", "third"]
+    assert "second" not in _texts(ui)
+
+
+def test_a_queued_message_offers_edit_and_cancel_only_while_waiting(monkeypatch):
+    from moka_code.ui.tui.msg_types import MsgAction
+
+    async def body(ui, queued):
+        assert [a.label for a in queued[0].get_active_actions()] == ["edit", "cancel", "copy"]
+
+    ui, _ = _queue_two(monkeypatch, body)
+    sent = next(m for m in ui.chat_history_panel.messages if m.base_text == "second")
+    assert MsgAction.EDIT not in sent.get_active_actions()
