@@ -24,6 +24,20 @@ from .base import ChatUIProtocol, pick
 ALL = "(all changes)"
 
 
+def ordered(found: List[changes.Change], workspace: str) -> List[changes.Change]:
+    """Changed files by path, with the new ones last, the most recently touched
+    first (a new file's mtime is when it was created or last written)."""
+    def touched(change: changes.Change) -> float:
+        try:
+            return os.stat(os.path.join(workspace, change.path)).st_mtime
+        except OSError:
+            return 0.0
+
+    old = [change for change in found if change.status not in ("??", "A")]
+    new = [change for change in found if change.status in ("??", "A")]
+    return old + sorted(new, key=touched, reverse=True)
+
+
 def rows(found: List[changes.Change]) -> Dict[str, Cell]:
     """Path -> one aligned, coloured line: ``modified   +25 −1``. The status is a
     word (``new`` for a file git does not know yet), numbers are right-aligned
@@ -53,11 +67,13 @@ def rows(found: List[changes.Change]) -> Dict[str, Cell]:
 
 def changed_files() -> List[str]:
     """The changed files, for ``/diff <file>`` suggestions."""
-    return [change.path for change in changes.cached_changes(current_workspace()) or []]
+    workspace = current_workspace()
+    return [change.path for change in ordered(changes.cached_changes(workspace) or [], workspace)]
 
 
 def changed_descriptions() -> Dict[str, Cell]:
-    return rows(changes.cached_changes(current_workspace()) or [])
+    workspace = current_workspace()
+    return rows(ordered(changes.cached_changes(workspace) or [], workspace))
 
 
 def live_description() -> str:
@@ -115,7 +131,7 @@ async def diff_command(ui: ChatUIProtocol, args: List[str]) -> None:
         await _show(ui, workspace, args[0])
         return
 
-    cells = rows(found)
+    cells = rows(ordered(found, workspace))
 
     def _as_text() -> None:
         ui.chat_history_panel.add_message(

@@ -175,7 +175,7 @@ def test_bare_diff_opens_a_picker_and_a_choice_opens_that_diff_read_only(tmp_pat
     async def scenario():
         await COMMANDS["diff"].execute(ui, [])
         assert ui.picker["title"] == "Changes" and ui.picker["ordered"]
-        assert ui.picker["items"] == ["(all changes)", "a.py", "gone.txt", "new.md", "sp ace.txt"]
+        assert ui.picker["items"] == ["(all changes)", "a.py", "gone.txt", "sp ace.txt", "new.md"]
         assert [cell_text(ui.picker["descriptions"][n]) for n in ("a.py", "gone.txt", "new.md")] == [
             "modified  +2 −1", "deleted   +0 −1", "new       +2 −0"]
         assert ui.picker["descriptions"]["(all changes)"] == "4 files"
@@ -346,3 +346,16 @@ def test_diff_context_setting_is_validated_and_reaches_the_command(tmp_path, edi
 
     assert [e["text"].count("\n") for e in editor][0] <= [e["text"].count("\n") for e in editor][1]
     assert "one" in editor[1]["text"]
+
+
+def test_new_files_sort_last_most_recent_first(tmp_path):
+    root = _repo(tmp_path)
+    _dirty(root)
+    (root / "newer.md").write_text("x\n")
+    os.utime(root / "new.md", (1_000, 1_000))
+    os.utime(root / "newer.md", (2_000, 2_000))
+
+    found = changes.changes(str(root))
+    names = [c.path for c in diff_module.ordered(found, str(root))]
+
+    assert names == ["a.py", "gone.txt", "sp ace.txt", "newer.md", "new.md"]

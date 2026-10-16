@@ -28,6 +28,7 @@ from .base import (
     reapply_endpoint,
     role_descriptions,
     role_name_completions,
+    stop_before,
     theme_descriptions,
     theme_name_completions,
 )
@@ -65,6 +66,8 @@ async def cmd_private(ui: ChatUIProtocol, args: List[str]):
 
 
 async def cmd_clear(ui: ChatUIProtocol, args: List[str]):
+    if not await stop_before(ui, "/clear"):
+        return
     ui.chat_history_panel.clear()
     if hasattr(ui.agent, "set_private"):
         ui.agent.set_private(False)

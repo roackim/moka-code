@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Union
@@ -360,3 +361,26 @@ async def open_shell(ui: ChatUIProtocol, argv: List[str], where: str) -> None:
             f"Could not open a {where} shell: {exc}", msg_type=SysMsgError(), title="terminal")
         return
     ui.chat_history_panel.add_message(f"Back from the {where} shell.", msg_type=SysMsg())
+
+
+async def stop_before(ui: ChatUIProtocol, command: str) -> bool:
+    """A command that replaces the history (``/import``, ``/clear``) implies
+    ``/stop``: cancel a running turn and wait for its worker to finish (its
+    ``finally`` autosaves) before the history changes, so the two never race on
+    the session file. False when the turn would not stop in time (the caller must
+    not touch the history)."""
+    from moka_code.ui.tui.msg_types import SysMsgError
+
+    if not getattr(ui, "is_generating", lambda: False)():
+        return True
+    stop = getattr(ui, "stop_generation", None)
+    if callable(stop):
+        stop()
+    for _ in range(400):  # bounded (~2 s): give the turn time to unwind (tool abort)
+        if getattr(ui, "current_generation_task", None) is None:
+            return True
+        await asyncio.sleep(0.005)
+    ui.chat_history_panel.add_message(
+        f"Could not stop the current response; {command} was not applied. Try again.",
+        msg_type=SysMsgError(), title="conversation")
+    return False

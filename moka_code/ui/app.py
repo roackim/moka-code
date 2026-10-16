@@ -854,6 +854,12 @@ class chatTUI(ChatActionHandlers):
                     self.flash_hint("no sandbox defined (/sandbox init)")
                 return True
 
+            # ESC while a response is generating is /stop.
+            if key == '\x1b' and self.is_generating() and not (
+                    self._last_focus_id == "input" and self.input_component.has_active_completion()):
+                self.stop_generation()
+                return True
+
             # ESC while the input is focused (and nothing is being completed)
             # unfocuses the input, moving focus to the history panel. The focus
             # manager updates each widget's focused state.

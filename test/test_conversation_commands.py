@@ -276,6 +276,27 @@ def test_import_stops_a_running_generation_first(tmp_path):
     assert ui.agent.history == [{"role": "user", "content": "x"}]
 
 
+def test_clear_stops_a_running_generation_first():
+    """``/clear`` implies ``/stop``, like ``/import``."""
+    from moka_code.ui.commands.core import cmd_clear
+
+    ui = FakeUI()
+    stopped = []
+    ui.current_generation_task = object()
+    ui.is_generating = lambda: ui.current_generation_task is not None
+
+    def _stop():
+        stopped.append(True)
+        ui.current_generation_task = None
+
+    ui.stop_generation = _stop
+
+    asyncio.run(cmd_clear(ui, []))
+
+    assert stopped == [True]
+    assert ui.chat_history_panel.messages[-1].text == "Conversation cleared."
+
+
 def test_conversation_import_shows_inline_think_tags_verbatim(tmp_path):
     """Decided 2026-09-30 (PLAN.md mode A off): content is never parsed; an
     older export with inline tags imports as one answer, tags included."""

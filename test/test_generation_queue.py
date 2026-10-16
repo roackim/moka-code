@@ -135,3 +135,27 @@ def test_dollar_prefix_is_an_ordinary_message(monkeypatch):
 
     asyncio.run(scenario())
     assert sent == ["$ ls"]
+
+
+def test_escape_while_generating_stops_it(monkeypatch):
+    async def chat(text, attached=None):
+        yield events.Start(message_id=text, role="assistant")
+        yield events.Token(text="partial")
+        await asyncio.sleep(10)
+        yield events.Done()
+
+    async def scenario():
+        ui = _ui(monkeypatch, chat)
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        ui.on_user_submit("slow")
+        await asyncio.sleep(0.05)
+        assert ui.is_generating()
+        assert ui.handle_global_input("\x1b") is True
+        await asyncio.sleep(0.05)
+        assert not ui.is_generating()
+        assert not ui.worker_task.done()
+        ui.worker_task.cancel()
+        return ui
+
+    ui = asyncio.run(scenario())
+    assert any("Generation stopped" in line for line in ui.activity_panel.lines)
