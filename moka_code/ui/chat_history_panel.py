@@ -964,6 +964,15 @@ class ChatHistoryPanel(TextComponent):
             self._notify_selection_changed()
             self._request_repaint()
 
+    def truncate_from(self, msg: Message) -> None:
+        """Remove ``msg`` and every message after it."""
+        try:
+            index = self.messages.index(msg)
+        except ValueError:
+            return
+        while len(self.messages) > index:
+            self.remove_message_by_index(len(self.messages) - 1)
+
     def replace_message(self, current: Message, new: Message):
         """Replace a message with a new message.
         

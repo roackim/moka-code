@@ -475,6 +475,8 @@ class Message:
         """
         if self.is_queued:
             return [MsgAction.EDIT, MsgAction.CANCEL, MsgAction.COPY]
+        if isinstance(self.type, msg_types.UserMsg) and self.harness_message_ids:
+            return [MsgAction.EDIT, MsgAction.COPY]
         return list(self.type.actions)
 
     def set_queued(self, position: Optional[int]) -> None:

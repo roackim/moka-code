@@ -269,7 +269,12 @@ muted gutter, title `queued #n`, numbered in send order) and **stays last**:
 queued messages, so the running generation's tool lines and text never land below
 a queued question. A selected queued message offers `[e]` edit (unqueue, text and
 images back in the input, replacing any draft) and `[x]` cancel; the worker skips
-an unqueued entry (`message.cancelled`). **`/stop`** cancels only the
+an unqueued entry (`message.cancelled`).
+A *sent* user message also offers `[e]` (not while a response is generating):
+`Harness.truncate_history(id)` drops it and everything after it, the panel drops the
+same messages (`truncate_from`), and its text and images go back in the input,
+replacing the draft. Sending it again continues from there. The session file keeps
+the old tail until the next save. **`/stop`** cancels only the
 running generation (`stop_generation` sets `_stop_requested`; the worker keeps
 serving the queue). The presenter then `aclose()`s the harness stream so
 `Harness._abort_tool_calls` runs at once: it kills the running tool

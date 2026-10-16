@@ -190,16 +190,45 @@ class ChatActionHandlers:
         if self._unqueue(message):
             self.flash_hint("queued message cancelled")
 
-    def handle_edit_queued_action(self, message):
-        """Unqueue a message and put its text back in the input, replacing the
-        draft there, until the user sends it again."""
-        draft = getattr(message, "draft", None)
-        if draft is None or not self._unqueue(message):
-            return
-        text, attached = draft
+    def handle_edit_action(self, message):
+        """Edit a user message: a queued one is unqueued, a sent one is cut back
+        (with everything after it) so it can be sent again."""
+        if getattr(message, "is_queued", False):
+            self.handle_edit_queued_action(message)
+        else:
+            self.handle_edit_sent_action(message)
+
+    def _fill_input(self, text: str, attached) -> None:
+        """Put a message back in the input, replacing the draft."""
         for image in attached:
             self._pasted_images[image["n"]] = image
         self.input_component.buffer.text = text
         self.input_component.buffer.cursor_pos = len(text)
         self.input_component._on_text_changed()
         self._set_app_focus("input")
+
+    def handle_edit_queued_action(self, message):
+        """Unqueue a message and put its text back in the input, replacing the
+        draft there, until the user sends it again."""
+        draft = getattr(message, "draft", None)
+        if draft is None or not self._unqueue(message):
+            return
+        self._fill_input(*draft)
+
+    def handle_edit_sent_action(self, message):
+        """Cut the conversation back to just before this user message and put
+        it in the input. Sending it again continues from there; the messages
+        after it are gone (the session file keeps them until the next save)."""
+        if self.is_generating():
+            self.flash_hint("stop the response first (esc)")
+            return
+        ids = message.harness_message_ids or []
+        entry = next((e for e in self.agent.history if e.get("id") in ids), None)
+        if entry is None:
+            return
+        text, attached = getattr(message, "draft", None) or (
+            entry.get("content") or "", list(entry.get("images") or ()))
+        self.agent.truncate_history(entry["id"])
+        panel = self.chat_history_panel
+        panel.truncate_from(message)
+        self._fill_input(text, attached)

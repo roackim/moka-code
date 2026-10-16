@@ -454,6 +454,16 @@ class Harness:
         self._last_usage = None
         self.conversation_cost = None
 
+    def truncate_history(self, message_id: str) -> bool:
+        """Drop the entry with this id and everything after it (editing a user
+        message in place). False when no entry has that id."""
+        for index, entry in enumerate(self.history):
+            if entry.get("id") == message_id:
+                del self.history[index:]
+                self._last_usage = None
+                return True
+        return False
+
     def set_private(self, on: bool) -> None:
         """Enter or leave private mode (``/private``; ``/clear`` leaves it)."""
         self.private = on

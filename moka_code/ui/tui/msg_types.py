@@ -9,15 +9,15 @@ class MsgAction(Enum):
     Only non-destructive, non-editing actions are exposed on messages. Actions
     that change conversation state (retry/stop/steer/pause/resume) or remove
     content (delete/edit) are intentionally not message actions; when needed
-    they belong to explicit commands. The one exception is a *queued* user
-    message (EDIT, CANCEL): it is not in the conversation yet, so unqueuing it
-    changes nothing the model has seen.
+    they belong to explicit commands. The exception is the user's own message
+    (EDIT): a queued one is not in the conversation yet, and a sent one is cut
+    back, with everything after it, to be edited and sent again.
     """
     COPY = ("c", "copy")
     OUTPUT = ("o", "output")
     ALLOW = ("a", "allow")
     DENY = ("x", "deny")
-    EDIT = ("e", "edit")        # queued message: back to the input
+    EDIT = ("e", "edit")        # user message: back to the input
     CANCEL = ("x", "cancel")    # queued message: dropped before it is sent
     
     def __init__(self, key: str, label: str):

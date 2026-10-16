@@ -231,3 +231,73 @@ def test_a_queued_message_offers_edit_and_cancel_only_while_waiting(monkeypatch)
     ui, _ = _queue_two(monkeypatch, body)
     sent = next(m for m in ui.chat_history_panel.messages if m.base_text == "second")
     assert MsgAction.EDIT not in sent.get_active_actions()
+
+
+def _history_chat(ui):
+    """A chat() that records each turn in ``ui.agent.history`` like the harness."""
+    async def chat(text, attached=None):
+        n = len(ui.agent.history)
+        ui.agent.history.append({"id": f"u{n}", "role": "user", "content": text})
+        yield events.Start(message_id=f"u{n}", role="user")
+        ui.agent.history.append({"id": f"a{n}", "role": "assistant", "content": f"answer to {text}"})
+        yield events.Start(message_id=f"a{n}", role="assistant")
+        yield events.Token(text=f"answer to {text}")
+        yield events.Done()
+    return chat
+
+
+def test_editing_a_sent_user_message_cuts_the_conversation_back(monkeypatch):
+    from moka_code.harness.harness import Harness
+    from moka_code.ui.tui.msg_types import MsgAction
+
+    async def scenario():
+        ui = _ui(monkeypatch, None)
+        ui.agent.history = []
+        ui.agent._last_usage = "x"
+        ui.agent.truncate_history = lambda i: Harness.truncate_history(ui.agent, i)
+        ui.agent.chat = _history_chat(ui)
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        for text in ("one", "two"):
+            ui.on_user_submit(text)
+            await asyncio.sleep(0.1)
+        second = next(m for m in ui.chat_history_panel.messages if m.base_text == "two")
+        assert MsgAction.EDIT in second.get_active_actions()
+        ui.input_component.buffer.text = "a draft"
+
+        ui.handle_edit_action(second)
+
+        assert ui.input_component.buffer.text == "two"          # replaces the draft
+        assert [e["content"] for e in ui.agent.history] == ["one", "answer to one"]
+        assert _texts(ui) == ["one", "answer to one"]
+        ui.on_user_submit("two, reworded")                      # continues from there
+        await asyncio.sleep(0.1)
+        ui.worker_task.cancel()
+        return ui
+
+    ui = asyncio.run(scenario())
+    assert [e["content"] for e in ui.agent.history] == [
+        "one", "answer to one", "two, reworded", "answer to two, reworded"]
+    assert "two" not in _texts(ui)
+
+
+def test_editing_is_refused_while_a_response_is_generating(monkeypatch):
+    async def chat(text, attached=None):
+        yield events.Start(message_id="u0", role="user")
+        await asyncio.sleep(10)
+        yield events.Done()
+
+    async def scenario():
+        ui = _ui(monkeypatch, chat)
+        ui.agent.history = [{"id": "u0", "role": "user", "content": "slow"}]
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        ui.on_user_submit("slow")
+        await asyncio.sleep(0.05)
+        message = next(m for m in ui.chat_history_panel.messages if m.base_text == "slow")
+        ui.handle_edit_action(message)
+        assert ui.agent.history == [{"id": "u0", "role": "user", "content": "slow"}]
+        assert message in ui.chat_history_panel.messages
+        ui.stop_generation()
+        await asyncio.sleep(0.05)
+        ui.worker_task.cancel()
+
+    asyncio.run(scenario())

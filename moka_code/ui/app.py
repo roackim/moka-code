@@ -563,7 +563,7 @@ class chatTUI(ChatActionHandlers):
             MsgAction.OUTPUT: self.handle_output_action,
             MsgAction.ALLOW: self.handle_allow_action,
             MsgAction.DENY: self.handle_deny_action,
-            MsgAction.EDIT: self.handle_edit_queued_action,
+            MsgAction.EDIT: self.handle_edit_action,
             MsgAction.CANCEL: self.handle_cancel_queued_action,
         }
         handler = handlers.get(action)
