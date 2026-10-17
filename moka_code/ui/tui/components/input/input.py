@@ -59,6 +59,11 @@ class InputComponent(Component):
         self.command_completion: Optional[CommandCompletion] = None
         self.command_list: List[str] = []
         self.command_descriptions: Dict[str, str] = {}
+        # ``!prompt`` menu: names, descriptions, and a name's parameters (hints).
+        self.prompt_completion: Optional[CommandCompletion] = None
+        self.prompt_names: Optional[Callable[[], List[str]]] = None
+        self.prompt_descriptions: Optional[Callable[[], Dict[str, str]]] = None
+        self.prompt_params: Optional[Callable[[str], List[str]]] = None
         self.subcommand_completion: Optional[SubcommandCompletion] = None
         self.subcommand_callback: Optional[Callable[[str], List[str]]] = None
         self.subcommand_descriptions_callback: Optional[Callable[[str], Dict[str, str]]] = None
@@ -108,6 +113,14 @@ class InputComponent(Component):
         self.command_list = commands
         self.command_descriptions = descriptions if callable(descriptions) else dict(descriptions or {})
     
+    def setup_prompts(self, names: Callable[[], List[str]],
+                      descriptions: Callable[[], Dict[str, str]],
+                      params: Callable[[str], List[str]]):
+        """Initialize ``!prompt`` completion and its parameter hints."""
+        self.prompt_names = names
+        self.prompt_descriptions = descriptions
+        self.prompt_params = params
+
     def setup_subcommands(self, get_subcommands_callback: Callable[[str], List[str]],
                           get_descriptions_callback: Optional[Callable[[str], Dict[str, str]]] = None):
         """Initialize subcommand completion system."""
@@ -139,6 +152,11 @@ class InputComponent(Component):
         if self.command_completion is None and self.command_list:
             self.command_completion = self._new_completion(lambda menu: CommandCompletion(
                 menu, self.command_list, self.command_descriptions))
+
+    def _ensure_prompt_menu(self):
+        if self.prompt_completion is None and self.prompt_names:
+            self.prompt_completion = self._new_completion(lambda menu: CommandCompletion(
+                menu, self.prompt_names, self.prompt_descriptions, trigger="!"))
 
     def _ensure_subcommand_menu(self):
         """Lazy-create subcommand menu and completion system on first use."""
@@ -176,6 +194,7 @@ class InputComponent(Component):
         self.bg = theme.get_bg()
         for completion in (
             self.command_completion,
+            self.prompt_completion,
             self.subcommand_completion,
             self.argument_completion,
             self.context_completion,
@@ -207,6 +226,9 @@ class InputComponent(Component):
         if self.command_list:
             self._ensure_command_menu()
             providers.append(self.command_completion)
+        if self.prompt_names:
+            self._ensure_prompt_menu()
+            providers.append(self.prompt_completion)
         if self.subcommand_callback:
             self._ensure_subcommand_menu()
             providers.append(self.subcommand_completion)
@@ -396,8 +418,11 @@ class InputComponent(Component):
         
         Uses the Command.params schema for generic, data-driven hints.
         """
-        text = self.buffer.text.lstrip()
-        
+        text = self.buffer.text
+        if text.startswith('!') and self.prompt_params:
+            return self._prompt_hint(text)
+        text = text.lstrip()
+
         # Only show hints for commands
         if not text.startswith('/'):
             return ""
@@ -454,6 +479,16 @@ class InputComponent(Component):
             return " " + " ".join(hints)
         return ""
     
+    def _prompt_hint(self, text: str) -> str:
+        """The parameters of ``!name`` still to type: ``<file> <focus>``."""
+        parts = text.split()
+        if not parts or (len(parts) == 1 and not text.endswith(' ')):
+            return ""
+        # Words after the name are parameters typed or begun; the rest are hinted
+        # (the last parameter takes the rest of the line, so it is hinted until begun).
+        remaining = self.prompt_params(parts[0][1:])[len(parts) - 1:]
+        return " " + " ".join(f"<{n}>" for n in remaining) if remaining else ""
+
     def tick_cursor(self):
         """Advance the cursor blink phase and request a redraw when focused.
 
@@ -516,6 +551,7 @@ class InputComponent(Component):
             completion and completion.is_active
             for completion in (
                 self.command_completion,
+                self.prompt_completion,
                 self.subcommand_completion,
                 self.argument_completion,
                 self.context_completion,
@@ -544,6 +580,7 @@ class InputComponent(Component):
         active_completion = None
         for completion in [
             self.command_completion,
+            self.prompt_completion,
             self.subcommand_completion,
             self.argument_completion,
             self.context_completion,

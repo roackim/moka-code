@@ -9,6 +9,7 @@ import atexit
 import time
 from typing import Any
 
+from moka_code import prompts
 from moka_code.ui.tui.compositor import Compositor
 from moka_code.ui.tui.events import KeyEvent, MouseEvent, PasteEvent, TickEvent
 from moka_code.ui.tui.components import (
@@ -128,6 +129,7 @@ class chatTUI(ChatActionHandlers):
         self.input_component.setup_subcommands(get_subcommand_list, get_subcommand_descriptions)
         get_context_items = lambda: agent.list_files_and_folders() if hasattr(agent, "list_files_and_folders") else []
         self.input_component.setup_context(get_context_items)
+        self.input_component.setup_prompts(self._prompt_names, self._prompt_descriptions, self._prompt_params)
         from moka_code.ui.commands import COMMANDS
         self.input_component.setup_command_registry(COMMANDS)
         self.input_box = Box(
@@ -495,6 +497,20 @@ class chatTUI(ChatActionHandlers):
                 return
             self.worker_task = asyncio.create_task(self.agent_worker())
 
+    def _workspace(self) -> str:
+        return getattr(self.agent, "workspace", None) or os.getcwd()
+
+    def _prompt_names(self) -> list:
+        return list(prompts.list_prompts(self._workspace()))
+
+    def _prompt_descriptions(self) -> dict:
+        return {name: f"{prompt.description} [{prompt.scope}]"
+                for name, prompt in prompts.list_prompts(self._workspace()).items()}
+
+    def _prompt_params(self, name: str) -> list:
+        prompt = prompts.list_prompts(self._workspace()).get(name)
+        return prompt.params if prompt else []
+
     def _enqueue_message(self, text: str, message: Message, attached=()) -> None:
         """Queue a message (with its image references) and apply queued presentation."""
         if self.is_generating() and message is not self._active_user_msg:
@@ -747,6 +763,17 @@ class chatTUI(ChatActionHandlers):
             self.flash_hint("can't send: this role requires a sandbox", 3.0, theme.ERROR)
             return False
 
+        # ``!name args`` expands a prompt file; the expansion is what is shown and
+        # sent, the typed call is what [e] edit puts back.
+        typed, expanded = text, None
+        try:
+            expanded = prompts.expand(text, self._workspace(), clean_args=unmention)
+        except prompts.PromptError as error:
+            self.chat_history_panel.add_message(str(error), msg_type=SysMsgError(), title="prompt")
+            return False
+        if expanded is not None:
+            text = expanded
+
         self._ensure_worker()
 
         if clean_text.lower() in ["exit", "quit", "q"]:
@@ -765,9 +792,10 @@ class chatTUI(ChatActionHandlers):
             # Create user message and queue it
             user_msg = self.chat_history_panel.add_user_message(
                 text, attached, queued=self.is_generating())
-            user_msg.draft = (text, list(attached))     # what [e] puts back in the input
+            user_msg.draft = (typed, list(attached))    # what [e] puts back in the input
 
-            self._enqueue_message(unmention(text), user_msg, attached)
+            self._enqueue_message(text if expanded is not None else unmention(text),
+                                  user_msg, attached)
             
             # Enable auto-scroll to show the new message
             self.chat_history_panel.auto_scroll = True

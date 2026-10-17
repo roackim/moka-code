@@ -25,6 +25,7 @@ activity panel. Nothing else reads the old location.
 | `roles/<name>.toml` | one role per file; file name is the role name | role body |
 | `sandboxes/<name>.toml` | one global sandbox per file; file name is the sandbox name | sandbox body |
 | `projects/<dirname>_<hash>/` | one project: `project.toml` (path + active) and `sandboxes/<name>.toml` (locals) | sandbox body |
+| `prompts/<name>.md` | one reusable prompt per file (global); local ones live in the workspace's `.moka/prompts/` | markdown template |
 | `state.toml` | last server/model, active theme, effort | machine-written |
 
 `state.toml` is disposable: deleting it only loses cached selections.

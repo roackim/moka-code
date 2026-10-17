@@ -404,6 +404,22 @@ style one provider's menu inline — that is how the argument menu drifted from
 the `/` and `@` menus. Descriptions come from `Command.get_descriptions(...)`
 (`Param.descriptions`, or an override such as `ConfigCommand` for `/config role <name>` / `/config theme <id>`).
 
+### Prompts (`!name`, `moka_code/prompts.py`)
+`!name arg1 arg2` as the first characters of the input expands `<name>.md`: global
+in `<config>/prompts/`, local in the workspace's `.moka/prompts/` (local wins).
+The file is the template, read when used (no cache, no watcher); `{param}` is a
+parameter (distinct names, in order of first appearance; the last takes the rest
+of the line; quotes group an earlier argument; `{{` / `}}` are literal braces);
+the menu description is the file's first non-empty line. `on_user_submit`
+expands it, so the transcript and the model get the expansion while the typed
+call is the message's `draft` (what `[e]` edit restores). `@path` in the
+arguments becomes a plain path; the template itself is never `unmention`ed. An
+unknown name or wrong argument count is an error and the text stays in the input;
+a leading space (or `!` followed by a space) sends it literally. `!` is a second
+`CommandCompletion` (`trigger="!"`, names read live), with the parameters still to
+type shown as a hint after the name. `/config prompt <name> [global|local]` opens
+(creating) the file in `$EDITOR`.
+
 ### Schema-Driven Parameter Hints
 
 When typing a `/command`, the input component shows grey hints for upcoming parameters. This is driven by the `Param` dataclass on each `Command`:

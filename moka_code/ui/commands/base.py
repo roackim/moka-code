@@ -133,7 +133,15 @@ def pick(ui: ChatUIProtocol, title: str, items: List[str], on_accept: Callable[[
 
 def config_section_completions() -> List[str]:
     """Return the editable config targets (for ``/config <section>``)."""
-    return [*settings.CONFIG_FILES, "sandbox", "role"]
+    return [*settings.CONFIG_FILES, "sandbox", "role", "prompt"]
+
+
+def prompt_name_completions() -> List[str]:
+    """Return the available prompt names (for ``/config prompt <name>``)."""
+    from moka_code import prompts
+    from moka_code.harness.harness import current_workspace
+
+    return list(prompts.list_prompts(current_workspace()))
 
 
 def role_name_completions() -> List[str]:

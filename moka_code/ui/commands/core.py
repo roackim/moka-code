@@ -27,6 +27,7 @@ from .base import (
     pick,
     reapply_endpoint,
     role_descriptions,
+    prompt_name_completions,
     role_name_completions,
     stop_before,
     theme_descriptions,
@@ -203,6 +204,7 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
             **settings.CONFIG_FILES,
             "sandbox": "sandboxes/<name>.toml  (global) · projects/<project>/sandboxes/  (local)",
             "role": "roles/<name>.toml  (create/edit a role)",
+            "prompt": "prompts/<name>.md  (global) · .moka/prompts/  (local); used as !<name>",
         }
         sections = config_section_completions()
 
@@ -224,6 +226,9 @@ async def cmd_config(ui: ChatUIProtocol, args: List[str]):
         return
     if section == "theme":
         await _config_theme(ui, args[1:])
+        return
+    if section == "prompt":
+        await _config_prompt(ui, args[1:])
         return
     if section not in settings.CONFIG_FILES:
         ui.chat_history_panel.add_message(
@@ -265,6 +270,10 @@ class ConfigCommand(Command):
                 return role_name_completions()
             if section == "theme":
                 return theme_name_completions()
+            if section == "prompt":
+                return prompt_name_completions()
+        if arg_index == 2 and prior_args and prior_args[0].lower() == "prompt":
+            return ["global", "local"]
         return super().get_completions(arg_index, prior_args)
 
     def get_descriptions(self, arg_index, prior_args=()):
@@ -327,6 +336,37 @@ async def _config_role(ui: ChatUIProtocol, args: List[str]):
         return
     await open_editor(ui, path)
     reload_and_apply(ui, "config")
+
+
+async def _config_prompt(ui: ChatUIProtocol, args: List[str]):
+    """Create/edit a prompt file in ``$EDITOR``. Prompts are read when used, so
+    there is nothing to reload."""
+    import os
+
+    from moka_code import prompts
+    from moka_code.ui.external_editor import open_editor, resolve_editor
+
+    workspace = getattr(ui.agent, "workspace", None) or os.getcwd()
+    existing = prompts.list_prompts(workspace)
+    if not args or len(args) > 2 or (len(args) == 2 and args[1] not in prompts.SCOPES):
+        listing = ", ".join(f"!{n} ({p.scope})" for n, p in existing.items()) or "none yet"
+        ui.chat_history_panel.add_message(
+            f"Usage: /config prompt <name> [global|local]\nPrompts: {listing}",
+            msg_type=SysMsg(), title="config")
+        return
+    name = args[0]
+    # An existing prompt opens where it lives; a new one is global unless said.
+    scope = args[1] if len(args) == 2 else (existing[name].scope if name in existing else "global")
+    if not resolve_editor():
+        ui.chat_history_panel.add_message(
+            "No editor found. Set $VISUAL or $EDITOR.", msg_type=SysMsgError(), title="config")
+        return
+    try:
+        path = prompts.ensure_prompt_file(name, scope, workspace)
+    except (OSError, ValueError) as exc:
+        ui.chat_history_panel.add_message(str(exc), msg_type=SysMsgError(), title="config")
+        return
+    await open_editor(ui, path)
 
 
 async def _config_theme(ui: ChatUIProtocol, args: List[str]):

@@ -22,7 +22,7 @@ the word changes.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Union
 
 from moka_code.ui.tui.colors import theme
 from moka_code.ui.tui.components.menu import SelectionMenu
@@ -134,28 +134,34 @@ class Completer:
 
 
 class CommandCompletion(Completer):
-    """Manages /command completion with auto-show menu."""
+    """Manages /command completion with auto-show menu. ``trigger`` and a
+    changing ``commands`` list make it the ``!prompt`` menu too."""
 
-    def __init__(self, menu, commands: List[str],
-                 descriptions: Optional[dict] = None):
+    def __init__(self, menu, commands: Union[List[str], Callable[[], List[str]]],
+                 descriptions: Optional[dict] = None, trigger: str = "/"):
         super().__init__(menu)
-        self.commands = commands
+        self._commands = commands
+        self.trigger = trigger
         # A dict, or a function returning one (descriptions that change).
         self.descriptions = descriptions if callable(descriptions) else dict(descriptions or {})
         self._apply_selector_style()
 
+    @property
+    def commands(self) -> List[str]:
+        return list(self._commands() if callable(self._commands) else self._commands)
+
     def should_trigger(self, text: str) -> bool:
         """Check if command completion should be active."""
         clean = text.lstrip()
-        # Trigger: starts with '/', no space (not a complete command)
-        return clean.startswith('/') and ' ' not in clean
+        # Trigger: starts with the trigger, no space (not a complete command)
+        return clean.startswith(self.trigger) and ' ' not in clean
 
     def get_current_command_word(self, text: str, cursor_pos: int) -> Optional[str]:
-        """Extract the /command word at cursor position (without /)."""
+        """Extract the command word at cursor position (without the trigger)."""
         clean = text.lstrip()
 
-        # Must start with /
-        if not clean.startswith('/'):
+        # Must start with the trigger
+        if not clean.startswith(self.trigger):
             return None
 
         # Find word boundaries (no space allowed in commands)
@@ -164,7 +170,7 @@ class CommandCompletion(Completer):
         else:
             word_part = clean
 
-        # Return without the leading /
+        # Return without the leading trigger
         return word_part[1:] if len(word_part) > 1 else ""
 
     def update(self, text: str, cursor_pos: int):
@@ -180,22 +186,23 @@ class CommandCompletion(Completer):
             self.hide()
             return
 
-        search_term = text.lstrip()[1:]  # Remove leading '/'
+        search_term = text.lstrip()[1:]  # Remove the leading trigger
+        commands = self.commands
 
         # Filter out exact matches (command is already complete)
-        if search_term.lower() in [cmd.lower() for cmd in self.commands]:
+        if search_term.lower() in [cmd.lower() for cmd in commands]:
             self.hide()
             return
 
         descriptions = self.descriptions() if callable(self.descriptions) else self.descriptions
-        self._show(self.commands, search_term, display_prefix="/", descriptions=descriptions)
+        self._show(commands, search_term, display_prefix=self.trigger, descriptions=descriptions)
 
     def accept_selection(self, text: str, cursor_pos: int) -> Optional[tuple[str, int]]:
         """Accept current selection, return (completed_text, cursor_pos)."""
         selected = self.menu.get_selected()
         if not selected:
             return None
-        completed = f"/{selected}"
+        completed = f"{self.trigger}{selected}"
         return completed, len(completed)
 
     def cancel(self, text: str, cursor_pos: int):
@@ -209,7 +216,6 @@ class CommandCompletion(Completer):
 # ---------------------------------------------------------------------------
 # /command sub-command
 # ---------------------------------------------------------------------------
-
 
 class SubcommandCompletion(Completer):
     """Manages /command subcommand completion with auto-show menu."""
