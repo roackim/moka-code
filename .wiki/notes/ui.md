@@ -402,7 +402,7 @@ picker) share **one** look, applied by `Completer._apply_selector_style()` in
 its constructor and pass descriptions via `_show(..., descriptions=...)`. Never
 style one provider's menu inline — that is how the argument menu drifted from
 the `/` and `@` menus. Descriptions come from `Command.get_descriptions(...)`
-(`Param.descriptions`, or an override such as `ConfigCommand` for `/config role <name>` / `/config theme <id>`).
+(`Param.descriptions`).
 
 ### Prompts (`!name`, `moka_code/prompts.py`)
 `!name arg1 arg2` as the first characters of the input expands `<name>.md`: global
@@ -417,8 +417,8 @@ arguments becomes a plain path; the template itself is never `unmention`ed. An
 unknown name or wrong argument count is an error and the text stays in the input;
 a leading space (or `!` followed by a space) sends it literally. `!` is a second
 `CommandCompletion` (`trigger="!"`, names read live), with the parameters still to
-type shown as a hint after the name. `/config prompt <name> [global|local]` opens
-(creating) the file in `$EDITOR`.
+type shown as a hint after the name. `/prompt` opens a picker of the prompts;
+`/prompt <name> [global|local]` opens (creating) the file in `$EDITOR`.
 
 ### Schema-Driven Parameter Hints
 
@@ -747,14 +747,14 @@ The package lives in `moka_code/ui/commands/`:
   `args[0]`. `ArgumentCompletion` already resolves the same tree, so each
   subcommand's `params` complete positionally — subcommands at `/cmd `, then
   the resolved subcommand's params at `/cmd sub `. `/sandbox` is the reference.
-- Subclass + override `get_completions` / `get_descriptions` only for purely
-  dynamic, cross-argument completion (currently `ConfigCommand` for `/config
-  role <name>` and `/config theme <id>`).
+- A `Command` is never subclassed: completion, descriptions and hints all read
+  `params` / `subcommands` (guarded by `test_command_contract.py`). How to write
+  one: [commands.md](./commands.md).
 
 ### Registered Commands
 
 `help`, `clear`, `private`, `reload`, `config`, `edit`, `export`, `import`, `compact`,
-`exit`, `stop`, `terminal`, `activity`, `debug`, `model`, `role`, `sandbox`, `diff`, `theme`
+`exit`, `stop`, `terminal`, `activity`, `debug`, `model`, `role`, `sandbox`, `diff`, `prompt`, `theme`
 
 ### Sandbox (`/sandbox`)
 
@@ -813,7 +813,7 @@ from a hand-rolled `get_completions`.
   conversation takes `agent`, else the first role that loads; with none, a no-tool
   placeholder and an error notice (`no role file loads → /config role agent`).
 - `/config role <name>` creates/opens `roles/<name>.toml` in `$EDITOR` and reloads;
-  `/config role delete <name> confirm` removes it.
+  `/config role-delete <name> confirm` removes it.
 
 ### Themes
 
@@ -853,42 +853,7 @@ from a hand-rolled `get_completions`.
 
 ### How to Add a New Command
 
-1. Write a handler in the relevant domain module (or `core.py` for a general one):
-   ```python
-   async def cmd_mycommand(ui: ChatUIProtocol, args: List[str]):
-       ui.chat_history_panel.add_message("hello", msg_type=SysMsg())
-   ```
-2. Register it in `registry.py`:
-   ```python
-   "mycommand": Command("mycommand", "One-line description", handler=cmd_mycommand,
-                        params=[Param("NAME", required=True)]),
-   ```
-    `Param` definitions drive parameter hints and fuzzy argument autocomplete;
-    `path=True` adds filesystem scanning.
-3. It is now callable as `/mycommand`, listed by `/help`, and offered by the input autocomplete.
-
-For a command with subcommands, build a tree instead of parsing `args[0]`:
-
-```python
-"mycommand": Command(
-    "mycommand", "One-line description",
-    handler=mycommand_help,                       # bare /mycommand
-    subcommands={
-        "start": Command("mycommand start", "…", handler=cmd_start,
-                         params=[Param("ID", completions=ids, descriptions=desc)]),
-        "build": Command("mycommand build", "…", handler=cmd_build,
-                         params=[Param("ID", completions=ids)]),
-    }),
-```
-
-`execute()` dispatches into the tree and `ArgumentCompletion` completes each
-subcommand's `params` positionally. Subclass `Command` and override
-`get_completions` / `get_descriptions` only when completion genuinely depends on
-earlier arguments (currently `ConfigCommand`).
-
-### Hiding a Command from `/help`
-
-Prefix the registry key with `_`; `cmd_help` / `get_command_descriptions` skip such names.
+See [commands.md](./commands.md).
 
 ## Terminal I/O (`tui/terminal.py`)
 

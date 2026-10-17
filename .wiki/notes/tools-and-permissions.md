@@ -149,7 +149,7 @@ Unknown tool names and values other than `no`/`ask`/`yes` are reported as
 | `/role` | list roles, mark the active one |
 | `/role <name>` | switch the active role |
 | `/config role <id>` | ensure the file exists, open in `$EDITOR`, reload |
-| `/config role delete <id> [confirm]` | confirm, then unlink |
+| `/config role-delete <id> [confirm]` | confirm, then unlink |
 
 ## Edit Tool (`worker.py`)
 

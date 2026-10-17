@@ -12,6 +12,7 @@ This document tells AI agents and humans how to operate and maintain this wiki.
   notes/
     principles.md           ← Canonical design principles (direction; read first)
     architecture.md         ← High-level system design and data flow
+    commands.md             ← How to write a slash command (the Command/Param declaration, guards)
     config.md               ← Configuration reference (split files under ~/.config/moka/)
     reasoning-traces.md     ← Reasoning trace handling (reasoning fields; content never parsed)
     security.md             ← Approval model and trust boundary

@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 
 from moka_code.ui.external_editor import edit_file, resolve_editor
-from moka_code.ui.commands.core import cmd_config, cmd_edit, cmd_reload
+from moka_code.ui.commands.core import cmd_edit, cmd_reload
+from moka_code.ui.commands.registry import COMMANDS
+
+
+def cmd_config(ui, args):
+    """``/config <args>`` as typed."""
+    return COMMANDS["config"].execute(ui, args)
 
 
 class _Panel:
@@ -120,10 +126,10 @@ def test_config_command_no_args_opens_the_section_picker(monkeypatch, tmp_path):
     assert captured["title"] == "Config"
     assert {"ui", "servers", "sandbox", "role"} <= set(captured["items"])
     assert not captured.get("ordered")                  # the menu sorts it
-    assert captured["descriptions"]["ui"] == "ui.toml"
+    assert captured["descriptions"]["ui"] == "Edit ui.toml and reload"
 
     opened = []
-    monkeypatch.setattr("moka_code.ui.commands.core.cmd_config",
+    monkeypatch.setattr(COMMANDS["config"], "execute",
                         lambda ui, args: opened.append(args) or asyncio.sleep(0))
 
     async def accept():

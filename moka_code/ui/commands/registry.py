@@ -1,12 +1,12 @@
 """Command registry: the single assembly point for all slash commands.
 
 Handlers live in per-domain modules (``core``, ``models``, ``roles``,
-``themes``, ``conversation``). Those modules depend only on
+``themes``, ``conversation``…). Those modules depend only on
 :mod:`moka_code.ui.commands.base`; this module is the only place that knows
 about all of them, which keeps the import graph acyclic.
 
-Most commands are plain handler functions with metadata; only the ``config``
-command is a small ``Command`` subclass (for contextual role completions).
+Every command is a plain ``Command``: its ``params`` and ``subcommands`` are the
+whole description of its arguments (see ``.wiki/notes/commands.md``).
 """
 
 from __future__ import annotations
@@ -17,6 +17,8 @@ from .base import (
     ChatUIProtocol,
     Command,
     Param,
+    prompt_descriptions,
+    prompt_name_completions,
     role_descriptions,
     role_name_completions,
 )
@@ -24,7 +26,7 @@ from .conversation import (
     conversation_export, conversation_import, conversation_session, json_file_completions,
 )
 from .core import (
-    ConfigCommand,
+    config_command,
     cmd_activity,
     cmd_clear,
     cmd_compact,
@@ -61,6 +63,7 @@ from .sandbox import (
     sandbox_start,
 )
 from .diff import changed_descriptions, changed_files, diff_command, live_description
+from .prompts import prompt_command
 from .themes import theme_command
 
 # Help needs the whole registry, so its handler is assembled here.
@@ -76,7 +79,7 @@ COMMANDS: Dict[str, Command] = {
                             handler=cmd_private),
     "reload":       Command("reload", "Reload config files and validate role files from disk",
                             handler=cmd_reload),
-    "config":       ConfigCommand(),
+    "config":       config_command(),
     "edit":         Command("edit", "Open a file in $EDITOR", handler=cmd_edit,
                             params=[Param("FILE", path=True)]),
     "export":       Command("export", "Export conversation history to a JSON file",
@@ -177,9 +180,17 @@ COMMANDS: Dict[str, Command] = {
                             handler=diff_command, live_description=live_description,
                             params=[Param("FILE", completions=changed_files,
                                           descriptions=changed_descriptions, ordered=True)]),
+    "prompt":       Command("prompt", "Create or edit a !prompt file (opens a picker)",
+                            handler=prompt_command,
+                            params=[Param("NAME", completions=prompt_name_completions,
+                                          descriptions=prompt_descriptions),
+                                    Param("SCOPE", completions=["global", "local"], ordered=True)]),
     "theme":        Command("theme", "Select the color theme (opens a picker with live preview)",
                             handler=theme_command),
 }
+
+# ``/config sandbox`` is ``/sandbox config``: one Command, so one set of params.
+COMMANDS["config"].subcommands["sandbox"] = COMMANDS["sandbox"].subcommands["config"]
 
 
 async def handle_command(ui: ChatUIProtocol, text: str):

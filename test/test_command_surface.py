@@ -31,22 +31,22 @@ def test_config_command_completes_role_names():
     assert "role" in sections
     assert "ui" in sections
 
-    names = config.get_completions(1, ("role",))
+    names = config.subcommands["role"].get_completions(0)
     assert "agent" in names
     assert "chat" in names
 
-    # A non-role section must not offer role names.
-    assert config.get_completions(1, ("ui",)) == []
+    # A flat section takes no argument, so it offers no role names.
+    assert config.subcommands["ui"].get_completions(0) == []
 
 
 def test_config_command_completes_theme_names():
-    config = COMMANDS["config"]
+    theme = COMMANDS["config"].subcommands["theme"]
 
-    names = config.get_completions(1, ("theme",))
+    names = theme.get_completions(0)
     assert "terminal" in names
     assert "nord" in names
 
-    assert config.get_descriptions(1, ("theme",))["terminal"] == "built-in"
+    assert theme.get_descriptions(0)["terminal"] == "built-in"
 
 
 def test_every_command_has_a_description():

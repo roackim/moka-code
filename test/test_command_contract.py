@@ -86,3 +86,45 @@ def test_bare_role_without_a_compositor_lists_them_as_text(monkeypatch, tmp_path
     asyncio.run(COMMANDS["role"].execute(ui, []))
 
     assert "active: agent" in ui.popups[-1] and "chat" in ui.popups[-1]
+
+
+def _all_commands(command=None, path=()):
+    for name, root in ((COMMANDS.items()) if command is None else command.subcommands.items()):
+        yield path + (name,), root
+        yield from _all_commands(root, path + (name,))
+
+
+def test_every_command_is_a_plain_command_described_by_its_schema():
+    """Completion, descriptions and hints all read ``subcommands`` and ``params``.
+    A subclass that answers some other way (``ConfigCommand`` once did) leaves the
+    schema, and so the hint, blind to it."""
+    from moka_code.ui.commands.base import Command
+
+    subclasses = [" ".join(path) for path, command in _all_commands() if type(command) is not Command]
+    assert subclasses == []
+
+
+def test_every_config_file_is_a_config_subcommand():
+    from moka_code import settings
+
+    assert set(settings.CONFIG_FILES) <= set(COMMANDS["config"].subcommands)
+
+
+def test_config_arguments_are_hinted_like_sandbox_ones():
+    from moka_code.ui.tui.components.input.input import InputComponent
+
+    entry = InputComponent("", id="entry")
+    entry.setup_command_registry(COMMANDS)
+
+    def hint(text):
+        entry.buffer.text = text
+        return entry._get_parameter_hint()
+
+    assert hint("/config ") == " <subcommand>"
+    assert hint("/prompt ") == " [NAME] [SCOPE]"
+    assert hint("/prompt review ") == " [SCOPE]"
+    assert hint("/config role ") == " <NAME>"
+    assert hint("/config role-delete agent ") == " [CONFIRM]"
+    assert hint("/config theme ") == " [NAME]"
+    assert hint("/config sandbox ") == " [NAME]"
+    assert hint("/config ui ") == ""

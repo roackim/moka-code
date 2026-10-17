@@ -133,7 +133,7 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   lifecycle (see [sandbox.md](./sandbox.md)).
 - `/edit <path>` opens any file.
 - `/config role <name>` opens (creating if needed) `roles/<name>.toml`;
-  `/config role delete <name> confirm` removes it.
+  `/config role-delete <name> confirm` removes it.
 - `/config theme` opens `themes.toml`; `/config theme <id>` first materializes a
   `[themes.<id>]` override section from that theme's current palette (with name
   suggestions as you type the id), then opens the file.

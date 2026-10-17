@@ -48,26 +48,30 @@ Slash command system. Leaf commands are plain `async def` handlers wrapped in
 | File | Purpose |
 |------|---------|
 | `registry.py` | The single `COMMANDS` assembly point; `handle_command`, description/completion helpers |
-| `base.py` | `Command`, `Param`, `ChatUIProtocol`, completion helpers (`config_section_completions`, `role_*`) |
+| `base.py` | `Command`, `Param`, `ChatUIProtocol`, completion helpers (`role_*`, `prompt_*`, `theme_*`) |
 | `core.py` | Core commands: help, clear, reload, config, edit, compact, exit, stop, activity |
 | `conversation.py` | `/import`, `/export` |
 | `models.py` | `/model` leaf (picker or direct selection) |
 | `roles.py` | `/role` — list roles or switch the active one |
 | `sandbox.py` | `/sandbox` — verb-first: `config [name]`, `path [name]`, `new`, `copy`, `build <name>`, `start [name]`, `restart`, `init <name> [base]`, `stop`, `terminal` |
+| `prompts.py` | `/prompt` — picker over the `!prompt` files, or open/create one (`moka_code/prompts.py` is the library) |
 | `themes.py` | `/theme` — picker or direct color-theme selection |
 
 Registered commands: `help`, `clear`, `reload`, `config`, `edit`, `export`,
 `import`, `compact`, `exit`, `stop`, `activity`, `model`, `role`, `sandbox`,
-`theme`.
+`prompt`, `theme`.
 
 - `/config <section>` opens a section file in `$EDITOR` and reloads (sections:
   `ui`, `context`, `debug`, `styles`, `servers`, `theme`).
   `/config sandbox [name]` opens one sandbox's file (a picker without a name) and
   re-applies the active entry;
   `/config role <name>` creates/opens `roles/<name>.toml`;
-  `/config role delete <name> confirm` removes it (`_config_role` in `core.py`);
+  `/config role-delete <name> confirm` removes it (`_config_role_delete` in `core.py`);
   `/config theme <id>` materializes a `[themes.<id>]` section then opens
-  `themes.toml` (`_config_theme`). Both offer id completions via `ConfigCommand`.
+  `themes.toml` (`_config_theme`); `/prompt` has its own command. `/config` is a `Command` tree built by
+  `config_command()` (one subcommand per `settings.CONFIG_FILES` section plus
+  `role`, `role-delete`; `sandbox` is `/sandbox config`), so completion and hints come from its
+  `params`.
 - Domain modules import **only** `base`; `registry.py` is the assembler
   (enforced by `test/test_command_import_graph.py`).
 - See [notes/tools-and-permissions.md](../notes/tools-and-permissions.md) for the role model and

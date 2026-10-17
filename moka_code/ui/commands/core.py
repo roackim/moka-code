@@ -21,13 +21,10 @@ from .base import (
     ChatUIProtocol,
     Command,
     Param,
-    config_section_completions,
-    open_project_sandbox,
     open_shell,
     pick,
     reapply_endpoint,
     role_descriptions,
-    prompt_name_completions,
     role_name_completions,
     stop_before,
     theme_descriptions,
@@ -190,144 +187,43 @@ def _report_reload(ui: ChatUIProtocol, errors: List[str], title: str | None = No
             getattr(ui, refresh)()
 
 
-async def cmd_config(ui: ChatUIProtocol, args: List[str]):
-    """Open one config section file in the user's editor, then reload it."""
-    from moka_code import settings
-    from moka_code.ui.external_editor import open_editor, resolve_editor
+def _no_editor(ui: ChatUIProtocol) -> bool:
+    """Say so when there is no editor; True when there is none."""
+    from moka_code.ui.external_editor import resolve_editor
 
-    if not args:
-        # The same list as ``/config <section>`` completion; picking one
-        # opens it.
-        import asyncio
-
-        descriptions = {
-            **settings.CONFIG_FILES,
-            "sandbox": "sandboxes/<name>.toml  (global) · projects/<project>/sandboxes/  (local)",
-            "role": "roles/<name>.toml  (create/edit a role)",
-            "prompt": "prompts/<name>.md  (global) · .moka/prompts/  (local); used as !<name>",
-        }
-        sections = config_section_completions()
-
-        def _as_text() -> None:
-            lines = [f"{s.ljust(10)} {descriptions[s]}" for s in sort_items(sections)]
-            ui.chat_history_panel.add_message("\n".join(lines), msg_type=SysMsg(), title="config")
-
-        pick(ui, "Config", sections,
-             lambda section: asyncio.ensure_future(cmd_config(ui, [section])),
-             descriptions=descriptions, headless=_as_text)
-        return
-
-    section = args[0].lower()
-    if section == "sandbox":
-        await _config_sandbox(ui, args[1:])
-        return
-    if section == "role":
-        await _config_role(ui, args[1:])
-        return
-    if section == "theme":
-        await _config_theme(ui, args[1:])
-        return
-    if section == "prompt":
-        await _config_prompt(ui, args[1:])
-        return
-    if section not in settings.CONFIG_FILES:
-        ui.chat_history_panel.add_message(
-            f"Unknown section '{section}'. Valid: "
-            + ", ".join(settings.CONFIG_FILES),
-            msg_type=SysMsgError(), title="config")
-        return
-
-    if not resolve_editor():
-        ui.chat_history_panel.add_message(
-            "No editor found. Set $VISUAL or $EDITOR.",
-            msg_type=SysMsgError(), title="config")
-        return
-    path = settings.config.ensure_section_file(section)
-    await open_editor(ui, path)
-    reload_and_apply(ui, "config")
+    if resolve_editor():
+        return False
+    ui.chat_history_panel.add_message(
+        "No editor found. Set $VISUAL or $EDITOR.", msg_type=SysMsgError(), title="config")
+    return True
 
 
-async def _config_sandbox(ui: ChatUIProtocol, args: List[str]):
-    """Open a sandbox's file (a picker without a name) and apply the active entry."""
-    await open_project_sandbox(ui, args[0] if args else None)
+def _config_flat(section: str):
+    """The handler of a flat section (``ui``, ``servers``…): open its file, then reload."""
+    async def handler(ui: ChatUIProtocol, args: List[str]):
+        from moka_code import settings
+        from moka_code.ui.external_editor import open_editor
 
+        if _no_editor(ui):
+            return
+        await open_editor(ui, settings.config.ensure_section_file(section))
+        reload_and_apply(ui, "config")
 
-class ConfigCommand(Command):
-    """``/config [section]``; offers role/theme ids after the matching section."""
-
-    def __init__(self):
-        super().__init__(
-            "config",
-            "Edit a config file in $EDITOR and reload it",
-            handler=cmd_config,
-            params=[Param("SECTION", completions=config_section_completions)],
-        )
-
-    def get_completions(self, arg_index, prior_args=()):
-        if arg_index == 1 and prior_args:
-            section = prior_args[0].lower()
-            if section == "role":
-                return role_name_completions()
-            if section == "theme":
-                return theme_name_completions()
-            if section == "prompt":
-                return prompt_name_completions()
-        if arg_index == 2 and prior_args and prior_args[0].lower() == "prompt":
-            return ["global", "local"]
-        return super().get_completions(arg_index, prior_args)
-
-    def get_descriptions(self, arg_index, prior_args=()):
-        if arg_index == 1 and prior_args:
-            section = prior_args[0].lower()
-            if section == "role":
-                return role_descriptions()
-            if section == "theme":
-                return theme_descriptions()
-        return super().get_descriptions(arg_index, prior_args)
+    return handler
 
 
 async def _config_role(ui: ChatUIProtocol, args: List[str]):
-    """Create/edit a role file, then reload. ``delete`` requires confirmation."""
-    from moka_code import settings
+    """Create/edit a role file, then reload."""
     from moka_code.harness import roles
-    from moka_code.ui.external_editor import open_editor, resolve_editor
+    from moka_code.ui.external_editor import open_editor
 
     if not args:
-        names = ", ".join(roles.list_roles())
         ui.chat_history_panel.add_message(
-            f"Usage: /config role <name>  |  /config role delete <name>\n"
-            f"Roles: {names}",
+            f"Usage: /config role <name>  |  /config role-delete <name>\n"
+            f"Roles: {', '.join(roles.list_roles())}",
             msg_type=SysMsg(), title="config")
         return
-
-    if args[0] == "delete":
-        if len(args) < 2:
-            ui.chat_history_panel.add_message(
-                "Usage: /config role delete <name>", msg_type=SysMsgError(), title="config")
-            return
-        name = args[1]
-        if len(args) == 2:
-            ui.chat_history_panel.add_message(
-                f"This deletes roles/{name}.toml. Re-run to confirm:\n"
-                f"/config role delete {name} confirm",
-                msg_type=SysMsgWarning(), title="config")
-            return
-        if args[2] != "confirm":
-            ui.chat_history_panel.add_message(
-                "Confirmation token must be 'confirm'.", msg_type=SysMsgError(), title="config")
-            return
-        try:
-            roles.delete_role(name)
-        except (KeyError, OSError, ValueError) as exc:
-            ui.chat_history_panel.add_message(str(exc), msg_type=SysMsgError(), title="config")
-            return
-        ui.chat_history_panel.add_message(f"Deleted role: {name}", msg_type=SysMsg(), title="config")
-        return
-
-    if not resolve_editor():
-        ui.chat_history_panel.add_message(
-            "No editor found. Set $VISUAL or $EDITOR.",
-            msg_type=SysMsgError(), title="config")
+    if _no_editor(ui):
         return
     try:
         path = roles.ensure_role_file(args[0])
@@ -338,35 +234,31 @@ async def _config_role(ui: ChatUIProtocol, args: List[str]):
     reload_and_apply(ui, "config")
 
 
-async def _config_prompt(ui: ChatUIProtocol, args: List[str]):
-    """Create/edit a prompt file in ``$EDITOR``. Prompts are read when used, so
-    there is nothing to reload."""
-    import os
+async def _config_role_delete(ui: ChatUIProtocol, args: List[str]):
+    """Delete a role file; asks to be run again with ``confirm``."""
+    from moka_code.harness import roles
 
-    from moka_code import prompts
-    from moka_code.ui.external_editor import open_editor, resolve_editor
-
-    workspace = getattr(ui.agent, "workspace", None) or os.getcwd()
-    existing = prompts.list_prompts(workspace)
-    if not args or len(args) > 2 or (len(args) == 2 and args[1] not in prompts.SCOPES):
-        listing = ", ".join(f"!{n} ({p.scope})" for n, p in existing.items()) or "none yet"
+    if not args:
         ui.chat_history_panel.add_message(
-            f"Usage: /config prompt <name> [global|local]\nPrompts: {listing}",
-            msg_type=SysMsg(), title="config")
+            "Usage: /config role-delete <name> [confirm]", msg_type=SysMsgError(), title="config")
         return
     name = args[0]
-    # An existing prompt opens where it lives; a new one is global unless said.
-    scope = args[1] if len(args) == 2 else (existing[name].scope if name in existing else "global")
-    if not resolve_editor():
+    if len(args) == 1:
         ui.chat_history_panel.add_message(
-            "No editor found. Set $VISUAL or $EDITOR.", msg_type=SysMsgError(), title="config")
+            f"This deletes roles/{name}.toml. Re-run to confirm:\n"
+            f"/config role-delete {name} confirm",
+            msg_type=SysMsgWarning(), title="config")
+        return
+    if args[1] != "confirm":
+        ui.chat_history_panel.add_message(
+            "Confirmation token must be 'confirm'.", msg_type=SysMsgError(), title="config")
         return
     try:
-        path = prompts.ensure_prompt_file(name, scope, workspace)
-    except (OSError, ValueError) as exc:
+        roles.delete_role(name)
+    except (KeyError, OSError, ValueError) as exc:
         ui.chat_history_panel.add_message(str(exc), msg_type=SysMsgError(), title="config")
         return
-    await open_editor(ui, path)
+    ui.chat_history_panel.add_message(f"Deleted role: {name}", msg_type=SysMsg(), title="config")
 
 
 async def _config_theme(ui: ChatUIProtocol, args: List[str]):
@@ -399,6 +291,57 @@ async def _config_theme(ui: ChatUIProtocol, args: List[str]):
 
     await open_editor(ui, path)
     reload_and_apply(ui, "config")
+
+
+def config_command() -> Command:
+    """``/config``: one subcommand per file or kind of file, each declaring its own
+    parameters, so completion, descriptions and hints all come from the tree. The
+    registry adds ``sandbox`` (the command ``/sandbox config`` is)."""
+    import asyncio
+
+    from moka_code import settings
+
+    subcommands = {
+        section: Command(f"config {section}", f"Edit {filename} and reload",
+                         handler=_config_flat(section))
+        for section, filename in settings.CONFIG_FILES.items() if section != "theme"
+    }
+    subcommands["theme"] = Command(
+        "config theme", "Edit themes.toml (a theme name adds its palette to edit)",
+        handler=_config_theme,
+        params=[Param("NAME", completions=theme_name_completions, descriptions=theme_descriptions)])
+    subcommands["role"] = Command(
+        "config role", "Create or edit roles/<name>.toml", handler=_config_role,
+        params=[Param("NAME", required=True, completions=role_name_completions,
+                      descriptions=role_descriptions)])
+    subcommands["role-delete"] = Command(
+        "config role-delete", "Delete roles/<name>.toml (asks to confirm)",
+        handler=_config_role_delete,
+        params=[Param("NAME", required=True, completions=role_name_completions,
+                      descriptions=role_descriptions),
+                Param("CONFIRM", completions=["confirm"])])
+
+    async def config_help(ui: ChatUIProtocol, args: List[str]):
+        """Bare ``/config``: a picker over the subcommands. Anything else is not one."""
+        if args:
+            ui.chat_history_panel.add_message(
+                f"Unknown section '{args[0]}'. Valid: {', '.join(command.subcommands)}",
+                msg_type=SysMsgError(), title="config")
+            return
+        sections = list(command.subcommands)
+        descriptions = {name: sub.description for name, sub in command.subcommands.items()}
+
+        def _as_text() -> None:
+            lines = [f"{s.ljust(12)} {descriptions[s]}" for s in sort_items(sections)]
+            ui.chat_history_panel.add_message("\n".join(lines), msg_type=SysMsg(), title="config")
+
+        pick(ui, "Config", sections,
+             lambda section: asyncio.ensure_future(command.execute(ui, [section])),
+             descriptions=descriptions, headless=_as_text)
+
+    command = Command("config", "Edit a config file in $EDITOR and reload it",
+                      handler=config_help, subcommands=subcommands)
+    return command
 
 
 async def cmd_edit(ui: ChatUIProtocol, args: List[str]):
@@ -505,6 +448,6 @@ async def cmd_activity(ui: ChatUIProtocol, args: List[str]):
 
 
 __all__ = [
-    "cmd_debug", "cmd_help", "cmd_clear", "cmd_reload", "cmd_config", "cmd_edit",
-    "cmd_compact", "cmd_exit", "cmd_stop", "cmd_activity", "ConfigCommand",
+    "cmd_debug", "cmd_help", "cmd_clear", "cmd_reload", "config_command", "cmd_edit",
+    "cmd_compact", "cmd_exit", "cmd_stop", "cmd_activity",
 ]

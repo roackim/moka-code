@@ -238,9 +238,9 @@ def test_the_hint_after_the_name_lists_the_parameters_still_to_type(workspace, m
     assert hint("!ghost ") == ""
 
 
-# -- /config prompt ----------------------------------------------------------------------
+# -- /prompt ----------------------------------------------------------------------------
 
-def _config_ui(workspace, monkeypatch):
+def _prompt_ui(workspace, monkeypatch, picker=False):
     from types import SimpleNamespace
 
     class _Panel:
@@ -258,31 +258,53 @@ def _config_ui(workspace, monkeypatch):
 
     monkeypatch.setenv("EDITOR", "my-editor")
     monkeypatch.setattr("moka_code.ui.external_editor.open_editor", _open)
-    return SimpleNamespace(agent=SimpleNamespace(workspace=str(workspace)),
-                           chat_history_panel=_Panel()), opened
+    ui = SimpleNamespace(agent=SimpleNamespace(workspace=str(workspace)),
+                         chat_history_panel=_Panel())
+    if picker:
+        ui.picked = {}
+        ui.show_search_modal = lambda title, items, **k: ui.picked.update(title=title, items=items, **k)
+    return ui, opened
 
 
-def test_config_prompt_creates_global_by_default_local_on_request_and_opens_where_it_lives(workspace, monkeypatch):
-    from moka_code.ui.commands.core import cmd_config
+def test_prompt_creates_global_by_default_local_on_request_and_opens_where_it_lives(workspace, monkeypatch):
+    from moka_code.ui.commands.registry import COMMANDS
 
-    ui, opened = _config_ui(workspace, monkeypatch)
+    ui, opened = _prompt_ui(workspace, monkeypatch)
 
-    asyncio.run(cmd_config(ui, ["prompt", "review"]))
-    asyncio.run(cmd_config(ui, ["prompt", "fix", "local"]))
-    asyncio.run(cmd_config(ui, ["prompt", "fix"]))               # exists locally: opens that one
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["review"]))
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["fix", "local"]))
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["fix"]))         # exists locally: opens that one
 
     assert opened == [_glob(workspace) / "review.md", _loc(workspace) / "fix.md", _loc(workspace) / "fix.md"]
     assert (_glob(workspace) / "review.md").exists()
 
 
-def test_config_prompt_without_a_name_lists_the_prompts_and_the_usage(workspace, monkeypatch):
-    from moka_code.ui.commands.core import cmd_config
+def test_bare_prompt_opens_a_picker_of_the_prompts_and_choosing_opens_the_file(workspace, monkeypatch):
+    from moka_code.ui.commands.registry import COMMANDS
 
-    _write(_glob(workspace), "review", "x")
-    ui, opened = _config_ui(workspace, monkeypatch)
+    _write(_glob(workspace), "review", "# Review a file\n{file}")
+    ui, opened = _prompt_ui(workspace, monkeypatch, picker=True)
 
-    asyncio.run(cmd_config(ui, ["prompt"]))
+    async def scenario():
+        await COMMANDS["prompt"].execute(ui, [])
+        assert ui.picked["title"] == "Prompts" and ui.picked["items"] == ["review"]
+        assert ui.picked["descriptions"] == {"review": "Review a file [global]"}
+        ui.picked["on_accept"]("review")
+        await asyncio.sleep(0.05)
 
+    asyncio.run(scenario())
+
+    assert opened == [_glob(workspace) / "review.md"]
+
+
+def test_bare_prompt_with_none_says_how_to_make_one_and_bad_arguments_show_the_usage(workspace, monkeypatch):
+    from moka_code.ui.commands.registry import COMMANDS
+
+    ui, opened = _prompt_ui(workspace, monkeypatch)
+
+    asyncio.run(COMMANDS["prompt"].execute(ui, []))
+    assert "No prompts yet. /prompt <name> creates one" in ui.chat_history_panel.messages[-1]
+
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["review", "nowhere"]))
+    assert ui.chat_history_panel.messages[-1] == "Usage: /prompt <name> [global|local]"
     assert opened == []
-    assert "Usage: /config prompt <name> [global|local]" in ui.chat_history_panel.messages[-1]
-    assert "!review (global)" in ui.chat_history_panel.messages[-1]

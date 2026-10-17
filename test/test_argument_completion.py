@@ -62,14 +62,10 @@ def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_pa
     assert comp.menu.item_descriptions.get("dev") == "local · toolchain"
 
 
-def test_config_role_completion_uses_role_descriptions(monkeypatch):
-    import moka_code.ui.commands.core as core
+def test_config_role_completion_uses_role_descriptions():
+    from moka_code.ui.commands.registry import COMMANDS
 
-    monkeypatch.setattr(core, "role_name_completions", lambda: ["agent", "chat"])
-    monkeypatch.setattr(core, "role_descriptions", lambda: {"agent": "General agent"})
+    role = COMMANDS["config"].subcommands["role"]
 
-    cmd = core.ConfigCommand()
-
-    assert cmd.get_completions(1, ("role",)) == ["agent", "chat"]
-    assert cmd.get_descriptions(1, ("role",)) == {"agent": "General agent"}
-    assert cmd.get_descriptions(1, ("ui",)) == {}
+    assert {"agent", "chat"} <= set(role.get_completions(0))
+    assert role.get_descriptions(0)["agent"]

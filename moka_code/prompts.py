@@ -156,7 +156,7 @@ def expand(text: str, workspace: str | Path,
     name = call.group(1)
     prompts = list_prompts(workspace)
     if name not in prompts:
-        available = ", ".join(f"!{n}" for n in prompts) or "none (see /config prompt)"
+        available = ", ".join(f"!{n}" for n in prompts) or "none (see /prompt)"
         raise PromptError(f"Unknown prompt: !{name}. Available: {available}")
     template = prompts[name].text
     names = params_of(template)
