@@ -198,6 +198,24 @@ starts with `Error:` or `[TOOL DENIED]`; unfiltered, the call and its result.
 Reasoning is `[thinking] …` only when `filter_thoughts` is off. Owns
 `COMPACTION_MARKER_PREFIX`.
 
+`cut_index(history, keep_tokens)` — where the verbatim tail starts: the earliest
+user message from which the rest fits (always at least the last user message;
+notices just before it go with it); `estimate_tokens` is characters / 4.
+
+**Strategy.** `compact_history` summarizes only the part before that cut (the
+earlier summary folded in) and inserts the marker *at* the cut, so the newest
+turns (`context.compact_keep` of the window, default 10%) stay word for word and
+"send from the last marker" needs no change. The active sandbox notice is
+re-emitted right after the marker. With nothing older than the newest turn it
+summarizes everything, unless a turn is running (`whole_if_needed=False`).
+**Triggers** (`Harness._auto_compact`, window from `endpoint.context_window()`,
+size from `context_estimate()` = last reported prompt tokens + an estimate of
+what was added since): after a turn ends over `compact_at` (0.8), and before each
+request inside a turn over `compact_stop_at` (0.85), which compacts and carries
+on; if nothing older can be summarized, or the estimate stays over the limit, the
+turn stops with an error. Progress and failures are `events.Notice`; an unknown
+window turns auto-compaction off and the notice band says so. `0` disables.
+
 ### `changes.py`
 `changes(workspace)` → `[Change(path, status, added, removed)]` (`None` outside a
 git repository): `git status --porcelain -z -uall` plus `git diff --numstat`

@@ -145,6 +145,10 @@ def notices(agent) -> list[tuple[str, str]]:
     problem = getattr(agent, "sandbox_problem", None)
     if problem:
         warnings.append(problem)
+    window = getattr(endpoint, "context_window", None)
+    if (endpoint is not None and callable(window) and window() is None
+            and (settings.config.context_compact_at > 0 or settings.config.context_compact_stop_at > 0)):
+        warnings.append("context size unknown: auto-compact is off (/compact works by hand)")
     drift = getattr(agent, "sandbox_drift", None)
     drift = drift() if callable(drift) else None
     sandbox_name = getattr(agent, "sandbox_name", None)

@@ -190,7 +190,10 @@ variables.
 `context_sessions` (`context.sessions`, conversations saved per project; 0 = off),
 `context_compact_filter_thoughts` / `context_compact_filter_tool_calls`
 (`/compact` input: reasoning left out; each tool call one line, no output;
-both default on), `context_diff_context` (`context.diff_context`: lines around
+both default on), `context_compact_at` / `context_compact_stop_at` /
+`context_compact_keep` (auto-compaction: fractions of the context window,
+defaults 0.8 / 0.85 / 0.1; see `tree/harness.md` `compaction.py`; 0 turns a
+trigger off), `context_diff_context` (`context.diff_context`: lines around
 each change in `/diff`, `"function"` or `"all"`, default 3);
 `ui_theme`, `ui_box_style`,
 `ui_status_bar_fields`, `ui_max_input_height` (input box caps + scrolls past

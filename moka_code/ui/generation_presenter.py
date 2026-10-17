@@ -342,6 +342,12 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                 # Usage arrived: the status bar's context and cost follow it.
                 app.refresh_status_bar()
 
+            elif isinstance(event, events.Notice):
+                chat.add_message(
+                    event.message,
+                    msg_type=SysMsgError() if event.level == "error" else SysMsg(),
+                    title="compact")
+
             elif isinstance(event, events.Error):
                 aborted_status = "error"
                 end_status_message()

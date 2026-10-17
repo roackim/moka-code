@@ -402,7 +402,8 @@ async def cmd_compact(ui: ChatUIProtocol, args: List[str]):
             return
         compact_msg = ui.chat_history_panel.new_message(
             (
-                f"Compaction complete: {result['compacted_messages']} messages summarized\n"
+                f"Compaction complete: {result['compacted_messages']} messages summarized, "
+                f"{result['kept_messages']} kept\n"
                 f"Inserted marker: {result['message_id']}\n"
                 f"Summary size: {result['summary_chars']:,} chars"
             ),

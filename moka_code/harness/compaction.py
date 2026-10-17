@@ -84,3 +84,35 @@ def transcript(history: List[Dict[str, Any]], *, filter_thoughts: bool,
                                  f"{(call.get('function') or {}).get('arguments', '')}")
                     lines.append(f"  [tool result] {result}")
     return "\n".join(lines)
+
+
+def estimate_tokens(entries: List[Dict[str, Any]]) -> int:
+    """A rough token count (characters / 4) for history entries or API messages."""
+    chars = 0
+    for entry in entries:
+        chars += len(str(entry.get("content") or ""))
+        if entry.get("tool_calls"):
+            chars += len(json.dumps(entry["tool_calls"], ensure_ascii=False))
+    return chars // 4
+
+
+def cut_index(history: List[Dict[str, Any]], keep_tokens: int) -> int:
+    """Where the verbatim tail of ``history`` starts: the earliest user message
+    from which the rest fits in ``keep_tokens`` (always at least the last user
+    message). Only user messages are cut points, so a tool call is never parted
+    from its results; system notices just before one stay with it. 0 means there
+    is nothing before the tail to summarize."""
+    starts = []
+    for i, entry in enumerate(history):
+        if entry.get("role") == "user" and entry.get("source") != "tool":
+            while i > 0 and history[i - 1].get("role") == "system":
+                i -= 1
+            starts.append(i)
+    if not starts:
+        return 0
+    cut = starts[-1]
+    for start in reversed(starts[:-1]):
+        if estimate_tokens(history[start:]) > keep_tokens:
+            break
+        cut = start
+    return cut

@@ -112,11 +112,19 @@ class Error:
 
 
 @dataclass
+class Notice:
+    """Something the harness did on its own (auto-compaction). ``level`` is
+    ``"info"`` or ``"error"``."""
+    message: str
+    level: str = "info"
+
+
+@dataclass
 class Done:
     """The generation stream has finished."""
 
 
 Event = Union[
     Start, Token, Reasoning, ToolCallDraft, ToolCall, PermissionRequest,
-    ToolOutput, ToolResult, Usage, Error, Done
+    ToolOutput, ToolResult, Usage, Error, Notice, Done
 ]

@@ -184,6 +184,9 @@ DEFAULT_CONTEXT_TOML = """\
 
 # compact_filter_thoughts = true        # leave the model's reasoning out of the summary input
 # compact_filter_tool_calls = true      # each tool call as one line, without its output
+# compact_at = 0.8                      # compact when a turn ends over this share of the context window; 0 = off
+# compact_stop_at = 0.85                # ... or pause a running turn over this share, compact, then resume it
+# compact_keep = 0.1                    # share of the window kept word for word (the newest turns)
 
 ## /diff
 
@@ -323,6 +326,9 @@ _CONTEXT_SPEC: Dict[str, tuple[str, str]] = {
     "sessions": ("context_sessions", "int"),
     "compact_filter_thoughts": ("context_compact_filter_thoughts", "bool"),
     "compact_filter_tool_calls": ("context_compact_filter_tool_calls", "bool"),
+    "compact_at": ("context_compact_at", "float"),
+    "compact_stop_at": ("context_compact_stop_at", "float"),
+    "compact_keep": ("context_compact_keep", "float"),
     "diff_context": ("context_diff_context", "diff_context"),
 }
 
@@ -603,6 +609,9 @@ class Config:
         self.context_sessions: int = 10
         self.context_compact_filter_thoughts: bool = True
         self.context_compact_filter_tool_calls: bool = True
+        self.context_compact_at: float = 0.8
+        self.context_compact_stop_at: float = 0.85
+        self.context_compact_keep: float = 0.1
         self.context_diff_context: int | str = 3
 
         # Style tables.
