@@ -393,7 +393,7 @@ class InputComponent(Component):
         # Note: Cursor is rendered separately via render_cursor() called after SubBuffer blit
         
         # Render parameter hints in grey after the end of typed text (not cursor)
-        if self.focused and not self.has_active_completion():
+        if self.focused:
             hint = self._get_parameter_hint()
             if hint:
                 # Position hint at the END of the text, not at the cursor
@@ -414,71 +414,37 @@ class InputComponent(Component):
         # Menu is rendered by compositor as overlay (not here)
     
     def _get_parameter_hint(self) -> str:
-        """Get parameter hint text to show in grey after cursor.
-        
-        Uses the Command.params schema for generic, data-driven hints.
+        """The slots still to type after the text, in grey: ``<subcommand>`` where
+        a subcommand is expected, ``<NAME>`` / ``[NAME]`` (optional) for each
+        remaining param. Only the slots, never the options: the completion menu
+        lists those. A slot is hinted until it is begun.
         """
         text = self.buffer.text
         if text.startswith('!') and self.prompt_params:
             return self._prompt_hint(text)
         text = text.lstrip()
-
-        # Only show hints for commands
         if not text.startswith('/'):
             return ""
-        
-        # Parse the command structure
+
         parts = text.split()
-        if not parts:
+        trailing = text.endswith(' ')
+        if not parts or parts[0][1:] not in self._command_registry:
             return ""
-        
-        cmd_name = parts[0][1:]  # strip '/'
-        if cmd_name not in self._command_registry:
-            return ""
-        
-        root_cmd = self._command_registry[cmd_name]
-        
-        # Walk subcommands to find the deepest resolved command
-        cmd, offset = root_cmd.resolve_command(parts[1:])
-        
-        # If the resolved command is a non-leaf (has subcommands), hint the subcommand list
+        if len(parts) == 1 and not trailing:
+            return ""                       # still typing the command name
+
+        words = parts[1:]
+        cmd, offset = self._command_registry[parts[0][1:]].resolve_command(words)
+        typed = words[offset:]              # the words after the resolved command
         if cmd.has_subcommands():
-            # We're still on the subcommand position — no param hint
-            return ""
-        
-        if not cmd.params:
-            return ""
-        
-        # Calculate which arg the cursor is on
-        args_start = 1 + offset
-        if len(parts) <= args_start:
-            # No args typed yet — hint the first param
-            if text.endswith(' '):
-                arg_index = 0
-            else:
-                # Still typing the subcommand name
-                return ""
-        else:
-            # Count args after the subcommand path
-            after_parts = parts[args_start:]
-            if text.endswith(' '):
-                # Trailing space: cursor is between args, hint from the next arg
-                arg_index = len(after_parts)
-            else:
-                # No trailing space: user is mid-arg — skip the arg being typed
-                arg_index = len(after_parts)
-        
-        # Collect hint for arg_index and beyond
-        hints = []
-        for i in range(arg_index, len(cmd.params)):
-            p = cmd.params[i]
-            name = p.name if p.required else f"[{p.name}]"
-            hints.append(name)
-        
-        if hints:
-            return " " + " ".join(hints)
-        return ""
-    
+            # A branch: the next word picks the subcommand (hinted until begun).
+            return " <subcommand>" if not typed and (trailing or not words) else ""
+
+        # The word being typed (no space after it) fills its slot already.
+        index = len(typed)
+        slots = [f"<{p.name}>" if p.required else f"[{p.name}]" for p in cmd.params[index:]]
+        return " " + " ".join(slots) if slots else ""
+
     def _prompt_hint(self, text: str) -> str:
         """The parameters of ``!name`` still to type: ``<file> <focus>``."""
         parts = text.split()

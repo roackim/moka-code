@@ -425,9 +425,10 @@ type shown as a hint after the name. `/config prompt <name> [global|local]` open
 When typing a `/command`, the input component shows grey hints for upcoming parameters. This is driven by the `Param` dataclass on each `Command`:
 
 1. `resolve_command(parts)` walks the command/subcommand tree to find the deepest matching `Command` and the argument offset
-2. `_get_parameter_hint()` reads `cmd.params[arg_index:]` and joins them with spaces
-3. Hints are rendered at the end of the current text (not at the cursor position)
-4. The current argument being typed is skipped from the hints
+2. `_get_parameter_hint()` names only the slots still to type, never their options (the completion menu lists those): `<subcommand>` where a subcommand is expected, then `<NAME>` per remaining required param and `[NAME]` per optional one (`cmd.params[len(typed):]`)
+3. A slot is hinted until it is begun: the word being typed fills its own slot; nothing is hinted while the command or subcommand name itself is still being typed
+4. Hints are rendered in grey at the end of the current text (not at the cursor position), also while a completion menu is open
+5. `!prompt` calls get the same hint from the prompt's `{param}` names (`<file> <focus>`)
 
 ## Mouse Interaction Model
 
