@@ -196,3 +196,16 @@ def test_a_running_turn_with_nothing_older_to_summarize_stops(tmp_path):
 
     assert [type(e) for e in seen if isinstance(e, (events.Error, events.Done))] == [events.Error, events.Done]
     assert any(isinstance(e, events.Notice) and e.level == "error" for e in seen)
+
+
+def test_the_context_is_what_the_server_held_after_the_reply_thinking_included(tmp_path):
+    async def stream(messages, tools=None):
+        yield Chunk(reasoning="r" * 4000, text="done",
+                    usage=TokenUsage(prompt_tokens=100, completion_tokens=1005))
+
+    harness = _harness(tmp_path, 100_000, stream)
+
+    _chat(harness)
+
+    assert harness._last_usage.context_tokens == 1105
+    assert harness.context_estimate() == 1105           # the reply is not counted twice

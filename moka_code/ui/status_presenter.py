@@ -256,7 +256,13 @@ def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
     """Push the status fields; ``endpoint`` is ``None`` when nothing is
     selected (no context field then)."""
     usage = getattr(agent, "_last_usage", None)
-    context_used = getattr(usage, "prompt_tokens", None) or 0
+    context_used = getattr(usage, "context_tokens", None)
+    estimated = context_used is None
+    if estimated:
+        # No server count yet (import, resume, truncate, compaction): the
+        # estimate of the next request, shown with a "~".
+        estimate = getattr(agent, "context_estimate", None)
+        context_used = estimate() if callable(estimate) and endpoint is not None else 0
     context_max = None
     if endpoint is not None:
         context_window = getattr(endpoint, "context_window", None)
@@ -279,11 +285,12 @@ def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
         theme.SUCCESS if sandboxed else theme.WARNING,
     )
 
+    approx = "~" if estimated and context_used else ""
     app.status_bar.set_values({
         "endpoint_model": endpoint_model,
         # An unknown window shows only what is used (never a guessed size).
-        "context": (f"ctx {_format_tokens(context_used)}/{_format_tokens(context_max)}"
-                    if context_max else f"ctx {_format_tokens(context_used)}"
+        "context": (f"ctx {approx}{_format_tokens(context_used)}/{_format_tokens(context_max)}"
+                    if context_max else f"ctx {approx}{_format_tokens(context_used)}"
                     if endpoint is not None else ""),
         "role": f"role {role}",
         "state": state,

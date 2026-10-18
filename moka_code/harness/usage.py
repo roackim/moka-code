@@ -23,6 +23,14 @@ class TokenUsage:
     raw: Any = None
 
     @property
+    def context_tokens(self) -> int | None:
+        """What the server held after this reply: the request plus the answer
+        (``completion_tokens`` includes the reasoning)."""
+        if self.prompt_tokens is None:
+            return None
+        return self.prompt_tokens + (self.completion_tokens or 0)
+
+    @property
     def is_empty(self) -> bool:
         return all(value is None for value in (
             self.prompt_tokens,

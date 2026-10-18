@@ -11,7 +11,7 @@ from typing import AsyncGenerator, Any, Dict, List, Optional, Tuple
 from moka_code.harness.llm_status import AgentState
 from moka_code.harness.debug import get_debug_stream
 from moka_code.harness.compaction import (
-    COMPACTION_MARKER_PREFIX, cut_index, estimate_tokens, transcript)
+    CHARS_PER_TOKEN, COMPACTION_MARKER_PREFIX, cut_index, estimate_tokens, transcript)
 from moka_code.harness.elision import elide
 from moka_code.harness import events, images
 from moka_code.harness.endpoint import Endpoint, get_active_endpoint
@@ -509,15 +509,16 @@ class Harness:
         return self.endpoint.context_window() if self.endpoint is not None else None
 
     def context_estimate(self) -> int:
-        """Tokens the next request will take: the last reported prompt size plus
-        an estimate for what was added since, or an estimate of the whole
-        request when nothing was reported yet."""
+        """Tokens the next request will take: the context the server reported
+        after the last reply plus an estimate for what was added since, or an
+        estimate of the whole request when nothing was reported yet."""
         usage = getattr(self, "_last_usage", None)
         at = getattr(self, "_usage_at", None)
-        if usage is not None and usage.prompt_tokens is not None \
+        if usage is not None and usage.context_tokens is not None \
                 and at is not None and at <= len(self.history):
-            return usage.prompt_tokens + estimate_tokens(self.history[at:])
-        return estimate_tokens(self._request_messages())
+            return usage.context_tokens + estimate_tokens(self.history[at:])
+        tools = json.dumps(self.tool_schemas, ensure_ascii=False) if self.tool_schemas else ""
+        return estimate_tokens(self._request_messages()) + len(tools) // CHARS_PER_TOKEN
 
     async def compact_history(self, whole_if_needed: bool = True) -> Dict[str, Any]:
         """Summarize the older part of the effective history with one LLM call
@@ -1165,15 +1166,13 @@ class Harness:
             try:
                 max_tokens = self.endpoint.context_window() or 0
                 status["context_max"] = max_tokens
-                if self._last_usage and self._last_usage.prompt_tokens is not None:
-                    status["context_used"] = self._last_usage.prompt_tokens
+                context = self._last_usage.context_tokens if self._last_usage else None
+                if context is not None:
+                    status["context_used"] = context
                     status["context_percentage"] = (
-                        self._last_usage.prompt_tokens / max_tokens * 100
-                        if max_tokens > 0 else 0
+                        context / max_tokens * 100 if max_tokens > 0 else 0
                     )
-                status["context_exact"] = bool(
-                    self._last_usage and self._last_usage.prompt_tokens is not None
-                )
+                status["context_exact"] = context is not None
                 status["usage"] = self._last_usage
             except Exception as e:
                 logger.warning(f"Failed to read context usage: {e}")
@@ -1287,6 +1286,9 @@ class Harness:
                 msg["origin"] = {"type": self.endpoint.type,
                                  "model": self.endpoint.selected_model}
                 self.history.append(msg)
+                # The server's count already holds this reply.
+                if getattr(self, "_usage_at", None) == len(self.history) - 1:
+                    self._usage_at = len(self.history)
 
                 # If no tools, we're done
                 if not tool_calls_list:

@@ -86,14 +86,20 @@ def transcript(history: List[Dict[str, Any]], *, filter_thoughts: bool,
     return "\n".join(lines)
 
 
+# Code, JSON and non-English text run near 3 characters per token, prose near
+# 4: an estimate must not understate the context, so it takes the lower.
+CHARS_PER_TOKEN = 3
+
+
 def estimate_tokens(entries: List[Dict[str, Any]]) -> int:
-    """A rough token count (characters / 4) for history entries or API messages."""
+    """A rough token count (characters / CHARS_PER_TOKEN) for history entries or API messages."""
     chars = 0
     for entry in entries:
         chars += len(str(entry.get("content") or ""))
+        chars += len(str(entry.get("reasoning_content") or ""))     # replayed thinking
         if entry.get("tool_calls"):
             chars += len(json.dumps(entry["tool_calls"], ensure_ascii=False))
-    return chars // 4
+    return chars // CHARS_PER_TOKEN
 
 
 def cut_index(history: List[Dict[str, Any]], keep_tokens: int) -> int:

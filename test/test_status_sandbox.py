@@ -1,5 +1,6 @@
 """Tests for the sandbox and context status-bar fields."""
 
+from moka_code.harness.usage import TokenUsage
 from types import SimpleNamespace
 
 from moka_code.ui.status_presenter import _resolve_color, refresh_status_bar
@@ -66,10 +67,19 @@ def test_unknown_context_window_shows_only_the_tokens_used():
     """ISSUES P4 (2026-10-01): no invented 32768 maximum."""
     app = _app(True)
     app.agent.endpoint.context_window = lambda: None
-    app.agent._last_usage = SimpleNamespace(prompt_tokens=1500)
+    app.agent._last_usage = TokenUsage(prompt_tokens=1000, completion_tokens=500)
     refresh_status_bar(app)
     assert app.status_bar.values["context"] == "ctx 1.5k"
 
     app.agent.endpoint.context_window = lambda: 131072
     refresh_status_bar(app)
     assert app.status_bar.values["context"] == "ctx 1.5k/128k"
+
+
+def test_without_a_server_count_the_status_bar_shows_the_estimate_marked_approximate():
+    app = _app(True)
+    app.agent.endpoint.context_window = lambda: 131072
+    app.agent._last_usage = None
+    app.agent.context_estimate = lambda: 3000
+    refresh_status_bar(app)
+    assert app.status_bar.values["context"] == "ctx ~3.0k/128k"
