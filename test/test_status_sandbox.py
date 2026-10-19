@@ -1,5 +1,6 @@
 """Tests for the sandbox and context status-bar fields."""
 
+from moka_code import settings
 from moka_code.harness.usage import TokenUsage
 from types import SimpleNamespace
 
@@ -19,7 +20,7 @@ class _Bar:
         self.colors = colors
 
 
-def _app(sandboxed, runtime="none"):
+def _app(sandboxed, runtime="none", name=None):
     endpoint = SimpleNamespace(
         name="local",
         model="q",
@@ -34,6 +35,7 @@ def _app(sandboxed, runtime="none"):
         state=None,
         workspace=".",
         _sandbox_runtime=runtime,
+        sandbox_name=name,
         sandboxed=lambda: sandboxed,
     )
     return SimpleNamespace(agent=agent, status_bar=_Bar(), _status_spinner_frame=0)
@@ -44,6 +46,23 @@ def test_sandbox_field_active_is_green():
     refresh_status_bar(app)
 
     assert app.status_bar.values["sandbox"] == "⬢ sandbox:podman"
+    assert app.status_bar.colors["sandbox"] == theme.SUCCESS
+
+
+def test_model_field_uses_glyph_and_prefix(monkeypatch):
+    monkeypatch.setattr(settings.config, "ui_model_glyph", "◆")
+    monkeypatch.setattr(settings.config, "ui_model_prefix", "model:")
+    app = _app(True)
+    refresh_status_bar(app)
+
+    assert app.status_bar.values["endpoint_model"] == "◆ model:local:q"
+
+
+def test_sandbox_field_shows_name_instead_of_runtime():
+    app = _app(True, runtime="podman", name="gpu-box")
+    refresh_status_bar(app)
+
+    assert app.status_bar.values["sandbox"] == "⬢ sandbox:gpu-box"
     assert app.status_bar.colors["sandbox"] == theme.SUCCESS
 
 

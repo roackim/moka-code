@@ -208,8 +208,13 @@ metrics keys (`show_metrics`, `metrics_show_*`; nothing displayed them) are
 retired too. Colour keys (`sandbox_*_color`) are validated at load: a palette
 name or `#rrggbb`, else a load error and the default is kept.
 
+The `endpoint_model` status-bar field is composed from `ui_model_glyph` +
+`ui_model_prefix` + `provider:model[:effort]`. `ui_status_bar_separator` sets
+the inter-field text, and a `"|"` entry in `ui_status_bar_fields` right-aligns
+the fields after it.
+
 The `sandbox` status-bar field is composed from `ui_sandbox_glyph` +
-`ui_sandbox_prefix` + the runtime name; it is green (`ui_sandbox_active_color`)
+`ui_sandbox_prefix` + the sandbox name; it is green (`ui_sandbox_active_color`)
 when a sandbox is active and orange (`ui_sandbox_inactive_color`) when tools run
 unsandboxed. Both colors accept a palette name or `#rrggbb`.
 

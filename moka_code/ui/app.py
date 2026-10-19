@@ -161,6 +161,7 @@ class chatTUI(ChatActionHandlers):
         # Left-align the status text (no leading padding).
         self.status_bar = StatusBar(
             fields=settings.config.ui_status_bar_fields,
+            separator=settings.config.ui_status_bar_separator,
             id="status",
             style=BarStyle(theme.DEFAULT, theme.get_bg(), theme.FOCUSED, padding=1),
         )

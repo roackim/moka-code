@@ -41,6 +41,15 @@ def _format_cost(cost: float | None) -> str:
     return f"${cost:.2f}"
 
 
+def _format_model(server: str, model: str) -> str:
+    """``[glyph ][prefix]server:model`` for the ``endpoint_model`` field."""
+    label = f"{settings.config.ui_model_prefix}{server}:{model}"
+    glyph = settings.config.ui_model_glyph
+    if glyph:
+        label = f"{glyph} {label}"
+    return label
+
+
 def _format_tokens(value: int | None) -> str:
     if value is None:
         return "?"
@@ -201,7 +210,7 @@ def refresh_status_bar(app) -> None:
         selected = settings.config.active_server
         if selected:
             model = settings.config.get_model_for_server(selected) or "?"
-            label = f"{selected}:{model}"
+            label = _format_model(selected, model)
             _set_fields(app, agent, label, selected, model, theme.ERROR, role, state, None)
             return
         label = "no server" if not settings.config.servers else "no model"
@@ -222,7 +231,7 @@ def refresh_status_bar(app) -> None:
                 break
     effort = getattr(endpoint, "effort", None)
     if effort:      # shown whenever it is sent (always, see effort_payload)
-        model = f"{model} · {effort}"
+        model = f"{model}:{effort}"
 
     # Show an animated spinner while .local hostname resolution or the
     # connection check is pending.
@@ -247,7 +256,7 @@ def refresh_status_bar(app) -> None:
         server_color = theme.SUCCESS
     else:
         server_color = theme.DEFAULT
-    _set_fields(app, agent, f"{endpoint.name}:{model}", endpoint.name, model,
+    _set_fields(app, agent, _format_model(endpoint.name, model), endpoint.name, model,
                 server_color, role, state, endpoint)
 
 
@@ -268,17 +277,20 @@ def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
         context_window = getattr(endpoint, "context_window", None)
         context_max = context_window() if callable(context_window) else None
 
-    # Sandbox field: [glyph][prefix]runtime, colored green when active and
+    # Sandbox field: [glyph][prefix]name, colored green when active and
     # orange when tools run unsandboxed. Always present so it stays visible.
     sandboxed = getattr(agent, "sandboxed", None)
     sandboxed = bool(sandboxed()) if callable(sandboxed) else False
     runtime = getattr(agent, "_sandbox_runtime", "none") or "none"
-    if sandboxed and runtime == "none":
-        runtime = "sandbox"
+    # The configured sandbox name is what the user chose; its runtime type is
+    # an implementation detail. Fall back to the runtime when no name is known.
+    sandbox_label = getattr(agent, "sandbox_name", None) or runtime
+    if sandboxed and sandbox_label == "none":
+        sandbox_label = "sandbox"
     sandbox_text = settings.config.ui_sandbox_glyph
     if sandbox_text:
         sandbox_text += " "
-    sandbox_text += f"{settings.config.ui_sandbox_prefix}{runtime}"
+    sandbox_text += f"{settings.config.ui_sandbox_prefix}{sandbox_label}"
     sandbox_color = _resolve_color(
         settings.config.ui_sandbox_active_color if sandboxed
         else settings.config.ui_sandbox_inactive_color,

@@ -7,6 +7,11 @@ from moka_code.ui.tui.components.base import Component
 from moka_code.ui.tui.events import KeyEvent, MouseEvent
 
 
+#: A field name in ``StatusBar.fields`` that is not rendered: everything after
+#: it is right-aligned. Lets ``status_bar_fields`` describe both groups.
+RIGHT_ALIGN_MARKER = "|"
+
+
 @dataclass(frozen=True)
 class BarStyle:
     """Shared visual defaults for one-line status and action bars."""
@@ -63,9 +68,22 @@ class StatusBar(Component):
         self.values = {key: str(value) for key, value in values.items()}
         if self.fields is not None:
             self.left = self.separator.join(
-                self.values[field] for field in self.fields if self.values.get(field)
+                self.values[field] for field in self.fields
+                if field != RIGHT_ALIGN_MARKER and self.values.get(field)
             )
         self.mark_changed()
+
+    def _split_fields(self) -> tuple[list[str], list[str]]:
+        """Fields before and after ``RIGHT_ALIGN_MARKER`` (left, right)."""
+        fields = self.fields or []
+        if RIGHT_ALIGN_MARKER in fields:
+            index = fields.index(RIGHT_ALIGN_MARKER)
+            return fields[:index], fields[index + 1:]
+        return fields, []
+
+    def _field_texts(self, fields: Sequence[str]) -> list[tuple[str, str]]:
+        return [(field, self.values[field]) for field in fields
+                if self.values.get(field)]
 
     def render(self, buffer: Buffer):
         if self.width <= 0 or self.height <= 0:
@@ -83,16 +101,40 @@ class StatusBar(Component):
         # based on how full the context window is.
         if self.fields is not None:
             x = self.x + self.style.padding
-            for field in self.fields:
-                text = self.values.get(field)
-                if not text:
-                    continue
+            edge = self.x + self.width - self.style.padding
+            left_fields, right_fields = self._split_fields()
+            right = self._field_texts(right_fields)
+            if right:
+                right_text = self.separator.join(text for _, text in right)
+                right_x = edge - len(right_text)
+                if right_x < x:
+                    right = []                  # too narrow: drop the tail
+                else:
+                    tail_x = right_x
+                    for index, (field, text) in enumerate(right):
+                        if index:
+                            buffer.write_str(tail_x, self.y, self.separator,
+                                             fg=self.style.fg, bg=self.style.bg,
+                                             max_width=max(0, edge - tail_x))
+                            tail_x += len(self.separator)
+                        fg = self.field_colors.get(field, self.style.fg)
+                        buffer.write_str(tail_x, self.y, text, fg=fg, bg=self.style.bg,
+                                         max_width=max(0, edge - tail_x))
+                        tail_x += len(text)
+                    edge = right_x - len(self.separator)
+            for index, (field, text) in enumerate(self._field_texts(left_fields)):
+                if x >= edge:
+                    break
+                if index:
+                    buffer.write_str(x, self.y, self.separator, fg=self.style.fg,
+                                     bg=self.style.bg, max_width=max(0, edge - x))
+                    x += len(self.separator)
+                if x >= edge:
+                    break
                 fg = self.field_colors.get(field, self.style.fg)
                 buffer.write_str(x, self.y, text, fg=fg, bg=self.style.bg,
-                                 max_width=max(0, self.x + self.width - x))
-                x += len(text) + len(self.separator)
-                if x >= self.x + self.width:
-                    break
+                                 max_width=max(0, edge - x))
+                x += len(text)
         else:
             left = self.left[:max(0, self.width - self.style.padding * 2)]
             buffer.write_str(self.x + self.style.padding, self.y, left,

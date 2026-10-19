@@ -62,7 +62,20 @@ provider reports a cost (`TokenUsage.cost`, e.g. OpenRouter's `usage.cost`;
 `/compact`'s request counts too). It is per conversation: `/clear` and
 `/import` (`Harness.load_history`) start it over.
 
-The `sandbox` field is composed as `glyph + " " + prefix + runtime` from
+`ui.status_bar_separator` sets the text drawn between fields (default two spaces).
+A `"|"` entry in `status_bar_fields` is not drawn: it splits the bar so every
+field after it is right-aligned, e.g.
+
+```toml
+status_bar_fields = ["endpoint_model", "role", "context", "|", "cost", "sandbox"]
+```
+
+The `endpoint_model` field is composed as
+`glyph + " " + prefix + provider:model[:effort]` from `ui.model_glyph` /
+`ui.model_prefix` (both empty by default). Its color follows the endpoint
+connection state: green when ok, orange while checking, red on error.
+
+The `sandbox` field is composed as `glyph + " " + prefix + name` from
 `ui.sandbox_glyph` / `ui.sandbox_prefix` and is colored green
 (`ui.sandbox_active_color`) when a sandbox is active and orange
 (`ui.sandbox_inactive_color`) when tools run unsandboxed. Both colors accept a

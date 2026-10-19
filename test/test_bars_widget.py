@@ -56,6 +56,38 @@ def test_status_bar_renders_field_colors():
     assert ctx_cell.fg == (0xF4, 0x87, 0x71)
 
 
+def test_status_bar_right_aligns_fields_after_marker():
+    status = StatusBar(fields=["endpoint_model", "role", "|", "cost", "sandbox"])
+    status.set_layout(0, 0, 60, 1)
+    status.set_values({
+        "endpoint_model": "local:model",
+        "role": "role agent",
+        "cost": "$0.12",
+        "sandbox": "⬢ sandbox:default",
+    })
+    buffer = Buffer(60, 1)
+
+    status.render(buffer)
+
+    rendered = row_text(buffer)
+    assert rendered.startswith(" local:model  role agent")
+    assert rendered.rstrip().endswith("$0.12  ⬢ sandbox:default")
+    # The marker itself is never drawn.
+    assert "|" not in rendered
+
+
+def test_status_bar_separator_is_configurable():
+    status = StatusBar(fields=["endpoint_model", "role"], separator=" | ")
+    status.set_layout(0, 0, 40, 1)
+    status.set_values({"endpoint_model": "local:model", "role": "role agent"})
+    buffer = Buffer(40, 1)
+
+    status.render(buffer)
+
+    assert row_text(buffer).startswith(" local:model | role agent")
+    assert row_text(buffer).strip() == "local:model | role agent"
+
+
 def test_status_bar_can_change_field_order_without_replacing_values():
     status = StatusBar(fields=["endpoint_model", "role"])
     status.set_layout(0, 0, 40, 1)

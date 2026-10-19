@@ -146,12 +146,19 @@ DEFAULT_UI_TOML = """\
 ## Status bar and notices
 
 # status_bar_fields = ["endpoint_model", "role", "context", "cost", "sandbox"]
+# status_bar_separator = "  "           # drawn between fields
+## Put "|" in status_bar_fields to right-align everything after it.
 # notice_lines = 2                      # top band height; past it, "+N more · /activity"
+
+## Model field
+
+# model_glyph = ""                      # before the field; empty hides it (emoji ok)
+# model_prefix = ""                     # before provider:model; empty hides it
 
 ## Sandbox field
 
 # sandbox_glyph = "⬢"                   # before the field; empty hides it (emoji ok)
-# sandbox_prefix = "sandbox:"           # before the runtime name; empty hides it
+# sandbox_prefix = "sandbox:"           # before the sandbox name; empty hides it
 # sandbox_active_color = "SUCCESS"      # palette name or #rrggbb
 # sandbox_inactive_color = "WARNING"
 
@@ -306,7 +313,10 @@ _UI_SPEC: Dict[str, tuple[str, str]] = {
     "scroll_alt_multiplier": ("ui_scroll_alt_multiplier", "float"),
     "metrics_refresh_interval": ("ui_metrics_refresh_interval", "float"),
     "status_bar_fields": ("ui_status_bar_fields", "str_list"),
+    "status_bar_separator": ("ui_status_bar_separator", "str"),
     "notice_lines": ("ui_notice_lines", "int"),
+    "model_glyph": ("ui_model_glyph", "str"),
+    "model_prefix": ("ui_model_prefix", "str"),
     "sandbox_glyph": ("ui_sandbox_glyph", "str"),
     "sandbox_prefix": ("ui_sandbox_prefix", "str"),
     "sandbox_active_color": ("ui_sandbox_active_color", "color"),
@@ -587,7 +597,10 @@ class Config:
         self.ui_scroll_alt_multiplier: float = 3.0
         self.ui_metrics_refresh_interval: float = 0.1
         self.ui_status_bar_fields: list[str] = ["endpoint_model", "role", "context", "cost", "sandbox"]
+        self.ui_status_bar_separator: str = "  "
         self.ui_notice_lines: int = 2
+        self.ui_model_glyph: str = ""
+        self.ui_model_prefix: str = ""
         self.ui_sandbox_glyph: str = "⬢"
         self.ui_sandbox_prefix: str = "sandbox:"
         self.ui_sandbox_active_color: str = "SUCCESS"
