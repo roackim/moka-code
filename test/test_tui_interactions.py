@@ -185,16 +185,29 @@ def test_tick_advances_focused_input_cursor_blink():
     assert ui.input_box.subbuffer.has_changed is True
 
 
-def test_esc_unfocuses_input_when_focused():
-    """ESC while input is focused moves focus to history (unfocuses input)."""
+def test_esc_keeps_input_focused():
+    """ESC while input is focused must not unfocus it."""
     ui = chatTUI(StubAgent())
     ui._set_app_focus("input")
 
     handled = ui.handle_global_input('\x1b')
 
     assert handled is True
-    assert ui._last_focus_id == "history"
-    assert ui.input_box.focused is False
+    assert ui._last_focus_id == "input"
+    assert ui.input_box.focused is True
+
+
+def test_esc_with_nothing_focused_focuses_the_input():
+    """ESC with no selected history message returns focus to the input."""
+    ui = chatTUI(StubAgent())
+    ui._set_app_focus("history")
+    assert ui.chat_history_panel.focused_message_index is None
+
+    handled = ui.handle_global_input('\x1b')
+
+    assert handled is True
+    assert ui._last_focus_id == "input"
+    assert ui.input_box.focused is True
 
 
 def test_esc_with_active_completion_not_unfocused():

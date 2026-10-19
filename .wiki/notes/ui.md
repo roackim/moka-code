@@ -636,7 +636,10 @@ two modes:
   change) refreshes it.
 
 The status bar stays visible below in both modes. `Esc`/`Enter`/`i` clear the
-message selection and collapse the line.
+message selection and collapse the line. `Esc` while the input is focused keeps
+the input focused; in history it peels one layer at a time (mouse selection →
+split segment → selected message), and `Esc` with nothing selected returns to
+the input.
 
 ### Activity Surface and Toasts
 

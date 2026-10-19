@@ -900,10 +900,19 @@ class chatTUI(ChatActionHandlers):
                 return True
 
             # ESC while the input is focused (and nothing is being completed)
-            # unfocuses the input, moving focus to the history panel. The focus
-            # manager updates each widget's focused state.
-            if key == '\x1b' and self._last_focus_id == "input" and not self.input_component.has_active_completion():
-                self._set_app_focus("history")
+            # does not leave the input.
+            if key == '\x1b' and self._last_focus_id == "input":
+                return True
+
+            # In history, ESC peels one layer first (mouse selection, split
+            # segment, selected message). Once nothing is focused there, ESC
+            # returns to the input.
+            if key == '\x1b' and self._last_focus_id == "history":
+                panel = self.chat_history_panel
+                if (panel.selection.has_selection or panel.inside_group
+                        or panel.focused_message_index is not None):
+                    return False        # ChatHistoryPanel handles this layer
+                self._set_app_focus("input")
                 return True
 
             # Shortcuts to focus input: 'i' or Enter (when not already in input)
