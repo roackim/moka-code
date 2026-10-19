@@ -38,13 +38,24 @@ class PasteHandler(InputHandler):
     def handle(self, event: PasteEvent, context: InputContext) -> bool:
         # Normalize line endings
         paste_text = event.text.replace('\r\n', '\n').replace('\r', '\n')
-        
-        # Insert at cursor
-        context.buffer.insert(paste_text)
-        
+
+        kind = getattr(event, "kind", "text")
+        if kind == "image":
+            # ``[image #N]`` is an attachment marker: keep it atomic so one
+            # Backspace removes the whole reference.
+            context.buffer.insert_token(paste_text, paste_text, "image")
+        elif len(paste_text.splitlines()) > 2:
+            # Long pastes stay out of the way in the input; the original text
+            # is restored when the message is submitted.
+            lines = len(paste_text.splitlines())
+            label = f"[Pasted {lines} {'line' if lines == 1 else 'lines'}]"
+            context.buffer.insert_token(label, paste_text, "paste")
+        else:
+            context.buffer.insert(paste_text)
+
         # Auto-scroll to show cursor
         context.scroll.scroll_to_cursor()
-        
+
         return True
 
 
@@ -174,7 +185,12 @@ class KeyboardHandler(InputHandler):
         if event in ('\x17', '\x1b\x7f', '\x08'):
             context.buffer.delete_word_backward()
             return True
-        
+
+        # Delete (forward): a token deletes as one unit.
+        if event == '\x1b[3~':
+            context.buffer.delete_forward()
+            return True
+
         return False
     
     def _handle_special_keys(self, event: str, context: InputContext) -> bool:
@@ -187,7 +203,7 @@ class KeyboardHandler(InputHandler):
         # Regular Enter -> Submit
         if event in (self.KEY_ENTER, self.KEY_NEWLINE):
             if self.on_submit and not context.buffer.is_empty():
-                if self.on_submit(context.buffer.text) is not False:
+                if self.on_submit(context.buffer.expanded_text()) is not False:
                     context.buffer.clear()
                     context.scroll.reset()
             return True

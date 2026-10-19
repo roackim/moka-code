@@ -40,9 +40,14 @@ class MouseEvent:
 
 @dataclass(frozen=True)
 class PasteEvent:
-    """Text delivered by bracketed paste."""
+    """Text delivered by bracketed paste.
+
+    ``kind`` lets Ctrl+V distinguish a text paste from an image attachment
+    marker, which must stay atomic in the input.
+    """
 
     text: str
+    kind: str = "text"
 
 
 @dataclass(frozen=True)

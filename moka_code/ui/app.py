@@ -595,12 +595,27 @@ class chatTUI(ChatActionHandlers):
             return None
         return messages[index]
 
+    def _prune_pasted_images(self):
+        """Forget attachment data whose ``[image #N]`` marker is gone.
+
+        Deleting a marker from the input must also drop the pending image; the
+        marker is the only thing that may attach it on submit.
+        """
+        pasted = getattr(self, "_pasted_images", None)
+        if not pasted:
+            return
+        text = self.input_component.text
+        active = {int(n) for n in images.MARKER_RE.findall(text)}
+        if active != set(pasted):
+            self._pasted_images = {n: image for n, image in pasted.items() if n in active}
+
     def _update_action_strip(self):
         """Show/hide the action line (mounted right above the input).
 
         It shows the selected message's actions, or, when the input is focused
         and empty, the available input prefixes as hints.
         """
+        self._prune_pasted_images()
         message = self._selected_message()
 
         if message is not None:
@@ -722,7 +737,9 @@ class chatTUI(ChatActionHandlers):
                 return
             n = max(self._pasted_images, default=0) + 1
             self._pasted_images[n] = image
-            content = f"[image #{n}]"
+            self.input_component.handle_input(
+                PasteEvent(f"[image #{n}]", kind="image"))
+            return
         self.input_component.handle_input(PasteEvent(content))
 
     def _collect_images(self, text: str):

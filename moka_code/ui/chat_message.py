@@ -182,7 +182,9 @@ def _tool_summary(name: str, args: dict, output: Optional[str]) -> str:
 # ``@path`` mentions: ``@'quoted path'``, ``@"quoted path"`` or ``@plain\ path``
 # (trailing punctuation is not part of a plain path).
 MENTION_RE = re.compile(r"""(?<!\S)@(?:'([^']+)'|"([^"]+)"|((?:\\ |\S)+?)(?=[.,;:!?)]*(?:\s|$)))""")
-_REFERENCE_RE = re.compile(f"{images.MARKER_RE.pattern}|{MENTION_RE.pattern}")
+_PASTE_MARKER_RE = re.compile(r"\[Pasted \d+ lines?\]")
+_REFERENCE_RE = re.compile(
+    f"{images.MARKER_RE.pattern}|{_PASTE_MARKER_RE.pattern}|{MENTION_RE.pattern}")
 
 
 def unmention(text: str) -> str:
