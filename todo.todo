@@ -1,3 +1,6 @@
+[x] copy paste text, with [ ] token
+[x] backspace on img or paste token = delete
+[ ] focusable terminal output for commands run via BASH tool (while running)
 [ ] /diff -> sort all 'new' file to bottom, and sort them by recency of modification or creation
 [x] /private cmd : make hte conversation private, no cache no save etc.
 [x] usr message text wrong color ? should be like input field

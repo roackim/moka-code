@@ -129,10 +129,8 @@ class TextBuffer:
             return
         start = max(0, start)
         end = min(len(self._text), end)
-        while True:
-            touched = [t for t in self._tokens if t.start < end and t.end > start]
-            if not touched:
-                break
+        touched = [t for t in self._tokens if t.start < end and t.end > start]
+        if touched:
             start = min([start] + [t.start for t in touched])
             end = max([end] + [t.end for t in touched])
         self._tokens = [t for t in self._tokens if not (t.start < end and t.end > start)]
