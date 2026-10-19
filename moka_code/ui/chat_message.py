@@ -287,13 +287,53 @@ def _tool_body(name: str, args: dict) -> list[tuple]:
         command = args.get("command")
         if isinstance(command, str):
             for i, line in enumerate(command.strip().splitlines()):
-                body.append((theme.MUTED, "$ " if i == 0 else "  ", line))
+                body.append((theme.MUTED, "" if i == 0 else "  ", line))
         return body
     if name == "read":
         return body
     for key, value in args.items():
         body.append((theme.MUTED, f"{key}: ", _short_value(value, limit=200)))
     return body
+
+
+def tool_command_text(message) -> str:
+    """The raw command/invocation a tool message represents (for copying)."""
+    name = getattr(message, "tool_name", None) or "tool"
+    args = _parse_tool_args(getattr(message, "tool_args", None) or "", full=True)
+    if name == "bash":
+        command = args.get("command")
+        return command if isinstance(command, str) else ""
+    path = args.get("path")
+    if isinstance(path, str) and path:
+        return f"{name} {path}"
+    if args:
+        try:
+            return f"{name} {json.dumps(args, ensure_ascii=False)}"
+        except (TypeError, ValueError):
+            pass
+    return name
+
+
+def tool_output_text(message) -> str:
+    """Raw tool output without bash's ``[stdout]``/``[stderr]``/``[exit:N]``
+    transport markers."""
+    output = getattr(message, "tool_output", None) or ""
+    if getattr(message, "tool_name", None) != "bash":
+        return output
+    lines = [line for line in output.splitlines()
+             if line.strip() not in ("[stdout]", "[stderr]")
+             and not _EXIT_RE.match(line.strip())]
+    return "\n".join(lines)
+
+
+def tool_terminal_text(message) -> str:
+    """Command plus output, formatted like a terminal transcript for ``c``."""
+    command = tool_command_text(message)
+    output = tool_output_text(message)
+    shown = command
+    if getattr(message, "tool_name", None) == "bash" and command:
+        shown = f"bash {command}"
+    return "\n".join(part for part in (shown, output) if part)
 
 
 def _output_lines(name: str, output: str) -> list[str]:
@@ -870,8 +910,18 @@ class Message:
             self._tool_display_body = _tool_body(self.tool_name, args) if not drafting else []
         target, metric = self._tool_display_parts
 
-        failed = state in ("error", "denied")
-        name_color = theme.ERROR if failed else theme.TOOL
+        name_color = {
+            "running": theme.WARNING,
+            "completed": theme.SUCCESS,
+            "error": theme.ERROR,
+            "denied": theme.ERROR,
+            "cancelled": theme.ERROR,
+        }.get(state, theme.TOOL)
+        # A bash command can "complete" with a non-zero status; that is a
+        # failure even though the tool call itself returned normally.
+        if (state == "completed" and self.tool_name == "bash"
+                and _bash_exit_code(self.tool_output)):
+            name_color = theme.ERROR
         name = self.tool_name
         is_compact = self.box.compact_when_unfocused and not self.box.focused
         # Expanded bash shows the whole command wrapped below, so the header
@@ -880,10 +930,17 @@ class Message:
         if wrap_body:
             target = ""
         trailing = self._tool_trailing()
-        trailing_color = {
-            "asking": theme.PERMISSION, "running": theme.MUTED,
-            "cancelled": theme.WARNING,
-        }.get(state, theme.ERROR)
+        if state == "running":
+            trailing_color = theme.WARNING
+        elif state == "asking":
+            trailing_color = theme.PERMISSION
+        elif state == "cancelled":
+            trailing_color = theme.WARNING
+        elif (state == "completed" and self.tool_name == "bash"
+              and _bash_exit_code(self.tool_output) == 0):
+            trailing_color = theme.SUCCESS
+        else:
+            trailing_color = theme.ERROR
         trailing = _clip(trailing, width // 2)
 
         # Single spaces; the parts read apart by color. Only the name (and
@@ -895,26 +952,22 @@ class Message:
             fixed += display_width(trailing) + 1
         target = _clip(target, max(8, width - fixed), keep_end=self.tool_name != "bash")
 
-        header = f"{name_color}{name}{theme.reset()}"
-        if target:
-            header += f" {theme.MUTED}{target}{theme.reset()}"
-        if metric:
-            header += f" {metric}"
-        if trailing:
-            header += f" {trailing_color}{trailing}{theme.reset()}"
-        lines = [header]
+        if wrap_body and self._tool_display_body:
+            lines = self._focused_bash_lines(
+                width, name_color, trailing, trailing_color)
+        else:
+            header = f"{name_color}{name}{theme.reset()}"
+            if target:
+                header += f" {theme.MUTED}{target}{theme.reset()}"
+            if metric:
+                header += f" {metric}"
+            if trailing:
+                header += f" {trailing_color}{trailing}{theme.reset()}"
+            lines = [header]
 
-        if not is_compact:
-            for color, prefix, text in self._tool_display_body:
-                room = width - display_width(prefix)
-                if wrap_body:
-                    chunks = _hard_wrap(text, room)
-                    lines += [
-                        f"{color}{prefix if k == 0 else ' ' * len(prefix)}{theme.reset()}"
-                        f"{theme.MUTED}{chunk}{theme.reset()}"
-                        for k, chunk in enumerate(chunks)
-                    ]
-                else:
+            if not is_compact:
+                for color, prefix, text in self._tool_display_body:
+                    room = width - display_width(prefix)
                     clipped = _clip(text, room)
                     if prefix.strip() in ("+", "-"):
                         # Added/removed lines are colored whole, not just the sign.
@@ -933,6 +986,51 @@ class Message:
         self.base_text = '\n'.join(lines)
         self._reveal_len = len(self.base_text)
         self._render_revealed()
+
+    def _focused_bash_lines(self, width: int, name_color, trailing: str,
+                            trailing_color) -> list[str]:
+        """Header and full command share lines; the exit word ends the last.
+
+        A short command stays on one row (``bash ls exit 0``); a multiline or
+        wrapped one continues with two-space indentation.
+        """
+        body = self._tool_display_body
+        name = self.tool_name
+        reset = theme.reset()
+        tail_width = display_width(" " + trailing) if trailing else 0
+        lines: list[str] = []
+        first_physical = True
+        for index, (_color, prefix, text) in enumerate(body):
+            last_body = index == len(body) - 1
+            if first_physical:
+                first_room = max(
+                    1, width - display_width(name) - 1 - display_width(prefix))
+            else:
+                first_room = max(1, width - display_width(prefix))
+            cont_room = max(1, width - 2)
+            tail = tail_width if last_body else 0
+            if display_width(text) <= first_room - tail:
+                chunks = [text]
+            else:
+                chunks = _hard_wrap(text, cont_room)
+                if chunks and display_width(chunks[0]) > first_room:
+                    chunks[:1] = _hard_wrap(chunks[0], first_room)
+                if tail and chunks and display_width(chunks[-1]) + tail > cont_room:
+                    chunks[-1:] = _hard_wrap(
+                        chunks[-1], max(1, cont_room - tail))
+            for chunk_index, chunk in enumerate(chunks):
+                if first_physical:
+                    lines.append(f"{name_color}{name}{reset} "
+                                 f"{theme.MUTED}{prefix}{chunk}{reset}")
+                    first_physical = False
+                elif chunk_index == 0:
+                    lines.append(f"{theme.MUTED}{prefix}{chunk}{reset}")
+                else:
+                    lines.append(f"{theme.MUTED}  {chunk}{reset}")
+        if trailing and lines:
+            base = lines[-1][:-len(reset)] if lines[-1].endswith(reset) else lines[-1]
+            lines[-1] = f"{base} {trailing_color}{trailing}{reset}"
+        return lines
 
     def _tool_trailing(self) -> str:
         """Plain trailing word: only when it is news (asking, running, failed)."""
@@ -956,6 +1054,6 @@ class Message:
             return reason
         if state == "completed" and self.tool_name == "bash":
             code = _bash_exit_code(self.tool_output)
-            if code:
+            if code is not None:
                 return f"exit {code}"
         return ""

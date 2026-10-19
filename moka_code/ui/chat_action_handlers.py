@@ -14,55 +14,34 @@ class ChatActionHandlers:
         logger = logging.getLogger("tui")
         
         try:
-            # For tool call messages, build comprehensive debug output
+            from moka_code.ui.chat_message import tool_terminal_text
             from moka_code.ui.tui.msg_types import ToolCallMsg, AskPermissionMsg
-            if isinstance(message.type, (ToolCallMsg, AskPermissionMsg)) and message.tool_name:
-                import json
-                
-                # Build detailed tool call output
-                lines = [
-                    "=" * 60,
-                    f"TOOL CALL: {message.tool_name}",
-                    "=" * 60,
-                    "",
-                    "ARGUMENTS:",
-                    "-" * 60,
-                ]
-                
-                # Pretty-print arguments
-                if message.tool_args:
-                    try:
-                        args_dict = json.loads(message.tool_args)
-                        lines.append(json.dumps(args_dict, indent=2))
-                    except:
-                        lines.append(message.tool_args)
+
+            panel = self.chat_history_panel
+            # A single (unsplit) tool call copies command + raw output like a
+            # terminal. Split groups and their segments go through
+            # ``copy_text_for``: whole group = both, inside = one part.
+            is_unsplit_tool = (
+                getattr(message, "group", None) is None
+                and isinstance(message.type, (ToolCallMsg, AskPermissionMsg))
+                and getattr(message, "tool_name", None)
+            )
+            if is_unsplit_tool:
+                # Hidden output is not copied: command only. With output shown
+                # inline (e.g. while running), copy the terminal transcript.
+                if getattr(message, "show_output", False):
+                    text = tool_terminal_text(message)
                 else:
-                    lines.append("(no arguments)")
-                
-                lines.extend(["", "STATUS:", "-" * 60])
-                lines.append(message.tool_state())
-                
-                # Include output if available
-                if message.tool_output:
-                    lines.extend(["", "OUTPUT:", "-" * 60, message.tool_output])
-                else:
-                    lines.extend(["", "OUTPUT:", "-" * 60, "(no output yet)"])
-                
-                lines.append("")
-                lines.append("=" * 60)
-                
-                text_to_copy = "\n".join(lines)
+                    from moka_code.ui.chat_message import tool_command_text
+                    text = tool_command_text(message)
             else:
-                # Strip ANSI escape codes for clean clipboard content. A split
-                # answer copies whole, or just the selected segment (code
-                # without its fences).
-                copy_text_for = getattr(self.chat_history_panel, "copy_text_for", None)
+                copy_text_for = getattr(panel, "copy_text_for", None)
                 text = copy_text_for(message) if callable(copy_text_for) else message.base_text
-                text_to_copy = strip_ansi(text)
-                # Ensure a trailing newline so pasting keeps the line break.
-                if text_to_copy and not text_to_copy.endswith("\n"):
-                    text_to_copy += "\n"
-            
+            text_to_copy = strip_ansi(text)
+            # Ensure a trailing newline so pasting keeps the line break.
+            if text_to_copy and not text_to_copy.endswith("\n"):
+                text_to_copy += "\n"
+
             self.copy_text(text_to_copy)
         except Exception as e:
             logger.error(f"Error copying to clipboard: {e}")
@@ -162,10 +141,21 @@ class ChatActionHandlers:
         logger.info("Output toggle action triggered")
         
         from moka_code.ui.tui.msg_types import ToolCallMsg, AskPermissionMsg
-        
+
+        panel = self.chat_history_panel
+        # An expanded tool call is a two-segment group: ``o`` collapses it.
+        if getattr(message, "group", None) is not None:
+            collapse = getattr(panel, "collapse_tool_group", None)
+            if callable(collapse) and collapse(message):
+                return
+
         # Check if this is a tool message
         if isinstance(message.type, (ToolCallMsg, AskPermissionMsg)):
-            # Toggle output visibility
+            # Finished calls expand into command/output segments; running
+            # calls keep the old inline toggle.
+            split = getattr(panel, "split_tool_output", None)
+            if callable(split) and split(message):
+                return
             message.show_output = not message.show_output
             message.rebuild_tool_display()
             logger.info(f"Tool output {'shown' if message.show_output else 'hidden'}")

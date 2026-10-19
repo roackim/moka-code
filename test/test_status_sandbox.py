@@ -49,6 +49,21 @@ def test_sandbox_field_active_is_green():
     assert app.status_bar.colors["sandbox"] == theme.SUCCESS
 
 
+def test_refresh_reapplies_status_bar_field_config(monkeypatch):
+    from moka_code.ui.tui.components.bars import StatusBar
+
+    app = _app(True)
+    app.status_bar = StatusBar(fields=["endpoint_model"])
+    monkeypatch.setattr(settings.config, "ui_status_bar_fields",
+                        ["role", "endpoint_model"])
+    monkeypatch.setattr(settings.config, "ui_status_bar_separator", " | ")
+
+    refresh_status_bar(app)
+
+    assert app.status_bar.fields == ["role", "endpoint_model"]
+    assert app.status_bar.separator == " | "
+
+
 def test_model_field_uses_glyph_and_prefix(monkeypatch):
     monkeypatch.setattr(settings.config, "ui_model_glyph", "◆")
     monkeypatch.setattr(settings.config, "ui_model_prefix", "model:")

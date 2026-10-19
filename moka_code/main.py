@@ -41,7 +41,13 @@ def main():
     projects.seed_default_sandbox(os.getcwd())
     # Insert commented lines for newly added config keys (and drop retired ones)
     # in existing files, then reload so the fresh file is what the app sees.
-    settings.sync_config_files()
+    changed = settings.sync_config_files()
+    notes = [migration_notice] if migration_notice else []
+    if changed:
+        notes.append(f"config: new settings added to {', '.join(changed)} "
+                     f"→ /config {changed[0]}")
+    for section, reason in settings.config.last_sync_skips:
+        notes.append(f"config {section}: sync skipped ({reason})")
     # Load errors stay on the banner (``chatTUI.setup_notes``) until fixed.
     settings.reload_config()
     harness = get_harness()
@@ -51,7 +57,8 @@ def main():
     from moka_code.ui.tui.colors import set_theme
     set_theme(settings.config.get_active_theme())
 
-    tui = chatTUI(harness, resume=args.resume, migration_notice=migration_notice)
+    tui = chatTUI(harness, resume=args.resume,
+                  migration_notice=" · ".join(notes) or None)
     try:
         asyncio.run(tui.run())
     except KeyboardInterrupt:

@@ -22,11 +22,103 @@ from __future__ import annotations
 
 import os
 import re
+import stat
+import tempfile
 import toml
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
+
+try:                                    # Linux-only, but moka targets linux-64.
+    import fcntl
+except ImportError:                     # pragma: no cover - non-POSIX fallback
+    fcntl = None                        # type: ignore[assignment]
 
 from moka_code.harness.providers import REGISTRY
+
+
+class _SyncSkipped(Exception):
+    """A config migration was aborted; the file was left byte-identical."""
+
+
+@contextmanager
+def _sync_lock(config_dir: Path) -> Iterator[None]:
+    """Serialise config migrations between moka instances (advisory).
+
+    Editors do not honour this lock; the stale-file guard and the backup are
+    what protect against concurrent edits.
+    """
+    try:
+        config_dir.mkdir(parents=True, exist_ok=True)
+        lock = os.open(str(config_dir / ".moka-sync.lock"),
+                       os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError as exc:
+        raise _SyncSkipped(f"config directory is not writable ({exc})") from exc
+    try:
+        if fcntl is not None:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as exc:
+                raise _SyncSkipped("another moka instance is syncing config") from exc
+        yield
+    finally:
+        try:
+            if fcntl is not None:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+        finally:
+            os.close(lock)
+
+
+def _fsync_dir(path: Path) -> None:
+    """Best-effort durability for a rename (not all filesystems support it)."""
+    try:
+        fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def _atomic_write_bytes(path: Path, data: bytes, mode: Optional[int] = None,
+                        *, guard_path: Optional[Path] = None,
+                        guard_bytes: Optional[bytes] = None) -> None:
+    """Replace ``path`` atomically with ``data``, never exposing a partial file.
+
+    The new bytes land in a same-directory temp file, are flushed and fsynced,
+    then shown to the guard (if any) and installed with ``os.replace``. On any
+    failure the temp file is removed and ``path`` is untouched.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(dir=str(path.parent),
+                                     prefix=f".{path.name}.moka-", suffix=".tmp")
+    temp = Path(temp_name)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if mode is not None:
+            os.chmod(temp, mode)
+        if guard_path is not None and guard_bytes is not None:
+            try:
+                current = guard_path.read_bytes()
+            except OSError as exc:
+                raise _SyncSkipped(f"file changed on disk ({exc})") from exc
+            if current != guard_bytes:
+                raise _SyncSkipped("file changed on disk")
+        os.replace(temp, path)
+        _fsync_dir(path.parent)
+    except BaseException:
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+        raise
 
 # Default markdown element styles.
 # Each key is an element name; values are dicts with optional:
@@ -379,61 +471,348 @@ def _template_key_lines(template: str) -> "list[tuple[str, str]]":
     return entries
 
 
-def _sync_flat_file(path: Path, template: str, retired: "set[str]") -> bool:
-    """Insert missing commented keys and drop retired ones.
+class _TemplateBlock:
+    """A template section: an optional ``##`` heading plus its settings."""
 
-    Line-preserving: user values, comments, and ordering are left alone. Only
-    keys named by the template or the ``retired`` set are touched. Returns True
-    when the file changed.
+    def __init__(self, lines: "list[str]"):
+        self.lines = [line if line.endswith("\n") else line + "\n"
+                      for line in lines]
+        self.keys = _template_key_lines("".join(self.lines))
+        self.heading = (self.lines[0].rstrip("\r\n")
+                        if self.lines and self.lines[0].startswith("## ") else "")
+
+
+def _template_blocks(template: str) -> "list[_TemplateBlock]":
+    """Split a template into sections and keep only sections with settings.
+
+    Section headings are ``##`` lines surrounded by blank lines. Inline help
+    also starts with ``##`` but is not blank-line-delimited, so it stays inside
+    its section instead of opening a new one.
+    """
+    source = template.splitlines(keepends=True)
+    blocks: list[_TemplateBlock] = []
+    current: list[str] = []
+    for index, line in enumerate(source):
+        previous_blank = index == 0 or not source[index - 1].strip()
+        next_blank = index + 1 == len(source) or not source[index + 1].strip()
+        if line.startswith("## ") and previous_blank and next_blank and current:
+            blocks.append(_TemplateBlock(current))
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        blocks.append(_TemplateBlock(current))
+    return [block for block in blocks if block.keys]
+
+
+def _key_positions(lines: "list[str]", known: "dict[str, str]") -> "dict[str, int]":
+    """First line index of each template key present in ``lines``."""
+    positions: dict[str, int] = {}
+    for index, line in enumerate(lines):
+        match = _KEY_LINE_RE.match(line)
+        if match and match.group(1) in known:
+            positions.setdefault(match.group(1), index)
+    return positions
+
+
+def _next_key_position(key: str, order: "list[str]",
+                       positions: "dict[str, int]", end: int) -> int:
+    """Where a missing key belongs: before the next template key that exists."""
+    for following in order[order.index(key) + 1:]:
+        if following in positions:
+            return positions[following]
+    return end
+
+
+def _next_heading_position(lines: "list[str]", blocks: "list[_TemplateBlock]",
+                           current: int, positions: "dict[str, int]") -> Optional[int]:
+    """Index of the next following block's heading, when that block exists."""
+    for block in blocks[current + 1:]:
+        if not block.heading:
+            continue
+        if not any(key in positions for key, _ in block.keys):
+            continue
+        for index, line in enumerate(lines):
+            if line.rstrip("\r\n") == block.heading:
+                return index
+    return None
+
+
+def _key_line_index(lines: "list[str]", key: str) -> Optional[int]:
+    for index, line in enumerate(lines):
+        match = _KEY_LINE_RE.match(line)
+        if match and match.group(1) == key:
+            return index
+    return None
+
+
+def _heading_line_index(lines: "list[str]", heading: str) -> Optional[int]:
+    for index, line in enumerate(lines):
+        if line.rstrip("\r\n") == heading:
+            return index
+    return None
+
+
+def _anchor_index(lines: "list[str]", anchor) -> Optional[int]:
+    kind, value = anchor
+    return (_heading_line_index(lines, value) if kind == "heading"
+            else _key_line_index(lines, value))
+
+
+def _block_header(block: "_TemplateBlock") -> "list[str]":
+    """Template lines before a block's first key (heading + any help)."""
+    first_key = block.keys[0][1].rstrip("\r\n")
+    header: list[str] = []
+    for line in block.lines:
+        if line.rstrip("\r\n") == first_key:
+            break
+        header.append(line)
+    while header and not header[-1].strip():
+        header.pop()
+    return header
+
+
+def _repair_structure(lines: "list[str]", blocks: "list[_TemplateBlock]") -> None:
+    """Repair headings and help lines in a file migrated by an older sync.
+
+    Only template-owned documentation moves: settings lines are never removed
+    or reordered. A heading that is missing, or that sits above another block's
+    keys, is moved directly before its own first key; then any missing ``##``
+    help line is inserted at its template-relative position.
+    """
+    owner = {key: index for index, block in enumerate(blocks)
+             for key, _ in block.keys}
+
+    # Pass 1: every block with keys gets its heading immediately above them.
+    for index, block in enumerate(blocks):
+        if not block.heading:
+            continue
+        keys = {key for key, _ in block.keys}
+        positions = [i for i, line in enumerate(lines)
+                     if (match := _KEY_LINE_RE.match(line))
+                     and match.group(1) in keys]
+        if not positions:
+            continue
+        first_key = min(positions)
+        heading_at = _heading_line_index(lines, block.heading)
+        misplaced = heading_at is None or heading_at > first_key
+        if heading_at is not None and heading_at < first_key:
+            for i in range(heading_at + 1, first_key):
+                match = _KEY_LINE_RE.match(lines[i])
+                if match and owner.get(match.group(1), index) != index:
+                    misplaced = True
+                    break
+        if not misplaced:
+            continue
+        if heading_at is not None:
+            blank_before = heading_at > 0 and not lines[heading_at - 1].strip()
+            del lines[heading_at]
+            if (blank_before and heading_at < len(lines)
+                    and not lines[heading_at].strip()):
+                del lines[heading_at]
+        positions = [i for i, line in enumerate(lines)
+                     if (match := _KEY_LINE_RE.match(line))
+                     and match.group(1) in keys]
+        if not positions:
+            continue
+        first_key = min(positions)
+        chunk = [line if line.endswith("\n") else line + "\n"
+                 for line in _block_header(block)]
+        while chunk and not chunk[-1].strip():
+            chunk.pop()
+        if chunk:
+            chunk.append("\n")
+            if first_key > 0 and lines[first_key - 1].strip():
+                chunk.insert(0, "\n")
+            lines[first_key:first_key] = chunk
+
+    # Pass 2: insert help lines that a partially-synced block is missing.
+    for block in blocks:
+        items: list[tuple[str, str]] = []
+        for index, line in enumerate(block.lines):
+            if index == 0 and line.startswith("## "):
+                items.append(("heading", line.rstrip("\r\n")))
+                continue
+            match = _KEY_LINE_RE.match(line)
+            if match:
+                items.append(("key", match.group(1)))
+            elif line.startswith("##"):
+                items.append(("help", line.rstrip("\r\n")))
+        groups: list[list] = []
+        current = None
+        for i, item in enumerate(items):
+            if item[0] == "help":
+                if current is None:
+                    continue
+                previous, following = current
+                if groups and groups[-1][0] == previous and groups[-1][1] == following:
+                    groups[-1][2].append(item[1])
+                else:
+                    groups.append([previous, following, [item[1]]])
+                continue
+            following = next((other for other in items[i + 1:]
+                              if other[0] in ("heading", "key")), None)
+            current = (item, following)
+        for previous, following, help_lines in groups:
+            start = _anchor_index(lines, previous)
+            if start is None:
+                continue
+            end = _anchor_index(lines, following) if following else None
+            end = len(lines) if end is None else end
+            existing = {line.rstrip("\r\n")
+                        for line in lines[start + 1:end]}
+            missing = [line for line in help_lines if line not in existing]
+            for offset, line in enumerate(missing):
+                lines.insert(start + 1 + offset, line + "\n")
+
+
+def _merge_template(original: str, template: str, retired: "set[str]") -> str:
+    """Insert missing template blocks/keys without rewriting user lines."""
+    lines = original.splitlines(keepends=True)
+    blocks = _template_blocks(template)
+    order = [key for block in blocks for key, _ in block.keys]
+    known: dict[str, str] = {}
+    for block in blocks:
+        for key, line in block.keys:
+            known.setdefault(key, line)
+
+    # Drop retired keys; every other line is kept byte-for-byte.
+    kept: list[str] = []
+    for line in lines:
+        match = _KEY_LINE_RE.match(line)
+        if match and match.group(1) in retired:
+            continue
+        kept.append(line)
+
+    for block_index, block in enumerate(blocks):
+        positions = _key_positions(kept, known)
+        has_key = any(key in positions for key, _ in block.keys)
+        has_heading = bool(block.heading) and any(
+            line.rstrip("\r\n") == block.heading for line in kept)
+        if has_key or has_heading:
+            # The section exists: add only its missing key lines, in place.
+            for key, line in block.keys:
+                if key in positions:
+                    continue
+                insert_at = _next_key_position(key, order, positions, len(kept))
+                if insert_at == len(kept) and kept and not kept[-1].endswith("\n"):
+                    kept.append("\n")
+                    insert_at = len(kept)
+                kept.insert(insert_at, line + "\n")
+                positions = _key_positions(kept, known)
+            continue
+
+        # The whole section is missing: insert heading + help + its keys.
+        insert_at = _next_key_position(block.keys[0][0], order, positions, len(kept))
+        heading_at = _next_heading_position(kept, blocks, block_index, positions)
+        if heading_at is not None:
+            insert_at = min(insert_at, heading_at)
+        chunk = [line if line.endswith("\n") else line + "\n"
+                 for line in block.lines]
+        while chunk and not chunk[-1].strip():
+            chunk.pop()
+        if not chunk:
+            continue
+        if insert_at == len(kept) and kept and not kept[-1].endswith("\n"):
+            kept.append("\n")
+            insert_at = len(kept)
+        if insert_at > 0 and kept[insert_at - 1].strip() and chunk[0].startswith("## "):
+            chunk.insert(0, "\n")
+        if insert_at < len(kept):
+            chunk.append("\n")
+        kept[insert_at:insert_at] = chunk
+
+    _repair_structure(kept, blocks)
+    return "".join(kept)
+
+
+def _template_documentation(template: str) -> "set[str]":
+    """Heading/help lines that sync is allowed to move or insert."""
+    docs: set[str] = set()
+    for block in _template_blocks(template):
+        if block.heading:
+            docs.add(block.heading)
+        for line in block.lines:
+            if line.startswith("##"):
+                docs.add(line.rstrip("\r\n"))
+    return docs
+
+
+def _is_subsequence(needle: "list[str]", haystack: "list[str]") -> bool:
+    """True when every ``needle`` line appears in order in ``haystack``."""
+    index = 0
+    for line in haystack:
+        if index < len(needle) and line.rstrip("\r\n") == needle[index].rstrip("\r\n"):
+            index += 1
+    return index == len(needle)
+
+
+def _sync_flat_file(path: Path, template: str, retired: "set[str]") -> bool:
+    """Insert missing template blocks/keys and drop retired keys, safely.
+
+    The file is never truncated or written in place. A whole-file merge is
+    verified (TOML equality plus line preservation), backed up, then installed
+    with an atomic rename guarded against concurrent modification. Returns
+    True when the file changed; raises ``_SyncSkipped`` when it was left alone.
     """
     if not path.exists():
         return False
-    original = path.read_text(encoding="utf-8")
-    lines = original.splitlines(keepends=True)
+    try:
+        target = path.resolve(strict=True)
+    except OSError as exc:
+        raise _SyncSkipped(f"cannot resolve path ({exc})") from exc
+    try:
+        before = target.stat()
+    except OSError as exc:
+        raise _SyncSkipped(f"cannot stat path ({exc})") from exc
+    if not stat.S_ISREG(before.st_mode):
+        raise _SyncSkipped("not a regular file")
 
-    known = {}
-    for key, line in _template_key_lines(template):
-        known.setdefault(key, line)
+    try:
+        original_bytes = target.read_bytes()
+        original = original_bytes.decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise _SyncSkipped(f"cannot read file ({exc})") from exc
+    try:
+        original_data = toml.loads(original)
+    except toml.TomlDecodeError as exc:
+        raise _SyncSkipped(f"invalid TOML, not touching it ({exc})") from exc
+    if not isinstance(original_data, dict):
+        raise _SyncSkipped("top level is not a table, not touching it")
 
-    kept = []
-    present: set[str] = set()
-    for line in lines:
-        match = _KEY_LINE_RE.match(line)
-        key = match.group(1) if match else None
-        if key is not None:
-            if key in retired:
-                continue  # drop deprecated key
-            present.add(key)
-        kept.append(line)
-
-    missing = [key for key in known if key not in present]
-    if missing:
-        if kept and not kept[-1].endswith("\n"):
-            kept[-1] += "\n"
-        order = list(known)
-        template_index = {key: i for i, key in enumerate(order)}
-        positions: dict[str, int] = {}
-        for index, line in enumerate(kept):
-            match = _KEY_LINE_RE.match(line)
-            if match and match.group(1) in known:
-                positions.setdefault(match.group(1), index)
-        for key in missing:
-            insert_at = len(kept)
-            for following in order[template_index[key] + 1:]:
-                if following in positions:
-                    insert_at = positions[following]
-                    break
-            kept.insert(insert_at, known[key] + "\n")
-            positions = {
-                pk: (pv + 1 if pv >= insert_at else pv)
-                for pk, pv in positions.items()
-            }
-            positions[key] = insert_at
-
-    updated = "".join(kept)
+    updated = _merge_template(original, template, retired)
     if updated == original:
         return False
-    path.write_text(updated, encoding="utf-8")
+
+    # Verify the merge before it can reach the disk.
+    try:
+        new_data = toml.loads(updated)
+    except toml.TomlDecodeError as exc:
+        raise _SyncSkipped(f"generated content is invalid TOML ({exc})") from exc
+    expected = dict(original_data)
+    for key in retired:
+        expected.pop(key, None)
+    if new_data != expected:
+        raise _SyncSkipped("verification failed: user values would change")
+    original_lines = original.splitlines(keepends=True)
+    documentation = _template_documentation(template)
+    kept_lines = [line for line in original_lines
+                  if (not (match := _KEY_LINE_RE.match(line))
+                      or match.group(1) not in retired)
+                  and line.rstrip("\r\n") not in documentation]
+    if not _is_subsequence(kept_lines, updated.splitlines(keepends=True)):
+        raise _SyncSkipped("verification failed: a user line would be lost")
+
+    mode = stat.S_IMODE(before.st_mode)
+    backup = target.with_name(target.name + ".bak")
+    try:
+        _atomic_write_bytes(backup, original_bytes, mode)
+        _atomic_write_bytes(target, updated.encode("utf-8"), mode,
+                            guard_path=target, guard_bytes=original_bytes)
+    except _SyncSkipped:
+        raise
+    except OSError as exc:
+        raise _SyncSkipped(f"could not write safely ({exc})") from exc
     return True
 
 
@@ -554,6 +933,8 @@ class Config:
         self._config_dir = Path(config_dir) if config_dir else None
         self._state_path = Path(state_path) if state_path else None
         self.load_errors: list[str] = []
+        # Sections whose migration was aborted this run, with the reason.
+        self.last_sync_skips: list[tuple[str, str]] = []
         # Live discovery results per server, in memory only (never persisted,
         # kept across reloads). Filled by ``endpoint.refresh_catalog``.
         self.models_by_server: Dict[str, list] = {}
@@ -710,7 +1091,8 @@ class Config:
             data["active_theme"] = self.active_theme
         if self.efforts:
             data["effort"] = {server: dict(m) for server, m in self.efforts.items()}
-        path.write_text(toml.dumps(data), encoding="utf-8")
+        mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
+        _atomic_write_bytes(path, toml.dumps(data).encode("utf-8"), mode)
 
     def set_active_server(self, name: str) -> None:
         """Make ``name`` the active server (its model is ``last_model``)."""
@@ -731,22 +1113,46 @@ class Config:
         path = self.section_file(section)
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(DEFAULT_CONFIG_TEMPLATES[section], encoding="utf-8")
+            _atomic_write_bytes(path, DEFAULT_CONFIG_TEMPLATES[section].encode("utf-8"),
+                                0o644)
         elif section in _FLAT_SECTION_SYNC:
             template, retired = _FLAT_SECTION_SYNC[section]
-            _sync_flat_file(path, template, retired)
+            self.last_sync_skips = [
+                (s, reason) for s, reason in self.last_sync_skips if s != section]
+            try:
+                with _sync_lock(self._dir()):
+                    _sync_flat_file(path, template, retired)
+            except _SyncSkipped as exc:
+                self.last_sync_skips.append((section, str(exc)))
+            except Exception as exc:        # fail closed, never crash startup
+                self.last_sync_skips.append((section, f"unexpected error: {exc}"))
         return path
 
     def sync_section_files(self) -> list[str]:
         """Sync every existing flat section file; return changed sections.
 
         Called on startup so keys added (or retired) since a user's config was
-        first written appear in their file.
+        first written appear in their file. Files are replaced atomically and
+        abandoned untouched if verification or the concurrent-change guard
+        fails; those sections land in ``last_sync_skips``.
         """
-        changed = []
-        for section, (template, retired) in _FLAT_SECTION_SYNC.items():
-            if _sync_flat_file(self.section_file(section), template, retired):
-                changed.append(section)
+        changed: list[str] = []
+        self.last_sync_skips = []
+        try:
+            with _sync_lock(self._dir()):
+                for section, (template, retired) in _FLAT_SECTION_SYNC.items():
+                    try:
+                        if _sync_flat_file(self.section_file(section), template, retired):
+                            changed.append(section)
+                    except _SyncSkipped as exc:
+                        self.last_sync_skips.append((section, str(exc)))
+                    except Exception as exc:    # fail closed, never crash startup
+                        self.last_sync_skips.append(
+                            (section, f"unexpected error: {exc}"))
+        except _SyncSkipped as exc:
+            self.last_sync_skips.append(("*", str(exc)))
+        except Exception as exc:                # fail closed, never crash startup
+            self.last_sync_skips.append(("*", f"unexpected error: {exc}"))
         return changed
 
     # -- read helpers --------------------------------------------------------

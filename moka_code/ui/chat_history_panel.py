@@ -32,6 +32,13 @@ class AnswerGroup:
         self.text = text  # the whole answer, copied when the group is selected
 
 
+class ToolGroup:
+    """Shared by the command/output segments of one expanded tool call."""
+
+    def __init__(self, text: str):
+        self.text = text  # terminal-like command + output, copied as a whole
+
+
 def _is_thought(msg: Message) -> bool:
     return isinstance(msg.type, ThinkingMsg)
 
@@ -148,10 +155,25 @@ class ChatHistoryPanel(TextComponent):
         if not self.selection.dragging:
             self.selection.clear()
 
+        # Leaving an expanded tool call folds its output segment away again.
+        previous = self.focused_message_index
+        previous_group = (self.messages[previous].group
+                          if previous is not None
+                          and 0 <= previous < len(self.messages) else None)
+        target_group = (self.messages[index].group
+                        if index is not None
+                        and 0 <= index < len(self.messages) else None)
+        if isinstance(previous_group, ToolGroup) and target_group is not previous_group:
+            removed_at = self._collapse_tool_group(previous_group)
+            if removed_at is not None:
+                if index is not None and index > removed_at:
+                    index -= 1
+                previous = None
+                self.focused_message_index = None
+
         # Clear previous focus
-        if (self.focused_message_index is not None
-                and 0 <= self.focused_message_index < len(self.messages)):
-            start, end = self._group_range(self.focused_message_index)
+        if previous is not None and 0 <= previous < len(self.messages):
+            start, end = self._group_range(previous)
             for prev in self.messages[start:end]:
                 prev.set_focused(False)
                 # Collapsible messages (thinking) fold back when unfocused.
@@ -280,6 +302,98 @@ class ChatHistoryPanel(TextComponent):
         if focused == index:
             self.set_focused_message(index)
         self._request_repaint()
+
+    def split_tool_output(self, msg: Message) -> bool:
+        """Expand a finished tool call into ``command`` + ``output`` segments.
+
+        Done only after the call finishes; a running tool keeps its output
+        inline. Returns True when the transcript was changed.
+        """
+        from moka_code.ui.chat_message import (
+            _output_lines, tool_command_text, tool_output_text, tool_terminal_text)
+        from moka_code.ui.tui.msg_types import ToolOutputMsg
+
+        if msg.group is not None or not getattr(msg, "tool_name", None):
+            return False
+        if msg.tool_state() in ("drafting", "asking", "running"):
+            return False
+        try:
+            index = self.messages.index(msg)
+        except ValueError:
+            return False
+        output = tool_output_text(msg)
+        if not output.strip():
+            return False
+        group = ToolGroup(tool_terminal_text(msg))
+        command = tool_command_text(msg)
+        display = "\n".join(_output_lines(msg.tool_name, msg.tool_output or ""))
+
+        msg.show_output = False
+        msg.group, msg.segment_kind, msg.copy_text = group, "command", command
+        # The command stays fully expanded while its output segment is focused.
+        msg.box.compact_when_unfocused = False
+        msg.rebuild_tool_display()
+
+        part = self.new_message(display, msg_type=ToolOutputMsg(),
+                                harness_message_ids=list(msg.harness_message_ids))
+        part.group, part.segment_kind, part.copy_text = group, "output", output
+        part.finalize()
+        part.get_component().parent = self
+        self.messages.insert(index + 1, part)
+
+        focused = self.focused_message_index
+        if focused is not None and focused > index:
+            self.focused_message_index = focused + 1
+        self._message_height_cache.clear()
+        if focused == index:
+            self.set_focused_message(index)
+        self._request_repaint()
+        return True
+
+    def _collapse_tool_group(self, group: ToolGroup) -> Optional[int]:
+        """Remove a tool group's output segment; return where it was removed."""
+        members = [index for index, msg in enumerate(self.messages)
+                   if getattr(msg, "group", None) is group]
+        command_index = next((index for index in members
+                              if self.messages[index].segment_kind == "command"), None)
+        if len(members) < 2 or command_index is None:
+            return None
+        removed = [index for index in members if index != command_index]
+        removed_at = min(removed)
+        focused = self.focused_message_index
+        for index in members:
+            self.messages[index].set_focused(False)
+        for index in sorted(removed, reverse=True):
+            del self.messages[index]
+        command = self.messages[command_index]
+        command.group = None
+        command.segment_kind = None
+        command.copy_text = None
+        command.show_output = False
+        command.box.compact_when_unfocused = True
+        command.rebuild_tool_display()
+        self.inside_group = False
+        if focused is not None:
+            if focused in removed or focused == command_index:
+                self.focused_message_index = command_index
+            elif focused > removed_at:
+                self.focused_message_index = focused - len(removed)
+        self._message_height_cache.clear()
+        return removed_at
+
+    def collapse_tool_group(self, msg: Message) -> bool:
+        """Remove an expanded tool call's output segment, restoring one line."""
+        group = getattr(msg, "group", None)
+        if not isinstance(group, ToolGroup):
+            return False
+        removed_at = self._collapse_tool_group(group)
+        if removed_at is None:
+            return False
+        index = self.focused_message_index
+        if index is not None and 0 <= index < len(self.messages):
+            self.set_focused_message(index)
+        self._request_repaint()
+        return True
 
     def _notify_selection_changed(self):
         if self.on_selection_changed is not None:

@@ -40,14 +40,25 @@ are seeded by `roles.ensure_roles_dir()` on startup.
 
 Existing **flat** files (`ui`, `context`, `debug`) are kept in sync
 with their templates: on startup (`settings.sync_config_files()` in `main()`) and
-when `/config <section>` opens one, `_sync_flat_file()` inserts the commented
-line for any spec key missing from the file (at its template-relative position)
-and removes lines whose key is in that section's `_RETIRED_*` set. Only keys
-named by the template or a registered retirement are touched; user values,
-comments, and ordering are preserved, and the file is written only when the text
-changes. Structured files (`styles`, `servers`, `theme`, and the sandbox files)
-hold user-authored tables and are never synced. See
-"Adding or deprecating a config key" in `AGENTS.md`.
+when `/config <section>` opens one, `_sync_flat_file()` merges missing template
+keys and removes lines whose key is in that section's `_RETIRED_*` set. The
+template is parsed into blocks (a `##` heading plus its help and settings); a
+key missing from an existing block is inserted next to its siblings, and a
+completely missing block brings its heading and help with it at the
+template-relative position. Only keys named by the template or a registered
+retirement are touched; user values, comments, and ordering are preserved.
+
+Migrations are fail-closed. The merged text is verified before it can reach
+disk (valid TOML, identical parsed user values, every user line preserved), the
+previous bytes are written to `<file>.bak`, and the new file is installed with a
+same-directory temp file + `fsync` + atomic `os.replace`. A concurrent-change
+guard re-reads the original immediately before the rename; invalid TOML, a
+changed file, or any I/O failure leaves the file byte-identical and records the
+reason in `Config.last_sync_skips` (surfaced on the startup banner). An advisory
+lock in the config directory serialises moka instances; editors are not locked,
+so the backup is the safety net for that window. Structured files (`styles`,
+`servers`, `theme`, and the sandbox files) hold user-authored tables and are
+never synced. See "Adding or deprecating a config key" in `AGENTS.md`.
 
 ### Sandbox files
 

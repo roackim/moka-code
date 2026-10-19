@@ -199,6 +199,17 @@ def _refresh_notices(app) -> None:
 
 def refresh_status_bar(app) -> None:
     """Refresh local status fields without performing network I/O."""
+    # ``/reload`` may have changed the field list or separator; StatusBar was
+    # built once at startup, so re-apply both here on every refresh.
+    bar = getattr(app, "status_bar", None)
+    if bar is not None and hasattr(bar, "set_fields"):
+        separator = settings.config.ui_status_bar_separator
+        if getattr(bar, "separator", None) != separator:
+            bar.separator = separator
+            bar.mark_changed()
+        fields = list(settings.config.ui_status_bar_fields)
+        if getattr(bar, "fields", None) != fields:
+            bar.set_fields(fields)
     agent = app.agent
     _refresh_notices(app)
     endpoint = getattr(agent, "endpoint", None)

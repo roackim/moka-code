@@ -107,6 +107,18 @@ class ToolCallMsg(MsgType):
     clamped = True
 
 
+class ToolOutputMsg(MsgType):
+    name = "tool_output"
+    title = "output"
+    frame_color = "MUTED"
+    content_color = "MUTED"
+    actions = [MsgAction.OUTPUT, MsgAction.COPY]
+    # Same prefix bar as the tool call it belongs to.
+    gutter = "▌"
+    gutter_color = "MUTED"
+    clamped = True
+
+
 class AskPermissionMsg(MsgType):
     name = "permission"
     title = "permission"

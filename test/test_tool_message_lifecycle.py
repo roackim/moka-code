@@ -71,16 +71,46 @@ def test_running_tool_shows_elapsed_time_only_when_not_instant(clock):
     clock[0] += 2.4
     msg.tick()
     assert _lines(msg)[0].endswith("running 2s")
+    assert f"{theme.WARNING}running 2s" in msg.get_formatted()
 
 
-def test_completed_line_has_no_trailing_word():
+def test_completed_bash_shows_exit_zero_in_success_color():
     msg = _tool(status="completed", finalized=True, output="a\n[exit:0]")
-    assert _lines(msg)[0].rstrip() == "bash ls"
+    assert _lines(msg)[0].rstrip() == "bash ls exit 0"
+    assert msg.get_formatted().startswith(f"{theme.SUCCESS}bash")
+    assert f"{theme.SUCCESS}exit 0" in msg.get_formatted()
+
+
+def test_non_bash_completion_has_no_exit_word():
+    msg = _tool(name="read", args={"path": "a.py"}, status="completed",
+                finalized=True, output="ok")
+    assert _lines(msg)[0].rstrip() == "read a.py 1 line"
+    assert "exit" not in _lines(msg)[0]
+
+
+def test_tool_name_color_tracks_state():
+    running = _tool(status="running")
+    assert running.get_formatted().startswith(f"{theme.WARNING}bash")
+
+    completed = _tool(status="completed", finalized=True, output="ok")
+    assert completed.get_formatted().startswith(f"{theme.SUCCESS}bash")
+
+    failed = _tool(status="error", finalized=True, output="boom")
+    assert failed.get_formatted().startswith(f"{theme.ERROR}bash")
+
+    denied = _tool(status="denied", finalized=True, output="User denied")
+    assert denied.get_formatted().startswith(f"{theme.ERROR}bash")
 
 
 def test_bash_failure_shows_exit_code():
     msg = _tool(status="completed", finalized=True, output="[stderr]\nboom\n[exit:2]")
     assert _lines(msg)[0].endswith("exit 2")
+    assert msg.get_formatted().startswith(f"{theme.ERROR}bash")
+
+
+def test_bash_zero_exit_stays_success():
+    msg = _tool(status="completed", finalized=True, output="ok\n[exit:0]")
+    assert msg.get_formatted().startswith(f"{theme.SUCCESS}bash")
 
 
 def test_error_reason_is_on_the_collapsed_line_and_name_turns_red():
@@ -288,10 +318,15 @@ def test_focused_write_shows_a_capped_head():
 def test_focused_bash_shows_the_full_command_wrapped_not_repeated():
     msg = _tool(args={"command": "cd x\nmake test"}, status="completed",
                 finalized=True, output="[exit:0]", focused=True)
-    assert _lines(msg) == ["bash", "$ cd x", "  make test"]
+    assert _lines(msg) == ["bash cd x", "  make test exit 0"]
     long = _tool(args={"command": "echo " + "a" * 30}, status="completed",
                  finalized=True, output="[exit:0]", focused=True, width=20)
-    assert _lines(long) == ["bash", "$ echo aaaaaaaaaaaaa", "  aaaaaaaaaaaaaaaaa"]
+    assert _lines(long) == [
+        "bash echo aaaaaaaaaa",
+        "  aaa",
+        "  aaaaaaaaaaa",
+        "  aaaaaa exit 0",
+    ]
 
 
 def test_compact_line_has_no_body():
@@ -305,7 +340,8 @@ def test_toggled_output_is_capped_head_and_tail():
     msg = _tool(status="completed", finalized=True, output=output, focused=True)
     msg.show_output = True
     msg.rebuild_tool_display()
-    out = _lines(msg)[2:]
+    lines = _lines(msg)
+    out = lines[lines.index("out 0"):]
     assert out[0] == "out 0"
     assert "… 70 more lines …" in out
     assert out[-1] == "out 99"
@@ -365,3 +401,143 @@ def test_focusing_a_permission_prompt_reveals_what_it_changes():
     assert _lines(ask)[1:] == ["- a", "+ b"]
     ask.set_focused(False)
     assert len(_lines(ask)) == 1
+
+
+# --- command / output segments and copy -----------------------------------
+
+from moka_code.ui.chat_action_handlers import ChatActionHandlers
+from moka_code.ui.chat_history_panel import ChatHistoryPanel
+
+
+class _CopyUI(ChatActionHandlers):
+    def __init__(self, panel):
+        self.chat_history_panel = panel
+
+    def _copy_feedback(self, method=None):
+        pass
+
+
+def _finished_bash(command="ls", output="[stdout]\nfile1\n[exit:0]"):
+    panel = ChatHistoryPanel(max_width=60)
+    msg = panel.add_message("", msg_type=ToolCallMsg())
+    msg.tool_name, msg.tool_args = "bash", json.dumps({"command": command})
+    msg.tool_output = output
+    msg.set_tool_status("completed")
+    msg.finalize()
+    msg.rebuild_tool_display()
+    panel.set_focused_message(panel.messages.index(msg))
+    return panel, msg, _CopyUI(panel)
+
+
+def test_output_action_splits_finished_tool_into_segments():
+    panel, msg, ui = _finished_bash()
+
+    ui.handle_output_action(msg)
+
+    assert len(panel.messages) == 2
+    command, output = panel.messages
+    assert command is msg
+    assert (command.segment_kind, output.segment_kind) == ("command", "output")
+    assert command.copy_text == "ls"
+    assert output.copy_text == "file1"
+    assert panel.enter_group()
+    assert panel.segment_label() == "command 1/2"
+    panel.set_focused_message(1, inside=True)
+    assert panel.segment_label() == "output 2/2"
+
+
+def test_output_action_collapses_the_segments_again():
+    panel, msg, ui = _finished_bash()
+    ui.handle_output_action(msg)
+
+    ui.handle_output_action(panel.messages[1])
+
+    assert len(panel.messages) == 1
+    assert panel.messages[0].group is None
+    assert panel.messages[0].segment_kind is None
+
+
+def test_output_action_does_not_split_a_running_tool():
+    panel, msg, ui = _finished_bash()
+    msg.set_tool_status("running")
+
+    ui.handle_output_action(msg)
+
+    assert len(panel.messages) == 1
+    assert msg.show_output is True
+
+
+def test_copy_tool_without_shown_output_copies_only_the_command(monkeypatch):
+    copied = []
+    monkeypatch.setattr("moka_code.ui.chat_action_handlers.copy_to_clipboard",
+                        lambda text: copied.append(text) or "xclip")
+    panel, msg, ui = _finished_bash()
+
+    ui.handle_copy_action(msg)
+
+    assert copied[-1] == "ls\n"
+
+
+def test_copy_tool_with_shown_output_copies_command_and_raw_output(monkeypatch):
+    copied = []
+    monkeypatch.setattr("moka_code.ui.chat_action_handlers.copy_to_clipboard",
+                        lambda text: copied.append(text) or "xclip")
+    panel, msg, ui = _finished_bash()
+    msg.show_output = True
+
+    ui.handle_copy_action(msg)
+
+    assert copied[-1] == "bash ls\nfile1\n"
+
+
+def test_copy_segments_copy_command_and_raw_output(monkeypatch):
+    copied = []
+    monkeypatch.setattr("moka_code.ui.chat_action_handlers.copy_to_clipboard",
+                        lambda text: copied.append(text) or "xclip")
+    panel, msg, ui = _finished_bash()
+    ui.handle_output_action(msg)
+
+    panel.enter_group()
+    ui.handle_copy_action(panel.messages[0])
+    assert copied[-1] == "ls\n"
+
+    panel.set_focused_message(1, inside=True)
+    ui.handle_copy_action(panel.messages[1])
+    assert copied[-1] == "file1\n"
+
+    panel.exit_group()
+    ui.handle_copy_action(panel.messages[0])
+    assert copied[-1] == "bash ls\nfile1\n"
+
+
+def test_focusing_output_keeps_the_command_expanded():
+    panel, msg, ui = _finished_bash(command="ls -la")
+    ui.handle_output_action(msg)
+    panel.enter_group()
+    panel.set_focused_message(1, inside=True)   # output segment
+
+    assert "bash ls -la" in strip_ansi(msg.base_text)
+
+
+def test_leaving_focus_collapses_the_output_again():
+    panel, msg, ui = _finished_bash()
+    ui.handle_output_action(msg)
+    panel.enter_group()
+    panel.set_focused_message(1, inside=True)
+
+    panel.clear_focus()
+
+    assert len(panel.messages) == 1
+    assert panel.messages[0].group is None
+    assert panel.messages[0].box.compact_when_unfocused is True
+
+
+def test_left_arrow_back_to_whole_group_keeps_output_visible():
+    panel, msg, ui = _finished_bash()
+    ui.handle_output_action(msg)
+    panel.enter_group()
+
+    panel.exit_group()
+
+    assert len(panel.messages) == 2
+    assert panel.inside_group is False

@@ -1,6 +1,8 @@
 """Tests for flat-section config sync (insert new keys, drop retired keys)."""
 
+import os
 import re
+import stat
 
 import pytest
 
@@ -114,6 +116,128 @@ def test_template_help_lines_use_double_hash(section):
     for line in template.splitlines():
         if line.startswith("#") and not line.startswith("##") and line != "#":
             assert _SETTING_LINE.match(line), f"{section}: help line needs ##: {line!r}"
+
+
+def test_missing_section_brings_its_heading_and_help(tmp_path):
+    (tmp_path / "ui.toml").write_text('theme = "pastel"\n', encoding="utf-8")
+
+    _config(tmp_path).sync_section_files()
+
+    text = (tmp_path / "ui.toml").read_text(encoding="utf-8")
+    assert 'theme = "pastel"' in text
+    assert "## Model field" in text
+    assert "# model_glyph" in text
+    assert "# model_prefix" in text
+    assert "## Sandbox field" in text
+
+
+def test_repairs_headings_and_help_left_by_a_previous_sync(tmp_path):
+    """Keys inserted by the old per-key sync can sit under the wrong heading."""
+    damaged = (
+        "## Moka UI settings\n\n"
+        "## Status bar and notices\n\n"
+        '# status_bar_fields = ["endpoint_model", "role", "context", "cost", "sandbox"]\n'
+        '# status_bar_separator = "  "\n'
+        "# notice_lines = 2\n\n"
+        "## Sandbox field\n\n"
+        '# model_glyph = ""\n'
+        '# model_prefix = ""\n'
+        '# sandbox_glyph = "⬢"\n'
+        '# sandbox_prefix = "sandbox:"\n'
+        '# sandbox_active_color = "SUCCESS"\n'
+        '# sandbox_inactive_color = "WARNING"\n'
+    )
+    (tmp_path / "ui.toml").write_text(damaged, encoding="utf-8")
+    config = _config(tmp_path)
+
+    config.sync_section_files()
+
+    text = (tmp_path / "ui.toml").read_text(encoding="utf-8")
+    assert (text.index("# status_bar_separator")
+            < text.index('## Put "|" in status_bar_fields')
+            < text.index("# notice_lines"))
+    assert (text.index("# notice_lines")
+            < text.index("## Model field")
+            < text.index("# model_glyph"))
+    assert (text.index("# model_prefix")
+            < text.index("## Sandbox field")
+            < text.index("# sandbox_glyph"))
+    assert config.sync_section_files() == []
+
+
+def test_backup_is_the_exact_previous_content(tmp_path):
+    before = 'theme = "pastel"\n# my own note\n'
+    (tmp_path / "ui.toml").write_text(before, encoding="utf-8")
+
+    _config(tmp_path).sync_section_files()
+
+    backup = tmp_path / "ui.toml.bak"
+    assert backup.read_bytes() == before.encode("utf-8")
+
+
+def test_failed_replace_leaves_the_file_untouched(tmp_path, monkeypatch):
+    before = 'theme = "pastel"\n'
+    (tmp_path / "ui.toml").write_text(before, encoding="utf-8")
+    real_replace = os.replace
+
+    def fail_for_target(src, dst):
+        if str(dst).endswith("ui.toml"):
+            raise OSError("simulated disk failure")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(settings.os, "replace", fail_for_target)
+    config = _config(tmp_path)
+    config.sync_section_files()
+
+    assert (tmp_path / "ui.toml").read_text(encoding="utf-8") == before
+    assert any(section == "ui" for section, _ in config.last_sync_skips)
+    assert not list(tmp_path.glob(".ui.toml.moka-*"))
+
+
+def test_concurrent_change_guard_refuses_to_overwrite(tmp_path):
+    target = tmp_path / "x.toml"
+    target.write_bytes(b"changed by someone else")
+
+    with pytest.raises(settings._SyncSkipped):
+        settings._atomic_write_bytes(target, b"new", guard_path=target,
+                                     guard_bytes=b"what we read")
+
+    assert target.read_bytes() == b"changed by someone else"
+    assert not list(tmp_path.glob(".x.toml.moka-*"))
+
+
+def test_invalid_toml_is_never_rewritten(tmp_path):
+    broken = 'theme = "pastel"\nbroken = "unterminated\n'
+    (tmp_path / "ui.toml").write_text(broken, encoding="utf-8")
+
+    config = _config(tmp_path)
+    changed = config.sync_section_files()
+
+    assert "ui" not in changed
+    assert (tmp_path / "ui.toml").read_text(encoding="utf-8") == broken
+    assert any(section == "ui" for section, _ in config.last_sync_skips)
+
+
+def test_symlink_is_preserved(tmp_path):
+    real = tmp_path / "real-ui.toml"
+    real.write_text('theme = "pastel"\n', encoding="utf-8")
+    link = tmp_path / "ui.toml"
+    link.symlink_to(real)
+
+    _config(tmp_path).sync_section_files()
+
+    assert link.is_symlink()
+    assert "# model_glyph" in real.read_text(encoding="utf-8")
+
+
+def test_file_mode_is_preserved(tmp_path):
+    path = tmp_path / "ui.toml"
+    path.write_text('theme = "pastel"\n', encoding="utf-8")
+    os.chmod(path, 0o600)
+
+    _config(tmp_path).sync_section_files()
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 def test_keys_that_did_nothing_are_cleaned_from_existing_files(tmp_path):

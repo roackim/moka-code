@@ -496,6 +496,7 @@ Every message displayed in the chat history has a `MsgType` that controls its ti
 | `SysMsgError` | "error" | ERROR | COPY |
 | `SysMsgWarning` | "warning" | WARNING | (inherits COPY) |
 | `ToolCallMsg` | "tool" | TOOL | OUTPUT, COPY |
+| `ToolOutputMsg` | "output" | MUTED | OUTPUT, COPY |
 | `AskPermissionMsg` | "permission" | PERMISSION | ALLOW, DENY, OUTPUT, COPY |
 
 `clamped` types (`ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`) are
@@ -535,10 +536,17 @@ edit a.py +2 lines −1 line approve? a/x   (AskPermissionMsg)
   starts the elapsed clock.
 - **Focused body** (`_tool_body`): edit → `SequenceMatcher` diff (`  `/`- `/`+ `,
   indentation kept, capped; `+`/`-` lines colored whole SUCCESS/ERROR); write → first 20 lines as `+ ` then
-  `… +N more lines`; bash → `$ ` full command; other tools → `key: value`. `o`
-  toggles the output, capped head 20 / tail 10, bash `[stdout]`/`[exit:N]`
-  markers dropped. Focus changes rebuild the line, so an auto-focused permission
-  prompt shows the diff it asks about.
+  `… +N more lines`; bash → the full command on the header's first line,
+  continuing indented when it wraps; other tools → `key: value`. `o` on a
+  finished call splits it into `command` + `output` segments (shared
+  `ToolGroup`); while running it toggles the inline output, capped head 20 /
+  tail 10, bash `[stdout]`/`[exit:N]` markers dropped. Focus changes rebuild
+  the line, so an auto-focused permission prompt shows the diff it asks about.
+- **Copy:** an unsplit tool call copies only its raw command while the output is
+  hidden; when output is shown inline it copies the terminal transcript
+  (`bash cmd` then output). In a split group, the whole group copies both, the
+  `command` segment copies the raw command, and the `output` segment copies the
+  raw output without transport markers.
 - **Running bash** shows its last 5 output lines under the line (even compact),
   fed by `ToolOutput` → `Message.append_live_output`; they fold away once the
   call finishes (the activity surface still logs everything).
@@ -586,7 +594,7 @@ type: user `USER`, assistant/thinking/tool calls `MUTED`, permission asks
 (the selected message); the selected message's prefix bar is replaced with a
 brighter `▌` marker (no extra column, nothing shifts, no leading margin).
 
-**Split answers.** Once an answer is complete (end of generation, or the
+**Split answers and tool output.** Once an answer is complete (end of generation, or the
 deferred reveal finalize in `chatTUI._finalize_stream`; also `/import`),
 `ChatHistoryPanel.split_answer` replaces it with segment messages from
 `ui/answer_split.py` — prose, top-level code blocks (fence at column 0), tables
@@ -594,14 +602,20 @@ deferred reveal finalize in `chatTUI._finalize_stream`; also `/import`),
 `segment_kind`, `copy_text`). Segments touch (no gap, no blank lines between
 them). Navigation has two levels:
 
-- **↑/↓** move between messages; a split answer is one stop, selected whole
-  (bright `▌` on all its segments), and `c` copies the whole answer;
+- **↑/↓** move between messages; a split answer (or an expanded tool call) is
+  one stop, selected whole (bright `▌` on all its segments), and `c` copies the
+  whole answer;
 - **→** enters it (`inside_group`): the selected segment gets a wide `█`, the
   action line reads `code 2/5` with `↑↓ part · ← back`; ↑/↓ move between
   segments and stop at the edges; `c` copies the segment (`copy_text_for`: code
   without fences). **←**/**Esc** return to the whole answer. **→** on a single
   message only flashes "single block". A click selects a split answer whole;
   a click on the already-selected answer selects the segment under the cursor.
+  The same navigation applies to a finished tool call expanded with `o`
+  (`ToolGroup`: `command` + `output`); `o` collapses it back to one line.
+  While the `output` segment is selected the `command` segment stays fully
+  expanded (it does not fall back to its compact header), and moving focus away
+  from the tool call collapses the output automatically.
 
 An **action line** sits above the input with a blank pad row above it
 (`ActionBar.set_top_pad`): an `ActionBar` mounted permanently in the workspace
