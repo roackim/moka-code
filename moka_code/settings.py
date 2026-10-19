@@ -244,8 +244,10 @@ DEFAULT_UI_TOML = """\
 
 ## Model field
 
-# model_glyph = ""                      # before the field; empty hides it (emoji ok)
-# model_prefix = ""                     # before provider:model; empty hides it
+# show_provider = true                  # show the server name before the model
+# provider_separator = ":"             # between server and model
+# show_effort = true                    # append the reasoning effort
+# effort_separator = ":"               # between model and effort
 
 ## Sandbox field
 
@@ -407,8 +409,10 @@ _UI_SPEC: Dict[str, tuple[str, str]] = {
     "status_bar_fields": ("ui_status_bar_fields", "str_list"),
     "status_bar_separator": ("ui_status_bar_separator", "str"),
     "notice_lines": ("ui_notice_lines", "int"),
-    "model_glyph": ("ui_model_glyph", "str"),
-    "model_prefix": ("ui_model_prefix", "str"),
+    "show_provider": ("ui_show_provider", "bool"),
+    "provider_separator": ("ui_provider_separator", "str"),
+    "show_effort": ("ui_show_effort", "bool"),
+    "effort_separator": ("ui_effort_separator", "str"),
     "sandbox_glyph": ("ui_sandbox_glyph", "str"),
     "sandbox_prefix": ("ui_sandbox_prefix", "str"),
     "sandbox_active_color": ("ui_sandbox_active_color", "color"),
@@ -444,6 +448,8 @@ _DEBUG_SPEC: Dict[str, tuple[str, str]] = {
 _RETIRED_UI: set[str] = {  # nothing read these: spinner (elapsed-time labels), console, per-message metrics
     "spinner_fps", "debug_console_height",
     "show_metrics", "metrics_show_tokens", "metrics_show_speed", "metrics_show_ttft",
+    # Superseded by show_provider/provider_separator/show_effort/effort_separator.
+    "model_glyph", "model_prefix",
 }
 # preserve_reasoning_traces: reasoning is no longer sent back (PLAN.md step 2).
 _RETIRED_CONTEXT: set[str] = {"preserve_reasoning_traces", "format"}  # format: the project tree was never sent
@@ -980,8 +986,10 @@ class Config:
         self.ui_status_bar_fields: list[str] = ["endpoint_model", "role", "context", "cost", "sandbox"]
         self.ui_status_bar_separator: str = "  "
         self.ui_notice_lines: int = 2
-        self.ui_model_glyph: str = ""
-        self.ui_model_prefix: str = ""
+        self.ui_show_provider: bool = True
+        self.ui_provider_separator: str = ":"
+        self.ui_show_effort: bool = True
+        self.ui_effort_separator: str = ":"
         self.ui_sandbox_glyph: str = "⬢"
         self.ui_sandbox_prefix: str = "sandbox:"
         self.ui_sandbox_active_color: str = "SUCCESS"

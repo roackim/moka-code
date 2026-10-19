@@ -71,9 +71,10 @@ status_bar_fields = ["endpoint_model", "role", "context", "|", "cost", "sandbox"
 ```
 
 The `endpoint_model` field is composed as
-`glyph + " " + prefix + provider:model[:effort]` from `ui.model_glyph` /
-`ui.model_prefix` (both empty by default). Its color follows the endpoint
-connection state: green when ok, orange while checking, red on error.
+`[provider<provider_separator>]model[<effort_separator>effort]`, controlled by
+`ui.show_provider` / `ui.provider_separator` and `ui.show_effort` /
+`ui.effort_separator`. Its color follows the endpoint connection state: green
+when ok, orange while checking, red on error.
 
 The `sandbox` field is composed as `glyph + " " + prefix + name` from
 `ui.sandbox_glyph` / `ui.sandbox_prefix` and is colored green

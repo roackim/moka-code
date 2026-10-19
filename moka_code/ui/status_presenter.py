@@ -41,12 +41,13 @@ def _format_cost(cost: float | None) -> str:
     return f"${cost:.2f}"
 
 
-def _format_model(server: str, model: str) -> str:
-    """``[glyph ][prefix]server:model`` for the ``endpoint_model`` field."""
-    label = f"{settings.config.ui_model_prefix}{server}:{model}"
-    glyph = settings.config.ui_model_glyph
-    if glyph:
-        label = f"{glyph} {label}"
+def _format_model(server: str, model: str, effort: str | None = None) -> str:
+    """Compose ``[server<sep>]model[<sep>effort]`` for the status field."""
+    parts = [server] if settings.config.ui_show_provider else []
+    parts.append(model)
+    label = settings.config.ui_provider_separator.join(parts)
+    if effort and settings.config.ui_show_effort:
+        label += settings.config.ui_effort_separator + effort
     return label
 
 
@@ -221,7 +222,8 @@ def refresh_status_bar(app) -> None:
         selected = settings.config.active_server
         if selected:
             model = settings.config.get_model_for_server(selected) or "?"
-            label = _format_model(selected, model)
+            effort = settings.config.efforts.get(selected, {}).get(model)
+            label = _format_model(selected, model, effort)
             _set_fields(app, agent, label, selected, model, theme.ERROR, role, state, None)
             return
         label = "no server" if not settings.config.servers else "no model"
@@ -241,15 +243,14 @@ def refresh_status_bar(app) -> None:
                 model = model[: -len(suffix)]
                 break
     effort = getattr(endpoint, "effort", None)
-    if effort:      # shown whenever it is sent (always, see effort_payload)
-        model = f"{model}:{effort}"
+    endpoint_model = _format_model(endpoint.name, model, effort)
 
     # Show an animated spinner while .local hostname resolution or the
     # connection check is pending.
     from moka_code.harness.endpoint import is_local_resolution_pending, unserved_model
     if is_local_resolution_pending(endpoint._original_base_url) or getattr(endpoint, "_connection_state", None) == "checking":
         frame = SPINNER_FRAMES[app._status_spinner_frame % len(SPINNER_FRAMES)]
-        model = f"{frame} {model}"
+        endpoint_model = f"{frame} {endpoint_model}"
 
     # Color the server/model field by connection state:
     #   checking -> orange, error -> red, ok -> green.
@@ -267,7 +268,7 @@ def refresh_status_bar(app) -> None:
         server_color = theme.SUCCESS
     else:
         server_color = theme.DEFAULT
-    _set_fields(app, agent, _format_model(endpoint.name, model), endpoint.name, model,
+    _set_fields(app, agent, endpoint_model, endpoint.name, model,
                 server_color, role, state, endpoint)
 
 

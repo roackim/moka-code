@@ -20,11 +20,12 @@ class _Bar:
         self.colors = colors
 
 
-def _app(sandboxed, runtime="none", name=None):
+def _app(sandboxed, runtime="none", name=None, effort=None):
     endpoint = SimpleNamespace(
         name="local",
         model="q",
         selected_model="q",
+        effort=effort,
         _connection_state="ok",
         _original_base_url="http://localhost:8080/v1",
     )
@@ -64,13 +65,25 @@ def test_refresh_reapplies_status_bar_field_config(monkeypatch):
     assert app.status_bar.separator == " | "
 
 
-def test_model_field_uses_glyph_and_prefix(monkeypatch):
-    monkeypatch.setattr(settings.config, "ui_model_glyph", "◆")
-    monkeypatch.setattr(settings.config, "ui_model_prefix", "model:")
-    app = _app(True)
+def test_model_field_provider_and_effort_are_configurable(monkeypatch):
+    app = _app(True, effort="high")
     refresh_status_bar(app)
+    assert app.status_bar.values["endpoint_model"] == "local:q:high"
 
-    assert app.status_bar.values["endpoint_model"] == "◆ model:local:q"
+    monkeypatch.setattr(settings.config, "ui_show_provider", False)
+    refresh_status_bar(app)
+    assert app.status_bar.values["endpoint_model"] == "q:high"
+
+    monkeypatch.setattr(settings.config, "ui_show_provider", True)
+    monkeypatch.setattr(settings.config, "ui_provider_separator", "/")
+    monkeypatch.setattr(settings.config, "ui_show_effort", False)
+    refresh_status_bar(app)
+    assert app.status_bar.values["endpoint_model"] == "local/q"
+
+    monkeypatch.setattr(settings.config, "ui_show_effort", True)
+    monkeypatch.setattr(settings.config, "ui_effort_separator", "@")
+    refresh_status_bar(app)
+    assert app.status_bar.values["endpoint_model"] == "local/q@high"
 
 
 def test_sandbox_field_shows_name_instead_of_runtime():

@@ -126,8 +126,8 @@ def test_missing_section_brings_its_heading_and_help(tmp_path):
     text = (tmp_path / "ui.toml").read_text(encoding="utf-8")
     assert 'theme = "pastel"' in text
     assert "## Model field" in text
-    assert "# model_glyph" in text
-    assert "# model_prefix" in text
+    assert "# show_provider" in text
+    assert "# provider_separator" in text
     assert "## Sandbox field" in text
 
 
@@ -140,8 +140,8 @@ def test_repairs_headings_and_help_left_by_a_previous_sync(tmp_path):
         '# status_bar_separator = "  "\n'
         "# notice_lines = 2\n\n"
         "## Sandbox field\n\n"
-        '# model_glyph = ""\n'
-        '# model_prefix = ""\n'
+        '# show_provider = true\n'
+        '# provider_separator = ":"\n'
         '# sandbox_glyph = "⬢"\n'
         '# sandbox_prefix = "sandbox:"\n'
         '# sandbox_active_color = "SUCCESS"\n'
@@ -158,8 +158,8 @@ def test_repairs_headings_and_help_left_by_a_previous_sync(tmp_path):
             < text.index("# notice_lines"))
     assert (text.index("# notice_lines")
             < text.index("## Model field")
-            < text.index("# model_glyph"))
-    assert (text.index("# model_prefix")
+            < text.index("# show_provider"))
+    assert (text.index("# provider_separator")
             < text.index("## Sandbox field")
             < text.index("# sandbox_glyph"))
     assert config.sync_section_files() == []
@@ -227,7 +227,7 @@ def test_symlink_is_preserved(tmp_path):
     _config(tmp_path).sync_section_files()
 
     assert link.is_symlink()
-    assert "# model_glyph" in real.read_text(encoding="utf-8")
+    assert "# show_provider" in real.read_text(encoding="utf-8")
 
 
 def test_file_mode_is_preserved(tmp_path):
