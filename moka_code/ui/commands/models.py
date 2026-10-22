@@ -136,12 +136,18 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
     def _show(pairs, modal=None):
         active_name, selected = _current_selection(ui)
         ordered = _by_server(pairs)
+        # An open picker keeps the highlighted (server, model), even when its
+        # label changes (a second server lists the same id: "qwen" becomes
+        # "alpha:qwen"); a first open starts on the active one.
+        target = (active_name, selected)
+        if modal is not None:
+            target = state["index"].get(modal.get_selected(), target)
         items, descriptions, footers, index = _build_rows(ordered, active_name, selected)
         state["index"] = index
         initial = next(
             (i for i, (server, model) in enumerate(ordered)
-             if server == active_name and model.id == selected),
-            0,
+             if (server, model.id) == target),
+            None if modal is not None else 0,
         )
 
         def _accept(item):

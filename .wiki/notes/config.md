@@ -189,10 +189,12 @@ while available; if its server left `servers.toml`, or the server's fresh
 listing no longer has it, or nothing was selected, it selects the first
 available model (that server's first, else the top of `/model`; stale servers
 are never picked) and says why. A server that cannot be listed keeps its
-selection, shown red with a notice. Failed discoveries are recorded in
-`Config.discovery_errors` and shown for every configured server (an error for
-the active one, a warning for the others), as are unset `api_key_env`
-variables.
+selection, shown red with a notice. `Config.server_errors` holds, per server,
+the latest failed probe (a model listing, the connection check, or a chat
+request failing on the network, auth or a server error), cleared by the next one
+that succeeds; it colors the active server red and is shown for every configured
+server (an error for the active one, a warning for the others), as are unset
+`api_key_env` variables.
 
 **Context / ui:** `context_max_files`,
 `context_max_depth`, `context_ignore_gitignore`,

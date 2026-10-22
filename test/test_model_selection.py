@@ -219,9 +219,9 @@ def test_a_server_that_cannot_be_listed_is_reported_even_when_not_active(cfg, mo
     monkeypatch.setattr(LlamaCpp, "list_models", refuse)
     asyncio.run(refresh_catalog(["ds"]))
 
-    assert cfg.config.discovery_errors == {"ds": "HTTP 401 (check the API key)"}
+    assert cfg.config.server_errors == {"ds": "HTTP 401 (check the API key)"}
     texts = [(level, t) for level, t in notices(agent)]
-    assert ("warning", "ds cannot be listed: HTTP 401 (check the API key) → /config servers") in texts
+    assert ("warning", "ds cannot be joined: HTTP 401 (check the API key) → /config servers") in texts
     assert ("warning", "$DS_KEY is not set (keyed API key) → export DS_KEY=…") in texts
 
     async def fine(self):
@@ -229,8 +229,8 @@ def test_a_server_that_cannot_be_listed_is_reported_even_when_not_active(cfg, mo
 
     monkeypatch.setattr(LlamaCpp, "list_models", fine)
     asyncio.run(refresh_catalog(["ds"]))
-    assert cfg.config.discovery_errors == {}
-    assert not any("cannot be listed" in t for _, t in notices(agent))
+    assert cfg.config.server_errors == {}
+    assert not any("cannot be joined" in t for _, t in notices(agent))
 
 
 def test_server_without_a_selected_model_is_an_error_notice(cfg):

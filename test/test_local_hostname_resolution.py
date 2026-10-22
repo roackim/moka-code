@@ -122,7 +122,7 @@ def test_connect_failure_retries_with_fresh_resolution():
     stale = MagicMock()
     stale.get = AsyncMock(side_effect=ConnectionError("stale address"))
     fresh = MagicMock()
-    fresh.get = AsyncMock(return_value=MagicMock())
+    fresh.get = AsyncMock(return_value=MagicMock(status_code=200))
 
     with patch("moka_code.harness.endpoint._new_http_client", side_effect=[stale, fresh]), patch(
         "moka_code.harness.endpoint_local._getent_host",

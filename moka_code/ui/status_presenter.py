@@ -104,9 +104,10 @@ def notices(agent) -> list[tuple[str, str]]:
         key_env = server.get("api_key_env")
         if key_env and not os.getenv(key_env):
             errors.append(f"${key_env} is not set ({name} API key) → export {key_env}=…")
-        if conn == "error":
+        if name in settings.config.server_errors:
             url = getattr(endpoint, "_original_base_url", "") or endpoint.base_url
-            errors.append(f"{name} unreachable ({url}) → start it, or /config servers")
+            errors.append(f"{name} cannot be joined: {settings.config.server_errors[name]} "
+                          f"({url}) → start it, or /config servers")
         elif not getattr(endpoint, "selected_model", None):
             errors.append(f"{name}: no model selected → /model")
         elif (settings.config.models_by_server.get(name) == []
@@ -145,9 +146,9 @@ def notices(agent) -> list[tuple[str, str]]:
         key_env = table.get("api_key_env")
         if key_env and not os.getenv(key_env):
             other.append(f"${key_env} is not set ({server_name} API key) → export {key_env}=…")
-        elif server_name in settings.config.discovery_errors:
-            other.append(f"{server_name} cannot be listed: "
-                         f"{settings.config.discovery_errors[server_name]} → /config servers")
+        elif server_name in settings.config.server_errors:
+            other.append(f"{server_name} cannot be joined: "
+                         f"{settings.config.server_errors[server_name]} → /config servers")
     sandbox_required = getattr(agent, "sandbox_required", None)
     if callable(sandbox_required) and sandbox_required():
         role = getattr(getattr(agent, "role", None), "name", "this role")
@@ -252,8 +253,9 @@ def refresh_status_bar(app) -> None:
         frame = SPINNER_FRAMES[app._status_spinner_frame % len(SPINNER_FRAMES)]
         endpoint_model = f"{frame} {endpoint_model}"
 
-    # Color the server/model field by connection state:
-    #   checking -> orange, error -> red, ok -> green.
+    # Color the server/model field by the latest probe of the server (model
+    # listing, connection check or chat request): checking -> orange, failed
+    # -> red, ok -> green.
     conn = getattr(endpoint, "_connection_state", "unknown")
     lists_nothing = (settings.config.models_by_server.get(endpoint.name) == []
                      and endpoint.name not in settings.config.stale_servers)
@@ -262,7 +264,7 @@ def refresh_status_bar(app) -> None:
         server_color = theme.ERROR      # kept, but not joinable: never replaced
     elif conn == "checking":
         server_color = theme.WARNING
-    elif conn == "error":
+    elif endpoint.name in settings.config.server_errors or conn == "error":
         server_color = theme.ERROR
     elif conn == "ok":
         server_color = theme.SUCCESS

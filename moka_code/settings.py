@@ -947,8 +947,10 @@ class Config:
         # Servers whose last refresh failed: their entry is the last
         # successful discovery of this session, possibly stale.
         self.stale_servers: set = set()
-        # Why the last discovery of a server failed (memory only), by server.
-        self.discovery_errors: Dict[str, str] = {}
+        # Why a server cannot be joined (memory only), by server: the latest
+        # failed probe (model listing, connection check or chat request),
+        # cleared by the next one that succeeds.
+        self.server_errors: Dict[str, str] = {}
         self._apply_defaults()
         self.reload()
 

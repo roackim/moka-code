@@ -7,8 +7,10 @@ available. A server that cannot be listed keeps its selection (red, with the
 notice band saying why): a network blip must not switch servers.
 """
 
+import asyncio
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from moka_code import settings
@@ -26,6 +28,7 @@ def cfg(monkeypatch):
     })
     monkeypatch.setattr(settings.config, "models_by_server", {})
     monkeypatch.setattr(settings.config, "stale_servers", set())
+    monkeypatch.setattr(settings.config, "server_errors", {})
     monkeypatch.setattr(settings.config, "active_server", None)
     monkeypatch.setattr(settings.config, "model_selection", {})
     monkeypatch.setattr(settings.config, "efforts", {})
@@ -157,3 +160,83 @@ def test_missing_server_is_red_until_auto_select_runs(cfg):
     assert ui.status_bar.values["endpoint_model"] == "gone:m"
     assert ui.status_bar.colors["endpoint_model"] == theme.ERROR
     assert any("'gone' is not in servers.toml" in text for _, text in notices(ui.agent))
+
+
+# -- the color follows the latest probe of the server (2026-10-22) -------------------
+# It used to be set by the first connection check only: a server that went down
+# later stayed green, and the active one had no notice either.
+
+def _drain(endpoint):
+    async def run():
+        async for _ in endpoint.stream([{"role": "user", "content": "hi"}]):
+            pass
+    return asyncio.run(run())
+
+
+def test_a_failed_listing_of_the_active_server_turns_it_red_with_a_notice(cfg):
+    cfg.active_server, cfg.model_selection = "a", {"a": "m"}
+    cfg.models_by_server, cfg.stale_servers = {"a": [{"id": "m"}]}, {"a"}
+    cfg.server_errors = {"a": "cannot connect"}
+    ui, _, _ = _ui(_endpoint("a", "m"))         # its first check said ok
+
+    refresh_status_bar(ui)
+
+    assert ui.status_bar.colors["endpoint_model"] == theme.ERROR
+    assert ("error", "a cannot be joined: cannot connect (http://a/v1) → start it, "
+                     "or /config servers") in notices(ui.agent)
+
+
+def test_a_chat_request_that_cannot_connect_turns_it_red_and_a_reply_green_again(cfg, monkeypatch):
+    cfg.active_server, cfg.model_selection = "a", {"a": "m"}
+    cfg.models_by_server = {"a": [{"id": "m"}]}
+    endpoint = _endpoint("a", "m")
+    endpoint.retry_attempts = 1
+    ui, _, _ = _ui(endpoint)
+
+    async def down(messages, tools):
+        raise httpx.ConnectError("refused")
+        yield
+    monkeypatch.setattr(endpoint, "_stream", down)
+    with pytest.raises(httpx.ConnectError):
+        _drain(endpoint)
+    refresh_status_bar(ui)
+    assert ui.status_bar.colors["endpoint_model"] == theme.ERROR
+    assert any("a cannot be joined: cannot connect" in t for _, t in notices(ui.agent))
+
+    async def up(messages, tools):
+        yield "hello"
+    monkeypatch.setattr(endpoint, "_stream", up)
+    _drain(endpoint)
+    refresh_status_bar(ui)
+    assert ui.status_bar.colors["endpoint_model"] == theme.SUCCESS
+    assert not any("cannot be joined" in t for _, t in notices(ui.agent))
+
+
+def test_a_rejected_request_says_nothing_about_the_server(cfg, monkeypatch):
+    cfg.active_server, cfg.model_selection = "a", {"a": "m"}
+    cfg.models_by_server = {"a": [{"id": "m"}]}
+    endpoint = _endpoint("a", "m")
+    request = httpx.Request("POST", "http://a/v1/chat/completions")
+
+    async def rejected(messages, tools):
+        raise httpx.HTTPStatusError("HTTP 400", request=request,
+                                    response=httpx.Response(400, request=request))
+        yield
+    monkeypatch.setattr(endpoint, "_stream", rejected)
+    with pytest.raises(httpx.HTTPStatusError):
+        _drain(endpoint)
+
+    assert "a" not in cfg.server_errors
+
+
+def test_the_connection_check_counts_an_http_error_as_not_joined(cfg, monkeypatch):
+    endpoint = _endpoint("a", "m")
+    request = httpx.Request("GET", "http://a/v1/models")
+
+    async def get(path):
+        return httpx.Response(401, request=request)
+    monkeypatch.setattr(endpoint.client, "get", get)
+
+    assert asyncio.run(endpoint.check_connection()) is False
+    assert endpoint._connection_state == "error"
+    assert cfg.server_errors["a"] == "HTTP 401 (check the API key)"

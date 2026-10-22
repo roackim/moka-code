@@ -140,3 +140,60 @@ def test_open_picker_shows_cached_catalog_without_network(monkeypatch):
     assert scheduled
     for coro in scheduled:
         coro.close()
+
+
+def test_a_background_refresh_keeps_the_highlighted_model_even_when_its_label_changes(monkeypatch):
+    """2026-10-22: the refresh used to move the highlight back to the active
+    model, and a second server listing the same id renamed the row ("qwen" ->
+    "alpha:qwen"), so Enter could select another model than the one shown."""
+    import asyncio
+    from types import SimpleNamespace
+
+    import moka_code.ui.commands.models as models
+    from moka_code.harness.endpoint import ModelInfo
+
+    cached = [("alpha", ModelInfo(id="qwen")), ("beta", ModelInfo(id="llama"))]
+    discovered = cached + [("beta", ModelInfo(id="qwen"))]
+    monkeypatch.setattr(models, "_cached_pairs", lambda: cached)
+
+    async def _discover_all():
+        return discovered
+    monkeypatch.setattr(models, "_discover_all", _discover_all)
+
+    class _Modal:
+        is_visible = True
+
+        def __init__(self, items, initial_index, on_accept):
+            self.items, self.selected, self.on_accept = items, initial_index, on_accept
+
+        def get_selected(self):
+            return self.items[self.selected]
+
+        def refresh(self, items, initial_index=None, **_):
+            self.items = items
+            if initial_index is not None:
+                self.selected = initial_index
+
+    shown = {}
+
+    def show_search_modal(title, items, on_accept=None, initial_index=0, **_):
+        shown["modal"] = _Modal(items, initial_index, on_accept)
+        return shown["modal"]
+
+    selected = []
+    monkeypatch.setattr(models, "_select_pair", lambda ui, server, model: selected.append((server, model)))
+    ui = SimpleNamespace(
+        agent=SimpleNamespace(endpoint=SimpleNamespace(name="beta", selected_model="llama")),
+        show_search_modal=show_search_modal)
+
+    async def scenario():
+        await models._open_picker(ui)
+        modal = shown["modal"]
+        assert modal.get_selected() == "llama"          # opens on the active model
+        modal.selected = modal.items.index("qwen")       # the user moves to alpha's qwen
+        await asyncio.sleep(0.01)                        # discovery lands
+        assert modal.items == ["alpha:qwen", "llama", "beta:qwen"]
+        modal.on_accept(modal.get_selected())
+
+    asyncio.run(scenario())
+    assert selected == [("alpha", "qwen")]

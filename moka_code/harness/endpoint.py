@@ -315,14 +315,38 @@ class Endpoint:
         """Check if the endpoint is reachable."""
         return (await self.diagnose_connection()).ok
 
+    def _probed(self, error: Optional[Exception]) -> None:
+        """Record what a probe of this server found: ``None`` joined it, an
+        error did not (``settings.config.server_errors``, the status color)."""
+        from moka_code import settings
+
+        self._connection_state = "ok" if error is None else "error"
+        if error is None:
+            settings.config.server_errors.pop(self.name, None)
+        else:
+            settings.config.server_errors[self.name] = describe_failure(error)
+
+    async def _get_models(self) -> None:
+        """``GET /models``; an HTTP error status raises (the server answered,
+        but cannot be used: a bad key, a broken route)."""
+        response = await asyncio.wait_for(self.client.get("/models"), timeout=self.timeout)
+        if response.status_code >= 400:
+            raise httpx.HTTPStatusError(f"HTTP {response.status_code}",
+                                        request=response.request, response=response)
+
     async def diagnose_connection(self) -> "ConnectionDiagnosis":
         """Attempt a connection and return detailed diagnostics on failure."""
         error = None
         self._connection_state = "checking"
         try:
-            await asyncio.wait_for(self.client.get("/models"), timeout=self.timeout)
-            self._connection_state = "ok"
+            await self._get_models()
+            self._probed(None)
             return ConnectionDiagnosis(ok=True, url=self.base_url, error=None)
+        except httpx.HTTPStatusError as e:
+            self._probed(e)                 # it answered: a new address won't help
+            return ConnectionDiagnosis(ok=False, url=self.base_url, error=e,
+                                       original_url=self._original_base_url,
+                                       hostname=self._hostname)
         except Exception as e:
             error = e
 
@@ -333,13 +357,13 @@ class Endpoint:
                 self.base_url = new_url
                 self._replace_client()
                 try:
-                    await asyncio.wait_for(self.client.get("/models"), timeout=self.timeout)
-                    self._connection_state = "ok"
+                    await self._get_models()
+                    self._probed(None)
                     return ConnectionDiagnosis(ok=True, url=self.base_url, error=None)
                 except Exception as e2:
                     error = e2
 
-        self._connection_state = "error"
+        self._probed(error)
         return ConnectionDiagnosis(
             ok=False,
             url=self.base_url,
@@ -359,6 +383,9 @@ class Endpoint:
 
         A 503 (model loading) or a network error retries the whole request
         with backoff, up to ``retry_attempts``; any other HTTP error is raised.
+        The outcome is recorded as a probe (:meth:`_probed`) when it says
+        whether the server can be joined: a reply, or a network, auth or
+        server error (a rejected request, e.g. a 400, says nothing about it).
         """
         self._in_flight += 1
         try:
@@ -368,11 +395,15 @@ class Endpoint:
                 try:
                     async for chunk in self._stream(messages, tools):
                         yield chunk
+                    self._probed(None)
                     return
                 except (httpx.HTTPStatusError, httpx.RequestError,
                         asyncio.TimeoutError, httpx.TimeoutException) as e:
                     loading = isinstance(e, httpx.HTTPStatusError)
                     if loading and e.response.status_code != 503:
+                        status = e.response.status_code
+                        if status in (401, 403) or status >= 500:
+                            self._probed(e)
                         raise
                     if attempt < max_retries - 1:
                         logger.warning(
@@ -383,6 +414,7 @@ class Endpoint:
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 1.5
                         continue
+                    self._probed(e)
                     if loading:
                         raise httpx.HTTPStatusError(
                             f"Model loading timeout after {max_retries} attempts: {e}",
@@ -585,11 +617,11 @@ async def refresh_catalog(names: Optional[list[str]] = None) -> None:
             return                          # a newer refresh owns the result
         if models is None:
             if failure:
-                settings.config.discovery_errors[name] = failure
+                settings.config.server_errors[name] = failure
             if name in settings.config.models_by_server:
                 settings.config.stale_servers.add(name)
             return
-        settings.config.discovery_errors.pop(name, None)
+        settings.config.server_errors.pop(name, None)
         settings.config.models_by_server[name] = [m.to_dict() for m in models]
         settings.config.stale_servers.discard(name)
 
