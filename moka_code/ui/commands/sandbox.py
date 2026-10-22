@@ -14,23 +14,8 @@ from typing import Dict, List, Optional
 
 from moka_code.ui.tui.msg_types import SysMsg, SysMsgError, SysMsgWarning
 
-from .base import ChatUIProtocol, open_project_sandbox, open_shell, pick
+from .base import ChatUIProtocol, confirm_remove, open_project_sandbox, open_shell, pick, show_path
 
-
-SUBCOMMANDS = ("config", "path", "new", "copy", "build", "start", "restart", "stop", "terminal", "init")
-
-_SUBCOMMAND_DESCRIPTIONS = {
-    "config": "Edit a sandbox's file (picker when no name given)",
-    "path": "Print (and copy) a sandbox's file path",
-    "new": "Create a sandbox: new <global|local> <type> [name]",
-    "copy": "Copy a sandbox: copy <name> <global|local> <new-name>",
-    "build": "Build a sandbox image from its dockerfile",
-    "start": "Activate a sandbox (picker when no name given)",
-    "restart": "Restart the active sandbox (re-reads its file)",
-    "stop": "Deactivate and run tools in-process",
-    "terminal": "Open a shell inside the active sandbox",
-    "init": "Write a starter Containerfile / Dockerfile next to a sandbox",
-}
 
 _BUILD_NOW = "Build now"
 _CANCEL = "Cancel"
@@ -40,8 +25,9 @@ _CANCEL = "Cancel"
 
 def _project():
     from moka_code import projects
+    from moka_code.harness.harness import current_workspace
 
-    return projects.load_project(os.getcwd())
+    return projects.load_project(current_workspace())
 
 
 def describe_sandbox(entry) -> str:
@@ -68,7 +54,7 @@ def sandbox_scope_completions() -> List[str]:
 
 
 def sandbox_type_completions() -> List[str]:
-    """Sandbox types ``new`` can create."""
+    """Sandbox types ``create`` can write."""
     from moka_code import projects
 
     return list(projects.SANDBOX_TYPES)
@@ -133,7 +119,7 @@ def _list_sandboxes(ui: ChatUIProtocol, project) -> None:
         description = f" — {entry.description}" if entry.description else ""
         lines.append(f"{entry.scope.ljust(6)} · {name.ljust(14)} {entry.type}{description}")
     if not project.sandboxes:
-        lines.append("(none defined — /sandbox new <global|local> <type>)")
+        lines.append("(none defined — /sandbox create <name> <type> [global|local])")
     ui.show_popup("sandboxes", "\n".join(lines), content_padding=0)
 
 
@@ -202,7 +188,7 @@ def _offer_build(ui: ChatUIProtocol, project, workspace: str, sandbox_id: str, e
         )
     else:
         message = (
-            f"Image '{spec.image}' not found. Set image/dockerfile in /sandbox config."
+            f"Image '{spec.image}' not found. Set image/dockerfile in /sandbox edit."
         )
     ui.chat_history_panel.add_message(message, msg_type=SysMsgWarning(), title="sandbox")
 
@@ -234,7 +220,7 @@ def next_sandbox_command(ui: ChatUIProtocol) -> Optional[str]:
 
 # --- subcommand handlers ---------------------------------------------------
 
-async def sandbox_help(ui: ChatUIProtocol, args: List[str]) -> None:
+async def sandbox_help(ui: ChatUIProtocol, args: List[str], command) -> None:
     """Bare ``/sandbox`` opens the picker (like ``/model``, ``/role``); with no
     sandbox to pick, or an unknown subcommand, it lists the subcommands."""
     from moka_code import projects
@@ -242,11 +228,11 @@ async def sandbox_help(ui: ChatUIProtocol, args: List[str]) -> None:
     if not args and projects.load_project(_workspace(ui)).sandboxes:
         await sandbox_start(ui, [])
         return
-    lines = [f"{name.ljust(8)} {_SUBCOMMAND_DESCRIPTIONS[name]}" for name in SUBCOMMANDS]
+    lines = [f"{name.ljust(8)} {sub.description}" for name, sub in command.subcommands.items()]
     ui.show_popup("sandbox", "Subcommands:\n" + "\n".join(lines), content_padding=0)
 
 
-async def sandbox_config(ui: ChatUIProtocol, args: List[str]) -> None:
+async def sandbox_edit(ui: ChatUIProtocol, args: List[str]) -> None:
     await open_project_sandbox(ui, args[0] if args else None)
 
 
@@ -274,16 +260,41 @@ async def sandbox_path(ui: ChatUIProtocol, args: List[str]) -> None:
             msg_type=SysMsgError(), title="sandbox")
         return
 
-    message = f"Sandbox '{name}' file: {entry.file}"
-    try:
-        from moka_code.ui.clipboard import copy_to_clipboard
+    show_path(ui, "sandbox", f"Sandbox '{name}' file ({entry.scope})", entry.file)
 
-        method = copy_to_clipboard(str(entry.file))
-        if method:
-            message += f"\n(copied path via {method})"
-    except Exception:  # pragma: no cover - clipboard is best effort
-        pass
-    ui.chat_history_panel.add_message(message, msg_type=SysMsg(), title="sandbox")
+
+async def sandbox_remove(ui: ChatUIProtocol, args: List[str]) -> None:
+    """``/sandbox remove <name>``: delete a sandbox's file after Remove / Cancel
+    (a dockerfile next to it stays). Removing the active one stops it."""
+    from moka_code import projects
+
+    if len(args) != 1:
+        ui.chat_history_panel.add_message(
+            "Usage: /sandbox remove <name>", msg_type=SysMsgError(), title="sandbox")
+        return
+    workspace = _workspace(ui)
+    project = projects.load_project(workspace)
+    name = args[0]
+    entry = project.sandboxes.get(name)
+    if entry is None or entry.file is None:
+        available = ", ".join(sorted(project.sandboxes)) or "(none)"
+        ui.chat_history_panel.add_message(
+            f"Unknown sandbox '{name}'. Available: {available}",
+            msg_type=SysMsgError(), title="sandbox")
+        return
+
+    def _remove() -> None:
+        if name == project.active and not _activate(ui, workspace, None, "none"):
+            return
+        try:
+            entry.file.unlink()
+        except OSError as exc:
+            ui.chat_history_panel.add_message(str(exc), msg_type=SysMsgError(), title="sandbox")
+            return
+        ui.chat_history_panel.add_message(
+            f"Removed {entry.scope} sandbox: {name}", msg_type=SysMsg(), title="sandbox")
+
+    confirm_remove(ui, f"Remove {entry.scope} sandbox '{name}'?", _remove)
 
 
 def _report_errors(ui: ChatUIProtocol, errors: List[str]) -> None:
@@ -293,17 +304,19 @@ def _report_errors(ui: ChatUIProtocol, errors: List[str]) -> None:
             msg_type=SysMsgError(), title="sandbox")
 
 
-async def sandbox_new(ui: ChatUIProtocol, args: List[str]) -> None:
+async def sandbox_create(ui: ChatUIProtocol, args: List[str]) -> None:
+    """``/sandbox create <name> <type> [global|local]``: write a starter sandbox
+    file (global by default) and open it."""
     from moka_code import projects
 
-    if len(args) < 2:
+    if not 2 <= len(args) <= 3:
         ui.chat_history_panel.add_message(
-            "Usage: /sandbox new <global|local> <type> [name]  "
-            f"(type: {', '.join(projects.SANDBOX_TYPES)}; name defaults to the type)",
+            "Usage: /sandbox create <name> <type> [global|local]  "
+            f"(type: {', '.join(projects.SANDBOX_TYPES)})",
             msg_type=SysMsgError(), title="sandbox")
         return
-    scope, stype = args[0].lower(), args[1].lower()
-    name = args[2] if len(args) > 2 else stype
+    name, stype = args[0], args[1].lower()
+    scope = args[2].lower() if len(args) == 3 else "global"
     if scope not in projects.SCOPES or stype not in projects.SANDBOX_TYPES:
         ui.chat_history_panel.add_message(
             f"Scope must be {' or '.join(projects.SCOPES)}; "
@@ -347,9 +360,12 @@ async def sandbox_copy(ui: ChatUIProtocol, args: List[str]) -> None:
 
 
 async def sandbox_restart(ui: ChatUIProtocol, args: List[str]) -> None:
-    """Restart the active sandbox: re-read its file and rebuild its worker,
-    without the full ``/reload`` (config, roles, theme, endpoint untouched)."""
-    from moka_code import projects
+    """Restart the active sandbox from its file and its current image (never a
+    rebuild: that is ``/sandbox build``). Checked like ``start`` first, so a
+    missing runtime or image leaves the running one alone; then the old worker
+    is shut down and waited for (its ``--rm`` container exits) before the fresh
+    one is applied."""
+    from moka_code import projects, sandbox
 
     if args:
         ui.chat_history_panel.add_message(
@@ -357,31 +373,36 @@ async def sandbox_restart(ui: ChatUIProtocol, args: List[str]) -> None:
         return
     if not _warn_if_busy(ui):
         return
-    agent = getattr(ui, "agent", None)
-    if agent is None or not hasattr(agent, "set_sandbox"):
-        ui.chat_history_panel.add_message(
-            "Sandbox switching is unavailable.", msg_type=SysMsgError(), title="sandbox")
-        return
-
     workspace = _workspace(ui)
     errors: list[str] = []
     project = projects.load_project(workspace, errors)
     _report_errors(ui, errors)
     name = project.active
-    spec = projects.active_spec(project)
-    if not name or spec is None:
+    entry = project.sandboxes.get(name) if name else None
+    if entry is None:
         ui.chat_history_panel.add_message(
             "No active sandbox to restart." if not name else
             f"Active sandbox '{name}' is no longer defined; nothing restarted.",
             msg_type=SysMsgError(), title="sandbox")
         return
+    spec = entry.to_spec()
+    if not sandbox.runtime_available(spec):
+        ui.chat_history_panel.add_message(
+            f"Runtime '{spec.runtime}' not found on PATH; nothing restarted.",
+            msg_type=SysMsgError(), title="sandbox")
+        return
+    if not sandbox.image_present(spec):
+        _offer_build(ui, project, workspace, name, entry, spec)
+        return
 
-    agent.set_sandbox(spec, name)
-    ui.chat_history_panel.add_message(
-        f"Sandbox '{name}' restarted ({spec.runtime}).",
-        msg_type=SysMsg(), title="sandbox")
-    if hasattr(ui, "refresh_status_bar"):
-        ui.refresh_status_bar()
+    stop = getattr(getattr(ui.agent, "transport", None), "stop", None)
+    if callable(stop):
+        await stop()
+    if _activate(ui, workspace, entry, name):
+        ui.chat_history_panel.add_message(
+            f"Sandbox '{name}' restarted ({spec.runtime}"
+            + (f", image {spec.image}" if spec.image else "") + ").",
+            msg_type=SysMsg(), title="sandbox")
 
 
 async def sandbox_stop(ui: ChatUIProtocol, _args: List[str]) -> None:
@@ -499,7 +520,7 @@ async def sandbox_init(ui: ChatUIProtocol, args: List[str]) -> None:
     message = (
         f"Wrote {path.name} (FROM {sandbox.resolve_base(base)}).\n"
         f"Path: {path}\n"
-        f'Set `dockerfile = "{path.name}"` and `image` in /sandbox config {name}, '
+        f'Set `dockerfile = "{path.name}"` and `image` in /sandbox edit {name}, '
         f"then /sandbox build {name}."
     )
     try:
@@ -515,7 +536,6 @@ async def sandbox_init(ui: ChatUIProtocol, args: List[str]) -> None:
 
 
 __all__ = [
-    "SUBCOMMANDS",
     "sandbox_id_completions",
     "sandbox_id_descriptions",
     "sandbox_scope_completions",
@@ -523,9 +543,10 @@ __all__ = [
     "sandbox_base_completions",
     "describe_sandbox",
     "sandbox_help",
-    "sandbox_config",
+    "sandbox_edit",
     "sandbox_path",
-    "sandbox_new",
+    "sandbox_create",
+    "sandbox_remove",
     "sandbox_copy",
     "sandbox_start",
     "sandbox_restart",

@@ -122,8 +122,8 @@ browsing is the point.
   and has finished saving before the history changes.
 - **A command that needs the agent idle** refuses while `ui.is_generating()` says so,
   with a message that names what to do.
-- Destructive commands ask first: run again with a `confirm` param (a declared
-  `Param("CONFIRM", completions=["confirm"])`), as `/config role-delete` does.
+- Destructive commands ask first with `base.confirm_remove` (a *Remove* /
+  *Cancel* picker; without one nothing is removed), as `/role remove` does.
 - Handlers are plain functions of `(ui, args)`; reach the agent through `ui.agent`
   and the screen through `ui.chat_history_panel`. They must work without a
   compositor (tests, headless).

@@ -131,8 +131,42 @@ def pick(ui: ChatUIProtocol, title: str, items: List[str], on_accept: Callable[[
         headless()
 
 
+REMOVE = "Remove"
+CANCEL = "Cancel"
+
+
+def confirm_remove(ui: ChatUIProtocol, title: str, on_yes: Callable[[], None]) -> None:
+    """Ask Remove / Cancel in the picker; ``on_yes`` runs on Remove. Without a
+    picker nothing is removed, and the notice says so."""
+    from moka_code.ui.tui.msg_types import SysMsgError
+
+    show = getattr(ui, "show_search_modal", None)
+    modal = show(title, [REMOVE, CANCEL], on_accept=lambda choice: choice == REMOVE and on_yes(),
+                 ordered=True) if callable(show) else None
+    if modal is None:
+        ui.chat_history_panel.add_message(
+            f"{title}: needs the confirmation picker; nothing removed.",
+            msg_type=SysMsgError(), title="remove")
+
+
+def show_path(ui: ChatUIProtocol, title: str, label: str, path) -> None:
+    """Print a file's path and copy it, so it can be edited outside the TUI."""
+    from moka_code.ui.tui.msg_types import SysMsg
+
+    message = f"{label}: {path}"
+    try:
+        from moka_code.ui.clipboard import copy_to_clipboard
+
+        method = copy_to_clipboard(str(path))
+        if method:
+            message += f"\n(copied path via {method})"
+    except Exception:  # pragma: no cover - clipboard is best effort
+        pass
+    ui.chat_history_panel.add_message(message, msg_type=SysMsg(), title=title)
+
+
 def prompt_name_completions() -> List[str]:
-    """Return the available prompt names (for ``/prompt <name>``)."""
+    """Return the available prompt names (for ``/prompt edit <name>``)."""
     from moka_code import prompts
     from moka_code.harness.harness import current_workspace
 
@@ -140,7 +174,7 @@ def prompt_name_completions() -> List[str]:
 
 
 def prompt_descriptions() -> Dict[str, str]:
-    """Map prompt name -> its first line and scope (for ``/prompt <name>``)."""
+    """Map prompt name -> its first line and scope (for ``/prompt edit <name>``)."""
     from moka_code import prompts
     from moka_code.harness.harness import current_workspace
 
@@ -188,7 +222,7 @@ async def open_project_sandbox(ui: ChatUIProtocol, name: Optional[str] = None) -
     """Open one sandbox's file (a picker when ``name`` is None) and re-apply the
     active sandbox.
 
-    Shared by ``/config sandbox`` and ``/sandbox config``.
+    Behind ``/sandbox edit`` and ``/sandbox create``.
     """
     import asyncio
 
@@ -210,7 +244,7 @@ async def open_project_sandbox(ui: ChatUIProtocol, name: Optional[str] = None) -
     if name is None:
         if not project.sandboxes:
             ui.chat_history_panel.add_message(
-                "No sandboxes yet → /sandbox new <global|local> <type>",
+                "No sandboxes yet → /sandbox create <name> <type> [global|local]",
                 msg_type=SysMsgError(), title="config")
             return
         descriptions = {n: describe_sandbox(e) for n, e in project.sandboxes.items()}

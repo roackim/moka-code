@@ -140,16 +140,18 @@ aliases are applied on load, so an unmigrated file still round-trips.
 
 Unknown tool names and values other than `no`/`ask`/`yes` are reported as
 `roles/<name>.toml: ...` by `validate_roles()`, surfaced by `/reload` and
-`/config role`.
+`/role edit`.
 
 ### Command surface
 
 | Command | Behavior |
 |---------|----------|
-| `/role` | list roles, mark the active one |
-| `/role <name>` | switch the active role |
-| `/config role <id>` | ensure the file exists, open in `$EDITOR`, reload |
-| `/config role-delete <id> [confirm]` | confirm, then unlink |
+| `/role` | picker over the roles, the active one marked; choosing switches |
+| `/role <name>` | switch the active role (the `/role ` menu lists the verbs, then the role names) |
+| `/role edit [name]` | open an existing role's file in `$EDITOR`, reload; no name opens a picker; never creates |
+| `/role create <name>` | write a starter file, open it, reload (refuses an existing name or a verb) |
+| `/role path [name]` | print (and copy) the file path; defaults to the active role |
+| `/role remove <name>` | *Remove* / *Cancel* picker, then unlink (at least one role must remain) |
 
 ## Edit Tool (`worker.py`)
 

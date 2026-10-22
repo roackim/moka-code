@@ -2,11 +2,12 @@
 
 One prompt per file, ``<name>.md``: global in ``<config>/prompts/`` and local in
 the workspace's ``.moka/prompts/`` (a local one wins over a global one of the
-same name). The whole file is the template; ``{name}`` is a parameter. The
-parameters are the distinct names in order of first appearance, an argument
-is a bare word or a quoted phrase, and the last parameter takes the rest of the
-line. ``{{`` and ``}}`` are literal braces. The menu description is the first
-non-empty line. Files are read when used: nothing is cached or watched.
+same name). The whole file is the template; ``{moka:name}`` is a parameter
+(namespaced, so braces in code or JSON are just text). The parameters are the
+distinct names in order of first appearance, an argument is a bare word or a
+quoted phrase, and the last parameter takes the rest of the line. The menu
+description is the first non-empty line. Files are read when used: nothing is
+cached or watched.
 """
 
 from __future__ import annotations
@@ -25,14 +26,14 @@ SCOPES = ("global", "local")
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 #: ``!name`` at the very start of the input (a leading space sends it literally).
 _CALL_RE = re.compile(r"!([A-Za-z0-9][A-Za-z0-9_-]*)(?=\s|$)")
-#: ``{{``, ``}}`` or ``{param}``.
-_TOKEN_RE = re.compile(r"\{\{|\}\}|\{([A-Za-z_][A-Za-z0-9_]*)\}")
+#: ``{moka:param}``; anything else, braces included, is literal text.
+_PARAM_RE = re.compile(r"\{moka:([A-Za-z_][A-Za-z0-9_]*)\}")
 _HIDDEN_PREFIXES = ("_", ".")
 
 _STARTER = """\
 # Short description (shown in the ! menu)
 
-Review {file}, focusing on {focus}.
+Review {moka:file}, focusing on {moka:focus}.
 """
 
 
@@ -101,19 +102,14 @@ def list_prompts(workspace: str | Path) -> Dict[str, Prompt]:
 def params_of(template: str) -> List[str]:
     """The distinct parameter names of ``template``, in order of first appearance."""
     names: List[str] = []
-    for match in _TOKEN_RE.finditer(template):
-        if match.group(1) and match.group(1) not in names:
+    for match in _PARAM_RE.finditer(template):
+        if match.group(1) not in names:
             names.append(match.group(1))
     return names
 
 
 def render(template: str, values: Dict[str, str]) -> str:
-    def substitute(match: re.Match) -> str:
-        if match.group(1):
-            return values[match.group(1)]
-        return match.group(0)[0]            # "{{" -> "{", "}}" -> "}"
-
-    return _TOKEN_RE.sub(substitute, template)
+    return _PARAM_RE.sub(lambda match: values[match.group(1)], template)
 
 
 # --- invoking -------------------------------------------------------------------

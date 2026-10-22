@@ -229,13 +229,13 @@ Centered overlay popups for commands that benefit from floating display rather t
 The interactive form stack (`form.py`, `form_popup.py`, `field_models.py`,
 `form_schema.py`, `role_editor_model.py`, `config_overlay.py`, `input/basic.py`)
 was removed. Configuration is edited as files: `/config <section>` and
-`/config role <name>` open the file in `$EDITOR` and reload. Pickers and viewers
+`/role edit <name>` open the file in `$EDITOR` and reload. Pickers and viewers
 are fine, in-app editing of settings is not; see
 [notes/principles.md](./principles.md).
 
 ## Foreground programs (`ui/external_editor.py`)
 
-`$EDITOR` (`/config`, `/edit`, `/config role`, `/sandbox config`) and
+`$EDITOR` (`/config`, `/edit`, `/role edit`, `/prompt edit`, `/sandbox edit`) and
 `/terminal` run through `run_in_foreground(ui, argv, cwd)`, which hands the
 terminal to the child **without freezing the conversation** (streams, tools and
 permission prompts keep going; the transcript is redrawn on return):
@@ -421,9 +421,9 @@ the `/` and `@` menus. Descriptions come from `Command.get_descriptions(...)`
 ### Prompts (`!name`, `moka_code/prompts.py`)
 `!name arg1 arg2` as the first characters of the input expands `<name>.md`: global
 in `<config>/prompts/`, local in the workspace's `.moka/prompts/` (local wins).
-The file is the template, read when used (no cache, no watcher); `{param}` is a
-parameter (distinct names, in order of first appearance; the last takes the rest
-of the line; quotes group an earlier argument; `{{` / `}}` are literal braces);
+The file is the template, read when used (no cache, no watcher); `{moka:param}`
+is a parameter (distinct names, in order of first appearance; the last takes the
+rest of the line; quotes group an earlier argument); every other brace is text;
 the menu description is the file's first non-empty line. `on_user_submit`
 expands it, so the transcript and the model get the expansion while the typed
 call is the message's `draft` (what `[e]` edit restores). `@path` in the
@@ -431,8 +431,11 @@ arguments becomes a plain path; the template itself is never `unmention`ed. An
 unknown name or wrong argument count is an error and the text stays in the input;
 a leading space (or `!` followed by a space) sends it literally. `!` is a second
 `CommandCompletion` (`trigger="!"`, names read live), with the parameters still to
-type shown as a hint after the name. `/prompt` opens a picker of the prompts;
-`/prompt <name> [global|local]` opens (creating) the file in `$EDITOR`.
+type shown as a hint after the name. `/prompt` opens a picker of the prompts to
+edit; `/prompt edit [name]` opens one (never creates), `/prompt create <name>
+[global|local]` writes a starter (global by default), `/prompt path [name]` prints
+the file the name resolves to, `/prompt remove <name>` deletes it after *Remove* /
+*Cancel*.
 
 ### Schema-Driven Parameter Hints
 
@@ -442,7 +445,7 @@ When typing a `/command`, the input component shows grey hints for upcoming para
 2. `_get_parameter_hint()` names only the slots still to type, never their options (the completion menu lists those): `<subcommand>` where a subcommand is expected, then `<NAME>` per remaining required param and `[NAME]` per optional one (`cmd.params[len(typed):]`)
 3. A slot is hinted until it is begun: the word being typed fills its own slot; nothing is hinted while the command or subcommand name itself is still being typed
 4. Hints are rendered in grey at the end of the current text (not at the cursor position), also while a completion menu is open
-5. `!prompt` calls get the same hint from the prompt's `{param}` names (`<file> <focus>`)
+5. `!prompt` calls get the same hint from the prompt's `{moka:param}` names (`<file> <focus>`)
 
 ## Mouse Interaction Model
 
@@ -791,7 +794,7 @@ The package lives in `moka_code/ui/commands/`:
 
 Verb-first command tree (`COMMANDS["sandbox"].subcommands`):
 
-- `/sandbox` → subcommand help; `/sandbox config` → edit the project file.
+- `/sandbox` → start picker (subcommand help when none exists); `/sandbox edit` → edit a sandbox's file.
 - `/sandbox start [id]` → activate; no id opens a picker (id, type or description,
   the active one tagged); missing image offers *Build now* / *Cancel*.
 - `/sandbox build <id>` → build the image (streams to activity; no activate).
@@ -842,9 +845,10 @@ from a hand-rolled `get_completions`.
   the notice band says when its file is `gone` (running from memory) or `changed on
   disk → /reload` (`Harness.role_problem`, gated by a `stat`). At startup the
   conversation takes `agent`, else the first role that loads; with none, a no-tool
-  placeholder and an error notice (`no role file loads → /config role agent`).
-- `/config role <name>` creates/opens `roles/<name>.toml` in `$EDITOR` and reloads;
-  `/config role-delete <name> confirm` removes it.
+  placeholder and an error notice (`no role file loads → /role create agent`).
+- `/role edit [name]` opens `roles/<name>.toml` in `$EDITOR` and reloads; `/role
+  create <name>` writes a starter first; `/role path [name]` prints the path;
+  `/role remove <name>` deletes it after *Remove* / *Cancel*.
 
 ### Themes
 

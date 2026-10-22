@@ -123,10 +123,10 @@ def notices(agent) -> list[tuple[str, str]]:
     role_problem = getattr(agent, "role_problem", None)
     problem = role_problem() if callable(role_problem) else None
     if problem == "none":
-        errors.append("no role file loads → /config role agent")
+        errors.append("no role file loads → /role create agent")
     elif problem == "gone":
         warnings.append(f"role {role.name}: its file is gone, running from memory "
-                        f"→ /config role {role.name}")
+                        f"→ /role create {role.name}")
     elif problem == "changed":
         warnings.append(f"role {role.name} changed on disk → /reload")
     preserve = getattr(role, "preserve_thinking", None)
@@ -134,7 +134,7 @@ def notices(agent) -> list[tuple[str, str]]:
             and endpoint.needs_preserved_thinking(bool(getattr(agent, "tool_schemas", None)))):
         warnings.append(
             f"{name} needs reasoning sent back, role {role.name} sends none "
-            f"→ preserve_thinking (/config role {role.name})")
+            f"→ preserve_thinking (/role edit {role.name})")
     # Every configured server, not only the active one: a server that cannot
     # be listed would otherwise fail without a word (the active one's own
     # problems are reported above).

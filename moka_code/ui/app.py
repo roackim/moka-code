@@ -332,9 +332,9 @@ class chatTUI(ChatActionHandlers):
         for error in settings.config.load_errors:
             section = sections.get(error.split(":", 1)[0])
             notes.append(("error", f"{error} → /config {section}" if section else error))
-        notes += [("error", f"{error} → /config role") for error in roles.validate_roles()]
+        notes += [("error", f"{error} → /role edit") for error in roles.validate_roles()]
         workspace = getattr(getattr(self, "agent", None), "workspace", None) or os.getcwd()
-        notes += [("error", f"{error} → /sandbox config")
+        notes += [("error", f"{error} → /sandbox edit")
                   for error in projects.validate_sandboxes(workspace)]
         notes += [("warning", note) for note in projects.moved_project_notes(workspace)]
         notes += [("error", f"{problem} → /theme") for problem in theme_problems()]

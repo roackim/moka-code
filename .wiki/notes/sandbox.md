@@ -116,7 +116,7 @@ workspace, leaked secrets) for **simple agentic usage** — bash, `python3`,
 coreutils; not a boundary against hostile code. It does not grow: when a project
 needs tooling that is hard to set up under bwrap (`git`/`node`/`pixi` under `$HOME`,
 specific versions, system packages), use a **podman/docker** sandbox
-(`/sandbox new <scope> podman`). The bubblewrap starter file says so, and
+(`/sandbox create <name> podman [scope]`). The bubblewrap starter file says so, and
 `run_args` is the only escape hatch (e.g. `--ro-bind ~/.pixi ~/.pixi`).
 
 ## Registry & selection (`moka_code/projects.py`)
@@ -195,12 +195,13 @@ completion come from the framework (see [ui.md](./ui.md)):
 | Subcommand | Behavior |
 |---|---|
 | `/sandbox` | opens the `start` picker when a sandbox exists (like `/model`, `/role`); otherwise, and for an unknown subcommand, lists the subcommands |
-| `/sandbox config [name]` | open that sandbox's file; no name opens a picker (alias of `/config sandbox [name]`) |
+| `/sandbox edit [name]` | open that sandbox's file; no name opens a picker |
 | `/sandbox path [name]` | print (and copy) that sandbox's file path (defaults to the active one), to edit it outside the TUI |
-| `/sandbox new <global\|local> <type> [name]` | create a file from a type-specific starter (name defaults to the type), then open it |
+| `/sandbox create <name> <type> [global\|local]` | create a file from a type-specific starter (global by default), then open it |
+| `/sandbox remove <name>` | *Remove* / *Cancel* picker, then unlink the file (stops it first when active; a dockerfile next to it stays) |
 | `/sandbox copy <name> <global\|local> <new-name>` | copy a sandbox into the other (or same) scope |
 | `/sandbox start [name]` | activate; no name opens a picker (tagged `global`/`local`); missing image offers *Build now* / *Cancel* |
-| `/sandbox restart` | re-read the active sandbox's file and rebuild its worker (no full `/reload`) |
+| `/sandbox restart` | re-read the active sandbox's file and start a fresh container from its **current** image (never rebuilds: that is `build`). Checked like `start` first (a missing runtime/image leaves the running one alone); the old worker gets `shutdown` and is waited for (its `--rm` container exits), then the new one starts on the next tool call |
 | `/sandbox build <name>` | build the image (streams to activity; does not activate) |
 | `/sandbox init <name> [base]` | write `<name>.Containerfile`/`.Dockerfile` next to the sandbox's file (bases: `python`→`python:3.12-slim`, `debian`→`debian:stable-slim`, `ubuntu`) |
 | `/sandbox stop` | deactivate (back to in-process) |

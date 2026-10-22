@@ -70,7 +70,7 @@ project; `<hash>` = 4 hex of a hash of the resolved workspace path). A file hold
 too (the limit on a tool call is the role's `tool_timeout`). The project's
 `project.toml` holds `path = "<resolved workspace>"` and the `active = "<name>"`
 selection (machine-written by `set_active()`). New files come from
-`/sandbox new` (a commented starter per type) or `/sandbox copy`; names are unique
+`/sandbox create` (a commented starter per type) or `/sandbox copy`; names are unique
 across both scopes. The default `bubblewrap` is seeded as a global on first run
 (when `sandboxes/` does not exist yet). moka never writes into the repository. See
 [sandbox.md](./sandbox.md).
@@ -138,13 +138,11 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 
 - `/config <section>` opens the section file in `$VISUAL`/`$EDITOR` and reloads
   on exit; no argument lists the sections. `section` is one of `ui`, `context`,
-  `debug`, `styles`, `servers`, `theme`, plus `sandbox [name]` (one sandbox's file;
-  a picker without a name) and `role`.
-- `/sandbox config` is the equivalent shortcut; `/sandbox` manages the sandbox
-  lifecycle (see [sandbox.md](./sandbox.md)).
+  `debug`, `styles`, `servers`, `theme`.
+- `/role`, `/prompt` and `/sandbox` each have `edit [name]`, `create`, `path` and
+  `remove` for their own files; `/sandbox` also manages the sandbox lifecycle
+  (see [sandbox.md](./sandbox.md)).
 - `/edit <path>` opens any file.
-- `/config role <name>` opens (creating if needed) `roles/<name>.toml`;
-  `/config role-delete <name> confirm` removes it.
 - `/config theme` opens `themes.toml`; `/config theme <id>` first materializes a
   `[themes.<id>]` override section from that theme's current palette (with name
   suggestions as you type the id), then opens the file.

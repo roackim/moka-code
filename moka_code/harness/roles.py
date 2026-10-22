@@ -133,7 +133,7 @@ def _default_roles_dir() -> Path:
 _ROLES_DIR = _default_roles_dir()
 
 
-def _role_file(name: str) -> Path:
+def role_file(name: str) -> Path:
     return _ROLES_DIR / f"{name}.toml"
 
 
@@ -259,7 +259,7 @@ def ensure_roles_dir() -> Path:
             path.unlink()
     if not _iter_role_files():
         for name, role in builtin_roles().items():
-            _role_file(name).write_text(_role_template(role), encoding="utf-8")
+            role_file(name).write_text(_role_template(role), encoding="utf-8")
     for path in _iter_role_files():
         _migrate_role_file(path)
     return _ROLES_DIR
@@ -296,7 +296,7 @@ def _role_template(role: Role) -> str:
 def ensure_role_file(name: str) -> Path:
     """Create the role's file if missing (built-ins included); return its path."""
     name = _validate_name(name)
-    path = _role_file(name)
+    path = role_file(name)
     if path.exists():
         return path
     _ROLES_DIR.mkdir(parents=True, exist_ok=True)
@@ -312,12 +312,12 @@ def delete_role(name: str) -> None:
         raise KeyError(f"Role not found: {name}")
     if len(list_roles()) <= 1:
         raise ValueError("At least one role must remain")
-    _role_file(name).unlink(missing_ok=True)
+    role_file(name).unlink(missing_ok=True)
 
 
 def load_role(name: str) -> Role:
     """The role in ``roles/<name>.toml``; ``KeyError`` when there is no such file."""
-    path = _role_file(name)
+    path = role_file(name)
     if not path.exists():
         raise KeyError(f"Role not found: {name}")
     return _role_from_dict(name, _read_role_file(path))
@@ -327,7 +327,7 @@ def role_file_stat(name: str) -> Optional[tuple[int, int]]:
     """``(mtime_ns, size)`` of the role's file, ``None`` when it is gone: the
     cheap check that tells whether a running role may differ from its file."""
     try:
-        stat = _role_file(name).stat()
+        stat = role_file(name).stat()
     except OSError:
         return None
     return stat.st_mtime_ns, stat.st_size

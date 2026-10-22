@@ -24,19 +24,19 @@ def test_model_is_a_leaf_handler():
     assert [p.name for p in model.params] == ["MODEL"]
 
 
-def test_config_command_completes_role_names():
-    config = COMMANDS["config"]
+def test_role_menu_lists_its_verbs_then_the_role_names():
+    """``/role <name>`` switches beside ``/role edit`` (2026-10-22), so the
+    ``/role `` menu offers both; ``/config`` no longer edits roles."""
+    from moka_code.ui.commands.registry import get_subcommand_descriptions, get_subcommand_list
 
-    sections = config.get_completions(0)
-    assert "role" in sections
-    assert "ui" in sections
-
-    names = config.subcommands["role"].get_completions(0)
-    assert "agent" in names
-    assert "chat" in names
+    names = get_subcommand_list("role")
+    assert names[:4] == ["edit", "create", "path", "remove"]
+    assert {"agent", "chat"} <= set(names[4:])
+    assert get_subcommand_descriptions("role")["agent"]
+    assert "role" not in COMMANDS["config"].get_completions(0)
 
     # A flat section takes no argument, so it offers no role names.
-    assert config.subcommands["ui"].get_completions(0) == []
+    assert COMMANDS["config"].subcommands["ui"].get_completions(0) == []
 
 
 def test_config_command_completes_theme_names():

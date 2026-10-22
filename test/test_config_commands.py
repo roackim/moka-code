@@ -15,6 +15,11 @@ def cmd_config(ui, args):
     return COMMANDS["config"].execute(ui, args)
 
 
+def cmd_role(ui, args):
+    """``/role <args>`` as typed."""
+    return COMMANDS["role"].execute(ui, args)
+
+
 class _Panel:
     def __init__(self):
         self.messages = []
@@ -124,7 +129,8 @@ def test_config_command_no_args_opens_the_section_picker(monkeypatch, tmp_path):
     asyncio.run(cmd_config(ui, []))
 
     assert captured["title"] == "Config"
-    assert {"ui", "servers", "sandbox", "role"} <= set(captured["items"])
+    assert {"ui", "servers", "theme"} <= set(captured["items"])
+    assert not {"sandbox", "role", "role-delete"} & set(captured["items"])  # own commands
     assert not captured.get("ordered")                  # the menu sorts it
     assert captured["descriptions"]["ui"] == "Edit ui.toml and reload"
 
@@ -255,7 +261,7 @@ def test_editing_the_active_role_applies_when_the_editor_closes(monkeypatch, tmp
     assert ui.agent.role.preserve_thinking is True
     _editing(monkeypatch, path, "", ("preserve_thinking = true", "preserve_thinking = false"))
 
-    asyncio.run(cmd_config(ui, ["role", "agent"]))
+    asyncio.run(cmd_role(ui, ["edit", "agent"]))
 
     assert ui.agent.role.preserve_thinking is False
     assert any("Config reloaded." in m for m in ui.chat_history_panel.messages)
@@ -274,7 +280,7 @@ def test_a_role_file_that_no_longer_loads_keeps_the_running_role(monkeypatch, tm
     ui, path = _role_ui(monkeypatch, tmp_path)
     _editing(monkeypatch, path, "\nreplay_reasoning_depth = 3\n")
 
-    asyncio.run(cmd_config(ui, ["role", "agent"]))
+    asyncio.run(cmd_role(ui, ["edit", "agent"]))
 
     assert ui.agent.role.preserve_thinking is True
     assert any("preserve_thinking" in m for m in ui.chat_history_panel.messages)
@@ -284,7 +290,65 @@ def test_a_role_change_waits_for_the_running_response_and_says_so(monkeypatch, t
     ui, path = _role_ui(monkeypatch, tmp_path, generating=True)
     _editing(monkeypatch, path, "", ("preserve_thinking = true", "preserve_thinking = false"))
 
-    asyncio.run(cmd_config(ui, ["role", "agent"]))
+    asyncio.run(cmd_role(ui, ["edit", "agent"]))
 
     assert ui.agent.role.preserve_thinking is True
     assert any("run /reload once the response is done" in m for m in ui.chat_history_panel.messages)
+
+
+# -- /role edit | create | path | remove (2026-10-22) -----------------------------
+
+def test_role_edit_never_creates_a_file(monkeypatch, tmp_path):
+    ui, _ = _role_ui(monkeypatch, tmp_path)
+    _editing(monkeypatch, None, "")
+
+    asyncio.run(cmd_role(ui, ["edit", "reveiw"]))
+
+    assert not (tmp_path / "roles" / "reveiw.toml").exists()
+    assert any("/role create reveiw" in m for m in ui.chat_history_panel.messages)
+
+
+def test_role_create_writes_a_starter_and_refuses_an_existing_or_verb_name(monkeypatch, tmp_path):
+    ui, _ = _role_ui(monkeypatch, tmp_path)
+    _editing(monkeypatch, None, "")
+
+    asyncio.run(cmd_role(ui, ["create", "review"]))
+    assert (tmp_path / "roles" / "review.toml").exists()
+
+    asyncio.run(cmd_role(ui, ["create", "agent"]))
+    assert any("already exists" in m for m in ui.chat_history_panel.messages)
+
+    asyncio.run(cmd_role(ui, ["create", "path"]))
+    assert not (tmp_path / "roles" / "path.toml").exists()
+
+
+def test_role_path_defaults_to_the_active_role(monkeypatch, tmp_path):
+    ui, path = _role_ui(monkeypatch, tmp_path)
+    monkeypatch.setattr("moka_code.ui.clipboard.copy_to_clipboard", lambda text: None)
+
+    asyncio.run(cmd_role(ui, ["path"]))
+
+    assert any(str(path) in m for m in ui.chat_history_panel.messages)
+
+
+def test_role_remove_asks_then_deletes_the_file(monkeypatch, tmp_path):
+    ui, _ = _role_ui(monkeypatch, tmp_path)
+    asked = {}
+    ui.show_search_modal = lambda title, items, **k: asked.update(title=title, items=items, **k)
+
+    asyncio.run(cmd_role(ui, ["remove", "chat"]))
+    assert asked["items"] == ["Remove", "Cancel"]
+    asked["on_accept"]("Cancel")
+    assert (tmp_path / "roles" / "chat.toml").exists()
+
+    asked["on_accept"]("Remove")
+    assert not (tmp_path / "roles" / "chat.toml").exists()
+
+
+def test_role_remove_without_a_picker_removes_nothing(monkeypatch, tmp_path):
+    ui, _ = _role_ui(monkeypatch, tmp_path)
+
+    asyncio.run(cmd_role(ui, ["remove", "chat"]))
+
+    assert (tmp_path / "roles" / "chat.toml").exists()
+    assert any("nothing removed" in m for m in ui.chat_history_panel.messages)

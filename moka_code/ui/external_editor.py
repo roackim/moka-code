@@ -1,7 +1,7 @@
 """Run interactive programs ($EDITOR, a shell) in the foreground of the TUI.
 
-Configuration is edited as files: ``/config``, ``/edit`` and ``/config role``
-shell out to ``$VISUAL``/``$EDITOR`` (falling back to nano/vim/vi) rather than
+Configuration is edited as files: ``/config``, ``/edit`` and the
+``edit`` subcommands of ``/role``, ``/prompt`` and ``/sandbox`` shell out to ``$VISUAL``/``$EDITOR`` (falling back to nano/vim/vi) rather than
 building in-TUI forms; ``/terminal`` opens a shell the same way.
 
 The conversation keeps running meanwhile. :func:`run_in_foreground` hands the

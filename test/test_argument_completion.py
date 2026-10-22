@@ -51,8 +51,8 @@ def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_pa
 
     comp.update("/sandbox ", len("/sandbox "))
     assert set(comp.menu.items) == {
-        "config", "path", "new", "copy", "build", "start", "restart", "stop",
-        "terminal", "init"}
+        "edit", "path", "create", "remove", "copy", "build", "start", "restart",
+        "stop", "terminal", "init"}
 
     comp.update("/sandbox init ", len("/sandbox init "))
     assert set(comp.menu.items) == {"dev", "tight"}
@@ -62,10 +62,10 @@ def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_pa
     assert comp.menu.item_descriptions.get("dev") == "local · toolchain"
 
 
-def test_config_role_completion_uses_role_descriptions():
+def test_role_edit_completion_uses_role_descriptions():
     from moka_code.ui.commands.registry import COMMANDS
 
-    role = COMMANDS["config"].subcommands["role"]
+    role = COMMANDS["role"].subcommands["edit"]
 
     assert {"agent", "chat"} <= set(role.get_completions(0))
     assert role.get_descriptions(0)["agent"]

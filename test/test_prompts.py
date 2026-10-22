@@ -55,7 +55,7 @@ def test_a_local_prompt_wins_and_hidden_or_misnamed_files_are_ignored(workspace)
 
 
 def test_the_description_is_the_first_non_empty_line_without_the_heading_mark(workspace):
-    _write(_glob(workspace), "review", "\n\n# Review a file\n\nLook at {file}.")
+    _write(_glob(workspace), "review", "\n\n# Review a file\n\nLook at {moka:file}.")
 
     assert prompts.list_prompts(workspace)["review"].description == "Review a file"
 
@@ -63,13 +63,17 @@ def test_the_description_is_the_first_non_empty_line_without_the_heading_mark(wo
 # -- parameters -------------------------------------------------------------------
 
 def test_params_are_the_distinct_names_in_order_of_first_appearance():
-    assert prompts.params_of("Fix {b} then {a}, then {b} again; {{literal}} {1}") == ["b", "a"]
+    assert prompts.params_of(
+        "Fix {moka:b} then {moka:a}, then {moka:b} again; {moka:1} {moka: c} {moka:}") == ["b", "a"]
 
 
-def test_braces_are_escaped_by_doubling_and_json_like_text_survives():
-    template = 'Return {{"ok": true}} for {file}'
+def test_only_moka_params_are_replaced_and_every_other_brace_is_text():
+    """2026-10-22: ``{name}`` occurred naturally (f-strings, JSON), so a
+    parameter is ``{moka:name}`` and there is no brace escaping."""
+    template = 'Return {"ok": true}, {{x}} and f"{file}" for {moka:file}'
 
-    assert prompts.render(template, {"file": "a.py"}) == 'Return {"ok": true} for a.py'
+    assert prompts.params_of(template) == ["file"]
+    assert prompts.render(template, {"file": "a.py"}) == 'Return {"ok": true}, {{x}} and f"{file}" for a.py'
 
 
 def test_the_last_param_takes_the_rest_and_quotes_group_earlier_ones():
@@ -82,7 +86,7 @@ def test_the_last_param_takes_the_rest_and_quotes_group_earlier_ones():
 # -- expanding ----------------------------------------------------------------------
 
 def test_expand_fills_the_template(workspace):
-    _write(_glob(workspace), "review", "Review {file}, focusing on {focus}.")
+    _write(_glob(workspace), "review", "Review {moka:file}, focusing on {moka:focus}.")
 
     assert prompts.expand("!review a.py error handling", workspace) == \
         "Review a.py, focusing on error handling."
@@ -100,7 +104,7 @@ def test_text_that_is_not_a_call_is_left_alone(workspace):
     ("!plain extra", "!plain takes no arguments"),
 ])
 def test_expand_reports_what_is_wrong(workspace, text, message):
-    _write(_glob(workspace), "review", "Review {file}, focusing on {focus}.")
+    _write(_glob(workspace), "review", "Review {moka:file}, focusing on {moka:focus}.")
     _write(_glob(workspace), "plain", "No parameters here.")
 
     with pytest.raises(prompts.PromptError, match=message.replace("<", r"\<").replace("!", "!")):
@@ -133,7 +137,7 @@ def _app(workspace, monkeypatch, sent):
 
 
 def test_submitting_a_call_sends_and_shows_the_expansion_and_edit_restores_the_call(workspace, monkeypatch):
-    _write(_glob(workspace), "review", "Review {file}, focusing on {focus}.")
+    _write(_glob(workspace), "review", "Review {moka:file}, focusing on {moka:focus}.")
     sent = []
 
     async def scenario():
@@ -153,7 +157,7 @@ def test_submitting_a_call_sends_and_shows_the_expansion_and_edit_restores_the_c
 
 
 def test_a_template_with_an_at_sign_is_not_mangled(workspace, monkeypatch):
-    _write(_glob(workspace), "deco", "Explain @property on {topic}")
+    _write(_glob(workspace), "deco", "Explain @property on {moka:topic}")
     sent = []
 
     async def scenario():
@@ -200,8 +204,8 @@ def test_the_bang_menu_lists_prompts_with_descriptions_and_scope(workspace):
     from moka_code.ui.tui.components.input.completion import CommandCompletion
     from moka_code.ui.tui.components.menu import SelectionMenu
 
-    _write(_glob(workspace), "review", "# Review a file\n{file}")
-    _write(_loc(workspace), "fix", "# Fix a bug\n{bug}")
+    _write(_glob(workspace), "review", "# Review a file\n{moka:file}")
+    _write(_loc(workspace), "fix", "# Fix a bug\n{moka:bug}")
     names = lambda: list(prompts.list_prompts(workspace))
     describe = lambda: {n: f"{p.description} [{p.scope}]"
                         for n, p in prompts.list_prompts(workspace).items()}
@@ -220,7 +224,7 @@ def test_the_bang_menu_lists_prompts_with_descriptions_and_scope(workspace):
 def test_the_hint_after_the_name_lists_the_parameters_still_to_type(workspace, monkeypatch):
     from moka_code.ui.tui.components.input.input import InputComponent
 
-    _write(_glob(workspace), "review", "{file} {focus}")
+    _write(_glob(workspace), "review", "{moka:file} {moka:focus}")
     entry = InputComponent("", id="entry")
     entry.setup_prompts(lambda: [], lambda: {},
                         lambda name: prompts.list_prompts(workspace)[name].params
@@ -266,23 +270,61 @@ def _prompt_ui(workspace, monkeypatch, picker=False):
     return ui, opened
 
 
-def test_prompt_creates_global_by_default_local_on_request_and_opens_where_it_lives(workspace, monkeypatch):
+def test_prompt_create_is_global_by_default_local_on_request_and_edit_opens_where_it_lives(workspace, monkeypatch):
     from moka_code.ui.commands.registry import COMMANDS
 
     ui, opened = _prompt_ui(workspace, monkeypatch)
 
-    asyncio.run(COMMANDS["prompt"].execute(ui, ["review"]))
-    asyncio.run(COMMANDS["prompt"].execute(ui, ["fix", "local"]))
-    asyncio.run(COMMANDS["prompt"].execute(ui, ["fix"]))         # exists locally: opens that one
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["create", "review"]))
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["create", "fix", "local"]))
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["edit", "fix"]))   # exists locally: opens that one
 
     assert opened == [_glob(workspace) / "review.md", _loc(workspace) / "fix.md", _loc(workspace) / "fix.md"]
     assert (_glob(workspace) / "review.md").exists()
 
 
+def test_prompt_edit_never_creates_and_create_refuses_one_in_the_same_scope(workspace, monkeypatch):
+    """2026-10-22: a typo no longer writes a file; a local prompt may still
+    shadow a global one."""
+    from moka_code.ui.commands.registry import COMMANDS
+
+    ui, opened = _prompt_ui(workspace, monkeypatch)
+    _write(_glob(workspace), "review", "# Review\n")
+
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["edit", "reveiw"]))
+    assert not (_glob(workspace) / "reveiw.md").exists()
+    assert "/prompt create reveiw" in ui.chat_history_panel.messages[-1]
+
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["create", "review"]))
+    assert "already exists (global)" in ui.chat_history_panel.messages[-1]
+
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["create", "review", "local"]))
+    assert opened == [_loc(workspace) / "review.md"]
+
+
+def test_prompt_path_and_remove_act_on_the_file_the_prompt_resolves_to(workspace, monkeypatch):
+    from moka_code.ui.commands.registry import COMMANDS
+
+    _write(_glob(workspace), "review", "# Global\n")
+    _write(_loc(workspace), "review", "# Local\n")
+    ui, _ = _prompt_ui(workspace, monkeypatch, picker=True)
+    monkeypatch.setattr("moka_code.ui.clipboard.copy_to_clipboard", lambda text: None)
+
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["path", "review"]))
+    assert str(_loc(workspace) / "review.md") in ui.chat_history_panel.messages[-1]
+
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["remove", "review"]))
+    assert ui.picked["items"] == ["Remove", "Cancel"]
+    ui.picked["on_accept"]("Remove")
+    assert not (_loc(workspace) / "review.md").exists()
+    assert (_glob(workspace) / "review.md").exists()
+    assert "the global one is used now" in ui.chat_history_panel.messages[-1]
+
+
 def test_bare_prompt_opens_a_picker_of_the_prompts_and_choosing_opens_the_file(workspace, monkeypatch):
     from moka_code.ui.commands.registry import COMMANDS
 
-    _write(_glob(workspace), "review", "# Review a file\n{file}")
+    _write(_glob(workspace), "review", "# Review a file\n{moka:file}")
     ui, opened = _prompt_ui(workspace, monkeypatch, picker=True)
 
     async def scenario():
@@ -303,8 +345,11 @@ def test_bare_prompt_with_none_says_how_to_make_one_and_bad_arguments_show_the_u
     ui, opened = _prompt_ui(workspace, monkeypatch)
 
     asyncio.run(COMMANDS["prompt"].execute(ui, []))
-    assert "No prompts yet. /prompt <name> creates one" in ui.chat_history_panel.messages[-1]
+    assert "No prompts yet. /prompt create <name> makes one" in ui.chat_history_panel.messages[-1]
 
-    asyncio.run(COMMANDS["prompt"].execute(ui, ["review", "nowhere"]))
-    assert ui.chat_history_panel.messages[-1] == "Usage: /prompt <name> [global|local]"
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["create", "review", "nowhere"]))
+    assert ui.chat_history_panel.messages[-1] == "Usage: /prompt create <name> [global|local]"
+
+    asyncio.run(COMMANDS["prompt"].execute(ui, ["review"]))
+    assert ui.chat_history_panel.messages[-1].startswith("Unknown subcommand 'review'")
     assert opened == []

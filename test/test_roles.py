@@ -391,7 +391,7 @@ def test_reload_leaves_the_placeholder_once_a_role_loads(tmp_path, monkeypatch):
     from moka_code.harness.harness import Harness
     harness = Harness(workspace_path=str(tmp_path))
     assert harness.role.name == roles_module.NO_ROLE
-    assert ("error", "no role file loads → /config role agent") in notices(harness)
+    assert ("error", "no role file loads → /role create agent") in notices(harness)
 
     ensure_roles_dir()
     ui = type("UI", (), {"agent": harness})()

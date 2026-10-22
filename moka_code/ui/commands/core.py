@@ -15,7 +15,7 @@ import os
 from typing import List
 
 from moka_code.ui.tui.components.menu import sort_items
-from moka_code.ui.tui.msg_types import SysMsg, SysMsgError, SysMsgWarning
+from moka_code.ui.tui.msg_types import SysMsg, SysMsgError
 
 from .base import (
     ChatUIProtocol,
@@ -24,8 +24,6 @@ from .base import (
     open_shell,
     pick,
     reapply_endpoint,
-    role_descriptions,
-    role_name_completions,
     stop_before,
     theme_descriptions,
     theme_name_completions,
@@ -212,55 +210,6 @@ def _config_flat(section: str):
     return handler
 
 
-async def _config_role(ui: ChatUIProtocol, args: List[str]):
-    """Create/edit a role file, then reload."""
-    from moka_code.harness import roles
-    from moka_code.ui.external_editor import open_editor
-
-    if not args:
-        ui.chat_history_panel.add_message(
-            f"Usage: /config role <name>  |  /config role-delete <name>\n"
-            f"Roles: {', '.join(roles.list_roles())}",
-            msg_type=SysMsg(), title="config")
-        return
-    if _no_editor(ui):
-        return
-    try:
-        path = roles.ensure_role_file(args[0])
-    except (OSError, ValueError) as exc:
-        ui.chat_history_panel.add_message(str(exc), msg_type=SysMsgError(), title="config")
-        return
-    await open_editor(ui, path)
-    reload_and_apply(ui, "config")
-
-
-async def _config_role_delete(ui: ChatUIProtocol, args: List[str]):
-    """Delete a role file; asks to be run again with ``confirm``."""
-    from moka_code.harness import roles
-
-    if not args:
-        ui.chat_history_panel.add_message(
-            "Usage: /config role-delete <name> [confirm]", msg_type=SysMsgError(), title="config")
-        return
-    name = args[0]
-    if len(args) == 1:
-        ui.chat_history_panel.add_message(
-            f"This deletes roles/{name}.toml. Re-run to confirm:\n"
-            f"/config role-delete {name} confirm",
-            msg_type=SysMsgWarning(), title="config")
-        return
-    if args[1] != "confirm":
-        ui.chat_history_panel.add_message(
-            "Confirmation token must be 'confirm'.", msg_type=SysMsgError(), title="config")
-        return
-    try:
-        roles.delete_role(name)
-    except (KeyError, OSError, ValueError) as exc:
-        ui.chat_history_panel.add_message(str(exc), msg_type=SysMsgError(), title="config")
-        return
-    ui.chat_history_panel.add_message(f"Deleted role: {name}", msg_type=SysMsg(), title="config")
-
-
 async def _config_theme(ui: ChatUIProtocol, args: List[str]):
     """Open ``themes.toml``; with an id, materialize that theme's section first."""
     from moka_code import settings
@@ -295,8 +244,8 @@ async def _config_theme(ui: ChatUIProtocol, args: List[str]):
 
 def config_command() -> Command:
     """``/config``: one subcommand per file or kind of file, each declaring its own
-    parameters, so completion, descriptions and hints all come from the tree. The
-    registry adds ``sandbox`` (the command ``/sandbox config`` is)."""
+    parameters, so completion, descriptions and hints all come from the tree.
+    Roles, prompts and sandboxes are edited from their own commands."""
     import asyncio
 
     from moka_code import settings
@@ -310,16 +259,6 @@ def config_command() -> Command:
         "config theme", "Edit themes.toml (a theme name adds its palette to edit)",
         handler=_config_theme,
         params=[Param("NAME", completions=theme_name_completions, descriptions=theme_descriptions)])
-    subcommands["role"] = Command(
-        "config role", "Create or edit roles/<name>.toml", handler=_config_role,
-        params=[Param("NAME", required=True, completions=role_name_completions,
-                      descriptions=role_descriptions)])
-    subcommands["role-delete"] = Command(
-        "config role-delete", "Delete roles/<name>.toml (asks to confirm)",
-        handler=_config_role_delete,
-        params=[Param("NAME", required=True, completions=role_name_completions,
-                      descriptions=role_descriptions),
-                Param("CONFIRM", completions=["confirm"])])
 
     async def config_help(ui: ChatUIProtocol, args: List[str]):
         """Bare ``/config``: a picker over the subcommands. Anything else is not one."""

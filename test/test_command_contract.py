@@ -16,7 +16,7 @@ from moka_code.ui.commands.registry import COMMANDS
 # Parameters that take free text (a new file or sandbox name): the only ones without
 # suggestions. Adding a parameter without completions fails until it is
 # listed here on purpose.
-FREE_TEXT = {("export", "FILENAME"), ("new", "NAME"), ("copy", "NEW_NAME")}
+FREE_TEXT = {("export", "FILENAME"), ("create", "NAME"), ("copy", "NEW_NAME")}
 
 
 def _leaves(command, path=()):
@@ -121,10 +121,10 @@ def test_config_arguments_are_hinted_like_sandbox_ones():
         return entry._get_parameter_hint()
 
     assert hint("/config ") == " <subcommand>"
-    assert hint("/prompt ") == " [NAME] [SCOPE]"
-    assert hint("/prompt review ") == " [SCOPE]"
-    assert hint("/config role ") == " <NAME>"
-    assert hint("/config role-delete agent ") == " [CONFIRM]"
+    assert hint("/prompt create ") == " <NAME> [SCOPE]"
+    assert hint("/prompt create review ") == " [SCOPE]"
+    assert hint("/role edit ") == " [NAME]"
+    assert hint("/role remove ") == " <NAME>"
+    assert hint("/sandbox create ") == " <NAME> <TYPE> [SCOPE]"
     assert hint("/config theme ") == " [NAME]"
-    assert hint("/config sandbox ") == " [NAME]"
     assert hint("/config ui ") == ""

@@ -100,8 +100,8 @@ def test_sandbox_is_a_command_tree():
 
     assert cmd.has_subcommands()
     assert set(cmd.get_completions(0)) == {
-        "config", "path", "new", "copy", "build", "start", "restart", "stop",
-        "terminal", "init"}
+        "edit", "path", "create", "remove", "copy", "build", "start", "restart",
+        "stop", "terminal", "init"}
 
 
 def test_start_completes_sandbox_ids_and_descriptions(monkeypatch, tmp_path):
@@ -128,15 +128,16 @@ def test_init_completes_names_then_bases(monkeypatch, tmp_path):
     assert init.get_completions(1) == ["python", "debian", "ubuntu"]
 
 
-def test_new_and_copy_complete_scopes_and_types(monkeypatch, tmp_path):
+def test_create_and_copy_complete_scopes_and_types(monkeypatch, tmp_path):
     _workdir(tmp_path, monkeypatch)
     cmd = _sandbox_cmd()
 
-    new, _ = cmd.resolve_command(["new"])
+    create, _ = cmd.resolve_command(["create"])
     copy, _ = cmd.resolve_command(["copy"])
 
-    assert new.get_completions(0) == ["global", "local"]
-    assert new.get_completions(1) == ["podman", "docker", "bubblewrap"]
+    assert create.get_completions(0) == []                       # a new name: free text
+    assert create.get_completions(1) == ["podman", "docker", "bubblewrap"]
+    assert create.get_completions(2) == ["global", "local"]
     assert copy.get_completions(0) == ["dev", "tight"]
     assert copy.get_completions(1) == ["global", "local"]
 
@@ -147,8 +148,8 @@ def test_subcommand_descriptions_exposed():
     descriptions = get_subcommand_descriptions("sandbox")
 
     assert set(descriptions) == {
-        "config", "path", "new", "copy", "build", "start", "restart", "stop",
-        "terminal", "init"}
+        "edit", "path", "create", "remove", "copy", "build", "start", "restart",
+        "stop", "terminal", "init"}
     assert "sandbox" in descriptions["start"].lower() or descriptions["start"]
 
 
@@ -194,15 +195,15 @@ def test_unknown_subcommand_lists_options(tmp_path):
     assert "Subcommands" in ui.popups[-1] or "start" in ui.popups[-1]
 
 
-def test_config_opens_project_file(tmp_path, monkeypatch):
+def test_edit_opens_project_file(tmp_path, monkeypatch):
     called = []
     async def _open(ui, name=None):
         called.append(name)
 
     monkeypatch.setattr("moka_code.ui.commands.sandbox.open_project_sandbox", _open)
     ui = _UI(tmp_path)
-    _run(ui, ["config"])
-    _run(ui, ["config", "dev"])
+    _run(ui, ["edit"])
+    _run(ui, ["edit", "dev"])
     assert called == [None, "dev"]
 
 
@@ -414,9 +415,9 @@ def test_init_refuses_overwrite(monkeypatch, tmp_path):
     assert existing.read_text() == "FROM x\n"
 
 
-# --- new / copy ------------------------------------------------------------
+# --- create / remove / copy ------------------------------------------------
 
-def test_new_creates_a_file_and_opens_it(monkeypatch, tmp_path):
+def test_create_writes_a_file_and_opens_it(monkeypatch, tmp_path):
     workspace = _workdir(tmp_path, monkeypatch)
     opened = []
 
@@ -425,35 +426,54 @@ def test_new_creates_a_file_and_opens_it(monkeypatch, tmp_path):
 
     monkeypatch.setattr("moka_code.ui.commands.sandbox.open_project_sandbox", _open)
     ui = _UI(workspace)
-    _run(ui, ["new", "global", "bubblewrap", "box"])
+    _run(ui, ["create", "box", "bubblewrap"])                 # global by default
 
     assert (tmp_path / "sandboxes" / "box.toml").exists()
     assert opened == ["box"]
     assert "Created global sandbox 'box'" in ui.chat_history_panel.messages[-1]
 
 
-def test_new_name_defaults_to_the_type(monkeypatch, tmp_path):
+def test_create_local_on_request(monkeypatch, tmp_path):
     workspace = _workdir(tmp_path, monkeypatch)
 
     async def _open(ui, name=None):
         pass
 
     monkeypatch.setattr("moka_code.ui.commands.sandbox.open_project_sandbox", _open)
-    _run(_UI(workspace), ["new", "local", "bubblewrap"])
+    _run(_UI(workspace), ["create", "box", "bubblewrap", "local"])
 
-    assert (projects.scope_dir("local", workspace) / "bubblewrap.toml").exists()
+    assert (projects.scope_dir("local", workspace) / "box.toml").exists()
 
 
-def test_new_errors(monkeypatch, tmp_path):
+def test_create_errors(monkeypatch, tmp_path):
     workspace = _workdir(tmp_path, monkeypatch)
     ui = _UI(workspace)
 
-    _run(ui, ["new", "local"])
-    assert "Usage: /sandbox new" in ui.chat_history_panel.messages[-1]
-    _run(ui, ["new", "nowhere", "bubblewrap"])
+    _run(ui, ["create", "box"])
+    assert "Usage: /sandbox create" in ui.chat_history_panel.messages[-1]
+    _run(ui, ["create", "box", "bubblewrap", "nowhere"])
     assert "Scope must be global or local" in ui.chat_history_panel.messages[-1]
-    _run(ui, ["new", "global", "bubblewrap", "dev"])      # dev is a local: names are shared
+    _run(ui, ["create", "dev", "bubblewrap"])             # dev is a local: names are shared
     assert "already exists" in ui.chat_history_panel.messages[-1]
+
+
+def test_remove_asks_then_deletes_and_stops_the_active_one(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch, active="dev")
+    ui = _UI(workspace)
+    ui.agent.set_sandbox = lambda spec, name: None
+    asked = {}
+    ui.show_search_modal = lambda title, items, **k: asked.update(title=title, items=items, **k)
+    path = projects.scope_dir("local", workspace) / "dev.toml"
+
+    _run(ui, ["remove", "dev"])
+    assert asked["items"] == ["Remove", "Cancel"]
+    asked["on_accept"]("Cancel")
+    assert path.exists()
+
+    asked["on_accept"]("Remove")
+    assert not path.exists()
+    assert projects.load_project(workspace).active is None
+    assert "Removed local sandbox: dev" in ui.chat_history_panel.messages[-1]
 
 
 def test_copy_into_global(monkeypatch, tmp_path):
@@ -487,15 +507,47 @@ def test_stop_deactivates(monkeypatch, tmp_path):
     assert projects.load_project(workspace).active is None
 
 
-def test_restart_rebuilds_the_active_sandbox(monkeypatch, tmp_path):
+class _Transport:
+    """The running worker: records a graceful stop (and that it was awaited)."""
+
+    def __init__(self, events):
+        self.events = events
+
+    async def stop(self):
+        await asyncio.sleep(0)
+        self.events.append("stopped")
+
+
+def test_restart_stops_the_running_worker_then_applies_the_file(monkeypatch, tmp_path):
+    """2026-10-22: restart shuts the old worker down and waits for it (its --rm
+    container exits) before the fresh spec runs; it never rebuilds the image."""
     workspace = _workdir(tmp_path, monkeypatch, active="dev")
+    _ready(monkeypatch)
     ui = _UI(workspace)
+    events = []
+    ui.agent.transport = _Transport(events)
+    ui.agent.set_sandbox = lambda spec, name=None: events.append(("set", spec.runtime, name))
+    monkeypatch.setattr(sandbox, "run_build", lambda *a, **k: events.append("built"))
 
     _run(ui, ["restart"])
 
-    assert ui.agent.specs[-1].runtime == "podman"
+    assert events == ["stopped", ("set", "podman", "dev")]
     assert projects.load_project(workspace).active == "dev"     # unchanged
     assert "restarted" in ui.chat_history_panel.messages[-1]
+
+
+def test_restart_with_a_missing_image_keeps_the_running_worker(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch, active="dev")
+    ui = _UI(workspace)
+    events = []
+    ui.agent.transport = _Transport(events)
+    monkeypatch.setattr(sandbox, "runtime_available", lambda spec: True)
+    monkeypatch.setattr(sandbox, "image_present", lambda spec: False)
+
+    _run(ui, ["restart"])
+
+    assert events == [] and ui.agent.specs == []
+    assert "not built" in ui.chat_history_panel.messages[-1]
 
 
 def test_restart_without_an_active_sandbox_does_nothing(monkeypatch, tmp_path):

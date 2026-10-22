@@ -1359,7 +1359,7 @@ def _sandbox_problem(spec, sandbox_id: str | None = None) -> str | None:
     from moka_code.sandbox import image_present, runtime_available
 
     if not runtime_available(spec):
-        return f"sandbox runtime '{spec.runtime}' not found on PATH → install it, or /sandbox config"
+        return f"sandbox runtime '{spec.runtime}' not found on PATH → install it, or /sandbox edit"
     if not image_present(spec):
         return (f"sandbox image '{spec.image or spec.runtime}' not found "
                 f"→ /sandbox build {sandbox_id or '<id>'}")

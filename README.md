@@ -65,7 +65,7 @@ the OpenRouter example instead.
 
 - **Tools with permissions.** The model can read, write and edit files and run
   shell commands. Each tool is allowed, asked, or disabled per role; switch
-  roles with `/role`, edit them with `/config role <name>`.
+  roles with `/role`, edit them with `/role edit <name>`.
 - **Sandboxes.** Run the tools inside podman, docker or bubblewrap instead of
   directly on your machine (`/sandbox`). Sandboxes are defined per project.
 - **Images.** Paste an image with Ctrl+V or mention a file with `@image.png`;

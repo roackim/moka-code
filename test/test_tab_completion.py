@@ -41,9 +41,9 @@ def test_tab_on_a_command_opens_its_subcommand_menu():
 
 def test_tab_on_an_argument_opens_the_next_arguments_menu():
     inp = _input()
-    _type(inp, "/config ro")
+    _type(inp, "/role ed")
     inp.handle_input("\t")
-    assert inp.buffer.text == "/config role "
+    assert inp.buffer.text == "/role edit "
     assert inp.has_active_completion()        # role names
 
 

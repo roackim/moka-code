@@ -24,7 +24,7 @@ Moka is a thin runtime over hand-editable configuration:
 
 1. **Config files are the settings UI.** No forms, no settings pages, no
    in-app editors for servers/models/roles/permissions. Editing spawns
-   `$VISUAL`/`$EDITOR` via `/config`, `/edit`, `/config role`; `/reload` applies.
+   `$VISUAL`/`$EDITOR` via `/config`, `/edit`, `/role edit`; `/reload` applies.
 
 2. **Explicit over implicit.** `/reload` applies changes; nothing is watched or
    auto-applied silently. No inheritance or magic resolution.

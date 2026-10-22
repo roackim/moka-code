@@ -17,8 +17,6 @@ from .base import (
     ChatUIProtocol,
     Command,
     Param,
-    prompt_descriptions,
-    prompt_name_completions,
     role_descriptions,
     role_name_completions,
 )
@@ -27,6 +25,7 @@ from .conversation import (
 )
 from .core import (
     config_command,
+    reload_and_apply,
     cmd_activity,
     cmd_clear,
     cmd_compact,
@@ -43,32 +42,37 @@ from .models import (
     effort_command, effort_completions, effort_descriptions,
     model_command, model_completions, model_descriptions,
 )
-from .roles import cmd_role
+from .roles import cmd_role, role_subcommands
 from .sandbox import (
     sandbox_base_completions,
     sandbox_build,
-    sandbox_config,
+    sandbox_create,
+    sandbox_edit,
     sandbox_help,
     sandbox_id_completions,
     sandbox_id_descriptions,
     sandbox_init,
     sandbox_path,
+    sandbox_remove,
     sandbox_restart,
     sandbox_stop,
     sandbox_terminal,
     sandbox_scope_completions,
     sandbox_type_completions,
-    sandbox_new,
     sandbox_copy,
     sandbox_start,
 )
 from .diff import changed_descriptions, changed_files, diff_command, live_description
-from .prompts import prompt_command
+from .prompts import PROMPT_SUBCOMMANDS, prompt_command
 from .themes import theme_command
 
 # Help needs the whole registry, so its handler is assembled here.
 async def _help(ui: ChatUIProtocol, args: List[str]):
     await cmd_help(ui, args, COMMANDS)
+
+
+async def _sandbox_help(ui: ChatUIProtocol, args: List[str]):
+    await sandbox_help(ui, args, COMMANDS["sandbox"])
 
 
 # Command Registry
@@ -109,17 +113,17 @@ COMMANDS: Dict[str, Command] = {
                             handler=effort_command,
                             params=[Param("LEVEL", completions=effort_completions,
                                           descriptions=effort_descriptions, ordered=True)]),
-    "role":         Command("role", "Switch the active role (opens a picker)",
-                            handler=cmd_role,
+    "role":         Command("role", "Switch the active role (opens a picker), or edit, create, path, remove",
+                            handler=cmd_role, subcommands=role_subcommands(reload_and_apply),
                             params=[Param("NAME", completions=role_name_completions,
                                           descriptions=role_descriptions)]),
     "sandbox":      Command(
-                        "sandbox", "Sandboxes: pick one, or config, path, new, copy, build, start, restart, stop, terminal, init",
-                        handler=sandbox_help,
+                        "sandbox", "Start a sandbox (opens a picker), or a subcommand",
+                        handler=_sandbox_help,
                         subcommands={
-                            "config": Command(
-                                "sandbox config", "Edit a sandbox's file (picker when no name given)",
-                                handler=sandbox_config,
+                            "edit": Command(
+                                "sandbox edit", "Edit a sandbox's file (picker when no name given)",
+                                handler=sandbox_edit,
                                 params=[Param("NAME", required=False,
                                               completions=sandbox_id_completions,
                                               descriptions=sandbox_id_descriptions)]),
@@ -129,14 +133,20 @@ COMMANDS: Dict[str, Command] = {
                                 params=[Param("NAME", required=False,
                                               completions=sandbox_id_completions,
                                               descriptions=sandbox_id_descriptions)]),
-                            "new": Command(
-                                "sandbox new", "Create a sandbox from a starter file",
-                                handler=sandbox_new,
-                                params=[Param("SCOPE", required=True,
-                                              completions=sandbox_scope_completions, ordered=True),
+                            "create": Command(
+                                "sandbox create", "Create a sandbox file from a starter",
+                                handler=sandbox_create,
+                                params=[Param("NAME", required=True),
                                         Param("TYPE", required=True,
                                               completions=sandbox_type_completions, ordered=True),
-                                        Param("NAME", required=False)]),
+                                        Param("SCOPE", required=False,
+                                              completions=sandbox_scope_completions, ordered=True)]),
+                            "remove": Command(
+                                "sandbox remove", "Remove a sandbox's file (asks to confirm)",
+                                handler=sandbox_remove,
+                                params=[Param("NAME", required=True,
+                                              completions=sandbox_id_completions,
+                                              descriptions=sandbox_id_descriptions)]),
                             "copy": Command(
                                 "sandbox copy", "Copy a sandbox into a global or local file",
                                 handler=sandbox_copy,
@@ -159,7 +169,7 @@ COMMANDS: Dict[str, Command] = {
                                               completions=sandbox_id_completions,
                                               descriptions=sandbox_id_descriptions)]),
                             "restart": Command(
-                                "sandbox restart", "Restart the active sandbox (re-reads its file)",
+                                "sandbox restart", "Restart the active sandbox from its current image (no rebuild)",
                                 handler=sandbox_restart),
                             "init": Command(
                                 "sandbox init", "Write a starter Containerfile / Dockerfile next to a sandbox",
@@ -180,18 +190,11 @@ COMMANDS: Dict[str, Command] = {
                             handler=diff_command, live_description=live_description,
                             params=[Param("FILE", completions=changed_files,
                                           descriptions=changed_descriptions, ordered=True)]),
-    "prompt":       Command("prompt", "Create or edit a !prompt file (opens a picker)",
-                            handler=prompt_command,
-                            params=[Param("NAME", completions=prompt_name_completions,
-                                          descriptions=prompt_descriptions),
-                                    Param("SCOPE", completions=["global", "local"], ordered=True)]),
+    "prompt":       Command("prompt", "Edit a !prompt file (opens a picker), or create, path, remove",
+                            handler=prompt_command, subcommands=PROMPT_SUBCOMMANDS),
     "theme":        Command("theme", "Select the color theme (opens a picker with live preview)",
                             handler=theme_command),
 }
-
-# ``/config sandbox`` is ``/sandbox config``: one Command, so one set of params.
-COMMANDS["config"].subcommands["sandbox"] = COMMANDS["sandbox"].subcommands["config"]
-
 
 async def handle_command(ui: ChatUIProtocol, text: str):
     parts = text.strip().split()
@@ -223,20 +226,28 @@ def get_command_descriptions() -> Dict[str, str]:
 
 
 def get_subcommand_list(command: str) -> List[str]:
-    """Get list of subcommands for a given command."""
+    """Get list of subcommands for a given command, then the values of its own
+    first param (``/role <name>`` sits beside ``/role edit``)."""
     if command in COMMANDS:
         cmd = COMMANDS[command]
         if cmd.has_subcommands():
-            return list(cmd.subcommands.keys())
+            names = list(cmd.subcommands.keys())
+            if cmd.params and cmd.params[0].completions is not None:
+                source = cmd.params[0].completions
+                names += [value for value in (source() if callable(source) else source)
+                          if value not in cmd.subcommands]
+            return names
     return []
 
 
 def get_subcommand_descriptions(command: str) -> Dict[str, str]:
-    """Map subcommand name -> one-line description for ``command``."""
+    """Map subcommand name (and first-param value) -> one-line description."""
     if command in COMMANDS:
         cmd = COMMANDS[command]
         if cmd.has_subcommands():
-            return {name: sub.description for name, sub in cmd.subcommands.items()}
+            descriptions = cmd.get_descriptions(0)
+            descriptions.update({name: sub.description for name, sub in cmd.subcommands.items()})
+            return descriptions
     return {}
 
 

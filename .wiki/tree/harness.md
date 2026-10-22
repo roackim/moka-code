@@ -245,7 +245,7 @@ permission engine.
 	`~/.config/moka/roles/<name>.toml`.
 - `validate_roles()` reports unknown tool names and values other than
 	`no`/`ask`/`yes` as `roles/<name>.toml: ...`, surfaced by `/reload` and
-	`/config role`.
+	`/role edit`.
 - `default_role()` picks the starting role (`agent`, else the first that loads, else
 	the `(no role)` placeholder); `Harness.role_problem()` reports how the running role
 	(kept in memory) differs from its file. A role change is
