@@ -93,9 +93,6 @@ class Harness:
         # USD spent on this conversation, when the provider reports costs
         # (None until one does, so local servers show nothing).
         self.conversation_cost: Optional[float] = None
-        # Cache for the @ file picker listing (invalidated on workspace change).
-        self._file_list_cache: list[str] = []
-        self._file_list_cache_key: tuple = ()
 
         # The selected server's endpoint, or ``None`` until a model is picked
         # (/model); nothing is guessed. Resolved here, not from a module-level
@@ -484,26 +481,18 @@ class Harness:
         """Returns a bounded list of files/folders for the @ file picker.
 
         Uses a depth/max-files-bounded walk so it stays responsive on huge
-        trees (e.g. ``$HOME``). The result is cached per-workspace so typing
-        ``@`` doesn't re-walk the tree on every keystroke.
+        trees (e.g. ``$HOME``). Not cached: the input walks it once per open
+        menu, so files created since the last ``@`` show up.
         """
         from moka_code.harness.context_builder import list_files_bounded
         from moka_code import settings
 
-        cache_key = (self.workspace, settings.config.context_max_files,
-                     settings.config.context_max_depth,
-                     settings.config.context_ignore_gitignore)
-        if getattr(self, "_file_list_cache_key", None) == cache_key:
-            return self._file_list_cache
-        entries = list_files_bounded(
+        return list_files_bounded(
             self.workspace,
             max_files=settings.config.context_max_files,
             max_depth=settings.config.context_max_depth,
             ignore_gitignore=settings.config.context_ignore_gitignore,
         )
-        self._file_list_cache = entries
-        self._file_list_cache_key = cache_key
-        return entries
 
     def _context_window(self) -> Optional[int]:
         return self.endpoint.context_window() if self.endpoint is not None else None

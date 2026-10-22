@@ -69,6 +69,9 @@ class InputComponent(Component):
         self.subcommand_descriptions_callback: Optional[Callable[[str], Dict[str, str]]] = None
         self.context_completion: Optional[ContextCompletion] = None
         self.context_items_callback: Optional[Callable[[], List[str]]] = None
+        # Workspace listing taken when a file menu opens; dropped when every
+        # menu closes so the next open rescans (new files show up).
+        self._files_snapshot: Optional[List[str]] = None
         self.argument_completion: Optional[ArgumentCompletion] = None
         self._command_registry: Optional[Dict[str, Any]] = None  # COMMANDS dict for generic hints/args
         # Notified (no args) whenever the text changes, so hosts can refresh
@@ -168,7 +171,7 @@ class InputComponent(Component):
         """Lazy-create context menu and completion system on first use."""
         if self.context_completion is None and self.context_items_callback:
             self.context_completion = self._new_completion(lambda menu: ContextCompletion(
-                menu, self.context_items_callback, trigger="@"))
+                menu, self._files, trigger="@"))
 
     def _ensure_argument_menu(self):
         """Lazy-create argument completion menu for generic Param-driven completion."""
@@ -176,7 +179,13 @@ class InputComponent(Component):
             self.argument_completion = self._new_completion(
                 lambda menu: ArgumentCompletion(
                     menu, self._command_registry,
-                    files=lambda: (self.context_items_callback() if self.context_items_callback else [])))
+                    files=self._files))
+
+    def _files(self) -> List[str]:
+        """The workspace listing, walked once per open menu."""
+        if self._files_snapshot is None:
+            self._files_snapshot = self.context_items_callback() if self.context_items_callback else []
+        return self._files_snapshot
 
     # def setup_menus(self, commands: List[str], get_context_items: Optional[Callable[[], List[str]]] = None,
                     # get_subcommands: Optional[Callable[[str], List[str]]] = None):
@@ -219,6 +228,7 @@ class InputComponent(Component):
                         other.hide()
                 self._position_menu(provider)
                 return
+        self._files_snapshot = None
 
     def _completion_providers(self):
         """Return the configured completion providers in priority order."""

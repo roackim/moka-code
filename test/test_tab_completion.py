@@ -101,3 +101,23 @@ def test_edit_completes_workspace_files_not_just_folders():
     assert inp.argument_completion.menu.items == ["README.md"]        # filtered as you type
     inp.handle_input("\t")
     assert inp.buffer.text == "/edit README.md "
+
+
+def test_at_menu_rescans_each_time_it_opens():
+    """A file created after the ``@`` menu was last open shows up the next time
+    it opens (2026-10-22); the listing used to be cached for the whole session.
+    While the menu is open the tree is walked only once."""
+    files = ["a.py"]
+    walks = []
+    inp = InputComponent("> ")
+    inp.set_layout(0, 0, 80, 3)
+    inp.setup_context(lambda: walks.append(1) or list(files))
+
+    _type(inp, "@a")
+    assert inp.context_completion.menu.items == ["a.py"]
+    assert len(walks) == 1                                           # once per open, not per key
+
+    _type(inp, " ")                                                  # menu closes
+    files.append("new.py")
+    _type(inp, "@n")
+    assert inp.context_completion.menu.items == ["new.py"]
