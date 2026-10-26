@@ -127,15 +127,19 @@ def test_a_turn_that_ends_over_the_soft_limit_is_compacted_after_it(tmp_path):
     seen = _chat(harness)
 
     assert calls == ["turn", "summary"]
-    kinds = (events.Notice, events.Compacted, events.Done)
-    assert [type(e) for e in seen if isinstance(e, kinds)] == list(kinds)
+    # The transcript's live line, not a notice (2026-10-26): started, the
+    # summary as it streams, then the folded line.
+    kinds = (events.Notice, events.CompactionStarted, events.CompactionText,
+             events.Compacted, events.Done)
+    assert [type(e) for e in seen if isinstance(e, kinds)] == [
+        events.CompactionStarted, events.CompactionText, events.Compacted, events.Done]
+    assert next(e for e in seen if isinstance(e, events.CompactionText)).text == "the summary"
     ids = [e["content"] for e in harness.history]
     marker = next(i for i, c in enumerate(ids) if str(c).startswith(COMPACTION_MARKER_PREFIX))
     assert ids[marker + 1] == "go"                      # the marker sits before the kept turn
     compacted = next(e for e in seen if isinstance(e, events.Compacted))
     assert compacted.marker_id == harness.history[marker]["id"]
     meta = harness.history[marker]["compaction"]
-    assert f"compacted_messages={meta['messages']}\n" in harness.history[marker]["content"]
     assert meta["until"] == harness.history[-1]["id"]
     assert meta["before"] > meta["after"]
     assert [e["role"] for e in harness._get_effective_history()] == ["assistant", "user", "assistant"]
@@ -201,7 +205,8 @@ def test_a_running_turn_with_nothing_older_to_summarize_stops(tmp_path):
     seen = _chat(harness, big)
 
     assert [type(e) for e in seen if isinstance(e, (events.Error, events.Done))] == [events.Error, events.Done]
-    assert any(isinstance(e, events.Notice) and e.level == "error" for e in seen)
+    assert any(isinstance(e, events.CompactionFailed) for e in seen)
+    assert not any(isinstance(e, events.CompactionStarted) for e in seen)   # nothing to summarize
 
 
 def test_the_context_is_what_the_server_held_after_the_reply_thinking_included(tmp_path):

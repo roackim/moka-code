@@ -101,6 +101,8 @@ class ChatHistoryPanel(TextComponent):
         # (SysMsg/SysMsgError/SysMsgWarning). When set, those messages are
         # routed out of the transcript into the activity surface.
         self.activity_sink = None
+        # The compaction line while its summary is written (``on_compaction``).
+        self._live_compaction: Optional[Message] = None
         # ``(level, text)`` setup problems drawn with the banner (see
         # ``chatTUI.refresh_setup_notes``).
         self.setup_notes: list[tuple[str, str]] = []
@@ -1162,10 +1164,12 @@ class ChatHistoryPanel(TextComponent):
             msg.copy_text = text
         return msg
 
-    def add_compaction(self, history: list, marker_id: str) -> Optional[Message]:
-        """Add the compaction line of the marker ``marker_id``: folded to a rule
-        with its counts, unfolded (focused) to the summary and the messages kept
-        word for word. None when the history has no such marker."""
+    def add_compaction(self, history: list, marker_id: str,
+                       replace: Optional[Message] = None) -> Optional[Message]:
+        """Add the compaction line of the marker ``marker_id`` (in place of
+        ``replace``, the live line, when given): folded to a rule with its
+        counts, unfolded (focused) to the summary and the messages kept word
+        for word. None when the history has no such marker."""
         from moka_code.harness.compaction import compaction_view
         from moka_code.ui.tui.msg_types import CompactionMsg
 
@@ -1173,11 +1177,47 @@ class ChatHistoryPanel(TextComponent):
         if view is None:
             return None
         label, text = view
-        msg = self.add_message(text, msg_type=CompactionMsg(), harness_message_ids=[marker_id])
+        live = replace is not None and replace in self.messages
+        msg = self.new_message(text, msg_type=CompactionMsg(), harness_message_ids=[marker_id],
+                               append=not live)
         msg.fold_label = label
         msg.set_collapsed(True)
         msg.finalize()
+        if live:
+            self.replace_message(replace, msg)
         return msg
+
+    def on_compaction(self, event, history: list) -> None:
+        """Show a compaction as it happens (``/compact`` and auto-compaction):
+        ``CompactionStarted`` opens a live line (``compacting conversation ·
+        12s`` and the summary's latest line), ``CompactionText`` streams into
+        it, ``Compacted`` turns it into the folded line, and ``CompactionFailed``
+        removes it (the error goes to the activity overlay)."""
+        from moka_code.harness import events
+        from moka_code.ui.tui.msg_types import CompactionMsg, SysMsgError
+
+        live = self._live_compaction
+        if isinstance(event, events.CompactionStarted):
+            self.drop_live_compaction()
+            live = self.add_message("", msg_type=CompactionMsg())
+            live.set_collapsed(True)
+            live.begin_phase("compacting")
+            self._live_compaction = live
+        elif isinstance(event, events.CompactionText):
+            if live is not None:
+                live.append(event.text)
+        elif isinstance(event, events.Compacted):
+            self._live_compaction = None
+            self.add_compaction(history, event.marker_id, replace=live)
+        elif isinstance(event, events.CompactionFailed):
+            self.drop_live_compaction()
+            self.add_message(event.message, msg_type=SysMsgError(), title="compact")
+
+    def drop_live_compaction(self) -> None:
+        """Remove a compaction line still being written (failed or cancelled)."""
+        if self._live_compaction is not None:
+            self.remove_message(self._live_compaction)
+            self._live_compaction = None
 
     def compaction_lines(self) -> List[Message]:
         """The compaction lines in the transcript, oldest first."""
@@ -1222,6 +1262,7 @@ class ChatHistoryPanel(TextComponent):
     def clear(self):
         """Clear the chat history UI."""
         self.messages = []
+        self._live_compaction = None
         self._message_height_cache.clear()
         self.scroll_offset = 0
         self.auto_scroll = True

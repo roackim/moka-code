@@ -622,11 +622,17 @@ them). Navigation has two levels:
   from the tool call collapses the output automatically.
 
 **Compaction line** (`CompactionMsg`, `ChatHistoryPanel.add_compaction`). The
-conversation stays on screen as it was. Where it was compacted (`/compact`, or
-`events.Compacted` from auto-compaction), one muted rule is added:
-`─ compacted · 42 messages · 6 kept · ~85k → ~12k tokens ───`. It folds like a
+conversation stays on screen as it was. Where it is compacted (`/compact` or
+auto-compaction, both through `ChatHistoryPanel.on_compaction`), a live line
+opens on `events.CompactionStarted`: `─ compacting conversation · 12s  <the
+summary's latest line>`, ticking like a running tool; `CompactionText` streams
+into it (focus shows the summary so far). On `Compacted` it becomes one muted
+rule, `─ compacted · 30 turns summarized, 9 kept · ~85k → ~12k tokens ───`; on
+`CompactionFailed`, an error, or a stop it is removed (`drop_live_compaction`)
+and the error goes to the activity overlay. A request's empty "waiting" thought
+is dropped when a compaction starts before it. The folded line folds like a
 thought: focused, it unfolds to what the model now sees, the summary (markdown)
-then the kept messages (`compaction.compaction_view`). On resume/import the
+then one line per kept turn, whose messages are above (`compaction.compaction_view`). On resume/import the
 marker is never drawn as an answer: its line comes after the marker's `until`
 entry, where it appeared live (`conversation._with_compaction_lines`).
 Editing a sent message (`handle_edit_sent_action`) that a compaction summarized

@@ -268,30 +268,30 @@ async def cmd_compact(ui: ChatUIProtocol, args: List[str]):
     if args:
         ui.chat_history_panel.add_message("Usage: /compact", msg_type=SysMsgError())
         return
-    if not hasattr(ui.agent, "compact_history"):
+    if not hasattr(ui.agent, "compact"):
         ui.chat_history_panel.add_message(
             "Compaction is not supported by this agent.", msg_type=SysMsgError())
         return
 
-    placeholder = ui.chat_history_panel.add_message(
-        "Compacting history...", msg_type=SysMsg(), title="compact")
+    # The transcript's compaction line shows it (live, then folded), as for
+    # auto-compaction.
+    from moka_code.harness import events
+
+    panel = ui.chat_history_panel
+    result: dict = {}
     try:
-        result = await ui.agent.compact_history()
-        if not result.get("ok"):
-            compact_msg = ui.chat_history_panel.new_message(
-                result.get("message", "Compaction skipped."),
-                msg_type=SysMsg(), title="compact")
-            ui.chat_history_panel.replace_message(placeholder, compact_msg)
-            return
-        # The transcript's compaction line says what happened (unfold: the summary).
-        ui.chat_history_panel.remove_message(placeholder)
-        ui.chat_history_panel.add_compaction(ui.agent.history, result["message_id"])
-        if hasattr(ui, "refresh_status_bar"):
-            ui.refresh_status_bar()
+        async for event in ui.agent.compact(result=result):
+            panel.on_compaction(event, ui.agent.history)
     except Exception as exc:
-        error_msg = ui.chat_history_panel.new_message(
-            f"Compaction failed: {exc}", msg_type=SysMsgError(), title="compact")
-        ui.chat_history_panel.replace_message(placeholder, error_msg)
+        panel.on_compaction(events.CompactionFailed(f"Compaction failed: {exc}"), ui.agent.history)
+        return
+    finally:
+        panel.drop_live_compaction()
+    if not result.get("ok"):
+        panel.add_message(result.get("message", "Compaction skipped."),
+                          msg_type=SysMsg(), title="compact")
+    elif hasattr(ui, "refresh_status_bar"):
+        ui.refresh_status_bar()
 
 
 async def cmd_exit(ui: ChatUIProtocol, args: List[str]):

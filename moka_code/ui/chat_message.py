@@ -668,6 +668,8 @@ class Message:
             label = self._tool_trailing()
         elif isinstance(self.type, msg_types.ThinkingMsg):
             label = self._thinking_label()
+        elif isinstance(self.type, msg_types.CompactionMsg):
+            label = self._compacting_label()
         else:
             return
         if label != self._live_label:
@@ -725,6 +727,13 @@ class Message:
             label = "waiting"
         return f"{label} {int(elapsed)}s"
 
+    def _compacting_label(self) -> str:
+        """A compaction line while its summary is written: ``compacting conversation · 12s``."""
+        elapsed = 0.0
+        if self._phase_started_at is not None:
+            elapsed = time.perf_counter() - self._phase_started_at
+        return f"compacting conversation · {int(elapsed)}s"
+
     def render_collapsed_line(self, subbuffer, max_width: int, fg, bg) -> None:
         """Render the single-line summary for a collapsed message.
 
@@ -732,9 +741,15 @@ class Message:
         latest reasoning line; a finalized one reads ``thought for Xs``.
         """
         if isinstance(self.type, msg_types.CompactionMsg):
-            # A rule across the transcript, joined to the ``─`` gutter.
-            line = f"─ {self.fold_label or self.type.title} "
-            line += "─" * max(0, max_width + 1 - display_width(line))
+            # A rule across the transcript, joined to the ``─`` gutter. While
+            # the summary is written: the ticking label and its latest line.
+            line = f"─ {self.fold_label or self._compacting_label()} "
+            if not self.finalized and self.base_text.strip():
+                last = next(l for l in reversed(self.base_text.splitlines()) if l.strip())
+                room = max_width + 1 - display_width(line) - 1
+                line += " " + _clip(" ".join(last.split()), room, keep_end=True)
+            else:
+                line += "─" * max(0, max_width + 1 - display_width(line))
             subbuffer.write_str(1, 0, line, fg=fg, bg=bg, max_width=max(0, max_width + 1))
             return
         if not isinstance(self.type, msg_types.ThinkingMsg):

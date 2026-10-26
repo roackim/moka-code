@@ -8,6 +8,7 @@ import time
 from typing import Any, Dict, List
 
 from .base import ChatUIProtocol, stop_before
+from moka_code.harness.compaction import is_marker as _is_marker
 from moka_code.ui.chat_message import thought_worth_showing
 from moka_code.ui.tui.msg_types import (
     AssistantMsg,
@@ -195,13 +196,6 @@ def _add_answer(ui: ChatUIProtocol, text: str, ids) -> None:
     split = getattr(ui.chat_history_panel, "split_answer", None)
     if callable(split):
         split(answer)
-
-
-def _is_marker(message: Dict[str, Any]) -> bool:
-    from moka_code.harness.compaction import COMPACTION_MARKER_PREFIX
-
-    return (message.get("role") == "assistant"
-            and str(message.get("content") or "").startswith(COMPACTION_MARKER_PREFIX))
 
 
 def _with_compaction_lines(ui: ChatUIProtocol, history: List[Dict[str, Any]]):

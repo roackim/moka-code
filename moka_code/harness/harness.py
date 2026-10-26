@@ -11,7 +11,7 @@ from typing import AsyncGenerator, Any, Dict, List, Optional, Tuple
 from moka_code.harness.llm_status import AgentState
 from moka_code.harness.debug import get_debug_stream
 from moka_code.harness.compaction import (
-    CHARS_PER_TOKEN, COMPACTION_MARKER_PREFIX, cut_index, estimate_tokens, transcript)
+    CHARS_PER_TOKEN, COMPACTION_MARKER_PREFIX, cut_index, estimate_tokens, is_marker, transcript)
 from moka_code.harness.elision import elide
 from moka_code.harness import events, images
 from moka_code.harness.endpoint import Endpoint, get_active_endpoint
@@ -312,10 +312,7 @@ class Harness:
 
     def _is_compaction_message(self, msg: Dict[str, Any]) -> bool:
         """Return True if message is a compaction marker message."""
-        if msg.get("role") != "assistant":
-            return False
-        content = msg.get("content")
-        return isinstance(content, str) and content.startswith(COMPACTION_MARKER_PREFIX)
+        return is_marker(msg)
 
     def _get_last_compaction_index(self) -> Optional[int]:
         """Get index of the most recent compaction marker, if any."""
@@ -536,6 +533,18 @@ class Harness:
                 + len(tools) // CHARS_PER_TOKEN)
 
     async def compact_history(self, whole_if_needed: bool = True) -> Dict[str, Any]:
+        """``compact`` run to its end, without its events.
+
+        Returns:
+            Summary stats describing the compaction operation.
+        """
+        result: Dict[str, Any] = {}
+        async for _ in self.compact(whole_if_needed, result):
+            pass
+        return result
+
+    async def compact(self, whole_if_needed: bool = True,
+                      result: Optional[Dict[str, Any]] = None) -> AsyncGenerator[events.Event, None]:
         """Summarize the older part of the effective history with one LLM call
         and insert the compaction marker before the newest turns, which stay
         word for word (``context.compact_keep`` of the window).
@@ -543,29 +552,28 @@ class Harness:
         With nothing older than the newest turn to summarize, everything is
         summarized, unless ``whole_if_needed`` is False (a running turn).
 
-        Returns:
-            Summary stats describing the compaction operation.
+        Yields ``CompactionStarted`` once there is something to summarize, a
+        ``CompactionText`` per piece of the summary as it streams, then
+        ``Compacted``. ``result`` is filled with the stats ``compact_history``
+        returns (``ok`` False, and nothing yielded, when there is nothing to do).
+        A failed request raises.
         """
         from moka_code import settings
 
+        result = {} if result is None else result
         if self.endpoint is None:
             raise RuntimeError("no model selected (/model)")
         tokens_before = self.context_estimate()
         effective_history = list(self._get_effective_history())
         if not effective_history:
-            return {
-                "ok": False,
-                "reason": "empty",
-                "message": "No messages to compact.",
-            }
+            result.update(ok=False, reason="empty", message="No messages to compact.")
+            return
 
         # Avoid compacting if the effective history is already only one compaction marker.
         if len(effective_history) == 1 and self._is_compaction_message(effective_history[0]):
-            return {
-                "ok": False,
-                "reason": "already_compacted",
-                "message": "History is already compacted.",
-            }
+            result.update(ok=False, reason="already_compacted",
+                          message="History is already compacted.")
+            return
 
         offset = self._get_last_compaction_index() or 0
         window = self._context_window() or 0
@@ -573,26 +581,29 @@ class Harness:
         head = effective_history[:cut]
         if not head or all(self._is_compaction_message(e) for e in head):
             if not whole_if_needed:
-                return {
-                    "ok": False,
-                    "reason": "no_head",
-                    "message": "nothing before the current turn to summarize",
-                }
+                result.update(ok=False, reason="no_head",
+                              message="nothing before the current turn to summarize")
+                return
             cut, head = len(effective_history), effective_history
         tail = effective_history[cut:]
+        yield events.CompactionStarted()
 
         summarize_user = {
             "role": "user",
             "content": (
                 "Summarize the following conversation for future continuation. "
-                "The summary will replace these messages (the most recent ones follow it "
-                "unchanged), so the conversation must be able to continue from it and "
-                "those alone. Include:\n"
-                "- The user's goal and any instructions or preferences they stated\n"
-                "- Key decisions made and their reasoning\n"
+                "The summary will replace these messages. It is not the end of the "
+                "conversation: the most recent messages, which you do not see here, follow "
+                "it unchanged (often the request being worked on right now), and they win "
+                "wherever they differ from it. So write a record up to this point that lets "
+                "the work carry on, not instructions. Include:\n"
+                "- The user's overall goal, and the instructions and preferences they "
+                "stated (they still apply)\n"
+                "- Key decisions and their reasoning; where a design was replaced, only the "
+                "one that replaced it\n"
                 "- Technical constraints and requirements\n"
-                "- Current state: what is done, what is in progress\n"
-                "- Open tasks and next steps\n"
+                "- State at the end of these messages: what is done, what was being worked "
+                "on and how far it got\n"
                 "- Exact file paths, names, commands and error messages that still matter\n"
                 "- Failed attempts and why they failed\n\n"
                 "Do not reproduce raw tool output; state what it showed. Keep code only "
@@ -610,6 +621,8 @@ class Harness:
         async for chunk in self.endpoint.stream(self._system_messages() + [summarize_user]):
             summary_text += chunk.text
             usage = chunk.usage or usage
+            if chunk.text:
+                yield events.CompactionText(chunk.text)
         self._add_cost(usage)       # one request, one cost: the last usage reported
         summary_text = summary_text.strip()
 
@@ -640,19 +653,20 @@ class Harness:
         # Shown by the transcript's compaction line (never sent: not an API
         # field). ``until`` is the last entry when it happened: the line goes
         # after it, and the kept messages it lists end there.
-        marker["compaction"] = {"messages": len(head), "before": tokens_before,
-                                "after": tokens_after, "until": self.history[-1]["id"]}
+        marker["compaction"] = {"before": tokens_before, "after": tokens_after,
+                                "until": self.history[-1]["id"]}
         self.debug_stream.log("COMPACT", f"Inserted compaction marker {compaction_id} over {len(head)} messages, kept {len(tail)}")
 
-        return {
-            "ok": True,
-            "message_id": compaction_id,
-            "compacted_messages": len(head),
-            "kept_messages": len(tail),
-            "summary_chars": len(summary_text),
-            "tokens_before": tokens_before,
-            "tokens_after": tokens_after,
-        }
+        result.update(
+            ok=True,
+            message_id=compaction_id,
+            compacted_messages=len(head),
+            kept_messages=len(tail),
+            summary_chars=len(summary_text),
+            tokens_before=tokens_before,
+            tokens_after=tokens_after,
+        )
+        yield events.Compacted(compaction_id)
 
     async def _auto_compact(self, at: float, running: bool) -> AsyncGenerator[events.Event, None]:
         """Compact when the next request would reach ``at`` of the context window.
@@ -668,17 +682,18 @@ class Harness:
         used = self.context_estimate()
         if used < at * window:
             return
-        yield events.Notice(f"Context {used * 100 // window}% full, compacting…")
+        result: Dict[str, Any] = {}
         try:
-            result = await self.compact_history(whole_if_needed=not running)
+            async for event in self.compact(whole_if_needed=not running, result=result):
+                yield event
         except Exception as exc:
             result = {"ok": False, "message": str(exc)}
         if not result.get("ok"):
             self._auto_compact_failed = True
-            yield events.Notice(f"Auto-compact failed: {result.get('message', 'unknown error')}", "error")
+            yield events.CompactionFailed(
+                f"Auto-compact failed: {result.get('message', 'unknown error')}")
             return
         after = result["tokens_after"]
-        yield events.Compacted(result["message_id"])
         if running and after >= at * window:
             self._auto_compact_failed = True
             yield events.Notice(

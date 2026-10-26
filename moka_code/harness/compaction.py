@@ -92,42 +92,64 @@ def _k(tokens: int) -> str:
     return f"{tokens / 1000:.1f}k" if tokens < 10_000 else f"{tokens // 1000}k"
 
 
+def is_marker(entry: Dict[str, Any]) -> bool:
+    """Whether a history entry is a compaction marker (the summary)."""
+    return (entry.get("role") == "assistant"
+            and str(entry.get("content") or "").startswith(COMPACTION_MARKER_PREFIX))
+
+
+def _prompts(entries: List[Dict[str, Any]]) -> List[str]:
+    """The user's own messages among ``entries``: one per turn."""
+    return [str(e.get("content") or "") for e in entries
+            if e.get("role") == "user" and e.get("source") != "tool"]
+
+
+def _turns(count: int) -> str:
+    return f"{count} turn" + ("" if count == 1 else "s")
+
+
+_PROMPT_CHARS = 100
+
+
 def compaction_view(history: List[Dict[str, Any]],
                     marker_id: str) -> Optional[Tuple[str, str]]:
     """The transcript's compaction line for the marker ``marker_id``:
-    ``(label, text)``. The label is the folded line (``compacted · 42 messages
-    · ~85k → ~12k tokens``); the text is what the model now sees instead: the
-    summary, then the messages kept word for word. None when there is no such
+    ``(label, text)``. The label is the folded line (``compacted · 30 turns
+    summarized, 9 kept · ~85k → ~12k tokens``); the text is what the model now
+    sees instead: the summary, then the turns kept word for word, one line each
+    (their messages are in the transcript above). None when there is no such
     marker."""
     index = next((i for i, e in enumerate(history)
-                  if e.get("id") == marker_id and e.get("role") == "assistant"
-                  and str(e.get("content") or "").startswith(COMPACTION_MARKER_PREFIX)), None)
+                  if e.get("id") == marker_id and is_marker(e)), None)
     if index is None:
         return None
     marker = history[index]
-    header, _, summary = marker["content"].partition("\n\n")
+    summary = marker["content"].partition("\n\n")[2]
     meta = marker.get("compaction") or {}
-    count = meta.get("messages")
-    if count is None:       # a marker written before the metadata: read its header
-        found = re.search(r"compacted_messages=(\d+)", header)
-        count = int(found.group(1)) if found else None
+    # What it summarized: back to the previous summary, which it folded in.
+    start = next((i for i in range(index - 1, -1, -1) if is_marker(history[i])), 0)
+    summarized = _prompts(history[start:index])
     until = next((i for i in range(index, len(history))
                   if history[i].get("id") == meta.get("until")), index)
-    kept = [e for e in history[index + 1:until + 1] if e.get("role") != "system"]
+    kept = _prompts(history[index + 1:until + 1])
 
-    label = ["compacted"]
-    if count is not None:
-        label.append(f"{count} messages")
-    label.append(f"{len(kept)} kept")
+    counts = f"{_turns(len(summarized))} summarized"
+    if kept:
+        counts += f", {len(kept)} kept"
+    label = ["compacted", counts]
     if meta.get("before") is not None and meta.get("after") is not None:
         label.append(f"~{_k(meta['before'])} → ~{_k(meta['after'])} tokens")
 
     text = summary.strip()
     if kept:
-        shown = transcript(kept, filter_thoughts=True, filter_tool_calls=True)
-        fence = "````" if "```" in shown else "```"
-        text += (f"\n\n---\n\n**Kept word for word** ({len(kept)} messages):\n\n"
-                 f"{fence}text\n{shown}\n{fence}")
+        lines = []
+        for prompt in kept:
+            first = next((line.strip() for line in prompt.splitlines() if line.strip()), "")
+            if len(first) > _PROMPT_CHARS:
+                first = first[:_PROMPT_CHARS - 1] + "…"
+            lines.append(f"- {first or '(image)'}")
+        text += (f"\n\n---\n\n**Kept word for word** ({_turns(len(kept))}, shown above):\n\n"
+                 + "\n".join(lines))
     return " · ".join(label), text
 
 

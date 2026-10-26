@@ -120,10 +120,27 @@ class Notice:
 
 
 @dataclass
+class CompactionStarted:
+    """The summary request for a compaction is sent."""
+
+
+@dataclass
+class CompactionText:
+    """A piece of the compaction summary, as it streams."""
+    text: str
+
+
+@dataclass
 class Compacted:
     """The history was compacted; ``marker_id`` is the summary entry's id
     (``compaction.compaction_view`` describes it)."""
     marker_id: str
+
+
+@dataclass
+class CompactionFailed:
+    """An auto-compaction did not happen; nothing in the history changed."""
+    message: str
 
 
 @dataclass
@@ -133,5 +150,6 @@ class Done:
 
 Event = Union[
     Start, Token, Reasoning, ToolCallDraft, ToolCall, PermissionRequest,
-    ToolOutput, ToolResult, Usage, Error, Notice, Compacted, Done
+    ToolOutput, ToolResult, Usage, Error, Notice,
+    CompactionStarted, CompactionText, Compacted, CompactionFailed, Done
 ]

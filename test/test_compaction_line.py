@@ -18,7 +18,7 @@ from conftest import StubAgent
 
 MARKER = {"id": "m1", "role": "assistant",
           "content": f"{COMPACTION_MARKER_PREFIX}\ncompacted_messages=2\n\n## Goal\nship it",
-          "compaction": {"messages": 2, "before": 85_000, "after": 12_300, "until": "a2"}}
+          "compaction": {"before": 85_000, "after": 12_300, "until": "a2"}}
 
 
 def _history():
@@ -53,25 +53,45 @@ def _shown(ui):
             for m in ui.chat_history_panel.messages]
 
 
-def test_view_has_the_counts_the_summary_and_the_kept_messages():
+def test_view_has_the_counts_the_summary_and_the_kept_turns():
+    """Counts are turns, not entries (an example had "242 messages" kept, every
+    tool call and result counted), and the kept turns are one line each: their
+    messages are in the transcript above (2026-10-26)."""
     label, text = compaction_view(_history(), "m1")
 
-    assert label == "compacted · 2 messages · 2 kept · ~85k → ~12k tokens"
+    assert label == "compacted · 1 turn summarized, 1 kept · ~85k → ~12k tokens"
     assert compaction_view([dict(MARKER, compaction={**MARKER["compaction"], "after": 9_400})],
                            "m1")[0].endswith("~85k → ~9.4k tokens")
     assert text.startswith("## Goal\nship it")
-    assert "User: two" in text and "Assistant: answer two" in text
-    assert "three" not in text                      # came after the compaction
+    assert text.endswith("**Kept word for word** (1 turn, shown above):\n\n- two")
+    assert "answer two" not in text and "three" not in text   # one line; after the compaction
     assert compaction_view(_history(), "u1") is None
 
 
+def test_kept_turns_show_their_first_line_and_tool_results_are_not_turns():
+    long = "x" * 300
+    history = [dict(MARKER, compaction={"until": "t1"}),
+               {"id": "u2", "role": "user", "content": "\n  fix the parser\nplease"},
+               {"id": "a2", "role": "assistant", "content": None, "tool_calls": []},
+               {"id": "t1", "role": "user", "source": "tool", "content": "image"},
+               {"id": "u3", "role": "user", "content": long}]
+    history[0]["compaction"]["until"] = "u3"
+
+    label, text = compaction_view(history, "m1")
+
+    assert label == "compacted · 0 turns summarized, 2 kept"
+    assert "- fix the parser\n" in text and "please" not in text
+    assert f"- {'x' * 99}…" in text
+
+
 def test_a_marker_from_before_the_metadata_still_shows():
-    history = [{"id": "m0", "role": "assistant",
+    history = [{"id": "u1", "role": "user", "content": "one"},
+               {"id": "m0", "role": "assistant",
                 "content": f"{COMPACTION_MARKER_PREFIX}\ncompacted_messages=7\n\nolder"}]
 
     label, text = compaction_view(history, "m0")
 
-    assert label == "compacted · 7 messages · 0 kept" and text == "older"
+    assert label == "compacted · 1 turn summarized" and text == "older"
 
 
 def test_resume_shows_the_line_where_it_happened_never_the_raw_marker(monkeypatch):
@@ -80,7 +100,7 @@ def test_resume_shows_the_line_where_it_happened_never_the_raw_marker(monkeypatc
     assert _shown(ui) == ["one", "answer one", "two", "answer two", "LINE", "three"]
     line = ui.chat_history_panel.messages[4]
     assert line.collapsed and line.collapsible
-    assert line.fold_label.startswith("compacted · 2 messages")
+    assert line.fold_label.startswith("compacted · 1 turn summarized")
     assert not any(COMPACTION_MARKER_PREFIX in m.base_text for m in ui.chat_history_panel.messages)
 
 
@@ -127,14 +147,138 @@ def test_the_edit_cost_is_the_history_sent_again(tmp_path):
     assert len(harness.history) == 6                       # only estimated
 
 
-def test_the_folded_line_is_a_rule_across_the_width(monkeypatch):
+def _row(msg, width=60):
     from moka_code.ui.tui.buffer import Buffer
 
+    buffer = Buffer(width, 1)
+    msg.render_collapsed_line(buffer, max_width=width - 2, fg=None, bg=None)
+    return "".join(cell.char for cell in buffer.cells[0][1:width])
+
+
+def test_the_live_line_ticks_streams_then_becomes_the_folded_line(monkeypatch):
+    """2026-10-26: compacting showed nothing until done, which was unclear; it
+    is a live transcript line now, like a running tool."""
+    from moka_code.harness import events
+
+    ui = _ui(monkeypatch)
+    panel = ui.chat_history_panel
+    history = ui.agent.history
+
+    panel.on_compaction(events.CompactionStarted(), history)
+    live = panel.messages[-1]
+    assert isinstance(live.type, CompactionMsg) and live.collapsed and not live.finalized
+    assert _row(live).startswith("─ compacting conversation · 0s ──")
+
+    panel.on_compaction(events.CompactionText("## Goal\nship "), history)
+    panel.on_compaction(events.CompactionText("it now"), history)
+    assert _row(live).startswith("─ compacting conversation · 0s  ship it now")
+
+    at = panel.messages.index(live)
+    panel.on_compaction(events.Compacted("m1"), history)
+    folded = panel.messages[at]
+    assert live not in panel.messages and folded.finalized
+    assert folded.fold_label.startswith("compacted · 1 turn summarized")
+
+
+def test_a_failed_compaction_leaves_no_line(monkeypatch):
+    from moka_code.harness import events
+
+    ui = _ui(monkeypatch)
+    panel = ui.chat_history_panel
+    before = _shown(ui)
+
+    panel.on_compaction(events.CompactionStarted(), ui.agent.history)
+    panel.on_compaction(events.CompactionFailed("Auto-compact failed: boom"), ui.agent.history)
+
+    assert _shown(ui)[:len(before)] == before and _shown(ui).count("LINE") == 1
+    assert panel._live_compaction is None
+
+
+def test_compact_command_shows_the_live_line_and_drops_it_on_failure(monkeypatch):
+    from moka_code.harness import events
+    from moka_code.ui.commands.core import cmd_compact
+
+    ui = _ui(monkeypatch)
+    lines = []
+
+    async def compact(result=None):
+        yield events.CompactionStarted()
+        lines.append(_row(ui.chat_history_panel.messages[-1]))
+        raise RuntimeError("server down")
+    ui.agent.compact = compact
+
+    asyncio.run(cmd_compact(ui, []))
+
+    assert lines[0].startswith("─ compacting conversation")
+    assert _shown(ui).count("LINE") == 1                 # only the resumed one
+    assert ui.chat_history_panel._live_compaction is None
+
+
+def _compacting_chat(ui, gate=None):
+    from moka_code.harness import events
+
+    async def chat(text, attached=None):
+        ui.agent.history.append({"id": "u9", "role": "user", "content": text})
+        yield events.Start(message_id="u9", role="user")
+        yield events.CompactionStarted()
+        yield events.CompactionText("the summary")
+        if gate is not None:
+            await gate.wait()
+        ui.agent.history.append(dict(MARKER, id="m9", compaction=dict(MARKER["compaction"], until="u9")))
+        yield events.Compacted("m9")
+        yield events.Start(message_id="a9", role="assistant")
+        yield events.Token(text="the answer")
+        yield events.Done()
+    return chat
+
+
+def test_a_turn_that_compacts_shows_the_line_before_its_answer(monkeypatch):
+    async def scenario():
+        ui = _ui(monkeypatch)
+        ui.chat_history_panel.clear()
+        ui.agent.history = []
+        ui.is_generating = lambda: False
+        ui.agent.chat = _compacting_chat(ui)
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        ui.on_user_submit("go")
+        await asyncio.sleep(0.1)
+        ui.worker_task.cancel()
+        return ui
+
+    ui = asyncio.run(scenario())
+    kinds = [type(m.type).__name__ for m in ui.chat_history_panel.messages]
+    # The request's empty "waiting" line went with the compaction; the
+    # request opened a fresh one after it.
+    assert kinds[:2] == ["UserMsg", "CompactionMsg"]
+    assert [s for s in _shown(ui) if s] == ["go", "LINE", "the answer"]
+
+
+def test_stopping_while_compacting_removes_the_live_line(monkeypatch):
+    async def scenario():
+        ui = _ui(monkeypatch)
+        ui.chat_history_panel.clear()
+        ui.agent.history = []
+        gate = asyncio.Event()
+        ui.agent.chat = _compacting_chat(ui, gate)
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        ui.on_user_submit("go")
+        await asyncio.sleep(0.05)
+        assert "LINE" in _shown(ui)
+        ui.stop_generation()
+        await asyncio.sleep(0.05)
+        ui.worker_task.cancel()
+        return ui
+
+    ui = asyncio.run(scenario())
+    assert "LINE" not in _shown(ui)
+    assert ui.chat_history_panel._live_compaction is None
+
+
+def test_the_folded_line_is_a_rule_across_the_width(monkeypatch):
     ui = _ui(monkeypatch)
     line = ui.chat_history_panel.messages[4]
-    buffer = Buffer(60, 1)
 
-    line.render_collapsed_line(buffer, max_width=58, fg=None, bg=None)
+    row = _row(line, width=90)
 
-    row = "".join(cell.char for cell in buffer.cells[0][1:60])
-    assert row.startswith("─ compacted · 2 messages") and row.endswith("──")
+    assert row.startswith("─ compacted · 1 turn summarized, 1 kept · ~85k → ~12k tokens ─")
+    assert row.endswith("──")

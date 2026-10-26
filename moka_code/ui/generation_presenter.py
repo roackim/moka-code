@@ -348,9 +348,20 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                     msg_type=SysMsgError() if event.level == "error" else SysMsg(),
                     title="compact")
 
-            elif isinstance(event, events.Compacted):
-                chat.add_compaction(app.agent.history, event.marker_id)
-                app.refresh_status_bar()
+            elif isinstance(event, (events.CompactionStarted, events.CompactionText,
+                                    events.Compacted, events.CompactionFailed)):
+                if (isinstance(event, events.CompactionStarted)
+                        and current_msg_type is ThinkingMsg and current_msg is not None
+                        and not current_msg.base_text.strip()):
+                    # The request waits for the compaction: its empty "waiting"
+                    # line goes, and the request opens a fresh one after it.
+                    chat.remove_message(current_msg)
+                    current_msg = None
+                    current_msg_type = None
+                    status_is_processing = False
+                chat.on_compaction(event, app.agent.history)
+                if isinstance(event, events.Compacted):
+                    app.refresh_status_bar()
 
             elif isinstance(event, events.Error):
                 aborted_status = "error"
@@ -406,6 +417,7 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
         # smoothing on, the frame callback owns finalization so the reveal can
         # finish animating; otherwise finalize now.
         finalize_active_tools(aborted_status)
+        chat.drop_live_compaction()         # stopped while summarizing: nothing changed
         # A stopped permission prompt must not keep blocking user input.
         app.pending_permission_prompt = None
         if not natural_done or not smoothing:

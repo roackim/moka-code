@@ -215,16 +215,27 @@ size from `context_estimate()` = last reported prompt tokens + an estimate of
 what was added since): after a turn ends over `compact_at` (0.8), and before each
 request inside a turn over `compact_stop_at` (0.85), which compacts and carries
 on; if nothing older can be summarized, or the estimate stays over the limit, the
-turn stops with an error. Progress and failures are `events.Notice`, a success
-is `events.Compacted(marker_id)`; an unknown window turns auto-compaction off
-and the notice band says so. `0` disables.
+turn stops with an error. `compact()` is the compaction as events
+(`CompactionStarted`, a `CompactionText` per streamed piece of the summary,
+`Compacted(marker_id)`), filling a `result` dict; `compact_history()` runs it
+and returns that dict. An auto-compaction that does not happen yields
+`CompactionFailed`; "still full after compacting" is an `events.Notice`. An
+unknown window turns auto-compaction off and the notice band says so. `0`
+disables.
 
-**The marker's metadata.** `marker["compaction"] = {messages, before, after,
-until}` (not an API field, so never sent; kept in sessions): the summarized
-count, `context_estimate()` before/after, and `until`, the id of the last entry
-when it happened. `compaction_view(history, marker_id)` turns it into the
-transcript line's `(label, text)`: the summary, then the entries between the
-marker and `until` (`transcript`, filtered). `truncate_history` moves an
+**The marker's metadata.** `marker["compaction"] = {before, after, until}` (not
+an API field, so never sent; kept in sessions): `context_estimate()`
+before/after, and `until`, the id of the last entry when it happened.
+`compaction_view(history, marker_id)` turns it into the transcript line's
+`(label, text)`. Counts are turns (the user's own messages): those since the
+previous summary are "summarized", those between the marker and `until` "kept".
+The text is the summary, then one line per kept turn (its first line).
+
+**The summary prompt** says that the newest messages follow the summary unseen
+(often the request being worked on) and win where they differ, so it asks for a
+record up to that point (goal and standing instructions, decisions with only
+the design that replaced an earlier one, state at the end of the part) rather
+than next steps, which the kept messages may already have done. `truncate_history` moves an
 `until` that was cut to the new last entry; `uncompacted_estimate(id)` is the
 cost of a cut that drops a compaction (None when it drops none).
 
