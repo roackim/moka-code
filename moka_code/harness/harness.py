@@ -507,7 +507,12 @@ class Harness:
                 and at is not None and at <= len(self.history):
             return usage.context_tokens + estimate_tokens(self.history[at:])
         tools = json.dumps(self.tool_schemas, ensure_ascii=False) if self.tool_schemas else ""
-        return estimate_tokens(self._request_messages()) + len(tools) // CHARS_PER_TOKEN
+        # The request's image parts are base64 and not counted; size them from
+        # the history's references instead.
+        pictures = sum(images.tokens(image) for entry in self._get_effective_history()
+                       for image in entry.get("images") or ())
+        return (estimate_tokens(self._request_messages()) + pictures
+                + len(tools) // CHARS_PER_TOKEN)
 
     async def compact_history(self, whole_if_needed: bool = True) -> Dict[str, Any]:
         """Summarize the older part of the effective history with one LLM call

@@ -161,6 +161,22 @@ def describe(image: ImageRef) -> str:
             f"{format_size(int(image.get('size', 0)))}")
 
 
+# Vision models bill about one token per 28x28 patch (Qwen-VL, llama.cpp) or
+# per 750 pixels (Anthropic), and downscale large images, which caps the cost.
+_PIXELS_PER_TOKEN = 750
+_MAX_IMAGE_TOKENS = 1600
+
+
+def tokens(image: ImageRef) -> int:
+    """A rough token count for one image from its size (never its base64);
+    an image of unknown size counts as the cap."""
+    try:
+        pixels = int(image["width"]) * int(image["height"])
+    except (KeyError, TypeError, ValueError):
+        return _MAX_IMAGE_TOKENS
+    return min(-(-pixels // _PIXELS_PER_TOKEN), _MAX_IMAGE_TOKENS)
+
+
 def encode(image: ImageRef) -> Optional[str]:
     """Base64 of the referenced file, or ``None`` when it is gone."""
     try:

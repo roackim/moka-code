@@ -200,7 +200,9 @@ Reasoning is `[thinking] …` only when `filter_thoughts` is off. Owns
 
 `cut_index(history, keep_tokens)` — where the verbatim tail starts: the earliest
 user message from which the rest fits (always at least the last user message;
-notices just before it go with it); `estimate_tokens` is characters / 4.
+notices just before it go with it); `estimate_tokens` is characters / 3 (`CHARS_PER_TOKEN`) plus, per image
+reference, `images.tokens` (width × height / 750, capped at 1600); an API
+message's base64 image parts are never counted as text.
 
 **Strategy.** `compact_history` summarizes only the part before that cut (the
 earlier summary folded in) and inserts the marker *at* the cut, so the newest

@@ -209,3 +209,31 @@ def test_the_context_is_what_the_server_held_after_the_reply_thinking_included(t
 
     assert harness._last_usage.context_tokens == 1105
     assert harness.context_estimate() == 1105           # the reply is not counted twice
+
+
+def test_an_image_counts_by_its_size_not_its_base64(tmp_path):
+    """2026-10-26: the estimate counted the request's base64 as text, ~10x the
+    real cost (a 905x470 screenshot: ~6000 instead of ~570); an image added
+    after the server's count was not counted at all."""
+    from pathlib import Path
+
+    from moka_code.harness import images
+
+    async def stream(messages, tools=None):
+        yield Chunk(text="done", usage=TokenUsage(prompt_tokens=100, completion_tokens=5))
+
+    harness = _harness(tmp_path, 100_000, stream)
+    harness.history.clear()
+    ref = images.store(Path("img/screenshot.png").read_bytes(), None, "screenshot.png")
+    harness.history.append({"id": "u1", "role": "user", "content": "", "images": [ref]})
+    assert images.tokens(ref) == 568                     # 905 x 470 / 750, rounded up
+
+    without = harness.context_estimate() - images.tokens(ref)
+    harness.history.clear()
+    harness.history.append({"id": "u1", "role": "user", "content": ""})
+    assert harness.context_estimate() == without         # nothing else for the picture
+
+    _chat(harness)
+    harness.history.append({"id": "u2", "role": "user", "content": "", "images": [ref]})
+    assert harness.context_estimate() == 105 + 568       # added after the count: still sized
+    assert images.tokens({"width": 4000, "height": 3000}) == 1600   # servers downscale

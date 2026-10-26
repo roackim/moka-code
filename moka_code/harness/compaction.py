@@ -10,6 +10,8 @@ import json
 import re
 from typing import Any, Dict, List
 
+from moka_code.harness import images
+
 COMPACTION_MARKER_PREFIX = "[COMPACTION_SUMMARY]"
 
 _COMMAND_CHARS = 120
@@ -92,14 +94,25 @@ CHARS_PER_TOKEN = 3
 
 
 def estimate_tokens(entries: List[Dict[str, Any]]) -> int:
-    """A rough token count (characters / CHARS_PER_TOKEN) for history entries or API messages."""
+    """A rough token count (characters / CHARS_PER_TOKEN) for history entries or API messages.
+
+    Images count by their size (``images.tokens``) from a history entry's
+    references; an API message's encoded image parts are skipped, never
+    counted as base64 text (that was ~10x the real cost)."""
     chars = 0
+    image_tokens = 0
     for entry in entries:
-        chars += len(str(entry.get("content") or ""))
+        content = entry.get("content") or ""
+        if isinstance(content, list):
+            chars += sum(len(part.get("text") or "") for part in content
+                         if isinstance(part, dict) and part.get("type") == "text")
+        else:
+            chars += len(str(content))
         chars += len(str(entry.get("reasoning_content") or ""))     # replayed thinking
         if entry.get("tool_calls"):
             chars += len(json.dumps(entry["tool_calls"], ensure_ascii=False))
-    return chars // CHARS_PER_TOKEN
+        image_tokens += sum(images.tokens(image) for image in entry.get("images") or ())
+    return chars // CHARS_PER_TOKEN + image_tokens
 
 
 def cut_index(history: List[Dict[str, Any]], keep_tokens: int) -> int:
