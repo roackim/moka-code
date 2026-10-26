@@ -509,6 +509,7 @@ class Harness:
             max_files=settings.config.context_max_files,
             max_depth=settings.config.context_max_depth,
             ignore_gitignore=settings.config.context_ignore_gitignore,
+            ignore_dotfiles=settings.config.context_ignore_dotfiles,
         )
 
     def _context_window(self) -> Optional[int]:

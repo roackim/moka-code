@@ -205,6 +205,8 @@ server (an error for the active one, a warning for the others), as are unset
 
 **Context / ui:** `context_max_files`,
 `context_max_depth`, `context_ignore_gitignore`,
+`context_ignore_dotfiles` (`context.ignore_dotfiles`: the `@` list leaves out
+names starting with `.`; `.git/` always; default off, so they are listed),
 `context_max_image_mb` (`context.max_image_mb`, largest attachable image),
 `context_sessions` (`context.sessions`, conversations saved per project; 0 = off),
 `context_compact_filter_thoughts` / `context_compact_filter_tool_calls`

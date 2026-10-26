@@ -295,6 +295,7 @@ DEFAULT_CONTEXT_TOML = """\
 # max_files = 500
 # max_depth = 4
 # ignore_gitignore = false
+# ignore_dotfiles = false               # hide .env, .github/ and other dot names (.git/ always)
 
 ## Images and sessions
 
@@ -400,6 +401,7 @@ _CONTEXT_SPEC: Dict[str, tuple[str, str]] = {
     "max_files": ("context_max_files", "int"),
     "max_depth": ("context_max_depth", "int"),
     "ignore_gitignore": ("context_ignore_gitignore", "bool"),
+    "ignore_dotfiles": ("context_ignore_dotfiles", "bool"),
     "max_image_mb": ("context_max_image_mb", "int_or_float"),
     "sessions": ("context_sessions", "int"),
     "compact_filter_thoughts": ("context_compact_filter_thoughts", "bool"),
@@ -1005,6 +1007,7 @@ class Config:
         self.context_max_files: int = 500
         self.context_max_depth: int = 4
         self.context_ignore_gitignore: bool = False
+        self.context_ignore_dotfiles: bool = False
         self.context_max_image_mb: float = 5
         self.context_sessions: int = 10
         self.context_compact_filter_thoughts: bool = True

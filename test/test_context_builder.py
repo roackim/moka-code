@@ -42,12 +42,13 @@ class TestListFilesBounded:
         assert 'a/b/c/d/' not in entries
         assert 'a/b/c/d/x.py' not in entries
 
-    def test_prunes_dot_folders(self, tmp_path):
-        """Should skip dot-folders like .git and .venv."""
+    def test_ignore_dotfiles_prunes_them(self, tmp_path):
+        """ignore_dotfiles=True skips every dot name, like .git and .venv."""
         (tmp_path / '.git').mkdir()
         (tmp_path / '.venv').mkdir()
+        (tmp_path / '.env').write_text("")
         (tmp_path / 'ok.py').write_text("")
-        entries = list_files_bounded(str(tmp_path))
+        entries = list_files_bounded(str(tmp_path), ignore_dotfiles=True)
         assert 'ok.py' in entries
         assert not any(e.startswith('.') for e in entries)
 
@@ -73,3 +74,18 @@ class TestListFilesBounded:
         entries = list_files_bounded(str(tmp_path), ignore_gitignore=True)
         assert 'main.py' in entries
         assert 'build/' in entries
+
+    def test_dotfiles_are_listed_by_default_but_never_git(self, tmp_path):
+        """2026-10-26: a .env or .github/ file can be @'d unless
+        context.ignore_dotfiles is set."""
+        (tmp_path / '.git').mkdir()
+        (tmp_path / '.git' / 'HEAD').write_text("")
+        (tmp_path / '.github').mkdir()
+        (tmp_path / '.github' / 'ci.yml').write_text("")
+        (tmp_path / '.env').write_text("")
+        (tmp_path / '.gitignore').write_text(".secret\n")
+        (tmp_path / '.secret').write_text("")
+        entries = list_files_bounded(str(tmp_path))
+        assert {'.env', '.gitignore', '.github/', '.github/ci.yml'} <= set(entries)
+        assert not any(e.startswith('.git/') for e in entries)
+        assert '.secret' not in entries                     # .gitignore still applies

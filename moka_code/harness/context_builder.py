@@ -18,6 +18,7 @@ def list_files_bounded(
     max_files: int = 500,
     max_depth: int = 4,
     ignore_gitignore: bool = False,
+    ignore_dotfiles: bool = False,
 ) -> List[str]:
     """List files/folders under ``root`` with bounded work.
 
@@ -26,9 +27,10 @@ def list_files_bounded(
     is reached. This keeps the @ file picker responsive even when opened on a
     huge tree (e.g. ``$HOME``) by never walking the whole directory.
 
-    Dot-folders are always pruned. ``.gitignore`` is respected unless
-    ``ignore_gitignore`` is True (useful when the user wants to reference a
-    gitignored file such as ``.env`` or a build artifact).
+    Names starting with ``.`` (files and folders) are skipped when
+    ``ignore_dotfiles`` is True; ``.git`` always is. ``.gitignore`` is respected
+    unless ``ignore_gitignore`` is True (useful when the user wants to reference
+    a gitignored file such as a build artifact).
 
     Returns a list of relative paths; directories end with ``/``.
     """
@@ -45,7 +47,7 @@ def list_files_bounded(
         dirnames = []
         filenames = []
         for name in names:
-            if name.startswith('.'):
+            if name == '.git' or (name.startswith('.') and ignore_dotfiles):
                 continue
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root)
