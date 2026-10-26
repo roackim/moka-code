@@ -215,8 +215,18 @@ size from `context_estimate()` = last reported prompt tokens + an estimate of
 what was added since): after a turn ends over `compact_at` (0.8), and before each
 request inside a turn over `compact_stop_at` (0.85), which compacts and carries
 on; if nothing older can be summarized, or the estimate stays over the limit, the
-turn stops with an error. Progress and failures are `events.Notice`; an unknown
-window turns auto-compaction off and the notice band says so. `0` disables.
+turn stops with an error. Progress and failures are `events.Notice`, a success
+is `events.Compacted(marker_id)`; an unknown window turns auto-compaction off
+and the notice band says so. `0` disables.
+
+**The marker's metadata.** `marker["compaction"] = {messages, before, after,
+until}` (not an API field, so never sent; kept in sessions): the summarized
+count, `context_estimate()` before/after, and `until`, the id of the last entry
+when it happened. `compaction_view(history, marker_id)` turns it into the
+transcript line's `(label, text)`: the summary, then the entries between the
+marker and `until` (`transcript`, filtered). `truncate_history` moves an
+`until` that was cut to the new last entry; `uncompacted_estimate(id)` is the
+cost of a cut that drops a compaction (None when it drops none).
 
 ### `changes.py`
 `changes(workspace)` → `[Change(path, status, added, removed)]` (`None` outside a

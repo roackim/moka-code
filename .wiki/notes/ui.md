@@ -621,6 +621,20 @@ them). Navigation has two levels:
   expanded (it does not fall back to its compact header), and moving focus away
   from the tool call collapses the output automatically.
 
+**Compaction line** (`CompactionMsg`, `ChatHistoryPanel.add_compaction`). The
+conversation stays on screen as it was. Where it was compacted (`/compact`, or
+`events.Compacted` from auto-compaction), one muted rule is added:
+`─ compacted · 42 messages · 6 kept · ~85k → ~12k tokens ───`. It folds like a
+thought: focused, it unfolds to what the model now sees, the summary (markdown)
+then the kept messages (`compaction.compaction_view`). On resume/import the
+marker is never drawn as an answer: its line comes after the marker's `until`
+entry, where it appeared live (`conversation._with_compaction_lines`).
+Editing a sent message (`handle_edit_sent_action`) that a compaction summarized
+asks *Drop compaction and edit* / *Cancel* with the cost
+(`uncompacted_estimate`: the full history up to it is sent again); without a
+picker nothing is cut. Editing a kept message keeps the compaction, and its line
+is added again after what is left (`_cut_back`).
+
 An **action line** sits above the input with a blank pad row above it
 (`ActionBar.set_top_pad`): an `ActionBar` mounted permanently in the workspace
 body (`ChatScreen(..., action_bar=...)`), collapsed to zero rows and expanded to

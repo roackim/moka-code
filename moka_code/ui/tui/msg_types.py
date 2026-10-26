@@ -95,6 +95,18 @@ class ThinkingMsg(AssistantMsg):
     gutter = "▌"
     clamped = True
 
+class CompactionMsg(MsgType):
+    """The line where the history was compacted: folded to a rule with the
+    counts; focused, it unfolds to the summary and the kept messages. Not a
+    ``SysMsg``: it belongs in the transcript, not the activity overlay."""
+    name = "compaction"
+    title = "compacted"
+    frame_color = "MUTED"
+    content_color = "MUTED"
+    actions = [MsgAction.COPY]
+    gutter = "─"
+
+
 class ToolCallMsg(MsgType):
     name = "tool"
     title = "tool"

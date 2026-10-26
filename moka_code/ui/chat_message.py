@@ -435,7 +435,9 @@ class Message:
         # the full content (used for thinking messages that fold by default).
         self.collapsed = False
         # Whether this message type folds by default and expands on focus.
-        self.collapsible = isinstance(msg_type, msg_types.ThinkingMsg)
+        self.collapsible = isinstance(msg_type, (msg_types.ThinkingMsg, msg_types.CompactionMsg))
+        # The folded line of a compaction (``compaction.compaction_view``).
+        self.fold_label: Optional[str] = None
         # Live wait-phase label for a collapsible status message (e.g.
         # "processing", "thinking"); rendered collapsed while in flight.
         self.status_phase: Optional[str] = None
@@ -664,7 +666,7 @@ class Message:
         """
         if self.is_tool_message():
             label = self._tool_trailing()
-        elif self.collapsible:
+        elif isinstance(self.type, msg_types.ThinkingMsg):
             label = self._thinking_label()
         else:
             return
@@ -729,6 +731,12 @@ class Message:
         A live thinking line shows its ticking label plus the tail of the
         latest reasoning line; a finalized one reads ``thought for Xs``.
         """
+        if isinstance(self.type, msg_types.CompactionMsg):
+            # A rule across the transcript, joined to the ``─`` gutter.
+            line = f"─ {self.fold_label or self.type.title} "
+            line += "─" * max(0, max_width + 1 - display_width(line))
+            subbuffer.write_str(1, 0, line, fg=fg, bg=bg, max_width=max(0, max_width + 1))
+            return
         if not isinstance(self.type, msg_types.ThinkingMsg):
             line = self.type.title or self.type.name
         else:

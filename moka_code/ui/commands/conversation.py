@@ -197,12 +197,36 @@ def _add_answer(ui: ChatUIProtocol, text: str, ids) -> None:
         split(answer)
 
 
+def _is_marker(message: Dict[str, Any]) -> bool:
+    from moka_code.harness.compaction import COMPACTION_MARKER_PREFIX
+
+    return (message.get("role") == "assistant"
+            and str(message.get("content") or "").startswith(COMPACTION_MARKER_PREFIX))
+
+
+def _with_compaction_lines(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
+    """Yield the history's entries; once the loop is done with the entry a
+    compaction ended on (its ``until``, else the marker itself), add that
+    compaction's line, where it appeared live."""
+    lines_after: Dict[str, List[str]] = {}
+    for message in history:
+        if _is_marker(message):
+            until = (message.get("compaction") or {}).get("until") or message.get("id")
+            lines_after.setdefault(until, []).append(message.get("id"))
+    for message in history:
+        yield message
+        # Resumed only after the loop body, ``continue`` included.
+        for marker_id in lines_after.get(message.get("id"), ()):
+            ui.chat_history_panel.add_compaction(history, marker_id)
+
+
 def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
     """Reconstruct visible messages from imported harness history.
 
     Content is shown verbatim (inline ``<think>`` tags of older exports
-    included), as it is stored and sent back."""
-    for message in history:
+    included), as it is stored and sent back. A compaction marker is not an
+    answer: its line comes where the compaction happened."""
+    for message in _with_compaction_lines(ui, history):
         role = message.get("role", "")
         content = message.get("content", "")
         message_id = message.get("id", "")
@@ -210,6 +234,8 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
 
         if role == "user" and message.get("source") == "tool":
             continue  # images returned by read: the read line already shows them
+        if _is_marker(message):
+            continue
         if role == "user":
             ui.chat_history_panel.add_user_message(content or "", message.get("images") or (),
                                                    harness_message_ids=ids)

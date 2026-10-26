@@ -120,11 +120,18 @@ class Notice:
 
 
 @dataclass
+class Compacted:
+    """The history was compacted; ``marker_id`` is the summary entry's id
+    (``compaction.compaction_view`` describes it)."""
+    marker_id: str
+
+
+@dataclass
 class Done:
     """The generation stream has finished."""
 
 
 Event = Union[
     Start, Token, Reasoning, ToolCallDraft, ToolCall, PermissionRequest,
-    ToolOutput, ToolResult, Usage, Error, Notice, Done
+    ToolOutput, ToolResult, Usage, Error, Notice, Compacted, Done
 ]

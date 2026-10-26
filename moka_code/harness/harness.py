@@ -454,13 +454,33 @@ class Harness:
 
     def truncate_history(self, message_id: str) -> bool:
         """Drop the entry with this id and everything after it (editing a user
-        message in place). False when no entry has that id."""
+        message in place). False when no entry has that id. A compaction whose
+        last entry went keeps its line after what is left (``until``)."""
         for index, entry in enumerate(self.history):
             if entry.get("id") == message_id:
                 del self.history[index:]
                 self._last_usage = None
+                ids = {e.get("id") for e in self.history}
+                for kept in self.history:
+                    meta = kept.get("compaction")
+                    if meta and meta.get("until") not in ids:
+                        meta["until"] = self.history[-1]["id"]
                 return True
         return False
+
+    def uncompacted_estimate(self, message_id: str) -> Optional[int]:
+        """When cutting the history back to before this entry drops a
+        compaction, the tokens the next request would then take (the summarized
+        messages are sent again); None when it drops none."""
+        index = next((i for i, e in enumerate(self.history) if e.get("id") == message_id), None)
+        if index is None or not any(self._is_compaction_message(e) for e in self.history[index:]):
+            return None
+        history, usage = self.history, self._last_usage
+        try:
+            self.history, self._last_usage = history[:index], None
+            return self.context_estimate()
+        finally:
+            self.history, self._last_usage = history, usage
 
     def set_private(self, on: bool) -> None:
         """Enter or leave private mode (``/private``; ``/clear`` leaves it)."""
@@ -506,7 +526,8 @@ class Harness:
         if usage is not None and usage.context_tokens is not None \
                 and at is not None and at <= len(self.history):
             return usage.context_tokens + estimate_tokens(self.history[at:])
-        tools = json.dumps(self.tool_schemas, ensure_ascii=False) if self.tool_schemas else ""
+        schemas = getattr(self, "tool_schemas", None)
+        tools = json.dumps(schemas, ensure_ascii=False) if schemas else ""
         # The request's image parts are base64 and not counted; size them from
         # the history's references instead.
         pictures = sum(images.tokens(image) for entry in self._get_effective_history()
@@ -529,6 +550,7 @@ class Harness:
 
         if self.endpoint is None:
             raise RuntimeError("no model selected (/model)")
+        tokens_before = self.context_estimate()
         effective_history = list(self._get_effective_history())
         if not effective_history:
             return {
@@ -614,6 +636,12 @@ class Harness:
                              "content": self._sandbox_notice(*announced)})
         self.history[position:position] = inserted
         self._last_usage = None         # the count no longer matches the history
+        tokens_after = self.context_estimate()
+        # Shown by the transcript's compaction line (never sent: not an API
+        # field). ``until`` is the last entry when it happened: the line goes
+        # after it, and the kept messages it lists end there.
+        marker["compaction"] = {"messages": len(head), "before": tokens_before,
+                                "after": tokens_after, "until": self.history[-1]["id"]}
         self.debug_stream.log("COMPACT", f"Inserted compaction marker {compaction_id} over {len(head)} messages, kept {len(tail)}")
 
         return {
@@ -622,6 +650,8 @@ class Harness:
             "compacted_messages": len(head),
             "kept_messages": len(tail),
             "summary_chars": len(summary_text),
+            "tokens_before": tokens_before,
+            "tokens_after": tokens_after,
         }
 
     async def _auto_compact(self, at: float, running: bool) -> AsyncGenerator[events.Event, None]:
@@ -647,10 +677,8 @@ class Harness:
             self._auto_compact_failed = True
             yield events.Notice(f"Auto-compact failed: {result.get('message', 'unknown error')}", "error")
             return
-        after = self.context_estimate()
-        yield events.Notice(
-            f"Compacted: ~{used // 1000}k → ~{after // 1000}k tokens "
-            f"({result['compacted_messages']} messages summarized, {result['kept_messages']} kept)")
+        after = result["tokens_after"]
+        yield events.Compacted(result["message_id"])
         if running and after >= at * window:
             self._auto_compact_failed = True
             yield events.Notice(

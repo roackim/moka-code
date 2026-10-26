@@ -283,15 +283,11 @@ async def cmd_compact(ui: ChatUIProtocol, args: List[str]):
                 msg_type=SysMsg(), title="compact")
             ui.chat_history_panel.replace_message(placeholder, compact_msg)
             return
-        compact_msg = ui.chat_history_panel.new_message(
-            (
-                f"Compaction complete: {result['compacted_messages']} messages summarized, "
-                f"{result['kept_messages']} kept\n"
-                f"Inserted marker: {result['message_id']}\n"
-                f"Summary size: {result['summary_chars']:,} chars"
-            ),
-            msg_type=SysMsg(), title="compact")
-        ui.chat_history_panel.replace_message(placeholder, compact_msg)
+        # The transcript's compaction line says what happened (unfold: the summary).
+        ui.chat_history_panel.remove_message(placeholder)
+        ui.chat_history_panel.add_compaction(ui.agent.history, result["message_id"])
+        if hasattr(ui, "refresh_status_bar"):
+            ui.refresh_status_bar()
     except Exception as exc:
         error_msg = ui.chat_history_panel.new_message(
             f"Compaction failed: {exc}", msg_type=SysMsgError(), title="compact")

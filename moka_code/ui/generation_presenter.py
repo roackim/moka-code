@@ -348,6 +348,10 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                     msg_type=SysMsgError() if event.level == "error" else SysMsg(),
                     title="compact")
 
+            elif isinstance(event, events.Compacted):
+                chat.add_compaction(app.agent.history, event.marker_id)
+                app.refresh_status_bar()
+
             elif isinstance(event, events.Error):
                 aborted_status = "error"
                 end_status_message()

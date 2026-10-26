@@ -3,7 +3,7 @@
 import bisect
 import logging
 import time
-from typing import Optional, Any
+from typing import Any, List, Optional
 from moka_code.ui.tui.buffer import Buffer
 from moka_code.ui.tui.components import TextComponent
 from moka_code.ui.tui.components.box import Box
@@ -963,10 +963,12 @@ class ChatHistoryPanel(TextComponent):
     @staticmethod
     def _should_render_markdown(msg_type: MsgType) -> bool:
         """Return True if this message type should render markdown."""
-        from moka_code.ui.tui.msg_types import AssistantMsg, ThinkingMsg
+        from moka_code.ui.tui.msg_types import AssistantMsg, CompactionMsg, ThinkingMsg
         # ThinkingMsg intentionally excluded: thinking content is plain text,
         # markdown would misinterpret it and break trailing-newline stripping.
-        return isinstance(msg_type, AssistantMsg) and not isinstance(msg_type, ThinkingMsg)
+        # A compaction shows the model's summary, which is markdown.
+        return (isinstance(msg_type, AssistantMsg) and not isinstance(msg_type, ThinkingMsg)
+                or isinstance(msg_type, CompactionMsg))
 
     def new_message(self, message: str, *, msg_type: MsgType = None, title: str = None, frame_color: RGB = None, content_color: RGB = None, left_margin: int = 0, right_margin: int = 0, harness_message_ids: list = None, append=False, queued: bool = False) -> Message:
         """Create a new message. If append is True, add it to the chat history. Return the Message object for further manipulation.
@@ -1159,6 +1161,29 @@ class ChatHistoryPanel(TextComponent):
         if lines:
             msg.copy_text = text
         return msg
+
+    def add_compaction(self, history: list, marker_id: str) -> Optional[Message]:
+        """Add the compaction line of the marker ``marker_id``: folded to a rule
+        with its counts, unfolded (focused) to the summary and the messages kept
+        word for word. None when the history has no such marker."""
+        from moka_code.harness.compaction import compaction_view
+        from moka_code.ui.tui.msg_types import CompactionMsg
+
+        view = compaction_view(history, marker_id)
+        if view is None:
+            return None
+        label, text = view
+        msg = self.add_message(text, msg_type=CompactionMsg(), harness_message_ids=[marker_id])
+        msg.fold_label = label
+        msg.set_collapsed(True)
+        msg.finalize()
+        return msg
+
+    def compaction_lines(self) -> List[Message]:
+        """The compaction lines in the transcript, oldest first."""
+        from moka_code.ui.tui.msg_types import CompactionMsg
+
+        return [msg for msg in self.messages if isinstance(msg.type, CompactionMsg)]
 
     def add_message(self, message: str, msg_type: MsgType = None, title: str = None, frame_color: RGB = None, content_color: RGB = None, left_margin: int = 0, right_margin: int = 0, harness_message_ids: list = None, queued: bool = False) -> Message:
         """Add a message to chat history and update UI.

@@ -127,11 +127,17 @@ def test_a_turn_that_ends_over_the_soft_limit_is_compacted_after_it(tmp_path):
     seen = _chat(harness)
 
     assert calls == ["turn", "summary"]
-    assert [type(e) for e in seen if isinstance(e, (events.Notice, events.Done))] == [
-        events.Notice, events.Notice, events.Done]
+    kinds = (events.Notice, events.Compacted, events.Done)
+    assert [type(e) for e in seen if isinstance(e, kinds)] == list(kinds)
     ids = [e["content"] for e in harness.history]
     marker = next(i for i, c in enumerate(ids) if str(c).startswith(COMPACTION_MARKER_PREFIX))
     assert ids[marker + 1] == "go"                      # the marker sits before the kept turn
+    compacted = next(e for e in seen if isinstance(e, events.Compacted))
+    assert compacted.marker_id == harness.history[marker]["id"]
+    meta = harness.history[marker]["compaction"]
+    assert f"compacted_messages={meta['messages']}\n" in harness.history[marker]["content"]
+    assert meta["until"] == harness.history[-1]["id"]
+    assert meta["before"] > meta["after"]
     assert [e["role"] for e in harness._get_effective_history()] == ["assistant", "user", "assistant"]
 
 

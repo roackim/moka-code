@@ -208,7 +208,11 @@ class ChatActionHandlers:
     def handle_edit_sent_action(self, message):
         """Cut the conversation back to just before this user message and put
         it in the input. Sending it again continues from there; the messages
-        after it are gone (the session file keeps them until the next save)."""
+        after it are gone (the session file keeps them until the next save).
+
+        A message that a compaction summarized takes that compaction with it
+        (the summary covers what is cut), so the full history up to it is sent
+        again: that is asked first."""
         if self.is_generating():
             self.flash_hint("stop the response first (esc)")
             return
@@ -216,9 +220,33 @@ class ChatActionHandlers:
         entry = next((e for e in self.agent.history if e.get("id") in ids), None)
         if entry is None:
             return
+        estimate = getattr(self.agent, "uncompacted_estimate", None)
+        tokens = estimate(entry["id"]) if callable(estimate) else None
+        if tokens is None:
+            self._cut_back(message, entry)
+            return
+        drop, cancel = "Drop compaction and edit", "Cancel"
+        show = getattr(self, "show_search_modal", None)
+        modal = show(f"This message was compacted: editing it drops the summary "
+                     f"(~{tokens // 1000}k tokens sent again)", [drop, cancel],
+                     on_accept=lambda choice: choice == drop and self._cut_back(message, entry),
+                     ordered=True) if callable(show) else None
+        if modal is None:
+            self.flash_hint("this message was compacted; editing it needs the confirmation picker")
+
+    def _cut_back(self, message, entry) -> None:
+        """``handle_edit_sent_action``'s cut: history and transcript from
+        ``entry``/``message`` on go, the text returns to the input. A compaction
+        still in effect keeps its line, after what is left."""
         text, attached = getattr(message, "draft", None) or (
             entry.get("content") or "", list(entry.get("images") or ()))
-        self.agent.truncate_history(entry["id"])
         panel = self.chat_history_panel
+        lines = panel.compaction_lines()
+        self.agent.truncate_history(entry["id"])
         panel.truncate_from(message)
+        kept = {e.get("id") for e in self.agent.history}
+        for line in lines:
+            marker_id = (line.harness_message_ids or [None])[0]
+            if line not in panel.messages and marker_id in kept:
+                panel.add_compaction(self.agent.history, marker_id)
         self._fill_input(text, attached)

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from moka_code.harness import images
 
@@ -86,6 +86,49 @@ def transcript(history: List[Dict[str, Any]], *, filter_thoughts: bool,
                                  f"{(call.get('function') or {}).get('arguments', '')}")
                     lines.append(f"  [tool result] {result}")
     return "\n".join(lines)
+
+
+def _k(tokens: int) -> str:
+    return f"{tokens / 1000:.1f}k" if tokens < 10_000 else f"{tokens // 1000}k"
+
+
+def compaction_view(history: List[Dict[str, Any]],
+                    marker_id: str) -> Optional[Tuple[str, str]]:
+    """The transcript's compaction line for the marker ``marker_id``:
+    ``(label, text)``. The label is the folded line (``compacted · 42 messages
+    · ~85k → ~12k tokens``); the text is what the model now sees instead: the
+    summary, then the messages kept word for word. None when there is no such
+    marker."""
+    index = next((i for i, e in enumerate(history)
+                  if e.get("id") == marker_id and e.get("role") == "assistant"
+                  and str(e.get("content") or "").startswith(COMPACTION_MARKER_PREFIX)), None)
+    if index is None:
+        return None
+    marker = history[index]
+    header, _, summary = marker["content"].partition("\n\n")
+    meta = marker.get("compaction") or {}
+    count = meta.get("messages")
+    if count is None:       # a marker written before the metadata: read its header
+        found = re.search(r"compacted_messages=(\d+)", header)
+        count = int(found.group(1)) if found else None
+    until = next((i for i in range(index, len(history))
+                  if history[i].get("id") == meta.get("until")), index)
+    kept = [e for e in history[index + 1:until + 1] if e.get("role") != "system"]
+
+    label = ["compacted"]
+    if count is not None:
+        label.append(f"{count} messages")
+    label.append(f"{len(kept)} kept")
+    if meta.get("before") is not None and meta.get("after") is not None:
+        label.append(f"~{_k(meta['before'])} → ~{_k(meta['after'])} tokens")
+
+    text = summary.strip()
+    if kept:
+        shown = transcript(kept, filter_thoughts=True, filter_tool_calls=True)
+        fence = "````" if "```" in shown else "```"
+        text += (f"\n\n---\n\n**Kept word for word** ({len(kept)} messages):\n\n"
+                 f"{fence}text\n{shown}\n{fence}")
+    return " · ".join(label), text
 
 
 # Code, JSON and non-English text run near 3 characters per token, prose near

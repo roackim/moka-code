@@ -76,6 +76,9 @@ class FakeServer:
     def context_window(self):
         return 32768
 
+    def replay(self, entry):
+        return {}
+
     async def stream(self, messages, tools=None):
         from moka_code.harness.endpoint import Chunk
 
