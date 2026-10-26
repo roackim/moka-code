@@ -183,7 +183,7 @@ def prompt_descriptions() -> Dict[str, str]:
 
 
 def role_name_completions() -> List[str]:
-    """Return the available role names (for ``/role <name>``)."""
+    """Return the available role names (for ``/role select <name>``)."""
     from moka_code.harness import roles
 
     return roles.list_roles()
@@ -203,19 +203,38 @@ def role_descriptions() -> Dict[str, str]:
 
 
 def theme_name_completions() -> List[str]:
-    """Return the selectable color theme names (for ``/config theme <id>``)."""
+    """Return the selectable color theme names (for ``/theme select <name>``)."""
     from moka_code.ui.tui.colors import theme_names
 
     return theme_names()
 
 
+def theme_file_completions() -> List[str]:
+    """Return the themes that have a file (for ``/theme path`` and ``remove``)."""
+    return sorted(getattr(settings.config, "themes", {}))
+
+
 def theme_descriptions() -> Dict[str, str]:
     """Return theme name -> description (for completion menus)."""
+    from moka_code.ui.tui.colors import BUILTIN_THEMES
+
     custom = set(getattr(settings.config, "themes", {}))
-    return {
-        name: ("custom (themes.toml)" if name in custom else "built-in")
-        for name in theme_name_completions()
-    }
+    labels = {(False, True): "built-in", (True, True): "built-in, edited", (True, False): "custom"}
+    return {name: labels[(name in custom, name in BUILTIN_THEMES)]
+            for name in theme_name_completions()}
+
+
+def show_subcommands(ui: ChatUIProtocol, command: "Command", args: List[str]) -> None:
+    """Bare ``/cmd`` lists its subcommands; a word that is not one says so."""
+    from moka_code.ui.tui.msg_types import SysMsgError
+
+    if args:
+        ui.chat_history_panel.add_message(
+            f"Unknown subcommand '{args[0]}'. Valid: {', '.join(command.subcommands)}",
+            msg_type=SysMsgError(), title=command.name)
+        return
+    lines = [f"{name.ljust(8)} {sub.description}" for name, sub in command.subcommands.items()]
+    ui.show_popup(command.name, "Subcommands:\n" + "\n".join(lines), content_padding=0)
 
 
 async def open_project_sandbox(ui: ChatUIProtocol, name: Optional[str] = None) -> None:

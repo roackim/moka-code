@@ -221,7 +221,7 @@ def next_sandbox_command(ui: ChatUIProtocol) -> Optional[str]:
 # --- subcommand handlers ---------------------------------------------------
 
 async def sandbox_help(ui: ChatUIProtocol, args: List[str], command) -> None:
-    """Bare ``/sandbox`` opens the picker (like ``/model``, ``/role``); with no
+    """Bare ``/sandbox`` opens the picker (like ``/model``); with no
     sandbox to pick, or an unknown subcommand, it lists the subcommands."""
     from moka_code import projects
 

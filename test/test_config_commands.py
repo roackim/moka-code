@@ -129,8 +129,8 @@ def test_config_command_no_args_opens_the_section_picker(monkeypatch, tmp_path):
     asyncio.run(cmd_config(ui, []))
 
     assert captured["title"] == "Config"
-    assert {"ui", "servers", "theme"} <= set(captured["items"])
-    assert not {"sandbox", "role", "role-delete"} & set(captured["items"])  # own commands
+    assert {"ui", "servers"} <= set(captured["items"])
+    assert not {"sandbox", "role", "theme", "styles"} & set(captured["items"])  # own commands / merged
     assert not captured.get("ordered")                  # the menu sorts it
     assert captured["descriptions"]["ui"] == "Edit ui.toml and reload"
 
@@ -163,39 +163,84 @@ def test_config_command_without_editor_reports_error(monkeypatch):
     assert any("No editor" in m for m in ui.chat_history_panel.messages)
 
 
-def test_config_theme_materializes_section(monkeypatch, tmp_path):
+# -- /theme edit | create | path | remove: one file per theme (2026-10-26) ---------
+
+def _theme_ui(monkeypatch, tmp_path, opened):
     import moka_code.settings as cfg_mod
 
+    config = cfg_mod.Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+    monkeypatch.setattr(cfg_mod, "config", config)
     monkeypatch.setattr(cfg_mod, "get_config_dir", lambda: tmp_path)
     monkeypatch.setattr(cfg_mod, "get_state_path", lambda: tmp_path / "state.toml")
     monkeypatch.setenv("EDITOR", "my-editor")
-    ui = _UI()
+    monkeypatch.setattr("moka_code.ui.external_editor.open_editor", _recording_editor(opened))
+    return _UI()
+
+
+def cmd_theme(ui, args):
+    return COMMANDS["theme"].execute(ui, args)
+
+
+def test_theme_edit_writes_a_builtin_out_as_its_own_file(monkeypatch, tmp_path):
+    import moka_code.settings as cfg_mod
+
     opened = []
+    ui = _theme_ui(monkeypatch, tmp_path, opened)
 
-    monkeypatch.setattr(
-        "moka_code.ui.external_editor.open_editor",
-        _recording_editor(opened),
-    )
+    asyncio.run(cmd_theme(ui, ["edit", "nord"]))
 
-    asyncio.run(cmd_config(ui, ["theme", "nord"]))
-
-    text = (tmp_path / "themes.toml").read_text(encoding="utf-8")
-    assert "[themes.nord]" in text
-    assert opened == [tmp_path / "themes.toml"]
+    path = tmp_path / "themes" / "nord.toml"
+    assert opened == [path]
+    assert "TOOL" in path.read_text(encoding="utf-8")     # the whole palette
+    assert not any("error" in m for m in ui.chat_history_panel.messages)
+    assert cfg_mod.config.load_errors == [] and "nord" in cfg_mod.config.themes
 
 
-def test_config_theme_unknown_reports_error(monkeypatch, tmp_path):
+def test_theme_edit_unknown_creates_nothing(monkeypatch, tmp_path):
+    ui = _theme_ui(monkeypatch, tmp_path, [])
+
+    asyncio.run(cmd_theme(ui, ["edit", "nope"]))
+
+    assert any("/theme create nope" in m for m in ui.chat_history_panel.messages)
+    assert not (tmp_path / "themes").exists()
+
+
+def test_theme_create_copies_the_active_palette_and_refuses_builtins(monkeypatch, tmp_path):
     import moka_code.settings as cfg_mod
 
-    monkeypatch.setattr(cfg_mod, "get_config_dir", lambda: tmp_path)
-    monkeypatch.setattr(cfg_mod, "get_state_path", lambda: tmp_path / "state.toml")
-    monkeypatch.setenv("EDITOR", "my-editor")
-    ui = _UI()
-    monkeypatch.setattr("moka_code.ui.external_editor.open_editor", _recording_editor([]))
+    opened = []
+    ui = _theme_ui(monkeypatch, tmp_path, opened)
 
-    asyncio.run(cmd_config(ui, ["theme", "nope"]))
+    asyncio.run(cmd_theme(ui, ["create", "mine"]))
+    assert opened == [tmp_path / "themes" / "mine.toml"]
+    assert "mine" in cfg_mod.config.themes
 
-    assert any("Unknown theme" in m for m in ui.chat_history_panel.messages)
+    asyncio.run(cmd_theme(ui, ["create", "mine"]))
+    assert any("already exists" in m for m in ui.chat_history_panel.messages)
+    asyncio.run(cmd_theme(ui, ["create", "nord"]))
+    assert any("/theme edit nord" in m for m in ui.chat_history_panel.messages)
+    assert not (tmp_path / "themes" / "nord.toml").exists()
+
+
+def test_theme_path_and_remove_need_a_file(monkeypatch, tmp_path):
+    ui = _theme_ui(monkeypatch, tmp_path, [])
+    monkeypatch.setattr("moka_code.ui.clipboard.copy_to_clipboard", lambda text: None)
+
+    asyncio.run(cmd_theme(ui, ["path", "nord"]))
+    assert any("built-in and has no file" in m for m in ui.chat_history_panel.messages)
+
+    asyncio.run(cmd_theme(ui, ["create", "mine"]))
+    asyncio.run(cmd_theme(ui, ["path", "mine"]))
+    path = tmp_path / "themes" / "mine.toml"
+    assert any(str(path) in m for m in ui.chat_history_panel.messages)
+
+    asked = {}
+    ui.show_search_modal = lambda title, items, **k: asked.update(title=title, items=items, **k)
+    async def remove():
+        await cmd_theme(ui, ["remove", "mine"])
+        asked["on_accept"]("Remove")
+    asyncio.run(remove())
+    assert not path.exists()
 
 
 def test_edit_command_opens_requested_file(monkeypatch, tmp_path):
@@ -308,7 +353,7 @@ def test_role_edit_never_creates_a_file(monkeypatch, tmp_path):
     assert any("/role create reveiw" in m for m in ui.chat_history_panel.messages)
 
 
-def test_role_create_writes_a_starter_and_refuses_an_existing_or_verb_name(monkeypatch, tmp_path):
+def test_role_create_writes_a_starter_and_refuses_an_existing_name(monkeypatch, tmp_path):
     ui, _ = _role_ui(monkeypatch, tmp_path)
     _editing(monkeypatch, None, "")
 
@@ -318,8 +363,9 @@ def test_role_create_writes_a_starter_and_refuses_an_existing_or_verb_name(monke
     asyncio.run(cmd_role(ui, ["create", "agent"]))
     assert any("already exists" in m for m in ui.chat_history_panel.messages)
 
+    # Names no longer sit beside the verbs (/role select <name>), so a verb is a fine name.
     asyncio.run(cmd_role(ui, ["create", "path"]))
-    assert not (tmp_path / "roles" / "path.toml").exists()
+    assert (tmp_path / "roles" / "path.toml").exists()
 
 
 def test_role_path_defaults_to_the_active_role(monkeypatch, tmp_path):

@@ -58,34 +58,48 @@ class _UI:
         self.switched.append(role.name)
 
 
-def test_bare_role_opens_a_picker_and_a_name_switches_directly(monkeypatch, tmp_path):
+def test_role_select_opens_a_picker_and_a_name_switches_directly(monkeypatch, tmp_path):
     import moka_code.harness.roles as roles_module
 
     monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
     roles_module.ensure_roles_dir()
     ui = _UI(with_modal=True)
 
-    asyncio.run(COMMANDS["role"].execute(ui, []))
+    asyncio.run(COMMANDS["role"].execute(ui, ["select"]))
 
     assert ui.modal["title"] == "Roles" and ui.modal["items"] == ["agent", "chat"]
     assert ui.modal["footers"] == {"agent": "active"}
     assert ui.modal["descriptions"]["chat"] == "Pure chat (no tools)"
     assert not ui.popups
     ui.modal["on_accept"]("chat")
-    asyncio.run(COMMANDS["role"].execute(ui, ["agent"]))
+    asyncio.run(COMMANDS["role"].execute(ui, ["select", "agent"]))
     assert ui.switched == ["chat", "agent"]
 
 
-def test_bare_role_without_a_compositor_lists_them_as_text(monkeypatch, tmp_path):
+def test_role_select_without_a_compositor_lists_them_as_text(monkeypatch, tmp_path):
     import moka_code.harness.roles as roles_module
 
     monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
     roles_module.ensure_roles_dir()
     ui = _UI(with_modal=False)
 
-    asyncio.run(COMMANDS["role"].execute(ui, []))
+    asyncio.run(COMMANDS["role"].execute(ui, ["select"]))
 
     assert "active: agent" in ui.popups[-1] and "chat" in ui.popups[-1]
+
+
+def test_bare_role_and_theme_list_their_subcommands_and_a_name_is_not_one():
+    """2026-10-26: role names beside the verbs got mixed up with them, so
+    switching is ``/role select <name>`` and ``/role <name>`` is an error."""
+    for name in ("role", "theme"):
+        ui = _UI(with_modal=True)
+        asyncio.run(COMMANDS[name].execute(ui, []))
+        assert "select" in ui.popups[-1] and "remove" in ui.popups[-1]
+        assert ui.modal is None
+
+        asyncio.run(COMMANDS[name].execute(ui, ["agent"]))
+        assert "Unknown subcommand 'agent'" in ui.messages[-1]
+        assert ui.switched == []
 
 
 def _all_commands(command=None, path=()):
@@ -123,8 +137,10 @@ def test_config_arguments_are_hinted_like_sandbox_ones():
     assert hint("/config ") == " <subcommand>"
     assert hint("/prompt create ") == " <NAME> [SCOPE]"
     assert hint("/prompt create review ") == " [SCOPE]"
+    assert hint("/role select ") == " [NAME]"
     assert hint("/role edit ") == " [NAME]"
     assert hint("/role remove ") == " <NAME>"
     assert hint("/sandbox create ") == " <NAME> <TYPE> [SCOPE]"
-    assert hint("/config theme ") == " [NAME]"
+    assert hint("/theme select ") == " [NAME]"
+    assert hint("/theme remove ") == " <NAME>"
     assert hint("/config ui ") == ""

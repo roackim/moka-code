@@ -595,9 +595,9 @@ def test_next_role_command_wraps(monkeypatch):
 
     monkeypatch.setattr(roles, "list_roles", lambda: ["agent", "chat", "review"])
     ui = SimpleNamespace(agent=SimpleNamespace(role=SimpleNamespace(name="chat")))
-    assert next_role_command(ui) == "/role review"
+    assert next_role_command(ui) == "/role select review"
     ui.agent.role.name = "review"
-    assert next_role_command(ui) == "/role agent"
+    assert next_role_command(ui) == "/role select agent"
 
 
 def test_start_without_id_opens_a_picker_that_starts_the_choice(monkeypatch, tmp_path):

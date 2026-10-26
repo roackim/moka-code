@@ -1,5 +1,6 @@
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from moka_code import settings
 
@@ -182,7 +183,7 @@ tokyo_night = _palette(
 )
 
 
-#: Built-in themes, always available (and overridable via ``themes.toml``).
+#: Built-in themes, always available (and overridable by ``themes/<name>.toml``).
 BUILTIN_THEMES = {
     "terminal":     terminal,
     "moka":         moka,
@@ -196,7 +197,7 @@ theme: _theme = terminal.copy()
 
 
 def _color_from_spec(spec):
-    """Build a color from a ``themes.toml`` palette value.
+    """Build a color from a theme file palette value.
 
     Accepted: ``"#RRGGBB"``, an integer ANSI fg code, or a table
     ``{ ansi = <fg>, bg = <bg> }``.
@@ -225,7 +226,7 @@ def _theme_from_palette(name: str, palette: dict) -> "_theme":
 
 
 def available_themes() -> dict:
-    """Built-in themes plus user ``[themes.<name>]`` definitions from config."""
+    """Built-in themes plus the user's ``themes/<name>.toml`` files."""
     themes = dict(BUILTIN_THEMES)
     for name, palette in getattr(settings.config, "themes", {}).items():
         try:
@@ -260,26 +261,27 @@ PALETTE_FIELDS = (
 
 
 def _color_to_toml(color) -> str:
-    """Render one palette color as a ``themes.toml`` value."""
+    """Render one palette color as a theme file value."""
     if hasattr(color, "r"):
         return f'"#{color.r:02X}{color.g:02X}{color.b:02X}"'
     return f"{{ ansi = {color.fg}, bg = {color.bg} }}"
 
 
-def theme_toml_section(name: str) -> "str | None":
-    """Render a ``[themes.<name>]`` block for an existing theme, or None.
-
-    Used by ``/config theme <id>`` to materialize a built-in as an override.
-    """
-    selected = available_themes().get(name)
+def write_theme_file(name: str, source: str) -> "Path":
+    """Write ``themes/<name>.toml`` with the full palette of theme ``source``
+    (``/theme edit`` copies a built-in, ``/theme create`` the active theme)."""
+    name = name.strip()
+    if not name or name.startswith(".") or any(c in name for c in "[]\\/"):
+        raise ValueError("Theme name must be non-empty and cannot contain '[', '\\', '/' or start with '.'")
+    selected = available_themes().get(source)
     if selected is None:
-        return None
-    lines = [f"[themes.{name}]"]
-    lines.extend(
-        f"{field} = {_color_to_toml(getattr(selected, field))}"
-        for field in PALETTE_FIELDS
-    )
-    return "\n".join(lines) + "\n"
+        raise KeyError(f"Unknown theme '{source}'")
+    path = settings.config.theme_file(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"{field.ljust(10)} = {_color_to_toml(getattr(selected, field))}"
+             for field in PALETTE_FIELDS]
+    path.write_text(settings.THEME_FILE_HELP + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
+    return path
 
 
 def set_theme(name: str):

@@ -146,10 +146,10 @@ Unknown tool names and values other than `no`/`ask`/`yes` are reported as
 
 | Command | Behavior |
 |---------|----------|
-| `/role` | picker over the roles, the active one marked; choosing switches |
-| `/role <name>` | switch the active role (the `/role ` menu lists the verbs, then the role names) |
+| `/role` | list the subcommands (the `/role ` menu lists only the verbs) |
+| `/role select [name]` | switch the active role; no name opens a picker, the active one marked |
 | `/role edit [name]` | open an existing role's file in `$EDITOR`, reload; no name opens a picker; never creates |
-| `/role create <name>` | write a starter file, open it, reload (refuses an existing name or a verb) |
+| `/role create <name>` | write a starter file, open it, reload (refuses an existing name) |
 | `/role path [name]` | print (and copy) the file path; defaults to the active role |
 | `/role remove <name>` | *Remove* / *Cancel* picker, then unlink (at least one role must remain) |
 

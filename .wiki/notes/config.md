@@ -16,12 +16,11 @@ activity panel. Nothing else reads the old location.
 
 | File | Contents | Shape |
 |------|----------|-------|
-| `ui.toml` | theme, padding, fps | flat keys |
+| `ui.toml` | theme, padding, fps; then `[markdown_styles.*]` / `[syntax_highlight.*]` | flat keys, then tables |
 | `context.toml` | context building | flat keys |
 | `debug.toml` | debug logging | flat keys |
-| `styles.toml` | `[markdown_styles.*]` / `[syntax_highlight.*]` | tables |
 | `servers.toml` | one `[servers.<name>]` table per server | tables |
-| `themes.toml` | one `[themes.<name>]` palette per theme | tables |
+| `themes/<name>.toml` | one palette per file; file name is the theme name | palette keys |
 | `roles/<name>.toml` | one role per file; file name is the role name | role body |
 | `sandboxes/<name>.toml` | one global sandbox per file; file name is the sandbox name | sandbox body |
 | `projects/<dirname>_<hash>/` | one project: `project.toml` (path + active) and `sandboxes/<name>.toml` (locals) | sandbox body |
@@ -29,7 +28,9 @@ activity panel. Nothing else reads the old location.
 | `state.toml` | last server/model, active theme, effort | machine-written |
 
 `state.toml` is disposable: deleting it only loses cached selections.
-`roles/` mirrors the same one-thing-per-file idea (see
+The old `styles.toml` and `themes.toml` are no longer read (merged into
+`ui.toml` and split into `themes/` on 2026-10-26; nothing migrates them).
+`roles/` and `themes/` mirror the same one-thing-per-file idea (see
 [tools-and-permissions.md](./tools-and-permissions.md)).
 
 Missing files are created from fully commented templates
@@ -47,6 +48,11 @@ key missing from an existing block is inserted next to its siblings, and a
 completely missing block brings its heading and help with it at the
 template-relative position. Only keys named by the template or a registered
 retirement are touched; user values, comments, and ordering are preserved.
+`ui.toml` ends with a tables part (the style tables), which starts at
+`_TABLES_HEADING` or the first table header, commented or not
+(`_split_tables`). Only the part above it is merged, so a new key never lands
+inside a table. The tables part is kept byte for byte, and a file without one
+gets the template's commented tables appended.
 
 Migrations are fail-closed. The merged text is verified before it can reach
 disk (valid TOML, identical parsed user values, every user line preserved), the
@@ -56,8 +62,8 @@ guard re-reads the original immediately before the rename; invalid TOML, a
 changed file, or any I/O failure leaves the file byte-identical and records the
 reason in `Config.last_sync_skips` (surfaced on the startup banner). An advisory
 lock in the config directory serialises moka instances; editors are not locked,
-so the backup is the safety net for that window. Structured files (`styles`,
-`servers`, `theme`, and the sandbox files) hold user-authored tables and are
+so the backup is the safety net for that window. Structured files (`servers`,
+the theme files, and the sandbox files) hold user-authored tables and are
 never synced. See "Adding or deprecating a config key" in `AGENTS.md`.
 
 ### Sandbox files
@@ -80,15 +86,15 @@ across both scopes. The default `bubblewrap` is seeded as a global on first run
 `Config` is a plain class with a flat attribute surface (`settings.config.<attr>`),
 instantiated once at module load as `config`. The split files map onto flat
 attributes via per-section specs (`_UI_SPEC`, `_CONTEXT_SPEC`,
-`_DEBUG_SPEC`); `styles.toml` and `servers.toml` are merged
+`_DEBUG_SPEC`); the style tables of `ui.toml` and `servers.toml` are merged
 into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
-`themes.toml` into `config.themes`.
+`themes/*.toml` into `config.themes` (errors prefixed `themes/<name>.toml:`).
 
 - `reload()` re-reads every section file plus `state.toml` and returns a list of
   validation errors. Invalid entries keep their defaults; valid ones still
   apply. Errors are prefixed with the file name (`ui.toml: ...`).
 - Unknown keys/sections/servers/types are reported rather than swallowed.
-- Every `/config` edit (any section, `role`, `theme`) and `/reload` go through
+- Every `/config` edit, every `/role` and `/theme` file edit, and `/reload` go through
   one path, `core.reload_and_apply`: reload the config files, validate the role
   files, apply the theme, **reload the active role from disk** (so an edited
   `preserve_thinking` or tool list applies at once; a file that no longer
@@ -138,36 +144,37 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 
 - `/config <section>` opens the section file in `$VISUAL`/`$EDITOR` and reloads
   on exit; no argument lists the sections. `section` is one of `ui`, `context`,
-  `debug`, `styles`, `servers`, `theme`.
-- `/role`, `/prompt` and `/sandbox` each have `edit [name]`, `create`, `path` and
-  `remove` for their own files; `/sandbox` also manages the sandbox lifecycle
-  (see [sandbox.md](./sandbox.md)).
+  `debug`, `servers`.
+- `/role`, `/theme`, `/prompt` and `/sandbox` each have `edit [name]`, `create`,
+  `path` and `remove` for their own files; `/sandbox` also manages the sandbox
+  lifecycle (see [sandbox.md](./sandbox.md)).
 - `/edit <path>` opens any file.
-- `/config theme` opens `themes.toml`; `/config theme <id>` first materializes a
-  `[themes.<id>]` override section from that theme's current palette (with name
-  suggestions as you type the id), then opens the file.
-- `/theme` opens a picker; `/theme <name>` selects directly. The choice is
-  persisted in `state.toml` (`active_theme`), falling back to `ui.toml`'s
-  `theme` when unset.
+- `/theme edit <name>` opens `themes/<name>.toml`; for a built-in without a file
+  it first writes one with that theme's full palette
+  (`colors.write_theme_file`). `/theme create <name>` copies the active palette.
+- `/theme select` opens a picker; `/theme select <name>` selects directly. The
+  choice is persisted in `state.toml` (`active_theme`), falling back to
+  `ui.toml`'s `theme` when unset.
 - The TUI suspends/resumes around the editor (`ui/external_editor.py`,
   `ui/tui/terminal.py`).
 
 ## Themes
 
-A theme is a palette (`themes.toml`, `[themes.<name>]`) mapping the eleven
-`_theme` fields (`BACKGROUND`, `DEFAULT`, `MUTED`, `ERROR`, `WARNING`,
-`SUCCESS`, `PERMISSION`, `TOOL`, `USER`, `ASSISTANT`, `FOCUSED`) to either a
+A theme is a palette file (`themes/<name>.toml`, top-level keys) mapping the
+fourteen `colors.PALETTE_FIELDS` (`BACKGROUND`, `DEFAULT`, `MUTED`, `ERROR`,
+`WARNING`, `SUCCESS`, `PERMISSION`, `TOOL`, `USER`, `ASSISTANT`, `FOCUSED`,
+`HEADING`, `EMPHASIS`, `CODE`) to either a
 `"#RRGGBB"` hex string or an ANSI table (`{ ansi = 90 }`, `{ ansi = 39, bg = 49 }`).
 Missing entries inherit the built-in base of the same name (or `terminal`).
-Built-ins are always available and are listed by `/theme` (or
+Built-ins are always available and are listed by `/theme select` (or
 `colors.theme_names()`): `terminal` (default), `pastel`, `nord`, `dracula`,
 `gruvbox`, `solarized`, `one-dark`, `catppuccin`, `tokyo-night`, `rose-pine`,
 `everforest`, `monokai`, `ayu-dark`, `kanagawa`.
 `colors.available_themes()` merges them with the user definitions and
 `set_theme()` applies one in place. Markdown/syntax styles remain a separate
-global layer in `styles.toml`.
+global layer in the tables of `ui.toml`.
 
-The `/theme` picker previews a theme as the highlight moves (`on_highlight`),
+The `/theme select` picker previews a theme as the highlight moves (`on_highlight`),
 persists only on accept, and on cancel reloads the configured theme
 (`reload_config()` + re-apply).
 

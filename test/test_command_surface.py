@@ -24,29 +24,29 @@ def test_model_is_a_leaf_handler():
     assert [p.name for p in model.params] == ["MODEL"]
 
 
-def test_role_menu_lists_its_verbs_then_the_role_names():
-    """``/role <name>`` switches beside ``/role edit`` (2026-10-22), so the
-    ``/role `` menu offers both; ``/config`` no longer edits roles."""
+def test_role_and_theme_menus_list_only_their_verbs():
+    """2026-10-26: role names beside the verbs got mixed up with them; the names
+    are ``/role select``'s argument now. ``/config`` edits neither."""
     from moka_code.ui.commands.registry import get_subcommand_descriptions, get_subcommand_list
 
-    names = get_subcommand_list("role")
-    assert names[:4] == ["edit", "create", "path", "remove"]
-    assert {"agent", "chat"} <= set(names[4:])
-    assert get_subcommand_descriptions("role")["agent"]
-    assert "role" not in COMMANDS["config"].get_completions(0)
+    for name in ("role", "theme"):
+        assert get_subcommand_list(name) == ["select", "edit", "create", "path", "remove"]
+        assert set(get_subcommand_descriptions(name)) == set(get_subcommand_list(name))
+        assert name not in COMMANDS["config"].get_completions(0)
 
+    assert "agent" in COMMANDS["role"].subcommands["select"].get_completions(0)
     # A flat section takes no argument, so it offers no role names.
     assert COMMANDS["config"].subcommands["ui"].get_completions(0) == []
 
 
-def test_config_command_completes_theme_names():
-    theme = COMMANDS["config"].subcommands["theme"]
+def test_theme_select_completes_theme_names():
+    select = COMMANDS["theme"].subcommands["select"]
 
-    names = theme.get_completions(0)
+    names = select.get_completions(0)
     assert "terminal" in names
     assert "nord" in names
 
-    assert theme.get_descriptions(0)["terminal"] == "built-in"
+    assert select.get_descriptions(0)["terminal"] == "built-in"
 
 
 def test_every_command_has_a_description():

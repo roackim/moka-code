@@ -4,7 +4,7 @@ import pytest
 import asyncio
 
 import moka_code.settings as settings
-from moka_code.ui.commands.themes import theme_command
+from moka_code.ui.commands.themes import theme_select as theme_command
 from moka_code.ui.tui import colors
 
 
@@ -83,20 +83,24 @@ def test_picking_a_theme_selects_and_persists(monkeypatch, tmp_path):
         colors.set_theme(original_theme)
 
 
-def test_theme_takes_no_argument_enter_opens_the_picker(monkeypatch, tmp_path):
-    """The live preview is the point of choosing: ``/theme`` has no argument and
-    no argument suggestions; any text after it is ignored."""
-    from moka_code.ui.commands.registry import COMMANDS
-
+def test_theme_select_with_a_name_selects_directly(monkeypatch, tmp_path):
+    """2026-10-26: ``/theme select <name>`` selects like the other choices; the
+    bare ``/theme select`` keeps the live-preview picker."""
     monkeypatch.setattr(settings, "get_state_path", lambda: tmp_path / "state.toml")
-    original = colors.theme.name
+    original_theme = colors.theme.name
+    original_active = settings.config.active_theme
     try:
-        assert COMMANDS["theme"].params == []
         ui = _UI()
         asyncio.run(theme_command(ui, ["moka"]))
-        assert ui.modals and colors.theme.name == original
+        assert not ui.modals and colors.theme.name == "moka"
+        assert settings.config.active_theme == "moka"
+
+        asyncio.run(theme_command(ui, ["nope"]))
+        assert colors.theme.name == "moka"
+        assert any("Theme not found: nope" in m for m in ui.chat_history_panel.messages)
     finally:
-        colors.set_theme(original)
+        settings.config.active_theme = original_active
+        colors.set_theme(original_theme)
 
 
 def test_theme_command_opens_picker(monkeypatch, tmp_path):

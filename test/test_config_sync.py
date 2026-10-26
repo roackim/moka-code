@@ -107,7 +107,7 @@ def test_template_key_lines_are_commented(section):
 _SETTING_LINE = re.compile(r'^# (\[|[A-Za-z_][A-Za-z0-9_]*\s*=|"[^"]+"\s*=)')
 
 
-@pytest.mark.parametrize("section", ["ui", "context", "debug", "styles", "theme", "servers"])
+@pytest.mark.parametrize("section", ["ui", "context", "debug", "servers"])
 def test_template_help_lines_use_double_hash(section):
     """Decided 2026-09-30 (PLAN.md step 0.5): a whole-line comment is either
     a setting to uncomment (single ``#``; a bare ``#`` spaces a block of
@@ -129,6 +129,35 @@ def test_missing_section_brings_its_heading_and_help(tmp_path):
     assert "# show_provider" in text
     assert "# provider_separator" in text
     assert "## Sandbox field" in text
+
+
+def test_ui_sync_adds_keys_above_the_style_tables_and_never_touches_them(tmp_path):
+    """styles.toml merged into ui.toml (2026-10-26): flat keys go above the
+    tables (a key below a table header would belong to it)."""
+    tables = '[markdown_styles.header1]\nfg = "#FFFFFF"\nbold = false\n'
+    (tmp_path / "ui.toml").write_text('theme = "pastel"\n\n' + tables, encoding="utf-8")
+    config = _config(tmp_path)
+
+    assert config.sync_section_files() == ["ui"]
+
+    text = (tmp_path / "ui.toml").read_text(encoding="utf-8")
+    assert text.endswith(tables)
+    assert text.index("# target_fps") < text.index("[markdown_styles.header1]")
+    assert config.reload() == []
+    assert config.markdown_styles["header1"] == {"fg": "#FFFFFF", "bold": False}
+    assert config.sync_section_files() == []
+
+
+def test_ui_sync_brings_the_commented_style_tables_to_an_older_file(tmp_path):
+    (tmp_path / "ui.toml").write_text('theme = "pastel"\n', encoding="utf-8")
+    config = _config(tmp_path)
+
+    config.sync_section_files()
+
+    text = (tmp_path / "ui.toml").read_text(encoding="utf-8")
+    assert settings._TABLES_HEADING in text and "# [markdown_styles.header1]" in text
+    assert text.index("# target_fps") < text.index(settings._TABLES_HEADING)
+    assert config.sync_section_files() == []
 
 
 def test_repairs_headings_and_help_left_by_a_previous_sync(tmp_path):

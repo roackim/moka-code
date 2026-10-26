@@ -100,9 +100,10 @@ commented examples. Open a file with `/config <name>`:
 | Name | Contents |
 |---|---|
 | `servers` | Model servers and models |
-| `ui` | Theme, banner, status bar |
+| `ui` | Theme, banner, status bar, markdown and code colors |
 | `context` | Project context sent to the model, image size limit |
-| `styles` | Markdown and code colors |
-| `role <name>` | A role's system prompt and tool permissions |
+
+Roles (`/role edit <name>`), themes (`/theme edit <name>`), prompts and
+sandboxes are one file each, managed by their own commands.
 
 Run `/help` for the full list of commands.

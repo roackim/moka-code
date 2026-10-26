@@ -13,13 +13,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from .base import (
-    ChatUIProtocol,
-    Command,
-    Param,
-    role_descriptions,
-    role_name_completions,
-)
+from .base import ChatUIProtocol, Command, Param
 from .conversation import (
     conversation_export, conversation_import, conversation_session, json_file_completions,
 )
@@ -42,7 +36,7 @@ from .models import (
     effort_command, effort_completions, effort_descriptions,
     model_command, model_completions, model_descriptions,
 )
-from .roles import cmd_role, role_subcommands
+from .roles import role_command
 from .sandbox import (
     sandbox_base_completions,
     sandbox_build,
@@ -113,10 +107,7 @@ COMMANDS: Dict[str, Command] = {
                             handler=effort_command,
                             params=[Param("LEVEL", completions=effort_completions,
                                           descriptions=effort_descriptions, ordered=True)]),
-    "role":         Command("role", "Switch the active role (opens a picker), or edit, create, path, remove",
-                            handler=cmd_role, subcommands=role_subcommands(reload_and_apply),
-                            params=[Param("NAME", completions=role_name_completions,
-                                          descriptions=role_descriptions)]),
+    "role":         role_command(reload_and_apply),
     "sandbox":      Command(
                         "sandbox", "Start a sandbox (opens a picker), or a subcommand",
                         handler=_sandbox_help,
@@ -192,8 +183,7 @@ COMMANDS: Dict[str, Command] = {
                                           descriptions=changed_descriptions, ordered=True)]),
     "prompt":       Command("prompt", "Edit a !prompt file (opens a picker), or create, path, remove",
                             handler=prompt_command, subcommands=PROMPT_SUBCOMMANDS),
-    "theme":        Command("theme", "Select the color theme (opens a picker with live preview)",
-                            handler=theme_command),
+    "theme":        theme_command(reload_and_apply),
 }
 
 async def handle_command(ui: ChatUIProtocol, text: str):
@@ -226,28 +216,16 @@ def get_command_descriptions() -> Dict[str, str]:
 
 
 def get_subcommand_list(command: str) -> List[str]:
-    """Get list of subcommands for a given command, then the values of its own
-    first param (``/role <name>`` sits beside ``/role edit``)."""
+    """Get list of subcommands for a given command."""
     if command in COMMANDS:
-        cmd = COMMANDS[command]
-        if cmd.has_subcommands():
-            names = list(cmd.subcommands.keys())
-            if cmd.params and cmd.params[0].completions is not None:
-                source = cmd.params[0].completions
-                names += [value for value in (source() if callable(source) else source)
-                          if value not in cmd.subcommands]
-            return names
+        return list(COMMANDS[command].subcommands)
     return []
 
 
 def get_subcommand_descriptions(command: str) -> Dict[str, str]:
-    """Map subcommand name (and first-param value) -> one-line description."""
+    """Map subcommand name -> one-line description."""
     if command in COMMANDS:
-        cmd = COMMANDS[command]
-        if cmd.has_subcommands():
-            descriptions = cmd.get_descriptions(0)
-            descriptions.update({name: sub.description for name, sub in cmd.subcommands.items()})
-            return descriptions
+        return {name: sub.description for name, sub in COMMANDS[command].subcommands.items()}
     return {}
 
 

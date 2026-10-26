@@ -54,15 +54,21 @@ def test_invalid_values_are_reported_and_do_not_apply(tmp_path):
     assert "servers.toml: [servers.local].base_url must be a string" in joined
 
 
-def test_unknown_section_in_dedicated_file_is_reported(tmp_path):
-    _write(tmp_path / "styles.toml", {"markdown_styles": {"header1": {"fg": "#fff"}}})
-    # A stray top-level table is only valid in servers.toml.
-    _write(tmp_path / "ui.toml", {"theme": "terminal", "servers": {}})
+def test_styles_live_in_ui_toml_and_other_tables_are_reported(tmp_path):
+    # styles.toml merged into ui.toml (2026-10-26); the old file is not read.
+    _write(tmp_path / "styles.toml", {"markdown_styles": {"header2": {"fg": "#000"}}})
+    _write(tmp_path / "ui.toml", {"theme": "terminal", "servers": {},
+                                  "markdown_styles": {"header1": {"fg": "#fff"}},
+                                  "syntax_highlight": {"nope": {"fg": "#fff"}}})
 
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
     assert config.markdown_styles["header1"]["fg"] == "#fff"
+    assert config.markdown_styles["header2"]["fg"] == "HEADING"
     assert any("ui.toml: unknown key 'servers'" in e for e in config.load_errors)
+    assert any("ui.toml: [syntax_highlight] unknown element 'nope'" in e
+               for e in config.load_errors)
+    assert not any("markdown_styles" in e for e in config.load_errors)
 
 
 def test_malformed_toml_reports_error_and_keeps_defaults(tmp_path):
@@ -170,9 +176,8 @@ def test_ensure_files_write_templates(tmp_path):
 
 
 def test_themes_parse_and_active_theme_is_state(tmp_path):
-    _write(tmp_path / "themes.toml", {
-        "themes": {"mine": {"USER": "#ABCDEF", "MUTED": {"ansi": 90}}},
-    })
+    (tmp_path / "themes").mkdir()
+    _write(tmp_path / "themes" / "mine.toml", {"USER": "#ABCDEF", "MUTED": {"ansi": 90}})
     state = _write(tmp_path / "state.toml", {"active_theme": "mine"})
 
     config = Config(config_dir=tmp_path, state_path=state)
@@ -185,15 +190,14 @@ def test_themes_parse_and_active_theme_is_state(tmp_path):
 
 
 def test_invalid_theme_values_are_reported(tmp_path):
-    _write(tmp_path / "themes.toml", {
-        "themes": {"bad": {"USER": "notacolor", "BOGUS": "#000000"}},
-    })
+    (tmp_path / "themes").mkdir()
+    _write(tmp_path / "themes" / "bad.toml", {"USER": "notacolor", "BOGUS": "#000000"})
 
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
     joined = "\n".join(config.load_errors)
-    assert "[themes.bad].USER must be a" in joined
-    assert "unknown color 'BOGUS'" in joined
+    assert "themes/bad.toml: USER must be a" in joined
+    assert "themes/bad.toml: unknown color 'BOGUS'" in joined
     assert "USER" not in config.themes.get("bad", {})
 
 

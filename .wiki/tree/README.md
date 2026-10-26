@@ -16,7 +16,7 @@ applies the configured theme, and runs `chatTUI`.
 ### `settings.py`
 `Config` — plain class instantiating the split, user-level config under
 `~/.config/moka/` (`ui.toml`, `context.toml`,
-`debug.toml`, `styles.toml`, `servers.toml`, `roles/<name>.toml`, disposable
+`debug.toml`, `servers.toml`, `roles/<name>.toml`, `themes/<name>.toml`, disposable
 `state.toml`). Loaded at import as the module-level singleton `settings.config`.
 `/reload` mutates it in place. See [notes/config.md](../notes/config.md).
 

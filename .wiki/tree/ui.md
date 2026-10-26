@@ -52,27 +52,26 @@ Slash command system. Leaf commands are plain `async def` handlers wrapped in
 | `core.py` | Core commands: help, clear, reload, config, edit, compact, exit, stop, activity |
 | `conversation.py` | `/import`, `/export` |
 | `models.py` | `/model` leaf (picker or direct selection) |
-| `roles.py` | `/role` — list roles or switch the active one |
+| `roles.py` | `/role` — `select [name]`, `edit [name]`, `create`, `path`, `remove` |
 | `sandbox.py` | `/sandbox` — verb-first: `config [name]`, `path [name]`, `new`, `copy`, `build <name>`, `start [name]`, `restart`, `init <name> [base]`, `stop`, `terminal` |
 | `prompts.py` | `/prompt` — picker over the `!prompt` files, or open/create one (`moka_code/prompts.py` is the library) |
-| `themes.py` | `/theme` — picker or direct color-theme selection |
+| `themes.py` | `/theme` — `select [name]` (live-preview picker), `edit [name]`, `create`, `path`, `remove` over `themes/<name>.toml` |
 
 Registered commands: `help`, `clear`, `reload`, `config`, `edit`, `export`,
 `import`, `compact`, `exit`, `stop`, `activity`, `model`, `role`, `sandbox`,
 `prompt`, `theme`.
 
 - `/config <section>` opens a section file in `$EDITOR` and reloads (sections:
-  `ui`, `context`, `debug`, `styles`, `servers`, `theme`).
-  `/config theme <id>` materializes a `[themes.<id>]` section then opens
-  `themes.toml` (`_config_theme`). `/config` is a `Command` tree built by
+  `ui`, `context`, `debug`, `servers`). `/config` is a `Command` tree built by
   `config_command()` (one subcommand per `settings.CONFIG_FILES` section), so
   completion and hints come from its `params`.
-- Roles, prompts and sandboxes share the verbs `edit [name]` (never creates),
+- Roles, themes, prompts and sandboxes share the verbs `edit [name]` (`/role`,
+  `/prompt` and `/sandbox` never create; `/theme` writes a built-in out),
   `create`, `path` and `remove` (`base.confirm_remove`: a *Remove* / *Cancel*
-  picker) under `/role`, `/prompt` and `/sandbox`. `/role`'s are built by
-  `roles.role_subcommands(reload)`, which the registry hands `reload_and_apply`;
-  `get_subcommand_list` appends a tree's own first-param values (role names)
-  after its verbs.
+  picker). `/role` and `/theme` also take `select [name]`; the bare command lists
+  the subcommands (`base.show_subcommands`). Their trees are built by
+  `roles.role_command(reload)` / `themes.theme_command(reload)`, which the
+  registry hands `reload_and_apply`. The `/cmd ` menu lists only subcommands.
 - Domain modules import **only** `base`; `registry.py` is the assembler
   (enforced by `test/test_command_import_graph.py`).
 - See [notes/tools-and-permissions.md](../notes/tools-and-permissions.md) for the role model and

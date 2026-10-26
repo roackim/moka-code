@@ -18,8 +18,9 @@ their templates on startup (and when `/config <section>` opens them):
 
 - `settings.sync_config_files()` runs in `main()`; it inserts the commented
   template line for any key missing from an existing user file and removes lines
-  whose key is in that section's `_RETIRED_*` set. Structured files (`styles`,
-  `servers`, `theme`) are user-authored tables and are never synced.
+  whose key is in that section's `_RETIRED_*` set. Structured files (`servers`,
+  `themes/<name>.toml`) and the style tables at the end of `ui.toml` are
+  user-authored and are never synced.
 
 To add a key:
 1. Add it to the section's `_*_SPEC` (key -> `(attr, kind)`) and to

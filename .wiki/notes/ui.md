@@ -88,7 +88,7 @@ The `context` field is colorized by how full the context window is:
 green below 33%, orange/amber below 66%, and red at or above 66%.
 
 The `role` field reflects the active conversation role and is refreshed
-whenever the role changes (via `/role <name>` or a conversation import that
+whenever the role changes (via `/role select <name>` or a conversation import that
 applies a saved role).
 
 ## Sessions (`harness/sessions.py`)
@@ -840,7 +840,9 @@ from a hand-rolled `get_completions`.
 
 ### Roles
 
-- `/role` opens a picker (the active role tagged `active`); `/role <name>` switches directly.
+- Bare `/role` lists its subcommands (a name after `/role` is an unknown
+  subcommand). `/role select` opens a picker (the active role tagged `active`);
+  `/role select <name>` switches directly. Tab sends `/role select <next>`.
 - A role is its file: nothing comes from code. The running role is kept in memory;
   the notice band says when its file is `gone` (running from memory) or `changed on
   disk → /reload` (`Harness.role_problem`, gated by a `stat`). At startup the
@@ -852,10 +854,14 @@ from a hand-rolled `get_completions`.
 
 ### Themes
 
-- `/theme` opens a searchable picker with live preview (built-ins plus
-  `themes.toml` definitions); it takes no argument. The choice persists in
-  `state.toml`.
-- `/config theme` edits `themes.toml`.
+- Bare `/theme` lists its subcommands. `/theme select` opens a searchable picker
+  with live preview (built-ins plus `themes/<name>.toml` files); `/theme select
+  <name>` selects directly. The choice persists in `state.toml`.
+- `/theme edit [name]` opens `themes/<name>.toml` and reloads (a built-in without
+  a file is first written out with its full palette); `/theme create <name>`
+  copies the active palette into a new file (a built-in name is refused: edit
+  it); `/theme path [name]` and `/theme remove <name>` take only themes that
+  have a file.
 
 - `/edit ` completes the workspace files and folders (the same list as the `@`
   menu: bounded, gitignore-aware, filtered as you type); `Param(path=True)` means

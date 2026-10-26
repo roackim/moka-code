@@ -4,12 +4,12 @@ Configuration is split into small, single-concern files under
 ``~/.config/moka/`` so each one stays focused and easy to edit with
 ``/config <section>`` or ``/edit``:
 
-- ``ui.toml`` — theme, padding, fps (flat keys)
+- ``ui.toml`` — theme, padding, fps (flat keys), then the
+  ``[markdown_styles.*]`` / ``[syntax_highlight.*]`` tables
 - ``context.toml`` — context building (flat keys)
 - ``debug.toml`` — debug logging (flat keys)
-- ``styles.toml`` — ``[markdown_styles.*]`` / ``[syntax_highlight.*]``
 - ``servers.toml`` — one ``[servers.<name>]`` table per server
-- ``themes.toml`` — one ``[themes.<name>]`` palette table per theme
+- ``themes/<name>.toml`` — one palette per theme file
 - ``roles/<name>.toml`` — one file per role
 - ``state.toml`` — machine-written, disposable (last server/model, theme, catalog)
 
@@ -155,6 +155,7 @@ DEFAULT_SYNTAX_HIGHLIGHT_STYLES: Dict[str, Dict[str, str]] = {
 
 CONFIG_DIR_ENV = "MOKA_CONFIG_DIR"
 ROLES_DIRNAME = "roles"
+THEMES_DIRNAME = "themes"
 STATE_FILENAME = "state.toml"
 
 #: Config section -> file name. The section is what ``/config <section>`` takes.
@@ -162,9 +163,7 @@ CONFIG_FILES = {
     "ui": "ui.toml",
     "context": "context.toml",
     "debug": "debug.toml",
-    "styles": "styles.toml",
     "servers": "servers.toml",
-    "theme": "themes.toml",
 }
 
 
@@ -206,6 +205,9 @@ def get_state_path() -> Path:
     return get_config_dir() / STATE_FILENAME
 
 
+# Starts the tables part of ``ui.toml``: sync keeps flat keys above it.
+_TABLES_HEADING = "## Markdown and syntax-highlight styles"
+
 # Per-section templates written on first use. Everything is commented out so
 # the built-in defaults apply until the user uncomments what they need.
 DEFAULT_UI_TOML = """\
@@ -215,7 +217,7 @@ DEFAULT_UI_TOML = """\
 
 ## Look
 
-# theme = "terminal"                    # built-in or [themes.<name>] of themes.toml (/theme)
+# theme = "terminal"                    # built-in or themes/<name>.toml (/theme select)
 # use_bg_color = false                  # paint the theme background
 # app_global_padding = 0
 # msg_h_padding = 1
@@ -263,6 +265,24 @@ DEFAULT_UI_TOML = """\
 # stream_smoothing = true               # reveal streamed text smoothly
 # smooth_target_fps = 60                # reveal cadence (independent of render fps)
 # target_fps = 60
+
+""" + _TABLES_HEADING + """
+## Tables come after every setting above. Keys: fg, bg (a hex color, or a
+## theme color name such as "MUTED"), bold, italic, underline.
+
+# [markdown_styles.header1]
+# fg   = "#FF79C6"
+# bold = true
+
+# [markdown_styles.bold]
+# fg   = "#FFD700"
+# bold = true
+
+# [markdown_styles.code]
+# fg = "#9CDCFE"
+
+# [syntax_highlight.keyword]
+# fg = "#FF6464"
 """
 
 DEFAULT_CONTEXT_TOML = """\
@@ -304,33 +324,6 @@ DEFAULT_DEBUG_TOML = """\
 # log_enabled = false                   # write debug_stream.log
 """
 
-DEFAULT_STYLES_TOML = """\
-## Moka markdown and syntax-highlight styles
-## Apply with /reload, or /config styles.
-## A line starting with # is a setting to uncomment; ## is help.
-##
-## Keys: fg, bg (a hex color, or a theme color name such as "MUTED"), bold,
-## italic, underline.
-
-## Markdown
-
-# [markdown_styles.header1]
-# fg   = "#FF79C6"
-# bold = true
-
-# [markdown_styles.bold]
-# fg   = "#FFD700"
-# bold = true
-
-# [markdown_styles.code]
-# fg = "#9CDCFE"
-
-## Syntax highlighting
-
-# [syntax_highlight.keyword]
-# fg = "#FF6464"
-"""
-
 # The servers template: a legend, then each provider's own block
 # (``Endpoint.template``), in registry order.
 DEFAULT_SERVERS_TOML = """\
@@ -344,46 +337,25 @@ DEFAULT_SERVERS_TOML = """\
 ## retry_attempts = 3, retry_delay = 2.0.
 """
 
-DEFAULT_THEMES_TOML = """\
-## Moka color themes
-## One [themes.<name>] table per theme; select with /theme. Apply with /reload,
-## or /config theme.
-## A line starting with # is a setting to uncomment; ## is help.
+# Help heading a ``themes/<name>.toml`` file (written by ``/theme create`` and
+# ``/theme edit``, followed by the palette lines).
+THEME_FILE_HELP = """\
+## Moka color theme; the file name is the theme name.
+## Select with /theme select; apply edits with /reload (or /theme edit).
 ##
 ## Each palette entry is a hex RGB string or an ANSI slot table:
 ##   USER       = "#4EC9B0"
 ##   MUTED      = { ansi = 90 }            # standard ANSI fg code
 ##   BACKGROUND = { ansi = 39, bg = 49 }   # fg and/or bg codes
 ##
-## Missing entries inherit from the built-in base of the same name (or terminal).
-## Several built-ins ship (terminal is the default; run /theme to list them);
-## they are always available and can be overridden here.
-##
-## Palette keys: BACKGROUND, DEFAULT, MUTED, ERROR, WARNING, SUCCESS,
-##               PERMISSION, USER, ASSISTANT, FOCUSED
-
-## Example
-
-# [themes.pastel]
-# BACKGROUND = "#1E1E1E"
-# DEFAULT    = "#D4D4D4"
-# MUTED      = "#808080"
-# ERROR      = "#F48771"
-# WARNING    = "#CCA700"
-# SUCCESS    = "#89D185"
-# PERMISSION = "#C586C0"
-# USER       = "#4EC9B0"
-# ASSISTANT  = "#569CD6"
-# FOCUSED    = "#DCDCAA"
+## Missing entries inherit from the built-in of the same name (or terminal).
 """
 
 DEFAULT_CONFIG_TEMPLATES = {
     "ui": DEFAULT_UI_TOML,
     "context": DEFAULT_CONTEXT_TOML,
     "debug": DEFAULT_DEBUG_TOML,
-    "styles": DEFAULT_STYLES_TOML,
     "servers": DEFAULT_SERVERS_TOML,
-    "theme": DEFAULT_THEMES_TOML,
 }
 
 
@@ -456,8 +428,8 @@ _RETIRED_CONTEXT: set[str] = {"preserve_reasoning_traces", "format"}  # format: 
 _RETIRED_DEBUG: set[str] = set()
 
 # Flat sections that can be synced line-by-line against their template. Each
-# maps to ``(template, retired_keys)``. Structured sections (styles, servers,
-# themes) are user-authored tables and are deliberately not synced.
+# maps to ``(template, retired_keys)``. Structured files (servers, themes) and
+# the tables part of ``ui.toml`` are user-authored and deliberately not synced.
 _FLAT_SECTION_SYNC: Dict[str, tuple[str, set[str]]] = {
     "ui": (DEFAULT_UI_TOML, _RETIRED_UI),
     "context": (DEFAULT_CONTEXT_TOML, _RETIRED_CONTEXT),
@@ -672,9 +644,30 @@ def _repair_structure(lines: "list[str]", blocks: "list[_TemplateBlock]") -> Non
                 lines.insert(start + 1 + offset, line + "\n")
 
 
+_TABLE_LINE_RE = re.compile(r"^\s*#?\s*\[")
+
+
+def _split_tables(text: str) -> "tuple[str, str]":
+    """Split a file into its flat keys and its tables part, which starts at
+    ``_TABLES_HEADING`` or the first (possibly commented) table header."""
+    lines = text.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if line.rstrip("\r\n") == _TABLES_HEADING or _TABLE_LINE_RE.match(line):
+            return "".join(lines[:index]), "".join(lines[index:])
+    return text, ""
+
+
 def _merge_template(original: str, template: str, retired: "set[str]") -> str:
-    """Insert missing template blocks/keys without rewriting user lines."""
-    lines = original.splitlines(keepends=True)
+    """Insert missing template blocks/keys without rewriting user lines.
+
+    Only the flat part is merged; the tables part is kept as written (a file
+    without one gets the template's commented tables)."""
+    head, tail = _split_tables(original)
+    template, template_tail = _split_tables(template)
+    added_tail = not tail and bool(template_tail)
+    if added_tail:
+        tail = template_tail
+    lines = head.splitlines(keepends=True)
     blocks = _template_blocks(template)
     order = [key for block in blocks for key, _ in block.keys]
     known: dict[str, str] = {}
@@ -729,7 +722,10 @@ def _merge_template(original: str, template: str, retired: "set[str]") -> str:
         kept[insert_at:insert_at] = chunk
 
     _repair_structure(kept, blocks)
-    return "".join(kept)
+    merged = "".join(kept)
+    if tail and (merged != head or added_tail) and merged.strip():
+        merged = merged.rstrip("\n") + "\n\n"
+    return merged + tail
 
 
 def _template_documentation(template: str) -> "set[str]":
@@ -848,10 +844,10 @@ _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
 _STATE_SECTIONS = {"last_server", "active_model", "last_model", "model_catalog",
                    "active_theme", "effort"}
 
-# Palette keys a ``[themes.<name>]`` table may define.
+# Palette keys a ``themes/<name>.toml`` file may define (``colors.PALETTE_FIELDS``).
 _THEME_PALETTE = {
     "BACKGROUND", "DEFAULT", "MUTED", "ERROR", "WARNING", "SUCCESS",
-    "PERMISSION", "USER", "ASSISTANT", "FOCUSED",
+    "PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED", "HEADING", "EMPHASIS", "CODE",
 }
 
 
@@ -884,7 +880,7 @@ def _coerce_theme_color(value: Any) -> Optional[str]:
 
 
 #: Palette names a setting may name instead of a ``#rrggbb`` (the theme's keys).
-_COLOR_NAMES = _THEME_PALETTE | {"TOOL", "HEADING", "EMPHASIS", "CODE"}
+_COLOR_NAMES = _THEME_PALETTE
 
 
 def _coerce(kind: str, value: Any) -> tuple[Any, Optional[str]]:
@@ -1035,6 +1031,13 @@ class Config:
         """Path to a section file within this config's directory."""
         return self._dir() / CONFIG_FILES[section]
 
+    def themes_dir(self) -> Path:
+        """Directory of one-file-per-theme palettes."""
+        return self._dir() / THEMES_DIRNAME
+
+    def theme_file(self, name: str) -> Path:
+        return self.themes_dir() / f"{name}.toml"
+
     def _state_file(self) -> Path:
         return self._state_path or get_state_path()
 
@@ -1046,12 +1049,13 @@ class Config:
         """
         self._apply_defaults()
         self.load_errors = []
-        _load_flat_file(self.section_file("ui"), _UI_SPEC, self, self.load_errors)
+        ui = _load_flat_file(self.section_file("ui"), _UI_SPEC, self, self.load_errors,
+                             tables=_STYLE_SECTIONS)
+        _load_styles(ui or {}, CONFIG_FILES["ui"], self, self.load_errors)
         _load_flat_file(self.section_file("context"), _CONTEXT_SPEC, self, self.load_errors)
         _load_flat_file(self.section_file("debug"), _DEBUG_SPEC, self, self.load_errors)
-        _load_styles_file(self.section_file("styles"), self, self.load_errors)
         _load_servers_file(self.section_file("servers"), self, self.load_errors)
-        _load_themes_file(self.section_file("theme"), self, self.load_errors)
+        _load_themes_dir(self.themes_dir(), self, self.load_errors)
         _load_state_file(self._state_file(), self, self.load_errors)
         return self.load_errors
 
@@ -1173,28 +1177,34 @@ class Config:
 
 
 
-def _read_toml(path: Path, errors: list[str]) -> Optional[dict]:
-    """Read a TOML file into a dict, reporting parse/shape errors."""
+def _read_toml(path: Path, errors: list[str], where: Optional[str] = None) -> Optional[dict]:
+    """Read a TOML file into a dict, reporting parse/shape errors as ``where``
+    (the file name by default)."""
     if not path.exists():
         return None
+    where = where or path.name
     try:
         data = toml.load(path)
     except (toml.TomlDecodeError, OSError) as exc:
-        errors.append(f"{path.name}: {exc}")
+        errors.append(f"{where}: {exc}")
         return None
     if not isinstance(data, dict):
-        errors.append(f"{path.name}: top level must be a table")
+        errors.append(f"{where}: top level must be a table")
         return None
     return data
 
 
 def _load_flat_file(path: Path, spec: Dict[str, tuple[str, str]],
-                    config: Config, errors: list[str]) -> None:
-    """Load a whole-file flat key/value section (ui/context/debug)."""
+                    config: Config, errors: list[str],
+                    tables: "set[str]" = frozenset()) -> Optional[dict]:
+    """Load a whole-file flat key/value section (ui/context/debug); keys in
+    ``tables`` are left to the caller. Returns the parsed file."""
     data = _read_toml(path, errors)
     if data is None:
-        return
+        return None
     for key, value in data.items():
+        if key in tables:
+            continue
         entry = spec.get(key)
         if entry is None:
             errors.append(f"{path.name}: unknown key '{key}'")
@@ -1205,19 +1215,14 @@ def _load_flat_file(path: Path, spec: Dict[str, tuple[str, str]],
             errors.append(f"{path.name}: {key} {error}")
             continue
         setattr(config, attr, coerced)
+    return data
 
 
-def _load_styles_file(path: Path, config: Config, errors: list[str]) -> None:
-    """Load ``styles.toml`` with its two style tables."""
-    data = _read_toml(path, errors)
-    if data is None:
-        return
-    for section in data:
-        if section not in _STYLE_SECTIONS:
-            errors.append(f"{path.name}: unknown section [{section}]")
-    _merge_style_table(config, data, path.name, "markdown_styles",
+def _load_styles(data: dict, filename: str, config: Config, errors: list[str]) -> None:
+    """Apply the ``[markdown_styles.*]`` / ``[syntax_highlight.*]`` tables of ``ui.toml``."""
+    _merge_style_table(config, data, filename, "markdown_styles",
                        config.markdown_styles, errors)
-    _merge_style_table(config, data, path.name, "syntax_highlight",
+    _merge_style_table(config, data, filename, "syntax_highlight",
                        config.syntax_highlight_styles, errors)
 
 
@@ -1330,37 +1335,29 @@ def _valid_routing(server: dict, name: str, where: str, errors: list[str]) -> bo
     return True
 
 
-def _load_themes_file(path: Path, config: Config, errors: list[str]) -> None:
-    """Load ``themes.toml`` (one ``[themes.<name>]`` palette table per theme)."""
-    data = _read_toml(path, errors)
-    if data is None:
+def _load_themes_dir(directory: Path, config: Config, errors: list[str]) -> None:
+    """Load ``themes/<name>.toml`` (one palette per file; the file name is the theme)."""
+    if not directory.is_dir():
         return
-    for section in data:
-        if section != "themes":
-            errors.append(f"{path.name}: unknown section [{section}]")
-    table = data.get("themes")
-    if table is None:
-        return
-    if not isinstance(table, dict):
-        errors.append(f"{path.name}: [themes] must be a table")
-        return
-    for name, palette in table.items():
-        where = f"{path.name}: [themes.{name}]"
-        if not isinstance(palette, dict):
-            errors.append(f"{where} must be a table")
+    for path in sorted(directory.glob("*.toml")):
+        if path.stem.startswith("."):
+            continue
+        where = f"{THEMES_DIRNAME}/{path.name}"
+        palette = _read_toml(path, errors, where)
+        if palette is None:
             continue
         normalized: Dict[str, Any] = {}
         for key, value in palette.items():
             palette_key = key.upper()
             if palette_key not in _THEME_PALETTE:
-                errors.append(f"{where} unknown color '{key}'")
+                errors.append(f"{where}: unknown color '{key}'")
                 continue
             error = _coerce_theme_color(value)
             if error:
-                errors.append(f"{where}.{key} {error}")
+                errors.append(f"{where}: {key} {error}")
                 continue
             normalized[palette_key] = value
-        config.themes[name] = normalized
+        config.themes[path.stem] = normalized
 
 
 def _merge_style_table(config: Config, data: dict, filename: str, section: str,

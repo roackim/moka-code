@@ -1,4 +1,4 @@
-"""``/role``: switch the active role, or edit, create, locate or remove a role
+"""``/role``: select the active role, or edit, create, locate or remove a role
 file (``roles/<name>.toml``)."""
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from .base import (
     role_descriptions,
     role_name_completions,
     show_path,
+    show_subcommands,
 )
 
 # Reloads hand-edited files and applies them (``core.reload_and_apply``).
@@ -37,8 +38,8 @@ def _switch(ui: ChatUIProtocol, name: str) -> None:
         ui.refresh_status_bar()
 
 
-async def cmd_role(ui: ChatUIProtocol, args: List[str]):
-    """``/role`` opens the picker; ``/role <name>`` switches directly."""
+async def role_select(ui: ChatUIProtocol, args: List[str]):
+    """``/role select`` opens the picker; ``/role select <name>`` switches directly."""
     from moka_code.harness import roles
 
     if args:
@@ -121,9 +122,6 @@ def _role_create(reload: Reload):
         if name in roles.list_roles():
             _error(ui, f"Role '{name}' already exists. /role edit {name} opens it.")
             return
-        if name in VERBS:
-            _error(ui, f"'{name}' is a /role subcommand; pick another name.")
-            return
         try:
             path = roles.ensure_role_file(name)
         except (OSError, ValueError) as exc:
@@ -176,13 +174,15 @@ def _name(required: bool) -> Param:
                  descriptions=role_descriptions)
 
 
-VERBS = ("edit", "create", "path", "remove")
+def role_command(reload: Reload) -> Command:
+    """``/role`` and its subcommands; ``reload`` applies an edited role file (the
+    registry passes ``reload_and_apply``). Bare ``/role`` lists the subcommands."""
+    async def role_help(ui: ChatUIProtocol, args: List[str]) -> None:
+        show_subcommands(ui, command, args)
 
-
-def role_subcommands(reload: Reload) -> Dict[str, Command]:
-    """``/role``'s subcommands; ``reload`` applies an edited role file (the
-    registry passes ``reload_and_apply``)."""
-    return {
+    subcommands: Dict[str, Command] = {
+        "select": Command("role select", "Switch the active role (picker when no name given)",
+                          handler=role_select, params=[_name(False)]),
         "edit": Command("role edit", "Edit a role's file (picker when no name given)",
                         handler=_role_edit(reload), params=[_name(False)]),
         "create": Command("role create", "Create a role file from a starter",
@@ -192,16 +192,19 @@ def role_subcommands(reload: Reload) -> Dict[str, Command]:
         "remove": Command("role remove", "Remove a role's file (asks to confirm)",
                           handler=role_remove, params=[_name(True)]),
     }
+    command = Command("role", "Roles: select, edit, create, path, remove",
+                      handler=role_help, subcommands=subcommands)
+    return command
 
 
 def next_role_command(ui: ChatUIProtocol) -> str:
-    """``/role`` command selecting the role after the active one (Tab)."""
+    """``/role select`` command for the role after the active one (Tab)."""
     from moka_code.harness import roles
 
     names = roles.list_roles()
     current = getattr(getattr(ui, "agent", None), "role", None)
     index = names.index(current.name) if current and current.name in names else -1
-    return f"/role {names[(index + 1) % len(names)]}"
+    return f"/role select {names[(index + 1) % len(names)]}"
 
 
-__all__ = ["cmd_role", "next_role_command", "role_subcommands"]
+__all__ = ["next_role_command", "role_command"]

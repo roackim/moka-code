@@ -71,8 +71,8 @@ User types → InputComponent
 ## Config
 
 `~/.config/moka/` — single-concern files (`ui.toml`, `context.toml`,
-`debug.toml`, `styles.toml`, `servers.toml`), one role per
-file at `roles/<name>.toml`, sandboxes one per file (`sandboxes/<name>.toml` global, `projects/<dir>_<hash>/sandboxes/` local),
+`debug.toml`, `servers.toml`), one role per
+file at `roles/<name>.toml`, one theme per file at `themes/<name>.toml`, sandboxes one per file (`sandboxes/<name>.toml` global, `projects/<dir>_<hash>/sandboxes/` local),
 and a disposable `state.toml`; global config loaded by `settings.py`, project
 files by `projects.py`. See [notes/config.md](./config.md).
 

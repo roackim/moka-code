@@ -103,8 +103,10 @@ A command that selects among values follows one behaviour (guarded by
 - Keep one source for values and descriptions (`theme_name_completions` /
   `theme_descriptions`), used by both the `Param` and the picker.
 
-`/theme` is the deliberate exception: no argument, because the live preview while
-browsing is the point.
+A command that also has verbs puts the choice under a `select` subcommand instead
+(`/role select [name]`, `/theme select [name]`), never as values beside its verbs:
+names mixed into the `/cmd ` menu got confused with the subcommands. Its bare
+`/cmd` lists the subcommands (`base.show_subcommands`).
 
 ## Things handlers must get right
 

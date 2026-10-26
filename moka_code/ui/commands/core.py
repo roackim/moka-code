@@ -20,13 +20,10 @@ from moka_code.ui.tui.msg_types import SysMsg, SysMsgError
 from .base import (
     ChatUIProtocol,
     Command,
-    Param,
     open_shell,
     pick,
     reapply_endpoint,
     stop_before,
-    theme_descriptions,
-    theme_name_completions,
 )
 
 logger = logging.getLogger(__name__)
@@ -210,42 +207,10 @@ def _config_flat(section: str):
     return handler
 
 
-async def _config_theme(ui: ChatUIProtocol, args: List[str]):
-    """Open ``themes.toml``; with an id, materialize that theme's section first."""
-    from moka_code import settings
-    from moka_code.ui.external_editor import open_editor, resolve_editor
-    from moka_code.ui.tui.colors import theme_toml_section
-
-    if not resolve_editor():
-        ui.chat_history_panel.add_message(
-            "No editor found. Set $VISUAL or $EDITOR.",
-            msg_type=SysMsgError(), title="config")
-        return
-
-    path = settings.config.ensure_section_file("theme")
-    if args:
-        name = args[0]
-        block = theme_toml_section(name)
-        if block is None:
-            ui.chat_history_panel.add_message(
-                f"Unknown theme '{name}'. Use /theme to list the available themes.",
-                msg_type=SysMsgError(), title="config")
-            return
-        text = path.read_text(encoding="utf-8")
-        # Add an override section for this theme if it is not there yet (so the
-        # user edits the palette rather than an empty file).
-        header = f"[themes.{name}]"
-        if not any(line.strip() == header for line in text.splitlines()):
-            path.write_text(text.rstrip() + "\n\n" + block, encoding="utf-8")
-
-    await open_editor(ui, path)
-    reload_and_apply(ui, "config")
-
-
 def config_command() -> Command:
     """``/config``: one subcommand per file or kind of file, each declaring its own
     parameters, so completion, descriptions and hints all come from the tree.
-    Roles, prompts and sandboxes are edited from their own commands."""
+    Roles, themes, prompts and sandboxes are edited from their own commands."""
     import asyncio
 
     from moka_code import settings
@@ -253,12 +218,8 @@ def config_command() -> Command:
     subcommands = {
         section: Command(f"config {section}", f"Edit {filename} and reload",
                          handler=_config_flat(section))
-        for section, filename in settings.CONFIG_FILES.items() if section != "theme"
+        for section, filename in settings.CONFIG_FILES.items()
     }
-    subcommands["theme"] = Command(
-        "config theme", "Edit themes.toml (a theme name adds its palette to edit)",
-        handler=_config_theme,
-        params=[Param("NAME", completions=theme_name_completions, descriptions=theme_descriptions)])
 
     async def config_help(ui: ChatUIProtocol, args: List[str]):
         """Bare ``/config``: a picker over the subcommands. Anything else is not one."""
