@@ -6,6 +6,7 @@ to change anything. Renames are shown as a deletion plus an addition.
 """
 from __future__ import annotations
 
+import difflib
 import os
 import subprocess
 import time
@@ -110,22 +111,19 @@ def cached_changes(workspace: str) -> Optional[List[Change]]:
     return found
 
 
-def _context_flag(context) -> str:
-    """git's option for ``diff_context``: N lines, the enclosing function, or the file."""
-    if context == "function":
-        return "--function-context"
-    return f"-U{1_000_000 if context == 'all' else context}"
+#: ``context`` that shows the whole file (``context.diff_full_file``).
+WHOLE_FILE = 1_000_000
 
 
-def diff_text(workspace: str, path: Optional[str] = None, context=3) -> str:
+def diff_text(workspace: str, path: Optional[str] = None, context: int = 3) -> str:
     """The unified diff of one file (or of everything) against ``HEAD``, untracked
-    files included, without colour. ``context``: lines around each change (an int),
-    ``"function"`` for the whole enclosing function, ``"all"`` for the whole file."""
+    files included, without colour. ``context``: unchanged lines around each change
+    (``WHOLE_FILE`` for the whole file)."""
     untracked = [c.path for c in (changes(workspace) or []) if c.status == "??"]
     parts = []
     if path is None or path not in untracked:
         tracked = _git(workspace, "diff", _base(workspace), "--no-renames", "--no-color",
-                       "--relative", "--no-ext-diff", _context_flag(context), *(["--", path] if path else []))
+                       "--relative", "--no-ext-diff", f"-U{context}", *(["--", path] if path else []))
         if tracked and tracked.returncode == 0:
             parts.append(tracked.stdout)
     for new in untracked if path is None else ([path] if path in untracked else []):
@@ -134,3 +132,13 @@ def diff_text(workspace: str, path: Optional[str] = None, context=3) -> str:
         if added and added.stdout:           # exit status 1 only means "they differ"
             parts.append(added.stdout)
     return "".join(parts)
+
+
+def edit_diff(before: str, after: str, path: str, context: int = 3) -> str:
+    """The unified diff (git's format, line numbers in the ``@@`` headers) from
+    ``before`` to ``after``: what an ``edit`` call changes, with ``context``
+    unchanged lines around it. Needs no git: the file may be outside a repository
+    or behind a sandbox."""
+    return "".join(difflib.unified_diff(
+        before.splitlines(keepends=True), after.splitlines(keepends=True),
+        fromfile=f"a/{path}", tofile=f"b/{path}", n=context))

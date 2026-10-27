@@ -90,7 +90,9 @@ def _diff_dir() -> Path:
 async def _show(ui: ChatUIProtocol, workspace: str, path: Optional[str]) -> None:
     from moka_code.ui.external_editor import open_editor
 
-    text = changes.diff_text(workspace, path, settings.config.context_diff_context)
+    context = (changes.WHOLE_FILE if settings.config.context_diff_full_file
+               else settings.config.context_diff_context)
+    text = changes.diff_text(workspace, path, context)
     if not text.strip():
         ui.chat_history_panel.add_message(
             f"No changes in {path}." if path else "No changes.", msg_type=SysMsg(), title="diff")

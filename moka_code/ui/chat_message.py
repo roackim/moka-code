@@ -7,7 +7,7 @@ import time
 from typing import Any, Optional
 from moka_code import settings
 from moka_code.harness import images
-from moka_code.ui.tui.colors import theme, RGB
+from moka_code.ui.tui.colors import theme, RGB, resolve_color
 from moka_code.ui.tui.components import TextComponent
 from moka_code.ui.tui.components.markdown import MarkdownComponent
 from moka_code.ui.tui.components.message_view import MessageView
@@ -251,13 +251,53 @@ def _hard_wrap(text: str, width: int) -> list[str]:
     return chunks
 
 
-def _tool_body(name: str, args: dict) -> list[tuple]:
+_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def _diff_body(diff: str) -> list[tuple]:
+    """Body lines of a unified diff: ``42 + text`` with the file's line number
+    (the old one for a removed line), ``…`` between hunks, capped."""
+    parsed: list = []
+    old = new = None                    # None before the first hunk (file headers)
+    for line in diff.splitlines():
+        hunk = _HUNK_RE.match(line)
+        if hunk:
+            if parsed:
+                parsed.append((theme.MUTED, "", "…"))
+            old, new = int(hunk.group(1)), int(hunk.group(2))
+        elif old is None or line.startswith("\\"):   # "\ No newline at end of file"
+            continue
+        elif line.startswith("-"):
+            parsed.append((theme.ERROR, old, "- ", line[1:]))
+            old += 1
+        elif line.startswith("+"):
+            parsed.append((theme.SUCCESS, new, "+ ", line[1:]))
+            new += 1
+        else:
+            parsed.append((theme.MUTED, new, "  ", line[1:]))
+            old += 1
+            new += 1
+    numbers = [entry[1] for entry in parsed if len(entry) == 4]
+    width = len(str(max(numbers))) if numbers else 1
+    body = [entry if len(entry) == 3 else (entry[0], f"{entry[1]:>{width}} {entry[2]}", entry[3])
+            for entry in parsed]
+    limit = _BODY_LINES * 2
+    if len(body) > limit:
+        more = len(body) - limit
+        body = body[:limit] + [(theme.MUTED, "", f"… {more} more {_lines_word(more)}")]
+    return body
+
+
+def _tool_body(name: str, args: dict, diff: Optional[str] = None) -> list[tuple]:
     """Readable focused-view body: edit diff, write head, full bash command.
 
     Lines are ``(color, prefix, text)`` triples so the caller clips the plain
-    text to the width before coloring.
+    text to the width before coloring. An edit shows ``diff`` (the file's own
+    lines around the change) when the harness read it, else search → replace.
     """
     body: list = []
+    if name == "edit" and diff:
+        return _diff_body(diff)
     if name == "edit":
         search, replace = args.get("search"), args.get("replace")
         if isinstance(search, str) and isinstance(replace, str):
@@ -448,6 +488,8 @@ class Message:
         self.tool_name: Optional[str] = None
         self.tool_args: Optional[str] = None
         self.tool_output: Optional[str] = None
+        # Unified diff of an edit, read by the harness before the decision.
+        self.tool_diff: Optional[str] = None
         # "drafting" | "running" | "completed" | "error" | "denied" | "cancelled"
         self.tool_status: Optional[str] = None
         self.show_output: bool = False  # Toggle for output visibility ('o')
@@ -493,7 +535,19 @@ class Message:
                  msg_types.ToolCallMsg, msg_types.AskPermissionMsg),
             ),
         )
-    
+        self._apply_thought_colors()
+
+    def _apply_thought_colors(self) -> None:
+        """A thought's bar and text: ``ui.thought_color`` folded,
+        ``ui.thought_expanded_color`` unfolded (the folded line is drawn in
+        the bar's color)."""
+        if not isinstance(self.type, msg_types.ThinkingMsg):
+            return
+        folded = resolve_color(settings.config.ui_thought_color, theme.MUTED)
+        unfolded = resolve_color(settings.config.ui_thought_expanded_color, theme.MUTED)
+        self.component.fg = unfolded
+        self.box.gutter_color = folded if self.collapsed else unfolded
+
     def finalize(self):
         # A finalized message is complete: drain any un-revealed arrived text so
         # the full content is rendered before the inline styling is applied.
@@ -600,6 +654,7 @@ class Message:
         self.box.fg = frame_color
         self.box.bg = theme.get_bg()
         self.box.gutter_color = gutter_color
+        self._apply_thought_colors()
         if self.is_tool_message():
             # The cached header/body carry colors of the previous theme.
             self._tool_display_cache_key = None
@@ -635,6 +690,7 @@ class Message:
         if self.collapsed != collapsed:
             self.collapsed = collapsed
             self.layout_revision += 1
+            self._apply_thought_colors()
             self.box.mark_changed()
 
     @property
@@ -923,7 +979,8 @@ class Message:
 
         # Parse/summarize at most once per distinct args/output: ticks rebuild
         # a running message, and re-parsing a huge ``write`` body is O(n).
-        cache_key = (id(self.tool_args), self.tool_name, id(completed_output), drafting)
+        cache_key = (id(self.tool_args), self.tool_name, id(completed_output), drafting,
+                     id(self.tool_diff))
         if getattr(self, "_tool_display_cache_key", None) != cache_key:
             # A draft's args are partial: never full-parse them, or a ``"}"``
             # inside the streamed content would scan the whole buffer.
@@ -932,7 +989,8 @@ class Message:
             self._tool_display_parts = _tool_target_metric(
                 self.tool_name, args, raw=self.tool_args,
                 output=completed_output, drafting=drafting)
-            self._tool_display_body = _tool_body(self.tool_name, args) if not drafting else []
+            self._tool_display_body = (_tool_body(self.tool_name, args, self.tool_diff)
+                                       if not drafting else [])
         target, metric = self._tool_display_parts
 
         name_color = {
@@ -994,7 +1052,7 @@ class Message:
                 for color, prefix, text in self._tool_display_body:
                     room = width - display_width(prefix)
                     clipped = _clip(text, room)
-                    if prefix.strip() in ("+", "-"):
+                    if prefix.rstrip().endswith(("+", "-")):
                         # Added/removed lines are colored whole, not just the sign.
                         lines.append(f"{color}{prefix}{clipped}{theme.reset()}")
                     else:

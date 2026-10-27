@@ -53,6 +53,9 @@ class Role:
     #: The harness sends it with every call (the model cannot set it), in bare and
     #: sandbox mode.
     tool_timeout: float = DEFAULT_TOOL_TIMEOUT
+    #: Palette name or ``#rrggbb`` coloring the input bars and the status bar's
+    #: role field while this role runs; empty keeps the theme's colors.
+    color: str = ""
 
     def enabled_tool_names(self) -> set[str]:
         """Tool names the model is allowed to see (anything but ``no``)."""
@@ -80,6 +83,7 @@ def agent_role() -> Role:
         description="General coding agent (all tools auto-approved)",
         prompt="You are a helpful assistant that can interact with a computer.",
         tools={name: "yes" for name in _all_tools_no()},
+        color="WARNING",
     )
 
 
@@ -90,6 +94,7 @@ def chat_role() -> Role:
         description="Pure chat (no tools)",
         prompt=DEFAULT_ROLE_PROMPT,
         tools=_all_tools_no(),
+        color="SUCCESS",
     )
 
 
@@ -104,9 +109,14 @@ def no_role() -> Role:
 
 
 def default_role() -> Role:
-    """The role a conversation starts on: ``agent``, else the first role file
-    that loads, else the ``no_role`` placeholder."""
-    for name in ["agent", *list_roles()]:
+    """The role a conversation starts on: the last one used (``state.toml``),
+    else ``agent``, else the first role file that loads, else the ``no_role``
+    placeholder."""
+    from moka_code import settings
+
+    names = list_roles()
+    last = settings.config.last_role
+    for name in [*([last] if last in names else []), "agent", *names]:
         try:
             return load_role(name)
         except (KeyError, OSError, ValueError):
@@ -172,7 +182,7 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
     registered = set(registered_tool_names())
     tools: dict[str, str] = {}
     for key, value in data.items():
-        if key in ("description", "prompt", "require_sandbox", "preserve_thinking",
+        if key in ("description", "prompt", "color", "require_sandbox", "preserve_thinking",
                    "tool_timeout"):
             continue
         if key in _RETIRED_ROLE_KEYS:
@@ -195,6 +205,13 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
         raise ValueError(
             f"roles/{name}.toml: tool_timeout must be a number of seconds (0 or less = no limit)")
+    color = data.get("color", "")
+    if color != "":
+        from moka_code.settings import _coerce
+
+        color, error = _coerce("color", color)
+        if error:
+            raise ValueError(f"roles/{name}.toml: color {error}")
     return Role(
         name=name,
         description=str(data.get("description", "")),
@@ -203,6 +220,7 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
         require_sandbox=bool(data.get("require_sandbox", False)),
         preserve_thinking=preserve,
         tool_timeout=timeout,
+        color=color,
     )
 
 
@@ -274,10 +292,14 @@ def _role_template(role: Role) -> str:
     tools = "".join(f'{name.ljust(width)} = "{value}"\n' for name, value in role.tools.items())
     sandbox = ("require_sandbox = true\n" if role.require_sandbox
                else "# require_sandbox = true\n")
+    color = (f"color = {json.dumps(role.color)}\n" if role.color
+             else '# color = "USER"\n')
     return (
         f"## Moka role: {role.name}\n\n"
         f"description = {json.dumps(role.description)}\n"
-        f"prompt = {json.dumps(role.prompt)}\n\n"
+        f"prompt = {json.dumps(role.prompt)}\n"
+        f"## color: input bars and status bar role field (palette name or #rrggbb)\n"
+        f"{color}\n"
         f"## All available tools: no = disabled (hidden from the model) · ask = confirm · yes = auto\n"
         f"{tools}\n"
         f"## Technical settings\n\n"

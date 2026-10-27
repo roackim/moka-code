@@ -217,6 +217,25 @@ def _color_from_spec(spec):
     raise ValueError(f"Invalid color: {spec!r}")
 
 
+def resolve_color(value: str, fallback):
+    """Resolve a theme palette name or ``#rrggbb`` string to a color.
+
+    Falls back to ``fallback`` for an unknown name or invalid hex so a typo in
+    the config never blanks what it colors.
+    """
+    if not value:
+        return fallback
+    named = getattr(theme, value, None)
+    if isinstance(named, (RGB, ANSIColor)):
+        return named
+    if value.startswith("#"):
+        try:
+            return RGB(value)
+        except ValueError:
+            return fallback
+    return fallback
+
+
 def _theme_from_palette(name: str, palette: dict) -> "_theme":
     base = BUILTIN_THEMES.get(name, terminal).copy()
     base.name = name
@@ -240,10 +259,9 @@ def theme_problems() -> list:
     """Chosen themes that do not exist (they fall back to ``terminal``)."""
     known = available_themes()
     problems = []
-    for where, name in (("ui.toml: theme", settings.config.ui_theme),
-                        ("state.toml: active_theme", settings.config.active_theme)):
-        if name and name not in known:
-            problems.append(f"{where} '{name}' is not a theme (using terminal)")
+    name = settings.config.active_theme
+    if name and name not in known:
+        problems.append(f"state.toml: active_theme '{name}' is not a theme (using terminal)")
     return problems
 
 

@@ -8,15 +8,24 @@ Moka's TUI is built from scratch — no curses, no third-party TUI framework. It
 
 ```
 chatTUI (app.py)
-  └─ Compositor (tui/compositor.py)       ← render loop, FPS throttle
-       ├─ Container layout (tui/container.py)
-       │    ├─ ChatHistoryPanel           ← scrollable message list
-       │    ├─ InputComponent             ← multi-line editor
-       │    └─ DebugLogPanel (optional)   ← dev logging
+  └─ Compositor (tui/compositor.py)       ← render loop, FPS throttle, ui.app_global_padding
+       ├─ ChatScreen → AppScaffold (tui/chat_screen.py, tui/scaffold.py)
+       │    ├─ top:    NoticeBand         ← what needs fixing now (0..ui.notice_lines rows)
+       │    ├─ body:   Hsplit [Fill, Content, Content]
+       │    │    ├─ ChatHistoryPanel      ← scrollable transcript
+       │    │    ├─ ActionBar             ← 0 rows, or 2 (pad + actions/hint)
+       │    │    └─ Box(lines_only) ⊃ InputComponent  ← multi-line editor
+       │    └─ bottom: StatusBar          ← one line, ui.status_bar_fields
        └─ Overlays (floating, on top)
-            ├─ SelectionMenu              ← autocomplete dropdowns
-            └─ Popup                      ← centered text popups (/help)
+            ├─ SelectionMenu              ← completion menus, above the input box
+            ├─ SearchModal                ← pickers
+            ├─ Popup                      ← /help, /debug (full screen)
+            ├─ DebugPopup                 ← /activity
+            └─ ThemePreview               ← palette strip while picking a theme
 ```
+
+`AppScaffold` sizes `top` and `bottom` by `get_preferred_height()`; the body
+gets the rest.
 
 Typed event dataclasses are defined in `tui/events.py`. Shared focus ownership
 is provided by `tui/focus.py`.
@@ -89,7 +98,10 @@ green below 33%, orange/amber below 66%, and red at or above 66%.
 
 The `role` field reflects the active conversation role and is refreshed
 whenever the role changes (via `/role select <name>` or a conversation import that
-applies a saved role).
+applies a saved role). A role file's `color` (palette name or `#rrggbb`) colors
+this field and the focused input bars (`chatTUI._input_box_fg`); without one they
+keep `DEFAULT` / `USER`. The seeded `agent` is `WARNING`, `chat` is `SUCCESS`.
+`switch_role` marks the input box changed so the bars recolor at once.
 
 ## Sessions (`harness/sessions.py`)
 
@@ -538,8 +550,13 @@ edit a.py +2 lines −1 line approve? a/x   (AskPermissionMsg)
 - **State** (`Message.tool_state()`): `drafting` → (`asking`) → `running` →
   `completed` / `error` / `denied` / `cancelled`. `set_tool_status("running")`
   starts the elapsed clock.
-- **Focused body** (`_tool_body`): edit → `SequenceMatcher` diff (`  `/`- `/`+ `,
-  indentation kept, capped; `+`/`-` lines colored whole SUCCESS/ERROR); write → first 20 lines as `+ ` then
+- **Focused body** (`_tool_body`): edit → the file's own unified diff when the
+  harness read it (`PermissionRequest.diff`, kept as `Message.tool_diff`, drawn by
+  `_diff_body`: `42 + text` with the file's line number, the old one for a removed
+  line, `…` between hunks, `context.diff_context` lines around the change), else
+  (drafting, or the edit would not apply) a `SequenceMatcher` diff of search →
+  replace (`  `/`- `/`+ `); indentation kept, capped; `+`/`-` lines colored whole
+  SUCCESS/ERROR; write → first 20 lines as `+ ` then
   `… +N more lines`; bash → the full command on the header's first line,
   continuing indented when it wraps; other tools → `key: value`. `o` on a
   finished call splits it into `command` + `output` segments (shared
@@ -740,7 +757,14 @@ Messages are separated by `ui_msg_v_margin` blank lines (default `1`; set it in
 (`MsgType.clamped`: `ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`) stacks
 with no gap; prose, user turns and notices keep the gap. A thought belongs to
 the message it precedes: it sits directly on top of it, and when that message
-needs a gap the gap goes above the thought.
+needs a gap the gap goes above the thought. `ui.thought_gap = true` spaces
+thoughts like any message (no longer stuck to what follows); `ui.tool_gap = true`
+spaces tool lines (`_clamped`).
+
+Thought colors: `ui.thought_color` colors the folded line and its bar,
+`ui.thought_expanded_color` the unfolded text and its bar (both `MUTED` by
+default; palette name or `#rrggbb`, resolved by `colors.resolve_color`;
+`Message._apply_thought_colors` re-applies them on fold, theme switch and reload).
 `ChatHistoryPanel` is the owner of the message list — it handles layout,
 selection, scrolling, and width-change reformatting.
 
@@ -807,27 +831,31 @@ The package lives in `moka_code/ui/commands/`:
 
 ### Registered Commands
 
-`help`, `clear`, `private`, `reload`, `config`, `edit`, `export`, `import`, `compact`,
-`exit`, `stop`, `terminal`, `activity`, `debug`, `model`, `role`, `sandbox`, `diff`, `prompt`, `theme`
+`help`, `clear`, `private`, `reload`, `config`, `edit`, `export`, `import`, `session`,
+`compact`, `exit`, `stop`, `terminal`, `debug`, `activity`, `model`, `effort`, `role`,
+`sandbox`, `diff`, `prompt`, `theme`
 
 ### Sandbox (`/sandbox`)
 
 Verb-first command tree (`COMMANDS["sandbox"].subcommands`):
 
-- `/sandbox` → start picker (subcommand help when none exists); `/sandbox edit` → edit a sandbox's file.
-- `/sandbox start [id]` → activate; no id opens a picker (id, type or description,
-  the active one tagged); missing image offers *Build now* / *Cancel*.
-- `/sandbox build <id>` → build the image (streams to activity; no activate).
-- `/sandbox init podman|docker [base]` → write a starter `Containerfile` /
-  `Dockerfile`; `params` complete runtime (`podman|docker`) then base
-  (`python|debian|ubuntu`).
+- `/sandbox` → start picker (subcommand help when none exists).
+- `/sandbox edit [name]` / `path [name]` → open / print a sandbox's file.
+- `/sandbox create <name> <type> [scope]`, `copy <name> <scope> <new_name>`,
+  `remove <name>` (asks to confirm) → manage sandbox files.
+- `/sandbox start [name]` → activate; no name opens a picker (name, type or
+  description, the active one tagged); missing image offers *Build now* / *Cancel*.
+- `/sandbox build <name>` → build the image (streams to activity; no activate).
+- `/sandbox restart` → restart the active sandbox from its current image.
+- `/sandbox init <name> [base]` → write a starter `Containerfile` /
+  `Dockerfile` next to the sandbox.
 - `/sandbox stop` → deactivate.
 - `/sandbox terminal` → shell inside the active sandbox (`open_shell`).
 
-The `start`/`build` `ID` param uses `sandbox_id_completions` +
-`sandbox_id_descriptions`; `init` uses `sandbox_runtime_completions` then
-`sandbox_base_completions`. All positional completion comes from the tree, not
-from a hand-rolled `get_completions`.
+`NAME` params use `sandbox_id_completions` + `sandbox_id_descriptions`; `TYPE`,
+`SCOPE` and `BASE` use `sandbox_type_completions`, `sandbox_scope_completions`
+and `sandbox_base_completions`. All positional completion comes from the tree,
+not from a hand-rolled `get_completions`.
 
 ### Diff review (`/diff`)
 
@@ -841,10 +869,9 @@ from a hand-rolled `get_completions`.
   files. The diff is a read-only (0444) `.diff` file under `~/.cache/moka/diff/`,
   removed when the editor closes.
 - Context: `context.toml` `diff_context` sets the unchanged lines around each
-  change: a number (default 3), `"function"` (the whole enclosing function) or
-  `"all"` (the whole file, changes marked in place). `"function"` is git's own
-  detection (the last unindented line, or a `diff=` driver from `.gitattributes`),
-  so it is exact for languages git knows and approximate otherwise.
+  change (a number, default 3; also used by the edit lines).
+  `diff_full_file = true` shows the whole file instead, changes marked in place
+  (`changes.WHOLE_FILE`).
 - Discoverability: the `/diff` row of the `/` menu reads "Review changes · 3
   files" (`Command.live_description`, evaluated each time the menu updates; git is
   asked at most every 3 s, `changes.cached_changes`). Descriptions in the `/`
@@ -866,7 +893,8 @@ from a hand-rolled `get_completions`.
 - A role is its file: nothing comes from code. The running role is kept in memory;
   the notice band says when its file is `gone` (running from memory) or `changed on
   disk → /reload` (`Harness.role_problem`, gated by a `stat`). At startup the
-  conversation takes `agent`, else the first role that loads; with none, a no-tool
+  conversation takes the last role used (`state.toml` `last_role`, saved by
+  `chatTUI.switch_role`), else `agent`, else the first role that loads; with none, a no-tool
   placeholder and an error notice (`no role file loads → /role create agent`).
 - `/role edit [name]` opens `roles/<name>.toml` in `$EDITOR` and reloads; `/role
   create <name>` writes a starter first; `/role path [name]` prints the path;

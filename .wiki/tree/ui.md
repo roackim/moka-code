@@ -21,6 +21,8 @@ architecture overview.
 | `clipboard.py` | `copy_to_clipboard` (native helpers, then OSC 52); `read_clipboard` for Ctrl+V (image bytes or text) |
 | `external_editor.py` | Opens files in `$VISUAL`/`$EDITOR`, suspending the TUI |
 | `logging_handlers.py` | `TuiLogHandler` — routes log records to the debug panel |
+| `banner.py` | `banner_lines(width)` — the startup art drawn in an empty transcript |
+| `answer_split.py` | Splits a finished answer into prose / code / table segments |
 | `__init__.py` | (empty) |
 
 ### Key details
@@ -31,7 +33,7 @@ architecture overview.
   `agent.set_role` and emits a de-duped role-change notice. Ordinary, edited,
   retried, and resumed messages share one enqueue path.
 - **Action surface**: a collapsible `ActionBar` above the input shows the
-  selected message's actions, or input prefixes (`/`, `@`, `$`) when focused.
+  selected message's actions, or input hints (`/`, `@`, `↑↓`) when focused.
 - **Activity overlay**: `SysMsg*` is routed to the activity surface (a
   `DebugPopup`) instead of the transcript; `/activity` toggles it; `/debug` shows the log full screen.
 - **Clipboard**: `ui/clipboard.py` is the single owner (native
@@ -43,23 +45,23 @@ architecture overview.
 ## `commands/` (package)
 
 Slash command system. Leaf commands are plain `async def` handlers wrapped in
-`Command(...)`; only real subcommand trees are classes.
+`Command(...)`; subcommands are a `Command` tree (`subcommands={...}`), never a
+subclass.
 
 | File | Purpose |
 |------|---------|
 | `registry.py` | The single `COMMANDS` assembly point; `handle_command`, description/completion helpers |
 | `base.py` | `Command`, `Param`, `ChatUIProtocol`, completion helpers (`role_*`, `prompt_*`, `theme_*`) |
-| `core.py` | Core commands: help, clear, reload, config, edit, compact, exit, stop, activity |
-| `conversation.py` | `/import`, `/export` |
-| `models.py` | `/model` leaf (picker or direct selection) |
+| `core.py` | Core commands: help, clear, private, reload, config, edit, compact, exit, stop, terminal, debug, activity |
+| `conversation.py` | `/import`, `/export`, `/session` |
+| `models.py` | `/model`, `/effort` (picker or direct selection) |
 | `roles.py` | `/role` — `select [name]`, `edit [name]`, `create`, `path`, `remove` |
-| `sandbox.py` | `/sandbox` — verb-first: `config [name]`, `path [name]`, `new`, `copy`, `build <name>`, `start [name]`, `restart`, `init <name> [base]`, `stop`, `terminal` |
+| `sandbox.py` | `/sandbox` — verb-first: `edit [name]`, `path [name]`, `create`, `copy`, `remove`, `build <name>`, `start [name]`, `restart`, `init <name> [base]`, `stop`, `terminal` |
+| `diff.py` | `/diff` — picker over changed files, opens a read-only diff in `$EDITOR` |
 | `prompts.py` | `/prompt` — picker over the `!prompt` files, or open/create one (`moka_code/prompts.py` is the library) |
 | `themes.py` | `/theme` — `select [name]` (live-preview picker), `edit [name]`, `create`, `path`, `remove` over `themes/<name>.toml` |
 
-Registered commands: `help`, `clear`, `reload`, `config`, `edit`, `export`,
-`import`, `compact`, `exit`, `stop`, `activity`, `model`, `role`, `sandbox`,
-`prompt`, `theme`.
+Registered commands: see [notes/ui.md](../notes/ui.md#registered-commands).
 
 - `/config <section>` opens a section file in `$EDITOR` and reloads (sections:
   `ui`, `context`, `debug`, `servers`). `/config` is a `Command` tree built by

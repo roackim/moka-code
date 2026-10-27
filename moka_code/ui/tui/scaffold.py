@@ -1,12 +1,9 @@
 """AppScaffold — shared top-level screen chrome.
 
-Every workspace screen (chat, settings, debug, …) shares the same frame:
-a tab bar across the top, a body filling the middle, and a status bar pinned
-to the bottom.  Previously each screen re-implemented this with ad-hoc ``Split``
-sizes and workarounds for the "0 means fill" ambiguity, which is how the
-settings screen ended up with a collapsed status bar.
+The chat screen's frame: an optional bar across the top (the notice band), a
+body filling the middle, and a bar pinned to the bottom (the status bar).
 
-``AppScaffold`` owns that frame once:
+``AppScaffold`` owns that frame:
 
 * ``top`` and ``bottom`` are sized by their ``get_preferred_height()`` (bars
   declare their own height, e.g. 1 line).

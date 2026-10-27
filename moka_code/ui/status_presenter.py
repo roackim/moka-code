@@ -11,27 +11,8 @@ import time
 from typing import Any
 
 from moka_code import settings
-from moka_code.ui.tui.colors import theme, RGB, ANSIColor
+from moka_code.ui.tui.colors import theme, resolve_color
 from moka_code.ui.tui.components.box import SPINNER_FRAMES
-
-
-def _resolve_color(value: str, fallback: Any) -> Any:
-    """Resolve a theme palette name or ``#rrggbb`` string to a color.
-
-    Falls back to ``fallback`` for an unknown name or invalid hex so a typo in
-    the config never blanks the field.
-    """
-    if not value:
-        return fallback
-    named = getattr(theme, value, None)
-    if isinstance(named, (RGB, ANSIColor)):
-        return named
-    if value.startswith("#"):
-        try:
-            return RGB(value)
-        except ValueError:
-            return fallback
-    return fallback
 
 
 def _format_cost(cost: float | None) -> str:
@@ -305,7 +286,7 @@ def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
     if sandbox_text:
         sandbox_text += " "
     sandbox_text += f"{settings.config.ui_sandbox_prefix}{sandbox_label}"
-    sandbox_color = _resolve_color(
+    sandbox_color = resolve_color(
         settings.config.ui_sandbox_active_color if sandboxed
         else settings.config.ui_sandbox_inactive_color,
         theme.SUCCESS if sandboxed else theme.WARNING,
@@ -327,7 +308,9 @@ def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
         # Empty (so hidden) until the provider reports a cost.
         "cost": _format_cost(getattr(agent, "conversation_cost", None)),
     })
+    role_color = resolve_color(getattr(getattr(agent, "role", None), "color", ""), theme.DEFAULT)
     app.status_bar.set_field_colors({
+        "role": role_color,
         "context": _context_color(context_used, context_max),
         "endpoint": server_color,
         "model": server_color,

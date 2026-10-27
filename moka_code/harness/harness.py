@@ -57,9 +57,9 @@ class Harness:
         import os
         self.workspace = workspace_path or os.getcwd()
 
-        # The conversation's role lives in memory. It starts as the user's
-        # ``agent`` file, else the first role file that loads; with none, a
-        # placeholder without tools (the notice band says so).
+        # The conversation's role lives in memory. It starts as the last role
+        # used, else the user's ``agent`` file, else the first role file that
+        # loads; with none, a placeholder without tools (the notice band says so).
         from moka_code.harness import roles
         self.role = roles.default_role()
         self._role_stat = roles.role_file_stat(self.role.name)
@@ -1001,7 +1001,8 @@ class Harness:
             
             permission_decision = self._check_tool_permission(tool_name, args)
             prompt = self._build_permission_prompt(tool_name, args)
-            
+            diff = await self._edit_preview(args) if tool_name == "edit" else ""
+
             # Emit permission request (auto or user-facing)
             if permission_decision == "ask":
                 # Need user input
@@ -1011,6 +1012,7 @@ class Harness:
                     args=tool_args,
                     prompt=prompt,
                     auto=False,
+                    diff=diff,
                 )
                 
                 # Wait for user response
@@ -1025,6 +1027,7 @@ class Harness:
                     args=tool_args,
                     prompt=prompt,
                     auto=True,
+                    diff=diff,
                 )
             
             # STEP 2: Emit denial
@@ -1150,6 +1153,32 @@ class Harness:
                 "user", f"[images returned by read: {', '.join(tool_image_paths)}]",
                 images=tool_images, source="tool",
             )
+
+    async def _edit_preview(self, args: Dict[str, Any]) -> str:
+        """The unified diff an ``edit`` call would make, or "" when it would not
+        apply. The file is read through the active transport (sandbox or not)
+        and patched in memory; the result is for the UI, not the model."""
+        from moka_code import settings
+        from moka_code.harness.changes import edit_diff
+        from moka_code.worker import apply_patch, edit_patch
+
+        path, search, replace = args.get("path"), args.get("search"), args.get("replace")
+        tool = self.tools_map.get("edit")
+        if tool is None or not all(isinstance(v, str) for v in (path, search, replace)):
+            return ""
+        try:
+            patch = edit_patch(path, search, replace)
+            # ``read`` reports a missing file as its result text, which the
+            # search block then does not match: no preview.
+            before = await tool.transport.execute("read", {"path": path})
+        except Exception:                   # an invalid edit, a transport failure
+            return ""
+        if not isinstance(before, str):
+            return ""
+        after, message = apply_patch(before, patch)
+        if not message.startswith("[OK]"):
+            return ""
+        return edit_diff(before, after, path, settings.config.context_diff_context)
 
     def _take_tool_image(self, found: Dict[str, Any]) -> Tuple[str, Optional[Dict[str, Any]]]:
         """Turn an image returned by ``read`` into ``(tool result, reference)``.

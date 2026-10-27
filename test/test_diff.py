@@ -302,46 +302,38 @@ def test_the_picker_aligns_its_columns_and_colours_status_and_numbers(tmp_path):
     assert colour_at("new.md", "−0") == theme.MUTED           # nothing removed: quiet
 
 
-def test_diff_context_lines_function_or_whole_file(tmp_path):
-    """``context.toml`` ``diff_context``: N lines around a change, the enclosing
-    function, or the whole file with the change marked in place."""
+def test_diff_context_lines_or_whole_file(tmp_path):
+    """``context.toml`` ``diff_context``: N lines around a change; ``WHOLE_FILE``
+    (``diff_full_file``) shows the whole file with the change marked in place."""
     root = _repo(tmp_path, commit=False)
-    # git finds the "function" by the last unindented line, so the filler is indented.
-    body = "class Filler:\n" + "".join(f"    x{n} = {n}\n" for n in range(40))
-    (root / "m.py").write_text(
-        "def first():\n    return 1\n\n" + body + "\ndef target():\n" + "".join(f"    a{n} = {n}\n" for n in range(8)) + "    b = 2\n"
-        + "".join(f"    c{n} = {n}\n" for n in range(8)) + "    return a0\n\n"
-        + body + "\ndef last():\n    return 3\n")
+    body = "".join(f"x{n} = {n}\n" for n in range(40))
+    (root / "m.py").write_text("first = 1\n" + body + "b = 2\n" + body + "last = 3\n")
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "m")
-    text = (root / "m.py").read_text().replace("    b = 2\n", "    b = 22\n")
-    (root / "m.py").write_text(text)
+    (root / "m.py").write_text((root / "m.py").read_text().replace("b = 2\n", "b = 22\n"))
 
     narrow = changes.diff_text(str(root), "m.py", 1)
     default = changes.diff_text(str(root), "m.py")
-    function = changes.diff_text(str(root), "m.py", "function")
-    whole = changes.diff_text(str(root), "m.py", "all")
+    whole = changes.diff_text(str(root), "m.py", changes.WHOLE_FILE)
 
-    assert "-    b = 2" in narrow and "+    b = 22" in narrow
-    assert "\n def target():" not in narrow           # (the @@ header names it, but no line)
-    assert "\n def target():" in function and "\n     return a0" in function
-    assert "\n def first():" not in function and "x39 = 39" not in function.split("def target")[0]
-    assert "\n def first():" in whole and "\n def last():" in whole and "    x39 = 39" in whole
-    assert len(narrow) < len(default) < len(function) < len(whole)
+    assert "-b = 2" in narrow and "+b = 22" in narrow
+    assert "\n first = 1" in whole and "\n last = 3" in whole
+    assert "\n first = 1" not in default
+    assert len(narrow) < len(default) < len(whole)
 
 
 def test_diff_context_setting_is_validated_and_reaches_the_command(tmp_path, editor, monkeypatch):
     from moka_code import settings as settings_module
     from moka_code.settings import _coerce
 
-    assert [_coerce("diff_context", v)[1] for v in (0, 7, "function", "all")] == [None] * 4
-    assert all(_coerce("diff_context", v)[1] for v in (-1, True, "some", 1.5))
+    assert [_coerce("lines", v)[1] for v in (0, 7)] == [None] * 2
+    assert all(_coerce("lines", v)[1] for v in (-1, True, "all", "function", 1.5))
 
     root = _repo(tmp_path)
     (root / "a.py").write_text("one\nTWO\n")
     ui = _UI(root)
     asyncio.run(COMMANDS["diff"].execute(ui, ["a.py"]))
-    monkeypatch.setattr(settings_module.config, "context_diff_context", "all")
+    monkeypatch.setattr(settings_module.config, "context_diff_full_file", True)
     asyncio.run(COMMANDS["diff"].execute(ui, ["a.py"]))
 
     assert [e["text"].count("\n") for e in editor][0] <= [e["text"].count("\n") for e in editor][1]

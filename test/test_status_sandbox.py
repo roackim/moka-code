@@ -4,8 +4,8 @@ from moka_code import settings
 from moka_code.harness.usage import TokenUsage
 from types import SimpleNamespace
 
-from moka_code.ui.status_presenter import _resolve_color, refresh_status_bar
-from moka_code.ui.tui.colors import theme
+from moka_code.ui.status_presenter import refresh_status_bar
+from moka_code.ui.tui.colors import resolve_color, theme
 
 
 class _Bar:
@@ -103,11 +103,11 @@ def test_sandbox_field_bare_is_orange():
 
 
 def test_resolve_color_accepts_name_hex_and_fallback():
-    assert _resolve_color("SUCCESS", theme.DEFAULT) is theme.SUCCESS
-    hexed = _resolve_color("#112233", theme.DEFAULT)
+    assert resolve_color("SUCCESS", theme.DEFAULT) is theme.SUCCESS
+    hexed = resolve_color("#112233", theme.DEFAULT)
     assert (hexed.r, hexed.g, hexed.b) == (0x11, 0x22, 0x33)
-    assert _resolve_color("NOPE", theme.DEFAULT) == theme.DEFAULT
-    assert _resolve_color("", theme.WARNING) == theme.WARNING
+    assert resolve_color("NOPE", theme.DEFAULT) == theme.DEFAULT
+    assert resolve_color("", theme.WARNING) == theme.WARNING
 
 
 def test_unknown_context_window_shows_only_the_tokens_used():

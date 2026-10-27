@@ -384,6 +384,21 @@ def write(path: str, content: str, *, cwd: Path | str) -> str:
         raise ToolError(f"Error writing file: {e}")
 
 
+def edit_patch(path: str, search: str, replace: str) -> PatchBlock:
+    """The replace block an ``edit`` call applies (shared with its preview)."""
+    try:
+        return parse_patch(
+            f"{path}\n"
+            "<<<<<<< SEARCH\n"
+            f"{search}\n"
+            "=======\n"
+            f"{replace}\n"
+            ">>>>>>> REPLACE"
+        )
+    except PatchParseError as e:
+        raise ToolError(f"Invalid edit: {e}")
+
+
 def edit(path: str, search: str, replace: str, *, cwd: Path | str) -> str:
     """
     Replace one exact text block in a file.
@@ -406,17 +421,7 @@ def edit(path: str, search: str, replace: str, *, cwd: Path | str) -> str:
     if replace is None:
         raise ToolError("Invalid edit arguments: missing 'replace'")
 
-    try:
-        patch = parse_patch(
-            f"{path}\n"
-            "<<<<<<< SEARCH\n"
-            f"{search}\n"
-            "=======\n"
-            f"{replace}\n"
-            ">>>>>>> REPLACE"
-        )
-    except PatchParseError as e:
-        raise ToolError(f"Invalid edit: {e}")
+    patch = edit_patch(path, search, replace)
 
     # Guardrails: replacement size and line delta constraints
     replacement_chars = len(patch.replace_text)

@@ -13,7 +13,7 @@ def _write(path, data):
 
 def test_section_files_apply(tmp_path):
     _write(tmp_path / "ui.toml",
-           {"theme": "pastel", "msg_h_padding": 2, "status_bar_fields": ["role"]})
+           {"msg_h_padding": 2, "status_bar_fields": ["role"]})
     _write(tmp_path / "context.toml", {"max_files": 50})
     _write(tmp_path / "debug.toml", {"log_enabled": True})
     _write(tmp_path / "servers.toml", {
@@ -25,7 +25,6 @@ def test_section_files_apply(tmp_path):
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
     assert config.load_errors == []
-    assert config.ui_theme == "pastel"
     assert config.ui_msg_h_padding == 2
     assert config.ui_status_bar_fields == ["role"]
     assert config.context_max_files == 50
@@ -34,7 +33,7 @@ def test_section_files_apply(tmp_path):
 
 
 def test_invalid_values_are_reported_and_do_not_apply(tmp_path):
-    _write(tmp_path / "ui.toml", {"theme": "dark", "msg_h_padding": "wide", "bogus": 1})
+    _write(tmp_path / "ui.toml", {"msg_h_padding": "wide", "bogus": 1})
     _write(tmp_path / "context.toml", {"max_files": "many"})
     _write(tmp_path / "servers.toml", {
         "servers": {"local": {"type": "wat", "base_url": 5}},
@@ -42,7 +41,6 @@ def test_invalid_values_are_reported_and_do_not_apply(tmp_path):
 
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
-    assert config.ui_theme == "dark"
     assert config.ui_msg_h_padding == 1  # default kept
     assert config.context_max_files == 500  # default kept
 
@@ -77,7 +75,7 @@ def test_malformed_toml_reports_error_and_keeps_defaults(tmp_path):
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
 
     assert config.load_errors
-    assert config.ui_theme == "terminal"
+    assert config.ui_msg_h_padding == 1
 
 
 def test_state_toml_loads_selection_and_ignores_the_retired_catalog(tmp_path):
@@ -162,7 +160,7 @@ def test_default_templates_are_valid_and_error_free(tmp_path):
 
     assert config.load_errors == []
     assert config.servers == {}
-    assert config.ui_theme == "terminal"
+    assert config.get_active_theme() == "terminal"
 
 
 def test_ensure_files_write_templates(tmp_path):
@@ -201,22 +199,30 @@ def test_invalid_theme_values_are_reported(tmp_path):
     assert "USER" not in config.themes.get("bad", {})
 
 
-def test_active_theme_falls_back_to_ui_setting(tmp_path):
-    _write(tmp_path / "ui.toml", {"theme": "pastel"})
-    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+def test_a_ui_toml_theme_moves_to_state_once(tmp_path):
+    """``theme`` is retired from ui.toml (2026-10-27): the theme is state."""
+    _write(tmp_path / "ui.toml", {"theme": "nord"})
+    state = tmp_path / "state.toml"
+    config = Config(config_dir=tmp_path, state_path=state)
 
-    assert config.active_theme is None
-    assert config.get_active_theme() == "pastel"
+    assert config.load_errors == []
+    assert config.get_active_theme() == "nord"
+    assert toml.load(state)["active_theme"] == "nord"
+
+    # A /theme select choice is never overridden by a leftover line.
+    config.save_active_theme("gruvbox")
+    assert config.reload() == []
+    assert config.get_active_theme() == "gruvbox"
 
 
 def test_reload_picks_up_edits(tmp_path):
-    _write(tmp_path / "ui.toml", {"theme": "pastel"})
+    _write(tmp_path / "ui.toml", {"msg_v_margin": 2})
     config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
-    assert config.ui_theme == "pastel"
+    assert config.ui_msg_v_margin == 2
 
-    _write(tmp_path / "ui.toml", {"theme": "terminal"})
+    _write(tmp_path / "ui.toml", {"msg_v_margin": 0})
     assert config.reload() == []
-    assert config.ui_theme == "terminal"
+    assert config.ui_msg_v_margin == 0
 
 
 def test_openrouter_routing_keys_load(tmp_path):

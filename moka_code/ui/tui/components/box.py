@@ -5,11 +5,24 @@ from moka_code.ui.tui.buffer import Buffer, SubBuffer, Cell
 from moka_code.ui.tui.events import MouseEvent
 from moka_code.ui.tui.msg_types import MsgAction
 
-from moka_code import settings
 from moka_code.ui.tui.colors import theme
 
 # Braille spinner frames for animating in-progress thinking.
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+
+@dataclass(frozen=True)
+class _BorderStyle:
+    tl: str  # top-left
+    tr: str  # top-right
+    bl: str  # bottom-left
+    br: str  # bottom-right
+    h: str   # horizontal
+    v: str   # vertical
+
+
+# Every frame in moka is square (menus and pickers draw the same corners).
+_SQUARE = _BorderStyle("┌", "┐", "└", "┘", "─", "│")
 
 
 class SubBufferCellsProxy:
@@ -308,25 +321,7 @@ class Box(Component):
         if self.focused:
             fg = self.focus_color or theme.FOCUSED
         
-        @dataclass(frozen=True)
-        class BorderStyle:
-            tl: str  # top-left
-            tr: str  # top-right
-            bl: str  # bottom-left
-            br: str  # bottom-right
-            h: str   # horizontal
-            v: str   # vertical
-            
-        STYLES = {
-            "square":  BorderStyle("┌", "┐", "└", "┘", "─", "│"),
-            "double":  BorderStyle("╔", "╗", "╚", "╝", "═", "║"),
-            "ascii":   BorderStyle("+", "+", "+", "+", "-", "|"),
-            "rounded": BorderStyle("╭", "╮", "╰", "╯", "─", "│"),
-        }
-
-        # Use focused style if box is focused, otherwise use normal style
-        style_name = settings.config.ui_box_style_focused if self.focused else settings.config.ui_box_style
-        style = STYLES[style_name]
+        style = _SQUARE
 
         # Clear SubBuffer
         self.subbuffer.clear()

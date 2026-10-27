@@ -22,20 +22,20 @@ def _config(tmp_path):
 
 
 def test_sync_inserts_missing_keys_preserving_user_values(tmp_path):
-    (tmp_path / "ui.toml").write_text('theme = "pastel"\n', encoding="utf-8")
+    (tmp_path / "ui.toml").write_text('msg_v_margin = 2\n', encoding="utf-8")
 
     changed = _config(tmp_path).sync_section_files()
 
     assert "ui" in changed
     text = (tmp_path / "ui.toml").read_text(encoding="utf-8")
-    assert 'theme = "pastel"' in text
+    assert 'msg_v_margin = 2' in text
     assert "# stream_smoothing" in text
     assert "# smooth_target_fps" in text
     assert text.index("# stream_smoothing") < text.index("# smooth_target_fps")
 
 
 def test_sync_is_idempotent(tmp_path):
-    (tmp_path / "ui.toml").write_text('theme = "pastel"\n', encoding="utf-8")
+    (tmp_path / "ui.toml").write_text('msg_v_margin = 2\n', encoding="utf-8")
     config = _config(tmp_path)
     config.sync_section_files()
     first = (tmp_path / "ui.toml").read_text(encoding="utf-8")
@@ -98,6 +98,18 @@ def test_every_spec_key_has_a_commented_template_line(section):
 
 
 @pytest.mark.parametrize("section", sorted(SPEC_TEMPLATES))
+def test_template_values_are_the_spec_defaults(section):
+    """The default lives in the spec; the template shows the same value."""
+    import toml
+
+    spec, template = SPEC_TEMPLATES[section]
+    flat, _tables = settings._split_tables(template)
+    for key, line in settings._template_key_lines(flat):
+        shown = toml.loads(line.lstrip()[1:].strip())[key]
+        assert shown == spec[key][2], f"{section}.{key}: template {shown!r} != default {spec[key][2]!r}"
+
+
+@pytest.mark.parametrize("section", sorted(SPEC_TEMPLATES))
 def test_template_key_lines_are_commented(section):
     _, template = SPEC_TEMPLATES[section]
     for _, line in settings._template_key_lines(template):
@@ -119,12 +131,12 @@ def test_template_help_lines_use_double_hash(section):
 
 
 def test_missing_section_brings_its_heading_and_help(tmp_path):
-    (tmp_path / "ui.toml").write_text('theme = "pastel"\n', encoding="utf-8")
+    (tmp_path / "ui.toml").write_text('msg_v_margin = 2\n', encoding="utf-8")
 
     _config(tmp_path).sync_section_files()
 
     text = (tmp_path / "ui.toml").read_text(encoding="utf-8")
-    assert 'theme = "pastel"' in text
+    assert 'msg_v_margin = 2' in text
     assert "## Model field" in text
     assert "# show_provider" in text
     assert "# provider_separator" in text
@@ -135,7 +147,7 @@ def test_ui_sync_adds_keys_above_the_style_tables_and_never_touches_them(tmp_pat
     """styles.toml merged into ui.toml (2026-10-26): flat keys go above the
     tables (a key below a table header would belong to it)."""
     tables = '[markdown_styles.header1]\nfg = "#FFFFFF"\nbold = false\n'
-    (tmp_path / "ui.toml").write_text('theme = "pastel"\n\n' + tables, encoding="utf-8")
+    (tmp_path / "ui.toml").write_text('msg_v_margin = 2\n\n' + tables, encoding="utf-8")
     config = _config(tmp_path)
 
     assert config.sync_section_files() == ["ui"]

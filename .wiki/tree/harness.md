@@ -19,6 +19,9 @@ See [notes/architecture.md](../notes/architecture.md), [notes/tools-and-permissi
   is never blank while the model writes a call
 - `_execute_tool_calls()` — emits the complete `ToolCall` then `PermissionRequest`
   per tool in order (a pending `ask` blocks later tools); delegates to `PermissionGate`.
+  For an `edit`, `_edit_preview()` first reads the file through the transport,
+  applies the patch in memory (`worker.edit_patch` + `apply_patch`) and puts the
+  unified diff on `PermissionRequest.diff` (UI only; "" when it would not apply).
   Runs the tool as a task and forwards its `on_output` chunks as `ToolOutput`
   events as they arrive (bash streaming), then `ToolResult`
 - `_build_transport(spec, workspace)` — builds a `SandboxTransport` for a
@@ -244,9 +247,11 @@ cost of a cut that drops a compaction (None when it drops none).
 git repository): `git status --porcelain -z -uall` plus `git diff --numstat`
 against `HEAD`, scoped to the workspace folder; `cached_changes` (3 s) for the `/`
 menu; `diff_text(workspace, path=None, context=3)` the unified diff (`context`: N
-lines, `"function"` or `"all"`), untracked files via
+lines, `WHOLE_FILE` for the whole file), untracked files via
 `git diff --no-index`. Read-only: git only ever runs `status`, `diff`,
 `rev-parse`, `hash-object`, with `GIT_OPTIONAL_LOCKS=0`. Used by `/diff`.
+`edit_diff(before, after, path, context)` — the same format from two strings
+(`difflib`, no git): what an `edit` call changes (`Harness._edit_preview`).
 
 ### `roles.py`
 `Role` — the single source of truth for a conversation's operating mode: a

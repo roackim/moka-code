@@ -134,6 +134,9 @@ def reload_and_apply(ui: ChatUIProtocol, title: str | None = None) -> None:
     errors = (settings.reload_config() + roles.validate_roles()
               + projects.validate_sandboxes(workspace) + theme_problems())
     _apply_theme(ui)
+    apply_layout = getattr(ui, "apply_layout_settings", None)
+    if callable(apply_layout):
+        apply_layout()
     errors += _reapply_role(ui)
     errors += _reapply_sandbox(ui)
     reapply_endpoint(ui)

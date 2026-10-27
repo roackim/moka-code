@@ -25,7 +25,7 @@ activity panel. Nothing else reads the old location.
 | `sandboxes/<name>.toml` | one global sandbox per file; file name is the sandbox name | sandbox body |
 | `projects/<dirname>_<hash>/` | one project: `project.toml` (path + active) and `sandboxes/<name>.toml` (locals) | sandbox body |
 | `prompts/<name>.md` | one reusable prompt per file (global); local ones live in the workspace's `.moka/prompts/` | markdown template |
-| `state.toml` | last server/model, active theme, effort | machine-written |
+| `state.toml` | last server/model, active theme, last role, effort | machine-written |
 
 `state.toml` is disposable: deleting it only loses cached selections.
 The old `styles.toml` and `themes.toml` are no longer read (merged into
@@ -133,9 +133,10 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   changed. `type = "openrouter"` has no `base_url` (always
   `https://openrouter.ai/api/v1`); setting one is reported as a load error.
 - **State** (machine-written, disposable): `state.toml` holds `last_server`,
-  `[last_model]` (per-server selection), `active_theme`, and `[effort]`.
+  `[last_model]` (per-server selection), `active_theme`, `last_role` (the role
+  the next start opens on; ignored when its file is gone), and `[effort]`.
   Written by `set_active_server` / `save_model_selection` / `save_active_theme`
-  / `save_effort`. Legacy `active_model` and `[model_catalog]` keys are
+  / `save_last_role` / `save_effort`. Legacy `active_model` and `[model_catalog]` keys are
   accepted and ignored (dropped on the next write). The discovery catalog is
   in memory only (`Config.models_by_server`, kept across reloads), so a
   changed server can never be shadowed by a stale copy.
@@ -153,8 +154,9 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
   it first writes one with that theme's full palette
   (`colors.write_theme_file`). `/theme create <name>` copies the active palette.
 - `/theme select` opens a picker; `/theme select <name>` selects directly. The
-  choice is persisted in `state.toml` (`active_theme`), falling back to
-  `ui.toml`'s `theme` when unset.
+  choice is persisted in `state.toml` (`active_theme`), else `terminal`. The
+  theme is state only: `ui.toml`'s old `theme` key is retired, and a value left
+  there moves to `state.toml` once (when no theme was chosen yet).
 - The TUI suspends/resumes around the editor (`ui/external_editor.py`,
   `ui/tui/terminal.py`).
 
@@ -167,9 +169,8 @@ fourteen `colors.PALETTE_FIELDS` (`BACKGROUND`, `DEFAULT`, `MUTED`, `ERROR`,
 `"#RRGGBB"` hex string or an ANSI table (`{ ansi = 90 }`, `{ ansi = 39, bg = 49 }`).
 Missing entries inherit the built-in base of the same name (or `terminal`).
 Built-ins are always available and are listed by `/theme select` (or
-`colors.theme_names()`): `terminal` (default), `pastel`, `nord`, `dracula`,
-`gruvbox`, `solarized`, `one-dark`, `catppuccin`, `tokyo-night`, `rose-pine`,
-`everforest`, `monokai`, `ayu-dark`, `kanagawa`.
+`colors.theme_names()`): `terminal` (default), `moka`, `nord`, `dracula`,
+`gruvbox`, `tokyo-night`.
 `colors.available_themes()` merges them with the user definitions and
 `set_theme()` applies one in place. Markdown/syntax styles remain a separate
 global layer in the tables of `ui.toml`.
@@ -181,7 +182,9 @@ persists only on accept, and on cancel reloads the configured theme
 ## Roles
 
 A `Role` is a prompt plus a per-tool approval setting (`no` / `ask` / `yes`),
-stored one file per role under `roles/<name>.toml`. `PermissionGate`
+stored one file per role under `roles/<name>.toml`, plus an optional `color`
+(palette name or `#rrggbb`, validated like the `ui.toml` colour keys) for the
+input bars and the status bar's role field. `PermissionGate`
 (`harness/permissions.py`) is the single decision point. See
 [security.md](./security.md) and [tools-and-permissions.md](./tools-and-permissions.md).
 
@@ -215,18 +218,28 @@ both default on), `context_compact_at` / `context_compact_stop_at` /
 `context_compact_keep` (auto-compaction: fractions of the context window,
 defaults 0.8 / 0.85 / 0.1; see `tree/harness.md` `compaction.py`; 0 turns a
 trigger off), `context_diff_context` (`context.diff_context`: lines around
-each change in `/diff`, `"function"` or `"all"`, default 3);
-`ui_theme`, `ui_box_style`,
+each change in `/diff` and in a focused edit line, a number, default 3),
+`context_diff_full_file` (`context.diff_full_file`: `/diff` shows the whole
+file; default off);
 `ui_status_bar_fields`, `ui_max_input_height` (input box caps + scrolls past
 this many wrapped lines), `ui_stream_smoothing` / `ui_smooth_target_fps`
-(streamed-text reveal smoothing), `target_fps`, and the rest of the `ui_*`
-attrs, including `ui_thought_min_tokens` (reasoning shorter than this gets
-no transcript line; 0 = show all). `spinner_fps` is retired (`_RETIRED_UI`): tool and thinking lines show
+(streamed-text reveal smoothing), `ui_target_fps` (`ui.target_fps`, render
+loop), and the rest of the `ui_*` attrs, including `ui_thought_min_tokens`
+(reasoning shorter than this gets no transcript line; 0 = show all).
+Each spec entry is `key -> (attr, kind, default)`: the default lives only there
+(`_apply_defaults` loops over the specs; `test_template_values_are_the_spec_defaults`
+checks the template shows it). The loader ignores retired keys (the sync removes
+them). `msg_h_padding`, `app_global_padding` and `target_fps` are held by the
+layout and re-applied by `chatTUI.apply_layout_settings` (startup and every
+reload). `spinner_fps` is retired (`_RETIRED_UI`): tool and thinking lines show
 ticking elapsed time instead of a spinner. `context.format` (the project tree was
 never sent to the model) and `ui.debug_console_height` (the console is never shown) and the per-message
 metrics keys (`show_metrics`, `metrics_show_*`; nothing displayed them) are
-retired too. Colour keys (`sandbox_*_color`) are validated at load: a palette
-name or `#rrggbb`, else a load error and the default is kept.
+retired too, and so are `box_style` / `box_style_focused` (only the popups
+read them; every frame is square) and `theme` (state only). Colour keys (`sandbox_*_color`, `thought_color`,
+`thought_expanded_color`) are validated at load: a palette name or `#rrggbb`,
+else a load error and the default is kept. `thought_gap` / `tool_gap` space
+thoughts / tool lines like other messages (see [ui.md](./ui.md)).
 
 The `endpoint_model` status-bar field is composed from `ui_show_provider` +
 `ui_provider_separator` + the model, then `ui_show_effort` /

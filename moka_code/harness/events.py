@@ -57,13 +57,16 @@ class PermissionRequest:
     """A tool call awaiting a permission decision.
 
     ``auto`` is True when a configured policy made the decision without asking
-    the user; False when the user must approve or deny.
+    the user; False when the user must approve or deny. ``diff`` is the unified
+    diff an ``edit`` would make, read before the decision ("" when unknown);
+    it is for the UI only, never sent to the model.
     """
     id: str
     name: str
     args: str
     prompt: str
     auto: bool = False
+    diff: str = ""
 
 
 @dataclass

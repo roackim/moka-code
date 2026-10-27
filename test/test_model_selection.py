@@ -244,16 +244,13 @@ def test_server_without_a_selected_model_is_an_error_notice(cfg):
 
 
 def test_unknown_theme_is_reported(cfg, monkeypatch):
-    """ISSUES U5: a typo in ``ui.theme`` (or a vanished saved theme) is named."""
+    """ISSUES U5: a vanished saved theme is named."""
     from moka_code.ui.tui.colors import theme_problems
 
-    monkeypatch.setattr(cfg.config, "ui_theme", "nrod")
     monkeypatch.setattr(cfg.config, "active_theme", "gone")
-    assert theme_problems() == ["ui.toml: theme 'nrod' is not a theme (using terminal)",
-                                "state.toml: active_theme 'gone' is not a theme (using terminal)"]
+    assert theme_problems() == ["state.toml: active_theme 'gone' is not a theme (using terminal)"]
 
-    monkeypatch.setattr(cfg.config, "ui_theme", "nord")
-    monkeypatch.setattr(cfg.config, "active_theme", None)
+    monkeypatch.setattr(cfg.config, "active_theme", "nord")
     assert theme_problems() == []
 
 

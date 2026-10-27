@@ -36,7 +36,7 @@ from moka_code.ui.tui.chat_screen import ChatScreen
 
         # Setup logging to debug panel
 import logging
-from moka_code.ui.tui.colors import theme
+from moka_code.ui.tui.colors import resolve_color, theme
 from moka_code.ui.tui.msg_types import MsgAction, SysMsg, SysMsgError, SysMsgWarning
 
 from moka_code import settings
@@ -220,7 +220,13 @@ class chatTUI(ChatActionHandlers):
             raise RuntimeError("Role changes apply after the current response finishes.")
         previous_name = getattr(getattr(self.agent, "role", None), "name", "agent")
         self.agent.set_role(role)
+        settings.config.save_last_role(role.name)  # the next start opens on it
         _show_role_change(self.chat_history_panel, previous_name, role.name)
+        # The input bars take the role's color: repaint them now, not at the
+        # next keystroke.
+        self.input_box.mark_changed()
+        if self.compositor is not None:
+            self.compositor.request_render()
         return self.agent.role
 
     def is_generating(self) -> bool:
@@ -311,8 +317,12 @@ class chatTUI(ChatActionHandlers):
         return changed
 
     def _input_box_fg(self):
-        """Color the input row by focus (muted when unfocused)."""
-        return theme.USER if self.input_box.focused else theme.MUTED
+        """Color the input row by focus (muted when unfocused) and the role's
+        ``color`` (the theme's USER when it sets none)."""
+        if not self.input_box.focused:
+            return theme.MUTED
+        role = getattr(self.agent, "role", None)
+        return resolve_color(getattr(role, "color", ""), theme.USER)
 
     def refresh_status_bar(self) -> None:
         """Refresh local status fields (see ``ui/status_presenter.py``)."""
@@ -343,6 +353,22 @@ class chatTUI(ChatActionHandlers):
         if self._migration_notice:
             notes.append(("info", self._migration_notice))
         self.chat_history_panel.setup_notes = notes
+
+    def apply_layout_settings(self) -> None:
+        """Apply the settings the layout holds on to (padding, fps), at startup
+        and on ``/reload``: everything else is read where it is used."""
+        pad = settings.config.ui_msg_h_padding
+        panel = self.chat_history_panel
+        if (panel.left_pad, panel.right_pad) != (pad, pad):
+            panel.left_pad = panel.right_pad = pad
+            for message in panel.messages:
+                message.left_pad = message.right_pad = pad
+                message.box.content_pad_left = message.box.content_pad_right = pad
+            if panel.width > 0:
+                panel.on_width_change(panel.width)   # rewraps every message
+        if self.compositor is not None:
+            self.compositor.padding = settings.config.ui_app_global_padding
+            self.compositor.fps = settings.config.ui_target_fps
 
     def refresh_theme(self) -> None:
         """Re-apply the active theme everywhere and force a full repaint.
@@ -1057,15 +1083,16 @@ class chatTUI(ChatActionHandlers):
         )
         self.root = chat_screen.root  # Store root for global handler
         # Read fps at construction time (not import time) so config changes apply.
-        self.compositor = Compositor(self.root, fps=settings.config.target_fps,
+        self.compositor = Compositor(self.root, fps=settings.config.ui_target_fps,
                                      shutdown_event=self.shutdown_event)
-        self.compositor.padding = settings.config.ui_app_global_padding  # Apply global padding from config
+        self.apply_layout_settings()
         self.modal_host = ModalHost(self.compositor)
         self._focus_scope.enter()
 
         self.reset_stream_revealer()
-        if self.stream_revealer is not None:
-            self.compositor.add_frame_callback(self._on_frame)
+        # Always registered: ``stream_smoothing`` may be turned on by /reload,
+        # and the callback does nothing while it is off.
+        self.compositor.add_frame_callback(self._on_frame)
         
         self.compositor.event_router.set_interceptor(self.handle_global_input)
         self.compositor.event_router.set_focus_scope(self._focus_scope)

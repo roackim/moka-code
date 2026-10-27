@@ -21,8 +21,11 @@ _LIVE_TICK_INTERVAL = 0.25
 
 
 def _clamped(msg: Message) -> bool:
-    """True for activity lines (thoughts, tool calls) that stack without gaps."""
-    return getattr(msg.type, "clamped", False)
+    """True for activity lines (thoughts, tool calls) that stack without gaps;
+    ``ui.thought_gap`` / ``ui.tool_gap`` space them like any message."""
+    if _is_thought(msg):
+        return not settings.config.ui_thought_gap
+    return getattr(msg.type, "clamped", False) and not settings.config.ui_tool_gap
 
 
 class AnswerGroup:
@@ -53,12 +56,15 @@ def _gap_before(messages: list, i: int) -> bool:
 
     A thought belongs to the message it precedes: it sits directly on top of
     it, and when that message needs a gap the gap goes above the thought.
+    With ``ui.thought_gap`` it is spaced like any message.
     """
     if i == 0:
         return False
     prev, msg = messages[i - 1], messages[i]
     if prev.group is not None and prev.group is msg.group:
         return False  # segments of one split answer touch
+    if settings.config.ui_thought_gap:
+        return _needs_gap(prev, msg)
     if _is_thought(prev):
         return False
     if _is_thought(msg):
@@ -1133,7 +1139,7 @@ class ChatHistoryPanel(TextComponent):
             return msg
         new = self.new_message("", msg_type=msg_type,
                                harness_message_ids=msg.harness_message_ids)
-        for attr in ("tool_name", "tool_args", "tool_output", "tool_status",
+        for attr in ("tool_name", "tool_args", "tool_output", "tool_diff", "tool_status",
                      "show_output", "live_output", "_run_started_at"):
             setattr(new, attr, getattr(msg, attr))
         self.replace_message(msg, new)

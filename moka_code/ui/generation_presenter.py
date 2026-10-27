@@ -272,6 +272,7 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                     app.active_tool_messages[tool_id] = msg
                     msg.tool_name = event.name
                     msg.tool_args = event.args
+                    msg.tool_diff = event.diff or None
                     msg.set_tool_status("running")
                     msg.rebuild_tool_display()
                     app.pending_permission_prompt = None
@@ -289,6 +290,7 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                     app.active_tool_messages[tool_id] = msg
                     msg.tool_name = event.name
                     msg.tool_args = event.args
+                    msg.tool_diff = event.diff or None
                     msg.tool_status = None
                     msg.rebuild_tool_display()
 

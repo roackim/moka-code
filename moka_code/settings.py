@@ -217,21 +217,21 @@ DEFAULT_UI_TOML = """\
 
 ## Look
 
-# theme = "terminal"                    # built-in or themes/<name>.toml (/theme select)
+## The theme is chosen with /theme select (kept in state.toml).
 # use_bg_color = false                  # paint the theme background
-# app_global_padding = 0
-# msg_h_padding = 1
+# app_global_padding = 0                # blank cells around the whole screen
+# msg_h_padding = 1                     # cells between a message's bar and its text
 # msg_v_margin = 1                      # blank lines between turns (assistant output is continuous)
+# thought_gap = false                   # blank lines between a thought and what follows it
+# tool_gap = false                      # blank lines between tool lines
 # max_input_height = 8                  # input grows with wrapped lines, then scrolls
-# box_style = "square"                  # "square" | "double" | "rounded" | "ascii"
-# box_style_focused = "square"
 
 ## Scrolling
 
-# scroll_lines_per_notch = 3
-# scroll_touchpad_speed = 0.1
-# scroll_touchpad_event_threshold = 2
-# scroll_alt_multiplier = 3.0
+# scroll_lines_per_notch = 3            # lines per mouse-wheel notch
+# scroll_touchpad_speed = 0.1           # multiplier when events come in a burst (touchpad)
+# scroll_touchpad_event_threshold = 2   # events per frame that count as a touchpad burst
+# scroll_alt_multiplier = 3.0           # multiplier while Alt is held
 
 ## Live usage
 
@@ -261,10 +261,15 @@ DEFAULT_UI_TOML = """\
 ## Transcript and streaming
 
 # thought_min_tokens = 0                # hide shorter reasoning lines (0 = show all)
+# thought_color = "MUTED"               # folded thought line and its bar (palette name or #rrggbb)
+# thought_expanded_color = "MUTED"      # unfolded thought text and its bar
 # show_banner = true                    # moka art in an empty transcript
 # stream_smoothing = true               # reveal streamed text smoothly
 # smooth_target_fps = 60                # reveal cadence (independent of render fps)
-# target_fps = 60
+
+## Rendering
+
+# target_fps = 60                       # screen refreshes per second at most
 
 """ + _TABLES_HEADING + """
 ## Tables come after every setting above. Keys: fg, bg (a hex color, or a
@@ -312,7 +317,8 @@ DEFAULT_CONTEXT_TOML = """\
 
 ## /diff
 
-# diff_context = 3                      # unchanged lines around each change; "function" = the whole function, "all" = the whole file
+# diff_context = 3                     # unchanged lines around each change (/diff and edit lines)
+# diff_full_file = false                # /diff shows the whole file, changes marked in place
 """
 
 DEFAULT_DEBUG_TOML = """\
@@ -361,59 +367,63 @@ DEFAULT_CONFIG_TEMPLATES = {
 
 
 # --- config schema ----------------------------------------------------------
-# Each spec maps a TOML key to (runtime attribute, kind). Kinds drive both
-# validation and coercion so a malformed value yields a reported error rather
-# than a silently ignored setting.
+# Each spec maps a TOML key to (runtime attribute, kind, default). Kinds drive
+# both validation and coercion so a malformed value yields a reported error
+# rather than a silently ignored setting. The default is the single source: a
+# guard test checks the template's commented value against it.
 
-_UI_SPEC: Dict[str, tuple[str, str]] = {
-    "theme": ("ui_theme", "str"),
-    "use_bg_color": ("ui_use_bg_color", "bool"),
-    "app_global_padding": ("ui_app_global_padding", "int"),
-    "msg_h_padding": ("ui_msg_h_padding", "int"),
-    "msg_v_margin": ("ui_msg_v_margin", "int"),
-    "max_input_height": ("ui_max_input_height", "int"),
-    "box_style": ("ui_box_style", "str"),
-    "box_style_focused": ("ui_box_style_focused", "str"),
-    "scroll_lines_per_notch": ("ui_scroll_lines_per_notch", "int"),
-    "scroll_touchpad_speed": ("ui_scroll_touchpad_speed", "float"),
-    "scroll_touchpad_event_threshold": ("ui_scroll_touchpad_event_threshold", "int"),
-    "scroll_alt_multiplier": ("ui_scroll_alt_multiplier", "float"),
-    "metrics_refresh_interval": ("ui_metrics_refresh_interval", "float"),
-    "status_bar_fields": ("ui_status_bar_fields", "str_list"),
-    "status_bar_separator": ("ui_status_bar_separator", "str"),
-    "notice_lines": ("ui_notice_lines", "int"),
-    "show_provider": ("ui_show_provider", "bool"),
-    "provider_separator": ("ui_provider_separator", "str"),
-    "show_effort": ("ui_show_effort", "bool"),
-    "effort_separator": ("ui_effort_separator", "str"),
-    "sandbox_glyph": ("ui_sandbox_glyph", "str"),
-    "sandbox_prefix": ("ui_sandbox_prefix", "str"),
-    "sandbox_active_color": ("ui_sandbox_active_color", "color"),
-    "sandbox_inactive_color": ("ui_sandbox_inactive_color", "color"),
-    "thought_min_tokens": ("ui_thought_min_tokens", "int"),
-    "show_banner": ("ui_show_banner", "bool"),
-    "stream_smoothing": ("ui_stream_smoothing", "bool"),
-    "smooth_target_fps": ("ui_smooth_target_fps", "int"),
-    "target_fps": ("target_fps", "int"),
+_UI_SPEC: Dict[str, tuple[str, str, Any]] = {
+    "use_bg_color": ("ui_use_bg_color", "bool", False),
+    "app_global_padding": ("ui_app_global_padding", "int", 0),
+    "msg_h_padding": ("ui_msg_h_padding", "int", 1),
+    "msg_v_margin": ("ui_msg_v_margin", "int", 1),
+    "thought_gap": ("ui_thought_gap", "bool", False),
+    "tool_gap": ("ui_tool_gap", "bool", False),
+    "max_input_height": ("ui_max_input_height", "int", 8),
+    "scroll_lines_per_notch": ("ui_scroll_lines_per_notch", "int", 3),
+    "scroll_touchpad_speed": ("ui_scroll_touchpad_speed", "float", 0.1),
+    "scroll_touchpad_event_threshold": ("ui_scroll_touchpad_event_threshold", "int", 2),
+    "scroll_alt_multiplier": ("ui_scroll_alt_multiplier", "float", 3.0),
+    "metrics_refresh_interval": ("ui_metrics_refresh_interval", "float", 0.1),
+    "status_bar_fields": ("ui_status_bar_fields", "str_list",
+                          ["endpoint_model", "role", "context", "cost", "sandbox"]),
+    "status_bar_separator": ("ui_status_bar_separator", "str", "  "),
+    "notice_lines": ("ui_notice_lines", "int", 2),
+    "show_provider": ("ui_show_provider", "bool", True),
+    "provider_separator": ("ui_provider_separator", "str", ":"),
+    "show_effort": ("ui_show_effort", "bool", True),
+    "effort_separator": ("ui_effort_separator", "str", ":"),
+    "sandbox_glyph": ("ui_sandbox_glyph", "str", "⬢"),
+    "sandbox_prefix": ("ui_sandbox_prefix", "str", "sandbox:"),
+    "sandbox_active_color": ("ui_sandbox_active_color", "color", "SUCCESS"),
+    "sandbox_inactive_color": ("ui_sandbox_inactive_color", "color", "WARNING"),
+    "thought_min_tokens": ("ui_thought_min_tokens", "int", 0),
+    "thought_color": ("ui_thought_color", "color", "MUTED"),
+    "thought_expanded_color": ("ui_thought_expanded_color", "color", "MUTED"),
+    "show_banner": ("ui_show_banner", "bool", True),
+    "stream_smoothing": ("ui_stream_smoothing", "bool", True),
+    "smooth_target_fps": ("ui_smooth_target_fps", "int", 60),
+    "target_fps": ("ui_target_fps", "int", 60),
 }
 
-_CONTEXT_SPEC: Dict[str, tuple[str, str]] = {
-    "max_files": ("context_max_files", "int"),
-    "max_depth": ("context_max_depth", "int"),
-    "ignore_gitignore": ("context_ignore_gitignore", "bool"),
-    "ignore_dotfiles": ("context_ignore_dotfiles", "bool"),
-    "max_image_mb": ("context_max_image_mb", "int_or_float"),
-    "sessions": ("context_sessions", "int"),
-    "compact_filter_thoughts": ("context_compact_filter_thoughts", "bool"),
-    "compact_filter_tool_calls": ("context_compact_filter_tool_calls", "bool"),
-    "compact_at": ("context_compact_at", "float"),
-    "compact_stop_at": ("context_compact_stop_at", "float"),
-    "compact_keep": ("context_compact_keep", "float"),
-    "diff_context": ("context_diff_context", "diff_context"),
+_CONTEXT_SPEC: Dict[str, tuple[str, str, Any]] = {
+    "max_files": ("context_max_files", "int", 500),
+    "max_depth": ("context_max_depth", "int", 4),
+    "ignore_gitignore": ("context_ignore_gitignore", "bool", False),
+    "ignore_dotfiles": ("context_ignore_dotfiles", "bool", False),
+    "max_image_mb": ("context_max_image_mb", "int_or_float", 5),
+    "sessions": ("context_sessions", "int", 10),
+    "compact_filter_thoughts": ("context_compact_filter_thoughts", "bool", True),
+    "compact_filter_tool_calls": ("context_compact_filter_tool_calls", "bool", True),
+    "compact_at": ("context_compact_at", "float", 0.8),
+    "compact_stop_at": ("context_compact_stop_at", "float", 0.85),
+    "compact_keep": ("context_compact_keep", "float", 0.1),
+    "diff_context": ("context_diff_context", "lines", 3),
+    "diff_full_file": ("context_diff_full_file", "bool", False),
 }
 
-_DEBUG_SPEC: Dict[str, tuple[str, str]] = {
-    "log_enabled": ("debug_log_enabled", "bool"),
+_DEBUG_SPEC: Dict[str, tuple[str, str, Any]] = {
+    "log_enabled": ("debug_log_enabled", "bool", False),
 }
 
 # Keys removed from a flat section but kept here so existing user files can be
@@ -424,6 +434,10 @@ _RETIRED_UI: set[str] = {  # nothing read these: spinner (elapsed-time labels), 
     "show_metrics", "metrics_show_tokens", "metrics_show_speed", "metrics_show_ttft",
     # Superseded by show_provider/provider_separator/show_effort/effort_separator.
     "model_glyph", "model_prefix",
+    # Only the popups had a border style left; every frame is square.
+    "box_style", "box_style_focused",
+    # The theme is state (/theme select); a ui.toml value moves there once.
+    "theme",
 }
 # preserve_reasoning_traces: reasoning is no longer sent back (PLAN.md step 2).
 _RETIRED_CONTEXT: set[str] = {"preserve_reasoning_traces", "format"}  # format: the project tree was never sent
@@ -844,7 +858,7 @@ _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
 # ``model_catalog`` (discovery is live, in memory) are retired keys, accepted
 # and ignored so older state files load without errors; the next save drops them.
 _STATE_SECTIONS = {"last_server", "active_model", "last_model", "model_catalog",
-                   "active_theme", "effort"}
+                   "active_theme", "effort", "last_role"}
 
 # Palette keys a ``themes/<name>.toml`` file may define (``colors.PALETTE_FIELDS``).
 _THEME_PALETTE = {
@@ -921,11 +935,10 @@ def _coerce(kind: str, value: Any) -> tuple[Any, Optional[str]]:
         if isinstance(value, bool) or not isinstance(value, int):
             return None, "must be an integer or absent"
         return value, None
-    if kind == "diff_context":
-        if value in ("function", "all") or (isinstance(value, int) and not isinstance(value, bool)
-                                           and value >= 0):
+    if kind == "lines":
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
             return value, None
-        return None, "must be a number of lines, 'function' or 'all'"
+        return None, "must be a number of lines (0 or more)"
     return value, None
 
 
@@ -968,54 +981,14 @@ class Config:
         # User color theme definitions (intent) and active selection (state).
         self.themes: Dict[str, Dict[str, Any]] = {}
         self.active_theme: Optional[str] = None
+        # Role of the last conversation (state), tried first at startup.
+        self.last_role: Optional[str] = None
 
-        # UI settings.
-        self.ui_max_input_height: int = 8
-        self.ui_use_bg_color: bool = False
-        self.ui_theme: str = "terminal"
-        self.ui_app_global_padding: int = 0
-        self.ui_msg_h_padding: int = 1
-        self.ui_msg_v_margin: int = 1
-        self.ui_box_style: str = "square"
-        self.ui_box_style_focused: str = "square"
-        self.ui_scroll_lines_per_notch: int = 3
-        self.ui_scroll_touchpad_speed: float = 0.1
-        self.ui_scroll_touchpad_event_threshold: int = 2
-        self.ui_scroll_alt_multiplier: float = 3.0
-        self.ui_metrics_refresh_interval: float = 0.1
-        self.ui_status_bar_fields: list[str] = ["endpoint_model", "role", "context", "cost", "sandbox"]
-        self.ui_status_bar_separator: str = "  "
-        self.ui_notice_lines: int = 2
-        self.ui_show_provider: bool = True
-        self.ui_provider_separator: str = ":"
-        self.ui_show_effort: bool = True
-        self.ui_effort_separator: str = ":"
-        self.ui_sandbox_glyph: str = "⬢"
-        self.ui_sandbox_prefix: str = "sandbox:"
-        self.ui_sandbox_active_color: str = "SUCCESS"
-        self.ui_sandbox_inactive_color: str = "WARNING"
-        self.ui_thought_min_tokens: int = 0
-        self.ui_show_banner: bool = True
-        self.ui_stream_smoothing: bool = True
-        self.ui_smooth_target_fps: int = 60
-        self.target_fps: int = 60
-
-        # Debug / reasoning.
-        self.debug_log_enabled: bool = False
-
-        # Context building.
-        self.context_max_files: int = 500
-        self.context_max_depth: int = 4
-        self.context_ignore_gitignore: bool = False
-        self.context_ignore_dotfiles: bool = False
-        self.context_max_image_mb: float = 5
-        self.context_sessions: int = 10
-        self.context_compact_filter_thoughts: bool = True
-        self.context_compact_filter_tool_calls: bool = True
-        self.context_compact_at: float = 0.8
-        self.context_compact_stop_at: float = 0.85
-        self.context_compact_keep: float = 0.1
-        self.context_diff_context: int | str = 3
+        # The flat section settings (``ui_*``, ``context_*``, ``debug_*``):
+        # their defaults live in the specs.
+        for spec in (_UI_SPEC, _CONTEXT_SPEC, _DEBUG_SPEC):
+            for attr, _kind, default in spec.values():
+                setattr(self, attr, list(default) if isinstance(default, list) else default)
 
         # Style tables.
         self.markdown_styles: Dict[str, Dict[str, Any]] = {
@@ -1053,13 +1026,23 @@ class Config:
         self._apply_defaults()
         self.load_errors = []
         ui = _load_flat_file(self.section_file("ui"), _UI_SPEC, self, self.load_errors,
-                             tables=_STYLE_SECTIONS)
+                             tables=_STYLE_SECTIONS, retired=_RETIRED_UI)
         _load_styles(ui or {}, CONFIG_FILES["ui"], self, self.load_errors)
-        _load_flat_file(self.section_file("context"), _CONTEXT_SPEC, self, self.load_errors)
-        _load_flat_file(self.section_file("debug"), _DEBUG_SPEC, self, self.load_errors)
+        _load_flat_file(self.section_file("context"), _CONTEXT_SPEC, self, self.load_errors,
+                        retired=_RETIRED_CONTEXT)
+        _load_flat_file(self.section_file("debug"), _DEBUG_SPEC, self, self.load_errors,
+                        retired=_RETIRED_DEBUG)
         _load_servers_file(self.section_file("servers"), self, self.load_errors)
         _load_themes_dir(self.themes_dir(), self, self.load_errors)
         _load_state_file(self._state_file(), self, self.load_errors)
+        # ``theme`` left ui.toml for state: a value chosen there (and never
+        # with /theme select) carries over before the sync removes the line.
+        legacy_theme = (ui or {}).get("theme")
+        if isinstance(legacy_theme, str) and legacy_theme and not self.active_theme:
+            try:
+                self.save_active_theme(legacy_theme)
+            except OSError:
+                self.active_theme = legacy_theme
         return self.load_errors
 
     # -- state mutations -----------------------------------------------------
@@ -1092,9 +1075,16 @@ class Config:
         self.active_theme = name
         self._save_state()
 
+    def save_last_role(self, name: str) -> None:
+        """Persist the role a conversation switched to (the next start uses it)."""
+        if name == self.last_role:
+            return
+        self.last_role = name
+        self._save_state()
+
     def get_active_theme(self) -> str:
-        """Effective theme name: state selection, then ``ui.toml``, else terminal."""
-        return self.active_theme or self.ui_theme or "terminal"
+        """Effective theme name: the ``/theme select`` choice (state), else terminal."""
+        return self.active_theme or "terminal"
 
     def _save_state(self) -> None:
         path = self._state_file()
@@ -1106,6 +1096,8 @@ class Config:
             data["last_model"] = dict(self.model_selection)
         if self.active_theme:
             data["active_theme"] = self.active_theme
+        if self.last_role:
+            data["last_role"] = self.last_role
         if self.efforts:
             data["effort"] = {server: dict(m) for server, m in self.efforts.items()}
         mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o644
@@ -1197,22 +1189,24 @@ def _read_toml(path: Path, errors: list[str], where: Optional[str] = None) -> Op
     return data
 
 
-def _load_flat_file(path: Path, spec: Dict[str, tuple[str, str]],
+def _load_flat_file(path: Path, spec: Dict[str, tuple[str, str, Any]],
                     config: Config, errors: list[str],
-                    tables: "set[str]" = frozenset()) -> Optional[dict]:
+                    tables: "set[str]" = frozenset(),
+                    retired: "set[str]" = frozenset()) -> Optional[dict]:
     """Load a whole-file flat key/value section (ui/context/debug); keys in
-    ``tables`` are left to the caller. Returns the parsed file."""
+    ``tables`` are left to the caller, ``retired`` keys are ignored (the sync
+    removes them). Returns the parsed file."""
     data = _read_toml(path, errors)
     if data is None:
         return None
     for key, value in data.items():
-        if key in tables:
+        if key in tables or key in retired:
             continue
         entry = spec.get(key)
         if entry is None:
             errors.append(f"{path.name}: unknown key '{key}'")
             continue
-        attr, kind = entry
+        attr, kind, _default = entry
         coerced, error = _coerce(kind, value)
         if error:
             errors.append(f"{path.name}: {key} {error}")
@@ -1410,6 +1404,13 @@ def _load_state_file(path: Path, config: Config, errors: list[str]) -> None:
             config.active_theme = active_theme
         else:
             errors.append(f"{path.name}: active_theme must be a string")
+
+    last_role = data.get("last_role")
+    if last_role is not None:
+        if isinstance(last_role, str):
+            config.last_role = last_role
+        else:
+            errors.append(f"{path.name}: last_role must be a string")
 
     last_model = data.get("last_model")
     if last_model is not None:

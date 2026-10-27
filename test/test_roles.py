@@ -272,13 +272,23 @@ def test_role_template_layout_and_uncommentable_settings():
     assert 'read = "yes"\nbash = "ask"\n' in template
     assert template.index("## Technical settings") > template.index('bash = "ask"')
     assert [l for l in template.splitlines() if l.startswith("# ")] == [
-        "# require_sandbox = true", "# tool_timeout = 300"]
+        '# color = "USER"', "# require_sandbox = true", "# tool_timeout = 300"]
     uncommented = re.sub(r"^# ", "", template, flags=re.M)
     loaded = toml.loads(uncommented)
     assert loaded["require_sandbox"] is True and loaded["preserve_thinking"] is True
     assert loaded["tool_timeout"] == 300
+    assert loaded["color"] == "USER"
     assert "require_sandbox = true\n" in roles_module._role_template(
         Role(name="x", require_sandbox=True))
+    assert 'color = "WARNING"\n' in roles_module._role_template(Role(name="x", color="WARNING"))
+
+
+def test_role_color_is_a_palette_name_or_hex():
+    assert roles_module._role_from_dict("r", {"color": "WARNING"}).color == "WARNING"
+    assert roles_module._role_from_dict("r", {"color": "#112233"}).color == "#112233"
+    assert roles_module._role_from_dict("r", {}).color == ""
+    with pytest.raises(ValueError, match="color"):
+        roles_module._role_from_dict("r", {"color": "orange"})
 
 
 # --- roles are files; the running one lives in memory ----------------------
@@ -286,6 +296,26 @@ def test_role_template_layout_and_uncommentable_settings():
 def _roles_in(tmp_path, monkeypatch):
     monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
     return tmp_path / "roles"
+
+
+def test_startup_opens_on_the_last_role_used(tmp_path, monkeypatch):
+    from moka_code import settings
+
+    _roles_in(tmp_path, monkeypatch)
+    ensure_roles_dir()
+    monkeypatch.setattr(settings.config, "last_role", "chat")
+    assert roles_module.default_role().name == "chat"
+    # Gone (or never a role): back to agent.
+    monkeypatch.setattr(settings.config, "last_role", "gone")
+    assert roles_module.default_role().name == "agent"
+
+
+def test_last_role_round_trips_through_state(tmp_path):
+    from moka_code.settings import Config
+
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+    config.save_last_role("chat")
+    assert Config(config_dir=tmp_path, state_path=tmp_path / "state.toml").last_role == "chat"
 
 
 def test_a_missing_role_file_is_not_replaced_by_a_built_in(tmp_path, monkeypatch):

@@ -23,17 +23,17 @@ their templates on startup (and when `/config <section>` opens them):
   user-authored and are never synced.
 
 To add a key:
-1. Add it to the section's `_*_SPEC` (key -> `(attr, kind)`) and to
-   `Config._apply_defaults`.
+1. Add it to the section's `_*_SPEC` (key -> `(attr, kind, default)`); the
+   spec is the only place the default lives (`Config._apply_defaults` reads it).
 2. Add a commented line to the matching `DEFAULT_*_TOML` template, in the same
-   order as the spec. A guard test asserts every spec key has a commented
-   template line.
+   order as the spec, showing the spec's default. Guard tests assert every spec
+   key has a commented template line with that value.
 3. Do **not** hand-edit user files; the sync inserts it on next startup.
 
 To deprecate a key:
 1. Remove it from the `_*_SPEC` and the `DEFAULT_*_TOML` template.
 2. Add its name to that section's `_RETIRED_*` set so existing files are
-   cleaned up on next startup.
+   cleaned up on next startup (the loader ignores retired keys meanwhile).
 
 Only template keys and registered retired keys are ever touched — never unknown
 or user-specific keys.
