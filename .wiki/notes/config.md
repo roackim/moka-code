@@ -34,7 +34,10 @@ The old `styles.toml` and `themes.toml` are no longer read (merged into
 [tools-and-permissions.md](./tools-and-permissions.md)).
 
 Missing files are created from fully commented templates
-(`settings.DEFAULT_CONFIG_TEMPLATES`) by `Config.ensure_section_file()`. In every template a single `#` marks a setting to
+(`settings.DEFAULT_CONFIG_TEMPLATES`) by `Config.ensure_section_file()`.
+Sections are headed by one-line rules (`settings._rule`: `## ── Look ───…`, 60
+columns) and run from the most used to the most technical; the specs list the
+keys in the same order (`test_template_and_spec_list_keys_in_the_same_order`). In every template a single `#` marks a setting to
 uncomment (a bare `#` spaces a block of settings) and `##` marks help
 (guarded by `test_template_help_lines_use_double_hash`; role files, from `roles._role_template`: description, prompt, tools, then a `## Technical settings` block, guarded by `test_role_template_layout_and_uncommentable_settings`). The built-in role files (`agent.toml`, `chat.toml`)
 are seeded by `roles.ensure_roles_dir()` on startup.
@@ -221,7 +224,8 @@ trigger off), `context_diff_context` (`context.diff_context`: lines around
 each change in `/diff` and in a focused edit line, a number, default 3),
 `context_diff_full_file` (`context.diff_full_file`: `/diff` shows the whole
 file; default off);
-`ui_status_bar_fields`, `ui_max_input_height` (input box caps + scrolls past
+`ui_status_bar` (the status bar template, see [ui.md](./ui.md#status-bar)),
+`ui_max_input_height` (input box caps + scrolls past
 this many wrapped lines), `ui_stream_smoothing` / `ui_smooth_target_fps`
 (streamed-text reveal smoothing), `ui_target_fps` (`ui.target_fps`, render
 loop), and the rest of the `ui_*` attrs, including `ui_thought_min_tokens`
@@ -241,16 +245,15 @@ read them; every frame is square) and `theme` (state only). Colour keys (`sandbo
 else a load error and the default is kept. `thought_gap` / `tool_gap` space
 thoughts / tool lines like other messages (see [ui.md](./ui.md)).
 
-The `endpoint_model` status-bar field is composed from `ui_show_provider` +
-`ui_provider_separator` + the model, then `ui_show_effort` /
-`ui_effort_separator` + the effort. `ui_status_bar_separator` sets the
-inter-field text, and a `"|"` entry in `ui_status_bar_fields` right-aligns the
-fields after it. The old `model_glyph` / `model_prefix` keys are retired.
-
-The `sandbox` status-bar field is composed from `ui_sandbox_glyph` +
-`ui_sandbox_prefix` + the sandbox name; it is green (`ui_sandbox_active_color`)
-when a sandbox is active and orange (`ui_sandbox_inactive_color`) when tools run
-unsandboxed. Both colors accept a palette name or `#rrggbb`.
+The status bar is one template, `ui.status_bar` (kind `status_bar`: every
+`{name}` must be one of `settings.STATUS_BAR_VALUES` and `[ ]` must balance,
+else a load error and the default is kept). It replaced `status_bar_fields`,
+`status_bar_separator`, `show_provider`, `provider_separator`, `show_effort`,
+`effort_separator`, `sandbox_glyph` and `sandbox_prefix` (all in `_RETIRED_UI`;
+`model_glyph` / `model_prefix` before them). `{sandbox}` is green
+(`ui_sandbox_active_color`) when a sandbox is active and orange
+(`ui_sandbox_inactive_color`) when tools run unsandboxed; both accept a palette
+name or `#rrggbb`.
 
 **Styles / themes:** `config.markdown_styles`, `config.syntax_highlight_styles`;
 `config.themes`, `config.active_theme`, `config.get_active_theme()`,

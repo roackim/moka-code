@@ -6,18 +6,18 @@ from types import SimpleNamespace
 
 from moka_code.ui.status_presenter import refresh_status_bar
 from moka_code.ui.tui.colors import resolve_color, theme
+from moka_code.ui.tui.components.bars import StatusBar
 
 
-class _Bar:
+class _Bar(StatusBar):
+    """The real bar, with the default template; ``colors`` for short."""
+
     def __init__(self):
-        self.values = {}
-        self.colors = {}
+        super().__init__(template=settings.DEFAULT_STATUS_BAR)
 
-    def set_values(self, values):
-        self.values = values
-
-    def set_field_colors(self, colors):
-        self.colors = colors
+    @property
+    def colors(self):
+        return self.field_colors
 
 
 def _app(sandboxed, runtime="none", name=None, effort=None):
@@ -46,51 +46,41 @@ def test_sandbox_field_active_is_green():
     app = _app(True, runtime="podman")
     refresh_status_bar(app)
 
-    assert app.status_bar.values["sandbox"] == "⬢ sandbox:podman"
+    assert "⬢ sandbox:podman" in app.status_bar.text()
     assert app.status_bar.colors["sandbox"] == theme.SUCCESS
 
 
-def test_refresh_reapplies_status_bar_field_config(monkeypatch):
-    from moka_code.ui.tui.components.bars import StatusBar
-
+def test_refresh_reapplies_the_status_bar_template(monkeypatch):
     app = _app(True)
-    app.status_bar = StatusBar(fields=["endpoint_model"])
-    monkeypatch.setattr(settings.config, "ui_status_bar_fields",
-                        ["role", "endpoint_model"])
-    monkeypatch.setattr(settings.config, "ui_status_bar_separator", " | ")
+    monkeypatch.setattr(settings.config, "ui_status_bar", "{role} | {model}")
 
     refresh_status_bar(app)
 
-    assert app.status_bar.fields == ["role", "endpoint_model"]
-    assert app.status_bar.separator == " | "
+    assert app.status_bar.template == "{role} | {model}"
+    assert app.status_bar.text() == "agent q"
 
 
-def test_model_field_provider_and_effort_are_configurable(monkeypatch):
+def test_default_template_shows_server_model_and_effort(monkeypatch):
     app = _app(True, effort="high")
     refresh_status_bar(app)
-    assert app.status_bar.values["endpoint_model"] == "local:q:high"
+    # No cost reported yet: its group goes, separator included.
+    assert app.status_bar.text() == "local:q:high  role agent  ctx 0  ⬢ sandbox:sandbox"
 
-    monkeypatch.setattr(settings.config, "ui_show_provider", False)
+    app.agent.endpoint.effort = None
     refresh_status_bar(app)
-    assert app.status_bar.values["endpoint_model"] == "q:high"
+    assert app.status_bar.text().startswith("local:q  role agent")
 
-    monkeypatch.setattr(settings.config, "ui_show_provider", True)
-    monkeypatch.setattr(settings.config, "ui_provider_separator", "/")
-    monkeypatch.setattr(settings.config, "ui_show_effort", False)
+    monkeypatch.setattr(settings.config, "ui_status_bar", "{model}[@{effort}]")
+    app.agent.endpoint.effort = "low"
     refresh_status_bar(app)
-    assert app.status_bar.values["endpoint_model"] == "local/q"
-
-    monkeypatch.setattr(settings.config, "ui_show_effort", True)
-    monkeypatch.setattr(settings.config, "ui_effort_separator", "@")
-    refresh_status_bar(app)
-    assert app.status_bar.values["endpoint_model"] == "local/q@high"
+    assert app.status_bar.text() == "q@low"
 
 
 def test_sandbox_field_shows_name_instead_of_runtime():
     app = _app(True, runtime="podman", name="gpu-box")
     refresh_status_bar(app)
 
-    assert app.status_bar.values["sandbox"] == "⬢ sandbox:gpu-box"
+    assert "⬢ sandbox:gpu-box" in app.status_bar.text()
     assert app.status_bar.colors["sandbox"] == theme.SUCCESS
 
 
@@ -98,7 +88,7 @@ def test_sandbox_field_bare_is_orange():
     app = _app(False, runtime="none")
     refresh_status_bar(app)
 
-    assert app.status_bar.values["sandbox"] == "⬢ sandbox:none"
+    assert "⬢ sandbox:none" in app.status_bar.text()
     assert app.status_bar.colors["sandbox"] == theme.WARNING
 
 
@@ -116,11 +106,12 @@ def test_unknown_context_window_shows_only_the_tokens_used():
     app.agent.endpoint.context_window = lambda: None
     app.agent._last_usage = TokenUsage(prompt_tokens=1000, completion_tokens=500)
     refresh_status_bar(app)
-    assert app.status_bar.values["context"] == "ctx 1.5k"
+    assert app.status_bar.values["context"] == "1.5k"
 
     app.agent.endpoint.context_window = lambda: 131072
     refresh_status_bar(app)
-    assert app.status_bar.values["context"] == "ctx 1.5k/128k"
+    assert app.status_bar.values["context"] == "1.5k/128k"
+    assert "  ctx 1.5k/128k  " in app.status_bar.text()
 
 
 def test_without_a_server_count_the_status_bar_shows_the_estimate_marked_approximate():
@@ -129,4 +120,4 @@ def test_without_a_server_count_the_status_bar_shows_the_estimate_marked_approxi
     app.agent._last_usage = None
     app.agent.context_estimate = lambda: 3000
     refresh_status_bar(app)
-    assert app.status_bar.values["context"] == "ctx ~3.0k/128k"
+    assert app.status_bar.values["context"] == "~3.0k/128k"

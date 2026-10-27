@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Sequence
 
@@ -5,11 +6,91 @@ from moka_code.ui.tui.buffer import Buffer
 from moka_code.ui.tui.colors import RGB, theme
 from moka_code.ui.tui.components.base import Component
 from moka_code.ui.tui.events import KeyEvent, MouseEvent
+from moka_code.ui.tui.layout_utils import display_width
 
 
-#: A field name in ``StatusBar.fields`` that is not rendered: everything after
-#: it is right-aligned. Lets ``status_bar_fields`` describe both groups.
+#: In a status bar template, everything after it is right-aligned.
 RIGHT_ALIGN_MARKER = "|"
+
+_PLACEHOLDER = re.compile(r"\{([A-Za-z_]+)\}")
+
+
+def _parse_template(template: str) -> tuple[list, list]:
+    """``(left, right)`` node trees of a status bar template.
+
+    A node is ``("text", s)``, ``("value", name)`` or ``("group", nodes)``
+    (``[ … ]``). A top-level ``|`` splits left from right. Unbalanced brackets
+    are read as text (``settings`` reports them at load).
+    """
+    sides: list[list] = [[]]
+    stack: list[list] = [sides[0]]
+    position = 0
+    while position < len(template):
+        char = template[position]
+        match = _PLACEHOLDER.match(template, position)
+        if match:
+            stack[-1].append(("value", match.group(1)))
+            position = match.end()
+            continue
+        if char == "[":
+            group: list = []
+            stack[-1].append(("group", group))
+            stack.append(group)
+        elif char == "]" and len(stack) > 1:
+            stack.pop()
+        elif char == RIGHT_ALIGN_MARKER and len(stack) == 1 and len(sides) == 1:
+            sides.append([])
+            stack = [sides[1]]
+        elif stack[-1] and stack[-1][-1][0] == "text":
+            stack[-1][-1] = ("text", stack[-1][-1][1] + char)
+        else:
+            stack[-1].append(("text", char))
+        position += 1
+    return sides[0], sides[1] if len(sides) > 1 else []
+
+
+def _first_color(nodes: list, colors: dict) -> Any:
+    for kind, payload in nodes:
+        if kind == "value" and payload in colors:
+            return colors[payload]
+        if kind == "group":
+            found = _first_color(payload, colors)
+            if found is not None:
+                return found
+    return None
+
+
+def _layout(nodes: list, values: dict, colors: dict, color: Any,
+            in_group: bool = False) -> Optional[list[tuple[str, Any]]]:
+    """``[(text, color)]`` for ``nodes``; ``None`` when a value directly in a
+    group is empty (the group is dropped). A group is drawn whole in the color
+    of its first colored value; outside groups a value has its own color."""
+    out: list[tuple[str, Any]] = []
+    for kind, payload in nodes:
+        if kind == "text":
+            out.append((payload, color))
+        elif kind == "value":
+            value = values.get(payload, "")
+            if not value:
+                if in_group:
+                    return None
+                continue
+            out.append((value, color if in_group else colors.get(payload, color)))
+        else:
+            group_color = _first_color(payload, colors)
+            inner = _layout(payload, values, colors,
+                            group_color if group_color is not None else color, True)
+            if inner:
+                out += inner
+    return out
+
+
+def render_template(template: str, values: dict, colors: dict, color: Any
+                    ) -> tuple[list[tuple[str, Any]], list[tuple[str, Any]]]:
+    """The left and right ``[(text, color)]`` runs of a status bar template."""
+    left, right = _parse_template(template)
+    return (_layout(left, values, colors, color) or [],
+            _layout(right, values, colors, color) or [])
 
 
 @dataclass(frozen=True)
@@ -27,63 +108,46 @@ class BarStyle:
 
 
 class StatusBar(Component):
-    """One-line status display with configurable field order.
-
-    Passing ``fields`` changes the bar from legacy left/right text mode to a
-    value-map mode. This keeps the component reusable while allowing the app's
-    ``ui.status_bar_fields`` setting to choose both visibility and order.
-    """
+    """One-line status display: plain left/right text, or a ``template``
+    (``ui.status_bar``) filled from named values (see ``render_template``)."""
 
     def __init__(self, left: str = "", right: str = "", *, style: Optional[BarStyle] = None,
-                 fields: Optional[Sequence[str]] = None, separator: str = "  ",
-                 id: Optional[str] = None):
+                 template: Optional[str] = None, id: Optional[str] = None):
         super().__init__(id)
         self.left = left
         self.right = right
         self.style = style or BarStyle.default()
-        self.fields = list(fields) if fields is not None else None
-        self.separator = separator
+        self.template = template
         self.values: dict[str, str] = {}
         self.field_colors: dict[str, Any] = {}
 
     def set_field_colors(self, colors: dict[str, Any]):
-        """Set per-field foreground colors (field name -> RGB/ANSIColor)."""
+        """Set per-value foreground colors (value name -> RGB/ANSIColor)."""
         self.field_colors = dict(colors)
         self.mark_changed()
 
     def get_preferred_height(self, width: int) -> int:
         return 1
 
-
-    def set_fields(self, fields: Sequence[str]):
-        """Set visible field names without changing their values."""
-        self.fields = list(fields)
-        self.left = self.separator.join(
-            self.values[field] for field in self.fields if self.values.get(field)
-        )
+    def set_template(self, template: str):
+        self.template = template
         self.mark_changed()
 
     def set_values(self, values: dict[str, Any]):
-        """Update named values used by the configured field order."""
+        """Update the named values the template refers to."""
         self.values = {key: str(value) for key, value in values.items()}
-        if self.fields is not None:
-            self.left = self.separator.join(
-                self.values[field] for field in self.fields
-                if field != RIGHT_ALIGN_MARKER and self.values.get(field)
-            )
         self.mark_changed()
 
-    def _split_fields(self) -> tuple[list[str], list[str]]:
-        """Fields before and after ``RIGHT_ALIGN_MARKER`` (left, right)."""
-        fields = self.fields or []
-        if RIGHT_ALIGN_MARKER in fields:
-            index = fields.index(RIGHT_ALIGN_MARKER)
-            return fields[:index], fields[index + 1:]
-        return fields, []
+    def runs(self) -> tuple[list[tuple[str, Any]], list[tuple[str, Any]]]:
+        """The left and right ``[(text, color)]`` runs the template draws."""
+        return render_template(self.template or "", self.values, self.field_colors,
+                               self.style.fg)
 
-    def _field_texts(self, fields: Sequence[str]) -> list[tuple[str, str]]:
-        return [(field, self.values[field]) for field in fields
-                if self.values.get(field)]
+    def text(self) -> str:
+        """The bar as plain text (left part, then right part after a space)."""
+        left, right = self.runs()
+        return " ".join(part for part in ("".join(t for t, _ in left).strip(),
+                                          "".join(t for t, _ in right).strip()) if part)
 
     def render(self, buffer: Buffer):
         if self.width <= 0 or self.height <= 0:
@@ -96,45 +160,26 @@ class StatusBar(Component):
             buffer.write_str(right_x, self.y, right, fg=self.style.fg,
                              bg=self.style.bg, max_width=self.width - (right_x - self.x))
 
-        # Render each configured field with its own color (falling back to the
-        # shared style fg). This lets the app colorize e.g. the context field
-        # based on how full the context window is.
-        if self.fields is not None:
+        # A template draws each value in its own color (falling back to the
+        # shared style fg), e.g. the context by how full the window is.
+        if self.template is not None:
             x = self.x + self.style.padding
             edge = self.x + self.width - self.style.padding
-            left_fields, right_fields = self._split_fields()
-            right = self._field_texts(right_fields)
-            if right:
-                right_text = self.separator.join(text for _, text in right)
-                right_x = edge - len(right_text)
-                if right_x < x:
-                    right = []                  # too narrow: drop the tail
-                else:
-                    tail_x = right_x
-                    for index, (field, text) in enumerate(right):
-                        if index:
-                            buffer.write_str(tail_x, self.y, self.separator,
-                                             fg=self.style.fg, bg=self.style.bg,
-                                             max_width=max(0, edge - tail_x))
-                            tail_x += len(self.separator)
-                        fg = self.field_colors.get(field, self.style.fg)
-                        buffer.write_str(tail_x, self.y, text, fg=fg, bg=self.style.bg,
-                                         max_width=max(0, edge - tail_x))
-                        tail_x += len(text)
-                    edge = right_x - len(self.separator)
-            for index, (field, text) in enumerate(self._field_texts(left_fields)):
+            left, right = self.runs()
+            right_width = sum(display_width(text) for text, _ in right)
+            if right and edge - right_width > x:
+                tail_x = edge - right_width
+                for text, fg in right:
+                    buffer.write_str(tail_x, self.y, text, fg=fg, bg=self.style.bg,
+                                     max_width=max(0, edge - tail_x))
+                    tail_x += display_width(text)
+                edge -= right_width + 1         # keep a cell between the halves
+            for text, fg in left:               # too narrow: the right half went first
                 if x >= edge:
                     break
-                if index:
-                    buffer.write_str(x, self.y, self.separator, fg=self.style.fg,
-                                     bg=self.style.bg, max_width=max(0, edge - x))
-                    x += len(self.separator)
-                if x >= edge:
-                    break
-                fg = self.field_colors.get(field, self.style.fg)
                 buffer.write_str(x, self.y, text, fg=fg, bg=self.style.bg,
                                  max_width=max(0, edge - x))
-                x += len(text)
+                x += display_width(text)
         else:
             left = self.left[:max(0, self.width - self.style.padding * 2)]
             buffer.write_str(self.x + self.style.padding, self.y, left,

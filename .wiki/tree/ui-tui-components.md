@@ -18,7 +18,7 @@ See [notes/ui.md](../notes/ui.md) for the component model overview.
 | `button.py` | `Button` — focusable control (`activate` semantic action) |
 | `choice.py` | `Checkbox`, `RadioGroup` — focusable boolean/single-select controls |
 | `layout.py` | `EmptyLine`, `SeparatorLine` — spacing primitives |
-| `bars.py` | `BarStyle`, `StatusBar` (fields), `ActionBar` (actions, `set_hint(text, color)`, `set_expanded`), `NoticeBand` (colored notice lines, `+N more`) |
+| `bars.py` | `BarStyle`, `StatusBar` (a `template` filled from values; `render_template`), `ActionBar` (actions, `set_hint(text, color)`, `set_expanded`), `NoticeBand` (colored notice lines, `+N more`) |
 | `menu.py` | `SelectionMenu` — floating dropdown with fuzzy filtering, item descriptions/footers, `measure_width()`, `title`/`status_text`. With nothing typed it sorts items (`sort_items`, case-insensitive) unless the source passes `ordered=True` (effort levels, sessions, `/model` grouped by server); click accepts (`on_click`), wheel scrolls |
 | `search_modal.py` | `SearchModal(SelectionMenu)` — type-to-filter picker (every picker: `/model`, `/effort`, `/theme`, `/session`, `/sandbox`, bare `/config`), anchored above the input; sorted like the menu unless `ordered`; a click accepts a row; fires `on_highlight` as the selection moves |
 | `theme_preview.py` | `ThemePreview` — top-center overlay showing the live palette as swatches while picking a theme |

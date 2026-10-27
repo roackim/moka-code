@@ -39,12 +39,14 @@ def test_user_message_content_is_normal_but_gutter_is_user_colored():
     assert msg.box.gutter_color == theme.USER
 
 
-def test_assistant_message_gutter_is_gray():
-    from moka_code.ui.tui.msg_types import AssistantMsg
+def test_answer_bar_is_the_theme_assistant_color():
+    """Like the user's turns (USER), answers take their bar from the theme."""
+    from moka_code.ui.tui.msg_types import AssistantMsg, ThinkingMsg
     from moka_code.ui.tui.colors import theme
 
     msg = Message("hello", msg_type=AssistantMsg(), max_width=40)
-    assert msg.box.gutter_color == theme.MUTED
+    assert msg.box.gutter_color == theme.ASSISTANT
+    assert Message("hm", msg_type=ThinkingMsg(), max_width=40).box.gutter_color == theme.MUTED
 
 
 def test_append_strips_leading_whitespace_on_first_chunk():

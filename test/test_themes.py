@@ -273,11 +273,11 @@ def test_refresh_theme_recolors_status_server_model(monkeypatch):
     try:
         colors.set_theme("moka")
         ui.refresh_theme()
-        assert ui.status_bar.field_colors["endpoint_model"] == colors.theme.SUCCESS
+        assert ui.status_bar.field_colors["model"] == colors.theme.SUCCESS
 
         colors.set_theme("terminal")
         ui.refresh_theme()
-        assert ui.status_bar.field_colors["endpoint_model"] == colors.theme.SUCCESS
+        assert ui.status_bar.field_colors["model"] == colors.theme.SUCCESS
     finally:
         colors.set_theme(original)
 

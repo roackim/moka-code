@@ -205,73 +205,80 @@ def get_state_path() -> Path:
     return get_config_dir() / STATE_FILENAME
 
 
+def _rule(name: str, width: int = 60) -> str:
+    """A template section heading: ``## ── Name ────…`` to ``width`` columns."""
+    head = f"## ── {name} "
+    return head + "─" * max(3, width - len(head))
+
+
 # Starts the tables part of ``ui.toml``: sync keeps flat keys above it.
-_TABLES_HEADING = "## Markdown and syntax-highlight styles"
+_TABLES_HEADING = _rule("Markdown and syntax-highlight styles")
+
+#: The values a ``ui.status_bar`` template can name (``status_presenter`` fills them).
+STATUS_BAR_VALUES = ("endpoint", "model", "effort", "role", "context", "cost",
+                     "sandbox", "state", "workspace", "spinner")
+
+DEFAULT_STATUS_BAR = ("[{spinner} ][{endpoint}:]{model}[:{effort}][  role {role}]"
+                      "[  ctx {context}][  {cost}][  ⬢ sandbox:{sandbox}]")
+
+_STATUS_BAR_BLOCK = f'# status_bar = "{DEFAULT_STATUS_BAR}"' + """
+## {endpoint} server · {model} model · {effort} reasoning effort · {role} role
+## {context} tokens used/window · {cost} $ spent · {sandbox} sandbox (or none)
+## {state} idle/thinking · {workspace} folder · {spinner} while the server is checked
+## [ … ] is left out when a value in it is empty (keep its separator inside),
+## and drawn in that value's color. | right-aligns everything after it."""
 
 # Per-section templates written on first use. Everything is commented out so
 # the built-in defaults apply until the user uncomments what they need.
-DEFAULT_UI_TOML = """\
+# Sections run from the most used to the most technical.
+DEFAULT_UI_TOML = f"""\
 ## Moka UI settings
 ## Apply with /reload, or /config ui (reloads when the editor exits).
 ## A line starting with # is a setting to uncomment; ## is help.
 
-## Look
+{_rule("Transcript")}
+
+# thought_min_tokens = 0                # hide shorter reasoning lines (0 = show all)
+# thought_color = "MUTED"               # folded thought line and its bar (palette name or #rrggbb)
+# thought_expanded_color = "MUTED"      # unfolded thought text and its bar
+# thought_gap = false                   # blank lines between a thought and what follows it
+# tool_gap = false                      # blank lines between tool lines
+# show_banner = true                    # moka art in an empty transcript
+
+{_rule("Look")}
 
 ## The theme is chosen with /theme select (kept in state.toml).
 # use_bg_color = false                  # paint the theme background
 # app_global_padding = 0                # blank cells around the whole screen
 # msg_h_padding = 1                     # cells between a message's bar and its text
 # msg_v_margin = 1                      # blank lines between turns (assistant output is continuous)
-# thought_gap = false                   # blank lines between a thought and what follows it
-# tool_gap = false                      # blank lines between tool lines
 # max_input_height = 8                  # input grows with wrapped lines, then scrolls
 
-## Scrolling
+{_rule("Status bar")}
+
+{_STATUS_BAR_BLOCK}
+# sandbox_active_color = "SUCCESS"      # {{sandbox}} while one is active (palette name or #rrggbb)
+# sandbox_inactive_color = "WARNING"    # {{sandbox}} while tools run unsandboxed
+# notice_lines = 2                      # top band height; past it, "+N more · /activity"
+
+{_rule("Streaming")}
+
+# stream_smoothing = true               # reveal streamed text smoothly
+# smooth_target_fps = 60                # reveal cadence (independent of render fps)
+
+{_rule("Scrolling")}
 
 # scroll_lines_per_notch = 3            # lines per mouse-wheel notch
 # scroll_touchpad_speed = 0.1           # multiplier when events come in a burst (touchpad)
 # scroll_touchpad_event_threshold = 2   # events per frame that count as a touchpad burst
 # scroll_alt_multiplier = 3.0           # multiplier while Alt is held
 
-## Live usage
-
-# metrics_refresh_interval = 0.1         # seconds between usage updates while streaming
-
-## Status bar and notices
-
-# status_bar_fields = ["endpoint_model", "role", "context", "cost", "sandbox"]
-# status_bar_separator = "  "           # drawn between fields
-## Put "|" in status_bar_fields to right-align everything after it.
-# notice_lines = 2                      # top band height; past it, "+N more · /activity"
-
-## Model field
-
-# show_provider = true                  # show the server name before the model
-# provider_separator = ":"             # between server and model
-# show_effort = true                    # append the reasoning effort
-# effort_separator = ":"               # between model and effort
-
-## Sandbox field
-
-# sandbox_glyph = "⬢"                   # before the field; empty hides it (emoji ok)
-# sandbox_prefix = "sandbox:"           # before the sandbox name; empty hides it
-# sandbox_active_color = "SUCCESS"      # palette name or #rrggbb
-# sandbox_inactive_color = "WARNING"
-
-## Transcript and streaming
-
-# thought_min_tokens = 0                # hide shorter reasoning lines (0 = show all)
-# thought_color = "MUTED"               # folded thought line and its bar (palette name or #rrggbb)
-# thought_expanded_color = "MUTED"      # unfolded thought text and its bar
-# show_banner = true                    # moka art in an empty transcript
-# stream_smoothing = true               # reveal streamed text smoothly
-# smooth_target_fps = 60                # reveal cadence (independent of render fps)
-
-## Rendering
+{_rule("Rendering")}
 
 # target_fps = 60                       # screen refreshes per second at most
+# metrics_refresh_interval = 0.1        # seconds between usage updates while streaming
 
-""" + _TABLES_HEADING + """
+{_TABLES_HEADING}
 ## Tables come after every setting above. Keys: fg, bg (a hex color, or a
 ## theme color name such as "MUTED"), bold, italic, underline.
 
@@ -290,43 +297,43 @@ DEFAULT_UI_TOML = """\
 # fg = "#FF6464"
 """
 
-DEFAULT_CONTEXT_TOML = """\
+DEFAULT_CONTEXT_TOML = f"""\
 ## Moka context settings
 ## Apply with /reload, or /config context.
 ## A line starting with # is a setting to uncomment; ## is help.
 
-## @ file picker
+{_rule("@ file picker")}
 
-# max_files = 500
-# max_depth = 4
-# ignore_gitignore = false
+# max_files = 500                       # most entries the picker lists
+# max_depth = 4                         # folder levels it walks
+# ignore_gitignore = false              # also list what .gitignore hides
 # ignore_dotfiles = false               # hide .env, .github/ and other dot names (.git/ always)
 
-## Images and sessions
+{_rule("Diffs")}
+
+# diff_context = 3                      # unchanged lines around each change (/diff and edit lines)
+# diff_full_file = false                # /diff shows the whole file, changes marked in place
+
+{_rule("Images and sessions")}
 
 # max_image_mb = 5                      # largest image a message can attach
 # sessions = 10                         # conversations saved per project (/session); 0 = off
 
-## /compact
+{_rule("Compaction")}
 
 # compact_filter_thoughts = true        # leave the model's reasoning out of the summary input
 # compact_filter_tool_calls = true      # each tool call as one line, without its output
 # compact_at = 0.8                      # compact when a turn ends over this share of the context window; 0 = off
 # compact_stop_at = 0.85                # ... or pause a running turn over this share, compact, then resume it
 # compact_keep = 0.1                    # share of the window kept word for word (the newest turns)
-
-## /diff
-
-# diff_context = 3                     # unchanged lines around each change (/diff and edit lines)
-# diff_full_file = false                # /diff shows the whole file, changes marked in place
 """
 
-DEFAULT_DEBUG_TOML = """\
+DEFAULT_DEBUG_TOML = f"""\
 ## Moka debug settings
 ## Apply with /reload, or /config debug.
 ## A line starting with # is a setting to uncomment; ## is help.
 
-## Logging
+{_rule("Logging")}
 
 # log_enabled = false                   # write debug_stream.log
 """
@@ -373,53 +380,55 @@ DEFAULT_CONFIG_TEMPLATES = {
 # guard test checks the template's commented value against it.
 
 _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
+    # Transcript
+    "thought_min_tokens": ("ui_thought_min_tokens", "int", 0),
+    "thought_color": ("ui_thought_color", "color", "MUTED"),
+    "thought_expanded_color": ("ui_thought_expanded_color", "color", "MUTED"),
+    "thought_gap": ("ui_thought_gap", "bool", False),
+    "tool_gap": ("ui_tool_gap", "bool", False),
+    "show_banner": ("ui_show_banner", "bool", True),
+    # Look
     "use_bg_color": ("ui_use_bg_color", "bool", False),
     "app_global_padding": ("ui_app_global_padding", "int", 0),
     "msg_h_padding": ("ui_msg_h_padding", "int", 1),
     "msg_v_margin": ("ui_msg_v_margin", "int", 1),
-    "thought_gap": ("ui_thought_gap", "bool", False),
-    "tool_gap": ("ui_tool_gap", "bool", False),
     "max_input_height": ("ui_max_input_height", "int", 8),
+    # Status bar
+    "status_bar": ("ui_status_bar", "status_bar", DEFAULT_STATUS_BAR),
+    "sandbox_active_color": ("ui_sandbox_active_color", "color", "SUCCESS"),
+    "sandbox_inactive_color": ("ui_sandbox_inactive_color", "color", "WARNING"),
+    "notice_lines": ("ui_notice_lines", "int", 2),
+    # Streaming
+    "stream_smoothing": ("ui_stream_smoothing", "bool", True),
+    "smooth_target_fps": ("ui_smooth_target_fps", "int", 60),
+    # Scrolling
     "scroll_lines_per_notch": ("ui_scroll_lines_per_notch", "int", 3),
     "scroll_touchpad_speed": ("ui_scroll_touchpad_speed", "float", 0.1),
     "scroll_touchpad_event_threshold": ("ui_scroll_touchpad_event_threshold", "int", 2),
     "scroll_alt_multiplier": ("ui_scroll_alt_multiplier", "float", 3.0),
-    "metrics_refresh_interval": ("ui_metrics_refresh_interval", "float", 0.1),
-    "status_bar_fields": ("ui_status_bar_fields", "str_list",
-                          ["endpoint_model", "role", "context", "cost", "sandbox"]),
-    "status_bar_separator": ("ui_status_bar_separator", "str", "  "),
-    "notice_lines": ("ui_notice_lines", "int", 2),
-    "show_provider": ("ui_show_provider", "bool", True),
-    "provider_separator": ("ui_provider_separator", "str", ":"),
-    "show_effort": ("ui_show_effort", "bool", True),
-    "effort_separator": ("ui_effort_separator", "str", ":"),
-    "sandbox_glyph": ("ui_sandbox_glyph", "str", "⬢"),
-    "sandbox_prefix": ("ui_sandbox_prefix", "str", "sandbox:"),
-    "sandbox_active_color": ("ui_sandbox_active_color", "color", "SUCCESS"),
-    "sandbox_inactive_color": ("ui_sandbox_inactive_color", "color", "WARNING"),
-    "thought_min_tokens": ("ui_thought_min_tokens", "int", 0),
-    "thought_color": ("ui_thought_color", "color", "MUTED"),
-    "thought_expanded_color": ("ui_thought_expanded_color", "color", "MUTED"),
-    "show_banner": ("ui_show_banner", "bool", True),
-    "stream_smoothing": ("ui_stream_smoothing", "bool", True),
-    "smooth_target_fps": ("ui_smooth_target_fps", "int", 60),
+    # Rendering
     "target_fps": ("ui_target_fps", "int", 60),
+    "metrics_refresh_interval": ("ui_metrics_refresh_interval", "float", 0.1),
 }
 
 _CONTEXT_SPEC: Dict[str, tuple[str, str, Any]] = {
+    # @ file picker
     "max_files": ("context_max_files", "int", 500),
     "max_depth": ("context_max_depth", "int", 4),
     "ignore_gitignore": ("context_ignore_gitignore", "bool", False),
     "ignore_dotfiles": ("context_ignore_dotfiles", "bool", False),
+    # Diffs
+    "diff_context": ("context_diff_context", "lines", 3),
+    "diff_full_file": ("context_diff_full_file", "bool", False),
+    # Images and sessions
     "max_image_mb": ("context_max_image_mb", "int_or_float", 5),
     "sessions": ("context_sessions", "int", 10),
+    # Compaction
     "compact_filter_thoughts": ("context_compact_filter_thoughts", "bool", True),
     "compact_filter_tool_calls": ("context_compact_filter_tool_calls", "bool", True),
     "compact_at": ("context_compact_at", "float", 0.8),
     "compact_stop_at": ("context_compact_stop_at", "float", 0.85),
     "compact_keep": ("context_compact_keep", "float", 0.1),
-    "diff_context": ("context_diff_context", "lines", 3),
-    "diff_full_file": ("context_diff_full_file", "bool", False),
 }
 
 _DEBUG_SPEC: Dict[str, tuple[str, str, Any]] = {
@@ -438,6 +447,9 @@ _RETIRED_UI: set[str] = {  # nothing read these: spinner (elapsed-time labels), 
     "box_style", "box_style_focused",
     # The theme is state (/theme select); a ui.toml value moves there once.
     "theme",
+    # Replaced by the status_bar template.
+    "status_bar_fields", "status_bar_separator", "show_provider", "provider_separator",
+    "show_effort", "effort_separator", "sandbox_glyph", "sandbox_prefix",
 }
 # preserve_reasoning_traces: reasoning is no longer sent back (PLAN.md step 2).
 _RETIRED_CONTEXT: set[str] = {"preserve_reasoning_traces", "format"}  # format: the project tree was never sent
@@ -934,6 +946,21 @@ def _coerce(kind: str, value: Any) -> tuple[Any, Optional[str]]:
             return None, None
         if isinstance(value, bool) or not isinstance(value, int):
             return None, "must be an integer or absent"
+        return value, None
+    if kind == "status_bar":
+        if not isinstance(value, str):
+            return None, "must be a string"
+        unknown = sorted(set(re.findall(r"\{([A-Za-z_]+)\}", value)) - set(STATUS_BAR_VALUES))
+        if unknown:
+            return None, (f"names unknown values {', '.join('{' + n + '}' for n in unknown)} "
+                          f"(known: {', '.join(STATUS_BAR_VALUES)})")
+        depth = 0
+        for char in value:
+            depth += {"[": 1, "]": -1}.get(char, 0)
+            if depth < 0:
+                break
+        if depth:
+            return None, "has unbalanced [ ]"
         return value, None
     if kind == "lines":
         if isinstance(value, int) and not isinstance(value, bool) and value >= 0:

@@ -19,85 +19,61 @@ def test_status_bar_renders_left_and_right_text_with_padding():
     assert rendered.endswith("100% ")
 
 
-def test_status_bar_renders_configured_fields_in_order():
-    status = StatusBar(fields=["endpoint_model", "role", "context"])
-    status.set_layout(0, 0, 60, 1)
-    status.set_values({
-        "role": "role default",
-        "context": "ctx 12.4k/32k",
-        "endpoint_model": "local:qwen3:8b",
-    })
-    buffer = Buffer(60, 1)
-
+def _render(template, values, colors=None, width=60):
+    status = StatusBar(template=template)
+    status.set_layout(0, 0, width, 1)
+    status.set_values(values)
+    status.set_field_colors(colors or {})
+    buffer = Buffer(width, 1)
     status.render(buffer)
-
-    assert row_text(buffer).strip().startswith(
-        "local:qwen3:8b  role default  ctx 12.4k/32k"
-    )
+    return buffer
 
 
-def test_status_bar_renders_field_colors():
+def test_status_bar_template_fills_values():
+    buffer = _render("{endpoint}:{model}  role {role}  ctx {context}",
+                     {"endpoint": "local", "model": "qwen3", "role": "default",
+                      "context": "12.4k/32k"})
+    assert row_text(buffer).strip() == "local:qwen3  role default  ctx 12.4k/32k"
+
+
+def test_a_group_is_left_out_when_a_value_in_it_is_empty():
+    values = {"endpoint": "local", "model": "qwen3", "effort": "", "cost": ""}
+    buffer = _render("[{endpoint}:]{model}[:{effort}]  [{cost}]x", values)
+    assert row_text(buffer).strip() == "local:qwen3  x"
+    # Nested: the inner group goes, the outer one stays.
+    buffer = _render("[{endpoint}:{model}[:{effort}]]", values)
+    assert row_text(buffer).strip() == "local:qwen3"
+    # Outside a group an empty value just leaves nothing.
+    buffer = _render("a{effort}b", values)
+    assert row_text(buffer).strip() == "ab"
+
+
+def test_a_group_is_drawn_in_its_value_color():
     from moka_code.ui.tui.colors import RGB
 
-    status = StatusBar(fields=["endpoint_model", "context"])
-    status.set_layout(0, 0, 40, 1)
-    status.set_values({
-        "endpoint_model": "local:model",
-        "context": "ctx 10k/32k",
-    })
-    status.set_field_colors({"context": RGB("#F48771")})
-    buffer = Buffer(40, 1)
-
-    status.render(buffer)
-
-    # The context field should be rendered with the error color.
-    ctx_start = row_text(buffer).index("ctx")
-    ctx_cell = buffer.cells[0][ctx_start]
-    assert ctx_cell.fg == (0xF4, 0x87, 0x71)
+    buffer = _render("{model}  [ctx {context}]", {"model": "m", "context": "10k/32k"},
+                     {"context": RGB("#F48771")})
+    row = row_text(buffer)
+    assert buffer.cells[0][row.index("ctx")].fg == (0xF4, 0x87, 0x71)     # the group text too
+    assert buffer.cells[0][row.index("10k")].fg == (0xF4, 0x87, 0x71)
+    assert buffer.cells[0][row.index("m")].fg != (0xF4, 0x87, 0x71)
 
 
-def test_status_bar_right_aligns_fields_after_marker():
-    status = StatusBar(fields=["endpoint_model", "role", "|", "cost", "sandbox"])
-    status.set_layout(0, 0, 60, 1)
-    status.set_values({
-        "endpoint_model": "local:model",
-        "role": "role agent",
-        "cost": "$0.12",
-        "sandbox": "⬢ sandbox:default",
-    })
-    buffer = Buffer(60, 1)
-
-    status.render(buffer)
-
+def test_status_bar_right_aligns_after_the_marker():
+    buffer = _render("{model}  role {role} | {cost}  ⬢ sandbox:{sandbox}",
+                     {"model": "local:model", "role": "agent", "cost": "$0.12",
+                      "sandbox": "default"})
     rendered = row_text(buffer)
     assert rendered.startswith(" local:model  role agent")
     assert rendered.rstrip().endswith("$0.12  ⬢ sandbox:default")
-    # The marker itself is never drawn.
     assert "|" not in rendered
 
 
-def test_status_bar_separator_is_configurable():
-    status = StatusBar(fields=["endpoint_model", "role"], separator=" | ")
-    status.set_layout(0, 0, 40, 1)
-    status.set_values({"endpoint_model": "local:model", "role": "role agent"})
-    buffer = Buffer(40, 1)
+def test_a_bracket_is_only_literal_when_unbalanced():
+    from moka_code.ui.tui.components.bars import render_template
 
-    status.render(buffer)
-
-    assert row_text(buffer).startswith(" local:model | role agent")
-    assert row_text(buffer).strip() == "local:model | role agent"
-
-
-def test_status_bar_can_change_field_order_without_replacing_values():
-    status = StatusBar(fields=["endpoint_model", "role"])
-    status.set_layout(0, 0, 40, 1)
-    status.set_values({"endpoint_model": "local:model", "role": "role reviewer"})
-    status.set_fields(["role", "endpoint_model"])
-    buffer = Buffer(40, 1)
-
-    status.render(buffer)
-
-    assert row_text(buffer).strip().startswith("role reviewer  local:model")
+    left, right = render_template("a]b", {}, {}, None)
+    assert "".join(t for t, _ in left) == "a]b" and right == []
 
 
 def test_action_bar_activates_by_key_and_mouse():

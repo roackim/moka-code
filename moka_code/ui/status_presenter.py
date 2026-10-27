@@ -22,16 +22,6 @@ def _format_cost(cost: float | None) -> str:
     return f"${cost:.2f}"
 
 
-def _format_model(server: str, model: str, effort: str | None = None) -> str:
-    """Compose ``[server<sep>]model[<sep>effort]`` for the status field."""
-    parts = [server] if settings.config.ui_show_provider else []
-    parts.append(model)
-    label = settings.config.ui_provider_separator.join(parts)
-    if effort and settings.config.ui_show_effort:
-        label += settings.config.ui_effort_separator + effort
-    return label
-
-
 def _format_tokens(value: int | None) -> str:
     if value is None:
         return "?"
@@ -182,17 +172,12 @@ def _refresh_notices(app) -> None:
 
 def refresh_status_bar(app) -> None:
     """Refresh local status fields without performing network I/O."""
-    # ``/reload`` may have changed the field list or separator; StatusBar was
-    # built once at startup, so re-apply both here on every refresh.
+    # ``/reload`` may have changed the template; StatusBar was built once at
+    # startup, so re-apply it here on every refresh.
     bar = getattr(app, "status_bar", None)
-    if bar is not None and hasattr(bar, "set_fields"):
-        separator = settings.config.ui_status_bar_separator
-        if getattr(bar, "separator", None) != separator:
-            bar.separator = separator
-            bar.mark_changed()
-        fields = list(settings.config.ui_status_bar_fields)
-        if getattr(bar, "fields", None) != fields:
-            bar.set_fields(fields)
+    if bar is not None and hasattr(bar, "set_template"):
+        if getattr(bar, "template", None) != settings.config.ui_status_bar:
+            bar.set_template(settings.config.ui_status_bar)
     agent = app.agent
     _refresh_notices(app)
     endpoint = getattr(agent, "endpoint", None)
@@ -205,11 +190,10 @@ def refresh_status_bar(app) -> None:
         if selected:
             model = settings.config.get_model_for_server(selected) or "?"
             effort = settings.config.efforts.get(selected, {}).get(model)
-            label = _format_model(selected, model, effort)
-            _set_fields(app, agent, label, selected, model, theme.ERROR, role, state, None)
+            _set_fields(app, agent, selected, model, effort, "", theme.ERROR, role, state, None)
             return
         label = "no server" if not settings.config.servers else "no model"
-        _set_fields(app, agent, label, label, "", theme.ERROR, role, state, None)
+        _set_fields(app, agent, "", label, None, "", theme.ERROR, role, state, None)
         return
 
     # ``selected_model`` is the one id the next request uses, as selected.
@@ -225,14 +209,13 @@ def refresh_status_bar(app) -> None:
                 model = model[: -len(suffix)]
                 break
     effort = getattr(endpoint, "effort", None)
-    endpoint_model = _format_model(endpoint.name, model, effort)
 
     # Show an animated spinner while .local hostname resolution or the
     # connection check is pending.
     from moka_code.harness.endpoint import is_local_resolution_pending, unserved_model
+    spinner = ""
     if is_local_resolution_pending(endpoint._original_base_url) or getattr(endpoint, "_connection_state", None) == "checking":
-        frame = SPINNER_FRAMES[app._status_spinner_frame % len(SPINNER_FRAMES)]
-        endpoint_model = f"{frame} {endpoint_model}"
+        spinner = SPINNER_FRAMES[app._status_spinner_frame % len(SPINNER_FRAMES)]
 
     # Color the server/model field by the latest probe of the server (model
     # listing, connection check or chat request): checking -> orange, failed
@@ -251,14 +234,14 @@ def refresh_status_bar(app) -> None:
         server_color = theme.SUCCESS
     else:
         server_color = theme.DEFAULT
-    _set_fields(app, agent, endpoint_model, endpoint.name, model,
+    _set_fields(app, agent, endpoint.name, model, effort, spinner,
                 server_color, role, state, endpoint)
 
 
-def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
+def _set_fields(app, agent, server: str, model: str, effort: str | None, spinner: str,
                 server_color: Any, role: str, state: str, endpoint) -> None:
-    """Push the status fields; ``endpoint`` is ``None`` when nothing is
-    selected (no context field then)."""
+    """Push the ``ui.status_bar`` values; ``endpoint`` is ``None`` when
+    nothing is selected (no context value then)."""
     usage = getattr(agent, "_last_usage", None)
     context_used = getattr(usage, "context_tokens", None)
     estimated = context_used is None
@@ -272,8 +255,8 @@ def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
         context_window = getattr(endpoint, "context_window", None)
         context_max = context_window() if callable(context_window) else None
 
-    # Sandbox field: [glyph][prefix]name, colored green when active and
-    # orange when tools run unsandboxed. Always present so it stays visible.
+    # Sandbox: its name, green when active and orange when tools run
+    # unsandboxed ("none"). Never empty, so it stays visible.
     sandboxed = getattr(agent, "sandboxed", None)
     sandboxed = bool(sandboxed()) if callable(sandboxed) else False
     runtime = getattr(agent, "_sandbox_runtime", "none") or "none"
@@ -282,10 +265,6 @@ def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
     sandbox_label = getattr(agent, "sandbox_name", None) or runtime
     if sandboxed and sandbox_label == "none":
         sandbox_label = "sandbox"
-    sandbox_text = settings.config.ui_sandbox_glyph
-    if sandbox_text:
-        sandbox_text += " "
-    sandbox_text += f"{settings.config.ui_sandbox_prefix}{sandbox_label}"
     sandbox_color = resolve_color(
         settings.config.ui_sandbox_active_color if sandboxed
         else settings.config.ui_sandbox_inactive_color,
@@ -294,26 +273,28 @@ def _set_fields(app, agent, endpoint_model: str, server: str, model: str,
 
     approx = "~" if estimated and context_used else ""
     app.status_bar.set_values({
-        "endpoint_model": endpoint_model,
-        # An unknown window shows only what is used (never a guessed size).
-        "context": (f"ctx {approx}{_format_tokens(context_used)}/{_format_tokens(context_max)}"
-                    if context_max else f"ctx {approx}{_format_tokens(context_used)}"
-                    if endpoint is not None else ""),
-        "role": f"role {role}",
-        "state": state,
+        "spinner": spinner,
         "endpoint": server,
         "model": model,
+        "effort": effort or "",
+        # An unknown window shows only what is used (never a guessed size).
+        "context": (f"{approx}{_format_tokens(context_used)}/{_format_tokens(context_max)}"
+                    if context_max else f"{approx}{_format_tokens(context_used)}"
+                    if endpoint is not None else ""),
+        "role": role,
+        "state": state,
         "workspace": getattr(agent, "workspace", ""),
-        "sandbox": sandbox_text,
-        # Empty (so hidden) until the provider reports a cost.
+        "sandbox": sandbox_label,
+        # Empty (so left out) until the provider reports a cost.
         "cost": _format_cost(getattr(agent, "conversation_cost", None)),
     })
     role_color = resolve_color(getattr(getattr(agent, "role", None), "color", ""), theme.DEFAULT)
     app.status_bar.set_field_colors({
-        "role": role_color,
-        "context": _context_color(context_used, context_max),
+        "spinner": server_color,
         "endpoint": server_color,
         "model": server_color,
-        "endpoint_model": server_color,
+        "effort": server_color,
+        "role": role_color,
+        "context": _context_color(context_used, context_max),
         "sandbox": sandbox_color,
     })

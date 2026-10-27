@@ -146,8 +146,8 @@ def test_unlisted_model_is_red_until_auto_select_runs(cfg):
 
     refresh_status_bar(ui)
 
-    assert ui.status_bar.values["endpoint_model"] == "a:gone"
-    assert ui.status_bar.colors["endpoint_model"] == theme.ERROR
+    assert (ui.status_bar.values["endpoint"], ui.status_bar.values["model"]) == ("a", "gone")
+    assert ui.status_bar.colors["model"] == theme.ERROR
     assert ("error", "gone is no longer served by a → /model") in notices(ui.agent)
 
 
@@ -157,8 +157,8 @@ def test_missing_server_is_red_until_auto_select_runs(cfg):
 
     refresh_status_bar(ui)
 
-    assert ui.status_bar.values["endpoint_model"] == "gone:m"
-    assert ui.status_bar.colors["endpoint_model"] == theme.ERROR
+    assert (ui.status_bar.values["endpoint"], ui.status_bar.values["model"]) == ("gone", "m")
+    assert ui.status_bar.colors["model"] == theme.ERROR
     assert any("'gone' is not in servers.toml" in text for _, text in notices(ui.agent))
 
 
@@ -181,7 +181,7 @@ def test_a_failed_listing_of_the_active_server_turns_it_red_with_a_notice(cfg):
 
     refresh_status_bar(ui)
 
-    assert ui.status_bar.colors["endpoint_model"] == theme.ERROR
+    assert ui.status_bar.colors["model"] == theme.ERROR
     assert ("error", "a cannot be joined: cannot connect (http://a/v1) → start it, "
                      "or /config servers") in notices(ui.agent)
 
@@ -200,7 +200,7 @@ def test_a_chat_request_that_cannot_connect_turns_it_red_and_a_reply_green_again
     with pytest.raises(httpx.ConnectError):
         _drain(endpoint)
     refresh_status_bar(ui)
-    assert ui.status_bar.colors["endpoint_model"] == theme.ERROR
+    assert ui.status_bar.colors["model"] == theme.ERROR
     assert any("a cannot be joined: cannot connect" in t for _, t in notices(ui.agent))
 
     async def up(messages, tools):
@@ -208,7 +208,7 @@ def test_a_chat_request_that_cannot_connect_turns_it_red_and_a_reply_green_again
     monkeypatch.setattr(endpoint, "_stream", up)
     _drain(endpoint)
     refresh_status_bar(ui)
-    assert ui.status_bar.colors["endpoint_model"] == theme.SUCCESS
+    assert ui.status_bar.colors["model"] == theme.SUCCESS
     assert not any("cannot be joined" in t for _, t in notices(ui.agent))
 
 

@@ -98,6 +98,13 @@ def test_every_spec_key_has_a_commented_template_line(section):
 
 
 @pytest.mark.parametrize("section", sorted(SPEC_TEMPLATES))
+def test_template_and_spec_list_keys_in_the_same_order(section):
+    spec, template = SPEC_TEMPLATES[section]
+    flat, _tables = settings._split_tables(template)
+    assert [key for key, _ in settings._template_key_lines(flat)] == list(spec)
+
+
+@pytest.mark.parametrize("section", sorted(SPEC_TEMPLATES))
 def test_template_values_are_the_spec_defaults(section):
     """The default lives in the spec; the template shows the same value."""
     import toml
@@ -137,10 +144,10 @@ def test_missing_section_brings_its_heading_and_help(tmp_path):
 
     text = (tmp_path / "ui.toml").read_text(encoding="utf-8")
     assert 'msg_v_margin = 2' in text
-    assert "## Model field" in text
-    assert "# show_provider" in text
-    assert "# provider_separator" in text
-    assert "## Sandbox field" in text
+    assert settings._rule("Status bar") in text
+    assert "# status_bar = " in text
+    assert "## {endpoint} server" in text
+    assert settings._rule("Scrolling") in text
 
 
 def test_ui_sync_adds_keys_above_the_style_tables_and_never_touches_them(tmp_path):
@@ -176,17 +183,16 @@ def test_repairs_headings_and_help_left_by_a_previous_sync(tmp_path):
     """Keys inserted by the old per-key sync can sit under the wrong heading."""
     damaged = (
         "## Moka UI settings\n\n"
-        "## Status bar and notices\n\n"
-        '# status_bar_fields = ["endpoint_model", "role", "context", "cost", "sandbox"]\n'
-        '# status_bar_separator = "  "\n'
-        "# notice_lines = 2\n\n"
-        "## Sandbox field\n\n"
-        '# show_provider = true\n'
-        '# provider_separator = ":"\n'
-        '# sandbox_glyph = "⬢"\n'
-        '# sandbox_prefix = "sandbox:"\n'
+        f"{settings._rule('Status bar')}\n\n"
+        f'# status_bar = "{settings.DEFAULT_STATUS_BAR}"\n'
         '# sandbox_active_color = "SUCCESS"\n'
         '# sandbox_inactive_color = "WARNING"\n'
+        "# notice_lines = 2\n\n"
+        f"{settings._rule('Streaming')}\n\n"
+        "# stream_smoothing = true\n"
+        "# smooth_target_fps = 60\n"
+        "# scroll_lines_per_notch = 3\n"
+        "# scroll_touchpad_speed = 0.1\n"
     )
     (tmp_path / "ui.toml").write_text(damaged, encoding="utf-8")
     config = _config(tmp_path)
@@ -194,15 +200,12 @@ def test_repairs_headings_and_help_left_by_a_previous_sync(tmp_path):
     config.sync_section_files()
 
     text = (tmp_path / "ui.toml").read_text(encoding="utf-8")
-    assert (text.index("# status_bar_separator")
-            < text.index('## Put "|" in status_bar_fields')
-            < text.index("# notice_lines"))
-    assert (text.index("# notice_lines")
-            < text.index("## Model field")
-            < text.index("# show_provider"))
-    assert (text.index("# provider_separator")
-            < text.index("## Sandbox field")
-            < text.index("# sandbox_glyph"))
+    assert (text.index("# status_bar = ")
+            < text.index("## {endpoint} server")
+            < text.index("# sandbox_active_color"))
+    assert (text.index("# smooth_target_fps")
+            < text.index(settings._rule("Scrolling"))
+            < text.index("# scroll_lines_per_notch"))
     assert config.sync_section_files() == []
 
 
@@ -268,7 +271,7 @@ def test_symlink_is_preserved(tmp_path):
     _config(tmp_path).sync_section_files()
 
     assert link.is_symlink()
-    assert "# show_provider" in real.read_text(encoding="utf-8")
+    assert "# status_bar = " in real.read_text(encoding="utf-8")
 
 
 def test_file_mode_is_preserved(tmp_path):

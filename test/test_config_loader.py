@@ -13,7 +13,7 @@ def _write(path, data):
 
 def test_section_files_apply(tmp_path):
     _write(tmp_path / "ui.toml",
-           {"msg_h_padding": 2, "status_bar_fields": ["role"]})
+           {"msg_h_padding": 2, "status_bar": "{role}"})
     _write(tmp_path / "context.toml", {"max_files": 50})
     _write(tmp_path / "debug.toml", {"log_enabled": True})
     _write(tmp_path / "servers.toml", {
@@ -26,7 +26,7 @@ def test_section_files_apply(tmp_path):
 
     assert config.load_errors == []
     assert config.ui_msg_h_padding == 2
-    assert config.ui_status_bar_fields == ["role"]
+    assert config.ui_status_bar == "{role}"
     assert config.context_max_files == 50
     assert config.debug_log_enabled is True
     assert config.servers["local"]["base_url"] == "http://localhost:8080/v1"
@@ -67,6 +67,16 @@ def test_styles_live_in_ui_toml_and_other_tables_are_reported(tmp_path):
     assert any("ui.toml: [syntax_highlight] unknown element 'nope'" in e
                for e in config.load_errors)
     assert not any("markdown_styles" in e for e in config.load_errors)
+
+
+def test_status_bar_template_names_known_values_with_balanced_groups(tmp_path):
+    _write(tmp_path / "ui.toml", {"status_bar": "{model} [{nope}]"})
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+    assert any("status_bar names unknown values {nope}" in e for e in config.load_errors)
+    assert config.ui_status_bar == settings.DEFAULT_STATUS_BAR
+
+    _write(tmp_path / "ui.toml", {"status_bar": "[{model}"})
+    assert any("unbalanced" in e for e in config.reload())
 
 
 def test_malformed_toml_reports_error_and_keeps_defaults(tmp_path):

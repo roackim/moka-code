@@ -15,7 +15,7 @@ chatTUI (app.py)
        │    │    ├─ ChatHistoryPanel      ← scrollable transcript
        │    │    ├─ ActionBar             ← 0 rows, or 2 (pad + actions/hint)
        │    │    └─ Box(lines_only) ⊃ InputComponent  ← multi-line editor
-       │    └─ bottom: StatusBar          ← one line, ui.status_bar_fields
+       │    └─ bottom: StatusBar          ← one line, the ui.status_bar template
        └─ Overlays (floating, on top)
             ├─ SelectionMenu              ← completion menus, above the input box
             ├─ SearchModal                ← pickers
@@ -55,48 +55,40 @@ plain name, nothing. It is drawn in the normal text color (`theme.DEFAULT`).
 
 ## Status Bar
 
-The chat workspace includes a one-line `StatusBar`. Its visible fields and
-order come from `settings.config.ui_status_bar_fields`; the default is:
+The chat workspace includes a one-line `StatusBar` drawn from one template,
+`ui.status_bar` (`bars.render_template`); the default is
 
 ```toml
-[ui]
-status_bar_fields = ["endpoint_model", "role", "context", "cost", "sandbox"]
+status_bar = "[{spinner} ][{endpoint}:]{model}[:{effort}][  role {role}][  ctx {context}][  {cost}][  ⬢ sandbox:{sandbox}]"
 ```
 
-The default display is `endpoint:model  role agent  ctx 12.4k/32k  $0.12  ⬢ sandbox:none`.
-Available values include `endpoint_model`, `endpoint`, `model`, `context`,
-`cost`, `role`, `state`, `workspace`, and `sandbox`. Empty values are hidden:
-`cost` (`$0.12`, rounded to the cent, from `Harness.conversation_cost`) only appears once the
-provider reports a cost (`TokenUsage.cost`, e.g. OpenRouter's `usage.cost`;
-`/compact`'s request counts too). It is per conversation: `/clear` and
-`/import` (`Harness.load_history`) start it over.
+drawn as `local:qwen3:high  role agent  ctx 12.4k/32k  $0.12  ⬢ sandbox:none`.
 
-`ui.status_bar_separator` sets the text drawn between fields (default two spaces).
-A `"|"` entry in `status_bar_fields` is not drawn: it splits the bar so every
-field after it is right-aligned, e.g.
+- `{name}` is a value (`settings.STATUS_BAR_VALUES`, filled by
+  `status_presenter._set_fields`): `endpoint`, `model`, `effort`, `role`,
+  `context` (`12.4k/32k`, `~` while estimated), `cost`, `sandbox`, `state`,
+  `workspace`, `spinner` (a frame while the server is checked).
+- `[ … ]` is a group: left out when a value directly in it is empty (a nested
+  group can go on its own), so a separator belongs inside it. A group is drawn
+  whole in the color of its first colored value; outside groups a value has its
+  own color and text the bar's.
+- A top-level `|` right-aligns what follows; the right part is dropped first
+  when the bar is too narrow. An unbalanced bracket is text (and a load error).
 
-```toml
-status_bar_fields = ["endpoint_model", "role", "context", "|", "cost", "sandbox"]
-```
+`cost` (`$0.12`, rounded to the cent, from `Harness.conversation_cost`) is empty
+until the provider reports a cost (`TokenUsage.cost`, e.g. OpenRouter's
+`usage.cost`; `/compact`'s request counts too). It is per conversation: `/clear`
+and `/import` (`Harness.load_history`) start it over.
 
-The `endpoint_model` field is composed as
-`[provider<provider_separator>]model[<effort_separator>effort]`, controlled by
-`ui.show_provider` / `ui.provider_separator` and `ui.show_effort` /
-`ui.effort_separator`. Its color follows the endpoint connection state: green
-when ok, orange while checking, red on error.
-
-The `sandbox` field is composed as `glyph + " " + prefix + name` from
-`ui.sandbox_glyph` / `ui.sandbox_prefix` and is colored green
+Colors: `spinner`/`endpoint`/`model`/`effort` follow the server's connection
+state (green ok, orange checking, red on error); `context` how full the window
+is (green below 33%, orange below 66%, red above); `sandbox` is green
 (`ui.sandbox_active_color`) when a sandbox is active and orange
-(`ui.sandbox_inactive_color`) when tools run unsandboxed. Both colors accept a
-palette name or `#rrggbb`. It is always non-empty, so it stays visible.
+(`ui.sandbox_inactive_color`) when tools run unsandboxed (never empty: `none`).
 Provider-reported prompt usage replaces the context estimate after a response
 supplies authoritative usage data.
 
-The `context` field is colorized by how full the context window is:
-green below 33%, orange/amber below 66%, and red at or above 66%.
-
-The `role` field reflects the active conversation role and is refreshed
+The `role` value reflects the active conversation role and is refreshed
 whenever the role changes (via `/role select <name>` or a conversation import that
 applies a saved role). A role file's `color` (palette name or `#rrggbb`) colors
 this field and the focused input bars (`chatTUI._input_box_fg`); without one they
@@ -609,8 +601,8 @@ routed to the activity surface rather than the transcript (see below).
 ### Message Selection and the Mode Line
 Messages are gutter-threaded and do not render actions inline. Messages use a
 full-height `▌` prefix bar (`Box.full_height_gutter`) whose color encodes the
-type: user `USER`, assistant/thinking/tool calls `MUTED`, permission asks
-`PERMISSION`. User content is normal text color (the accent is only the bar).
+type, from the theme: user `USER`, answers `ASSISTANT`, thinking/tool calls
+`MUTED` (thoughts: `ui.thought_*_color`), permission asks `PERMISSION`. User content is normal text color (the accent is only the bar).
 `ChatHistoryPanel` keeps a `focused_message_index`
 (the selected message); the selected message's prefix bar is replaced with a
 brighter `▌` marker (no extra column, nothing shifts, no leading margin).

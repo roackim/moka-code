@@ -58,9 +58,8 @@ class AssistantMsg(MsgType):
     name = "assistant"
     title = "assistant"
     actions = [MsgAction.COPY]
-    frame_color = "ASSISTANT"
+    frame_color = "ASSISTANT"    # the bar, like USER for the user's turns
     gutter = "▌"
-    gutter_color = "MUTED"
 
 class SysMsg(MsgType):
     name = "system"
@@ -93,6 +92,7 @@ class ThinkingMsg(AssistantMsg):
     actions = [MsgAction.COPY]
     # Same prefix bar as user/assistant so the thought line reads like any message.
     gutter = "▌"
+    gutter_color = "MUTED"       # ui.thought_color / thought_expanded_color override it
     clamped = True
 
 class CompactionMsg(MsgType):
