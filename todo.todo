@@ -1,3 +1,7 @@
+[x] toggle for content stream interpolation in ui
+[x] remember last role and use it on next startup
+[x] discovery des fichiers dotfiles
+[ ] outil formulaire de questions
 [x] copy paste text, with [ ] token
 [x] backspace on img or paste token = delete
 [ ] focusable terminal output for commands run via BASH tool (while running)
