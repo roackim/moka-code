@@ -34,6 +34,8 @@ class InputComponent(Component):
         self.bg = theme.get_bg()  # Use global background
         self.config = None  # Config object passed during initialization
         self.focused = True  # Track focus state for input handling and cursor rendering
+        # Muted text shown on an empty, focused input (e.g. while a form asks).
+        self.placeholder = ""
         # Optional ``line -> [(start, end, fg)]``: spans drawn in their own color.
         self.highlighter = None
         
@@ -291,6 +293,9 @@ class InputComponent(Component):
         else:
             menu_width = min(max(self.width, 20), screen_width)
             menu_x = max(0, min(trigger_x, screen_width - menu_width))
+        header_rows = getattr(menu, "header_rows", None)
+        if header_rows is not None:
+            menu_height += header_rows(menu_width)
 
         space_above = max(0, trigger_y)
         space_below = max(0, screen_height - trigger_y - 1)
@@ -414,6 +419,10 @@ class InputComponent(Component):
                 paint_spans(buffer, self.x, self.y + line_idx, display_line,
                             self.highlighter, self.bg, self.width)
         
+        if self.placeholder and self.focused and not self.buffer.text:
+            buffer.write_str(self.x + prompt_width, self.y, self.placeholder, fg=theme.MUTED,
+                             bg=self.bg, max_width=max(0, self.width - prompt_width))
+
         # Note: Cursor is rendered separately via render_cursor() called after SubBuffer blit
         
         # Render parameter hints in grey after the end of typed text (not cursor)

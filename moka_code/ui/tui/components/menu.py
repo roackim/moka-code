@@ -1,3 +1,4 @@
+import textwrap
 import time
 from typing import Any, Callable, List, Optional, Tuple, Union
 from enum import Enum
@@ -79,6 +80,10 @@ class SelectionMenu(Component):
         # current search query) shown in the bottom border.
         self.title = ""
         self.status_text = ""
+        # Optional text above the items (e.g. a question), wrapped to the
+        # width and followed by a blank row; see ``header_rows``.
+        self.header = ""
+        self._header_rows = 0
         # Minimum popup width (0 = shrink to content).
         self.min_width = 0
         # When True, use the full available width instead of shrinking to the
@@ -198,6 +203,18 @@ class SelectionMenu(Component):
         return None
     
 
+    def header_lines(self, width: int) -> List[str]:
+        """``header`` wrapped for a box ``width`` wide, plus its blank row."""
+        if not self.header:
+            return []
+        room = max(1, width - 2 - self.left_pad - self.right_pad)
+        lines = [row for paragraph in self.header.split("\n")
+                 for row in (textwrap.wrap(paragraph, room) or [""])]
+        return lines + [""]
+
+    def header_rows(self, width: int) -> int:
+        return len(self.header_lines(width))
+
     def measure_width(self, available: int) -> int:
         """Width the popup box will occupy, given the available columns."""
         if self.fill_width:
@@ -237,8 +254,12 @@ class SelectionMenu(Component):
         )
         has_desc = desc_col > 0
 
+        header = self.header_lines(menu_width)
+        self._header_rows = len(header)
+
         # Visible rows from the height, capped by max_height.
-        max_visible = max(1, min(self.max_height - 2, max(0, self.height - 2)))
+        max_visible = max(1, min(self.max_height - 2,
+                                 max(0, self.height - 2 - len(header))))
         visible_count = min(len(self.items), max_visible)
 
         # Scroll window that keeps the selection visible.
@@ -248,7 +269,7 @@ class SelectionMenu(Component):
         first = max(0, min(first, len(self.items) - visible_count))
         self._first = first
 
-        menu_height = visible_count + 2  # +2 for top and bottom borders
+        menu_height = visible_count + 2 + len(header)  # + top and bottom borders
 
         # Clear the popup rectangle first so it overwrites whatever is behind
         # it (e.g. the action bar) instead of letting it show through the gaps.
@@ -272,11 +293,18 @@ class SelectionMenu(Component):
         inner_width = menu_width - 2  # Minus borders
         content_area = max(0, inner_width - self.left_pad - self.right_pad)
 
+        for row, line in enumerate(header):
+            curr_y = self.y + 1 + row
+            buffer.set(self.x, curr_y, "│", fg=self.frame_color, bg=self.bg)
+            buffer.write_str(self.x + 1 + self.left_pad, curr_y, line,
+                             fg=self.content_color, bg=self.bg, max_width=content_area)
+            buffer.set(self.x + menu_width - 1, curr_y, "│", fg=self.frame_color, bg=self.bg)
+
         # Render visible items (windowed around the selection).
         for row in range(visible_count):
             idx = first + row
             item = self.items[idx]
-            curr_y = self.y + 1 + row
+            curr_y = self.y + 1 + len(header) + row
 
             buffer.set(self.x, curr_y, "│", fg=self.frame_color, bg=self.bg)
 
@@ -351,7 +379,7 @@ class SelectionMenu(Component):
         elif event.button == 65:
             self.action_down()
         elif event.button == 0 and event.pressed and not event.drag:
-            index = self._first + event.y - self.y - 1
+            index = self._first + event.y - self.y - 1 - self._header_rows
             if self.y < event.y < self.y + self.height - 1 and 0 <= index < len(self.items):
                 self.selected_index = index
                 if self.on_click is not None:

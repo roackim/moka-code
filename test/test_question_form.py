@@ -3,7 +3,9 @@
 from moka_code.harness import events
 from moka_code.ui import question_form
 from moka_code.ui.app import chatTUI
+from moka_code.ui.tui.buffer import Buffer
 from moka_code.ui.tui.chat_screen import ChatScreen
+from moka_code.ui.tui.colors import theme
 
 DB = events.Question("q1", "Which database?", ["Postgres", "SQLite"], label="Database")
 TESTS = events.Question("q2", "Which tests?", ["unit", "slow"], multiple=True, label="Tests")
@@ -29,6 +31,7 @@ def _ui(*items):
     ui = chatTUI(Stub())
     ui.chat_screen = ChatScreen(ui.chat_history_panel, ui.input_box, ui._focus_scope,
                                 ui.status_bar, ui.action_bar)
+    ui.input_component.set_layout(0, 20, 50, 1)
     question_form.open_form(ui, list(items))
 
     def press(*keys):
@@ -37,38 +40,73 @@ def _ui(*items):
                 ui.input_component.handle_input(key)
 
     def shown():
-        return ui.question_message.base_text if ui.question_form else None
+        """The selector above the input, as drawn (borders stripped)."""
+        if ui.question_form is None:
+            return None
+        buffer = Buffer(50, 21)
+        ui.question_menu.render(buffer)
+        menu = ui.question_menu
+        rows = ["".join(c.char for c in buffer.cells[y][:50]).rstrip()
+                for y in range(menu.y, menu.y + menu.height)]
+        return "\n".join(rows)
 
     return ui, press, shown
 
 
 def test_a_form_is_filled_question_by_question_then_sent_all_at_once():
-    """2026-10-29: Enter picks the highlight (or keeps the typed text) and goes
-    to the next unanswered question, then to Send; Enter there answers every
-    call and the message folds to one line per question."""
+    """2026-10-29: the form is a selector above the input: tabs in its top
+    border, the question, the options. Enter picks the highlight (or keeps
+    the typed text) and goes to the next unanswered question, then to Send;
+    Enter there answers every call and the transcript gets one line each."""
     ui, press, shown = _ui(DB, TESTS, NAME)
 
     assert shown().splitlines() == [
-        "[Database] · Tests · Name · Send",
-        "? Which database?",
-        "▸ 1  Postgres",
-        "  2  SQLite",
+        "┌─ [Database] · Tests · Name · Send ─────────────┐",
+        "│ Which database?                                │",
+        "│                                                │",
+        "│ 1. Postgres                                    │",
+        "│ 2. SQLite                                      │",
+        "│ ✎ your own answer (type it below)              │",
+        "└────────────────────────────────────────────────┘",
     ]
+    assert ui.question_menu.y + ui.question_menu.height == 20      # right above the input
     assert ui.action_bar.hint.startswith("←→ question · ↑↓ option")
+    assert ui.input_component.placeholder == "your own answer…"
+    assert ui._input_box_fg() is theme.PERMISSION              # the input answers the form
+    line = Buffer(50, 21)
+    ui.input_component.render(line)
+    assert "your own answer…" in "".join(c.char for c in line.cells[20])
 
     press("\x1b[B", "\r")                            # SQLite
-    assert shown().splitlines()[:2] == ["Database ✓ · [Tests] · Name · Send",
-                                        "? Which tests?  (several: [SPACE] picks)"]
+    assert shown().splitlines()[:5] == [
+        "┌─ Database ✓ · [Tests] · Name · Send ───────────┐",
+        "│ Which tests?                                   │",
+        "│ (several answers: [SPACE] picks)               │",
+        "│                                                │",
+        "│ [ ] unit                                       │",
+    ]
     assert "[SPACE] toggle" in ui.action_bar.hint
 
-    press(" ", "\x1b[B", " ", *"on CI", "\r")         # unit + slow + own words
+    press(" ", "\x1b[B", " ", *"on CI")               # unit + slow, typing own words
+    assert "│ ✎ on CI   " in shown()                    # the own row mirrors the input
+    assert ui.action_bar.hint == "←→ question · type your answer · [ENTER] keep it · [ESC] dismiss"
+    press("\r")
     assert ui.question_form.tab == 2
-    press("\x1b[C")                                   # → on an empty input: Send
-    assert shown().startswith("Database ✓ · Tests ✓ · Name · [Send]")
-    assert "  Name      — no answer" in shown()
+    press("\x1b[D")                                   # back to Tests to look
+    assert "│ [x] unit" in shown() and "│ [x] slow" in shown()
+    assert "│ ✎ on CI  ✓" in shown()
+    press("\x1b[C", "\x1b[C")                         # → on an empty input: Send
+    assert "│ Name      — no answer" in shown()
     press("\x1b[D", *"moka", "\r")                    # back to Name; answered: to Send
     assert ui.question_form.on_send
     assert ui.action_bar.hint == "←→ question · [ENTER] send all · [ESC] dismiss"
+    assert shown().splitlines()[1:6] == [
+        "│ Send these answers?                            │",
+        "│                                                │",
+        "│ Database  SQLite                               │",
+        "│ Tests     unit, slow · ✎ on CI                 │",
+        "│ Name      ✎ moka                               │",
+    ]
 
     press("\r")
 
@@ -78,12 +116,28 @@ def test_a_form_is_filled_question_by_question_then_sent_all_at_once():
         "q3": events.Answer([], "moka"),
     }]
     assert ui.question_form is None
+    assert not ui.compositor or ui.question_menu not in ui.compositor.overlays
     assert ui.chat_history_panel.messages[-1].base_text.splitlines() == [
         "? Which database? → SQLite",
         "? Which tests? → unit, slow · ✎ on CI",
         "? Name? → ✎ moka",
     ]
     assert ui.action_bar.hint.startswith("[/] command")
+
+
+def test_a_click_on_an_option_picks_or_toggles_it():
+    from moka_code.ui.tui.events import MouseEvent
+
+    ui, press, shown = _ui(TESTS, DB)
+    shown()
+    menu = ui.question_menu
+    first_option = menu.y + 1 + menu._header_rows
+    menu.handle_input(MouseEvent(2, first_option + 1, 0, True))     # slow
+    assert ui.question_form.picked[0] == [1]
+    press("\t")
+    shown()
+    menu.handle_input(MouseEvent(2, menu.y + 1 + menu._header_rows, 0, True))   # Postgres
+    assert ui.question_form.picked[1] == [0] and ui.question_form.on_send
 
 
 def test_arrows_move_the_text_cursor_once_something_is_typed():
@@ -96,21 +150,41 @@ def test_arrows_move_the_text_cursor_once_something_is_typed():
 
 
 def test_a_lone_question_is_sent_by_enter_and_own_words_replace_the_pick():
-    ui, press, _ = _ui(DB)
-    assert "Send" not in ui.question_message.base_text
+    ui, press, shown = _ui(DB)
+    assert "Send" not in shown()
     press(*"MySQL", "\r")
     assert ui.agent.answered == [{"q1": events.Answer([], "MySQL")}]
 
 
-def test_escape_dismisses_and_a_command_line_still_runs():
-    ui, press, _ = _ui(DB, NAME)
+def test_the_own_row_needs_typed_text():
+    ui, press, shown = _ui(DB, NAME)
+    press("\x1b[A", "\r")                              # ↑ wraps to the own row
+    assert ui.question_form.tab == 0                   # nothing to keep: stays
+    assert ui.action_bar.hint == "type your answer in the input first"
+
+
+def test_escape_asks_before_dismissing_and_a_command_line_still_runs():
+    """2026-10-29: Esc shows a warning in the selector; Enter on its default
+    (keep answering) or Esc again goes back; ↓ Enter dismisses."""
+    ui, press, shown = _ui(DB, NAME)
     ui.input_component.update("/x")
     assert question_form.handle_key(ui, "\r") is False    # left to the command path
     ui.input_component.clear()
 
     press("\x1b")
+    assert shown().splitlines()[:2] == [
+        "┌─ dismiss? ─────────────────────────────────────┐",
+        "│ Dismiss these questions? The model is told you │",
+    ]
+    press("\r")                                         # keep answering
+    assert ui.agent.answered == [] and not ui.question_form.confirming
+    press("\x1b", "\x1b")                               # Esc again: back too
+    assert ui.agent.answered == [] and not ui.question_form.confirming
+
+    press("\x1b", "\x1b[B", "\r")
 
     assert ui.agent.answered == [None]
+    assert ui.input_component.placeholder == ""
     assert ui.chat_history_panel.messages[-1].base_text.splitlines() == [
         "? Which database? → dismissed", "? Name? → dismissed"]
 

@@ -194,7 +194,7 @@ class chatTUI(ChatActionHandlers):
         self.chat_history_panel.on_selection_changed = self._update_action_strip
         self.chat_history_panel.on_hint = self.flash_hint
         self.chat_history_panel.on_copy = self.copy_text
-        self.input_component.on_change = self._update_action_strip
+        self.input_component.on_change = self._on_input_change
         self.command_queue = asyncio.Queue()
         self.shutdown_event = asyncio.Event()
         # Single-conversation state (formerly owned by ConversationRuntime).
@@ -205,9 +205,9 @@ class chatTUI(ChatActionHandlers):
         self._stop_requested = False
         self.active_tool_messages = {}
         self.pending_permission_prompt = None
-        # The open ``ask`` form and its transcript message (``question_form``).
+        # The open ``ask`` form and its selector (``question_form``).
         self.question_form = None
-        self.question_message = None
+        self.question_menu = None
         self._active_user_msg = None
         # Images pasted into the input draft, by their ``[image #N]`` number.
         self._pasted_images = {}
@@ -327,11 +327,17 @@ class chatTUI(ChatActionHandlers):
             changed = True
         return changed
 
+    def _on_input_change(self) -> None:
+        question_form.input_changed(self)     # an open form mirrors the typed answer
+        self._update_action_strip()
+
     def _input_box_fg(self):
         """Color the input row by focus (muted when unfocused) and the role's
         ``color`` (the theme's USER when it sets none)."""
         if not self.input_box.focused:
             return theme.MUTED
+        if self.question_form is not None:     # the input answers the form
+            return theme.PERMISSION
         role = getattr(self.agent, "role", None)
         return resolve_color(getattr(role, "color", ""), theme.USER)
 

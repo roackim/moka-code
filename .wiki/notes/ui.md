@@ -1108,24 +1108,40 @@ Markdown tables (`| ... | ... |` with a `---` separator row) are detected by `Bl
 ## The `ask` form (`question_form.py`)
 
 `events.Questions` (a run of adjacent `ask` calls, see
-[tools-and-permissions.md](./tools-and-permissions.md)) opens a `QuestionForm`:
-a `QuestionMsg` in the transcript redrawn from the form's state
-(`Message.replace_text`), with the input focused. `ask` calls get no tool line
-(their drafts and `ToolCall` are skipped by the presenter; an invalid one's
-error goes to the notice band). The app routes keys to
-`question_form.handle_key` while `app.question_form` is set and the input is
-focused, after the completion menu and before Esc-stops-the-turn:
+[tools-and-permissions.md](./tools-and-permissions.md)) opens a `QuestionForm`
+drawn in a `FormMenu`: a `SelectionMenu` placed above the input on every draw
+(`place_menu_above_input`, full width like the `@` file menu) and counted in
+the input's `_own_menus`, so the input keeps its cursor and the keys. Its top
+border holds the tab strip, the `header` (a `SelectionMenu` option: text
+wrapped above the items, then a blank row; `header_rows(width)` is added to the
+placed height and to click mapping) holds the question, the rows are the
+options (`1. Postgres`, or `[x] unit` / `[ ] slow` on a `multiple` question),
+then a last row for the user's own answer: `✎ your own answer (type it below)`,
+mirroring the input as it is typed (`input_changed`, from the input's
+`on_change`; typing moves the highlight there). While the form is open the
+input bars take the PERMISSION color (`_input_box_fg`) and the empty input shows
+a muted `InputComponent.placeholder` (`your own answer…`). The Send tab lists
+each label with its answer. `ask` calls get no tool line (their drafts and
+`ToolCall` are skipped by the presenter; an invalid one's error goes to the
+notice band). The app routes keys to `question_form.handle_key` while
+`app.question_form` is set and the input is focused, after the completion menu
+and before Esc-stops-the-turn:
 
 - one tab per question (its `label`, else `Q<n>`; `✓` once answered) plus a
   last `Send` tab when there are several; ←/→ change tab on an empty input
   (else they move the text cursor), Tab/Shift+Tab always;
-- ↑/↓ move the option highlight; Space toggles it on a `multiple` question;
+- ↑/↓ move the option highlight; Space toggles it on a `multiple` question; a
+  click on an option toggles or picks it;
 - Enter keeps the typed text as the own answer (on a single-choice question it
   replaces the pick) or picks the highlight, then goes to the next unanswered
   question, else to Send; Enter on Send (or on a lone question) answers every
   call (`Harness.answer_questions`); a `/` line still runs as a command;
-- Esc dismisses (each call: dismissed); a turn that ends while the form is open
-  folds it as `stopped` (`close_form` from the presenter's `finally`).
+- Enter on the own row with nothing typed (and nothing kept) flashes "type your
+  answer in the input first";
+- Esc first turns the selector into a warning (WARNING frame, `dismiss?`:
+  `Keep answering` highlighted, `Dismiss` below); ↑↓ choose, Enter confirms,
+  Esc again keeps answering. Dismissing answers each call as dismissed; a turn that ends while the form is open
+  closes it as `stopped` (`close_form` from the presenter's `finally`).
 
-The action line shows `QuestionForm.hint()`. Closed, the message folds to one
-`? question → answer` line per question.
+The action line shows `QuestionForm.hint()`. Once closed, a `QuestionMsg` in the
+transcript records one `? question → answer` line per question.
