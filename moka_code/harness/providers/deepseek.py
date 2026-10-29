@@ -19,7 +19,7 @@ class DeepSeek(OpenAICompatible):
     label = "DeepSeek"
     template = """\
 # [servers.deepseek]
-# api_key_env = "DEEPSEEK_API_KEY"
+# api_key = "$DEEPSEEK_API_KEY"
 """
 
     def needs_preserved_thinking(self, has_tools: bool) -> bool:

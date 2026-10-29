@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Dict, Optional
 from urllib.parse import urlsplit
@@ -490,6 +491,15 @@ class Endpoint:
             except Exception as e:
                 logger.debug("closing a retired client failed: %s", e)
 
+_ENV_REF_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def env_ref(value: Any) -> Optional[str]:
+    """The variable name when ``value`` is a whole ``"$NAME"`` reference, else None."""
+    match = _ENV_REF_RE.fullmatch(value) if isinstance(value, str) else None
+    return match.group(1) if match else None
+
+
 def make_endpoint(name: str, data: dict[str, Any]) -> Endpoint:
     """Build an endpoint from a ``servers.toml`` ``[servers.<name>]`` table
     (already validated by ``settings``), as an instance of its type's class."""
@@ -497,9 +507,8 @@ def make_endpoint(name: str, data: dict[str, Any]) -> Endpoint:
 
     cls = REGISTRY[data["type"]]
     api_key = data.get("api_key", "")
-    api_key_env = data.get("api_key_env")
-    if api_key_env:
-        api_key = os.getenv(api_key_env, api_key)
+    if key_env := env_ref(api_key):
+        api_key = os.getenv(key_env, "")
     extras = {key: data[key] for key in cls.extra_keys if key in data}
     return cls(
         name=name,

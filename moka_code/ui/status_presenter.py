@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from moka_code import settings
+from moka_code.harness.endpoint import env_ref
 from moka_code.ui.tui.colors import theme, resolve_color
 from moka_code.ui.tui.components.box import SPINNER_FRAMES
 
@@ -72,7 +73,7 @@ def notices(agent) -> list[tuple[str, str]]:
             errors.append("no model selected → /model")
     else:
         server = settings.config.servers.get(name) or {}
-        key_env = server.get("api_key_env")
+        key_env = env_ref(server.get("api_key"))
         if key_env and not os.getenv(key_env):
             errors.append(f"${key_env} is not set ({name} API key) → export {key_env}=…")
         if name in settings.config.server_errors:
@@ -114,7 +115,7 @@ def notices(agent) -> list[tuple[str, str]]:
         if server_name == name and endpoint is not None:
             continue
         other = errors if server_name == selected else warnings
-        key_env = table.get("api_key_env")
+        key_env = env_ref(table.get("api_key"))
         if key_env and not os.getenv(key_env):
             other.append(f"${key_env} is not set ({server_name} API key) → export {key_env}=…")
         elif server_name in settings.config.server_errors:

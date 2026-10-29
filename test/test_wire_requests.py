@@ -108,6 +108,22 @@ def test_chat_completions_request(fake):
     assert (text, usages) == ("Hi", [(9, 2)])
 
 
+@pytest.mark.parametrize("api_key, env, sent", [
+    ("$MOKA_TEST_KEY", "from-env", "Bearer from-env"),   # a whole $NAME reads the variable
+    ("sk-$abc", "from-env", "Bearer sk-$abc"),           # anything else is the key itself
+    ("$MOKA_TEST_KEY", None, None),                       # unset: no key, no fallback
+])
+def test_api_key_dollar_name_reads_the_environment(fake, monkeypatch, api_key, env, sent):
+    """2026-10-29: ``api_key = "$NAME"`` replaces the retired ``api_key_env``."""
+    if env is None:
+        monkeypatch.delenv("MOKA_TEST_KEY", raising=False)
+    else:
+        monkeypatch.setenv("MOKA_TEST_KEY", env)
+    chat_route(fake)
+    run_chat(make_endpoint({**LLAMACPP, "api_key": api_key}), SIMPLE)
+    assert fake.requests[0].headers.get("authorization") == sent
+
+
 def test_no_api_key_sends_no_authorization_header(fake):
     chat_route(fake)
     run_chat(make_endpoint(LLAMACPP), SIMPLE)

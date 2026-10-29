@@ -60,7 +60,8 @@ Declarative, read by config validation and by the template generator.
 optional; neither → required.
 
 Common keys (all providers): `type`, `base_url` (per the rule above),
-`api_key` or `api_key_env`, and the advanced `timeout`, `retry_attempts`,
+`api_key` (`"$NAME"` reads that environment variable, anything else is
+the key itself; `endpoint.env_ref`), and the advanced `timeout`, `retry_attempts`,
 `retry_delay`.
 
 | Provider | `base_url` | `extra_keys` |
@@ -81,7 +82,7 @@ for both.
 ## One table per server. The name is yours (shown by /model).
 
 [servers.openrouter]                          # named after its type: no type line
-api_key_env = "OPENROUTER_API_KEY"
+api_key = "$OPENROUTER_API_KEY"
 models = ["deepseek/deepseek-v4.1-flash"]     # only these are offered
 providers = ["deepseek"]                      # default routing: only these, in order
 
@@ -98,8 +99,9 @@ base_url = "http://localhost:8080/v1"
   `[servers.deepseek]`) has no `type` line, the loader implies it. Any other
   name (`[servers.local]`) must write `type`, else a load error. Valid types
   come from the registry; nothing else is guessed.
-- **Keys:** the common keys above. A keyless server has no key line. A set
-  `api_key_env` whose variable is unset is an error notice.
+- **Keys:** the common keys above. A keyless server has no key line. An
+  `api_key = "$NAME"` whose variable is unset is an error notice (no
+  fallback). The retired `api_key_env` is reported and its server skipped.
 - **OpenRouter:** `models` is the whitelist (what `/model` lists; absent or
   empty offers nothing, reported by the existing "lists no models" notice).
   `providers` is the default routing: only those, in order, no fallbacks.
@@ -462,7 +464,7 @@ window).
 |---|---|---|---|
 | A1 | `type` string | one class, one `type`; the one generic type, `openai-compatible`, requires the server to state its own facts (§9.15) | ✅ |
 | A2 | Base URL | `fixed_url` (forbidden in the table), `default_url` (optional) or required | ✅ |
-| A3 | Auth | `api_key` / `api_key_env`; a keyless server has no key line; a set `api_key_env` whose variable is unset is an error notice | ✅ |
+| A3 | Auth | `api_key` (`"$NAME"` = environment variable); a keyless server has no key line; an unset `$NAME` variable is an error notice | ✅ |
 | A4 | Keys beyond the common ones | `extra_keys`; anything else is a load error | ✅ |
 | A5 | Template block | `template`, only the keys a server needs; a guard test reads it | ✅ |
 | A6 | Registry line | `providers/__init__.py`; drives valid types, keys and the template | ✅ |

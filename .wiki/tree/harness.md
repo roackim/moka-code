@@ -65,7 +65,7 @@ is the only request path (chat and compaction): it wraps the provider's
 `Chunk`s (`text`, `reasoning`, `reasoning_native`, `tool_calls` as
 `ToolCallPiece`s, `usage`, `finish`); the harness reads no vendor field.
 `make_endpoint(name, data)` builds the registry class for a `[servers.<name>]`
-table and resolves `api_key_env` (`type` is required unless the table is named
+table and resolves an `api_key = "$NAME"` from the environment (`type` is required unless the table is named
 after one; `base_url` is required unless the class has a `default_url` or
 `fixed_url`; the loader skips a server otherwise).
 Also hosts `ModelInfo`, `ConnectionDiagnosis`, and `.local` hostname resolution

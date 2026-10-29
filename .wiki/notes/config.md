@@ -207,7 +207,7 @@ the latest failed probe (a model listing, the connection check, or a chat
 request failing on the network, auth or a server error), cleared by the next one
 that succeeds; it colors the active server red and is shown for every configured
 server (an error for the active one, a warning for the others), as are unset
-`api_key_env` variables.
+`api_key = "$NAME"` variables.
 
 **Context / ui:** `context_max_files`,
 `context_max_depth`, `context_ignore_gitignore`,

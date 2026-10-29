@@ -208,7 +208,7 @@ def test_a_server_that_cannot_be_listed_is_reported_even_when_not_active(cfg, mo
     monkeypatch.delenv("DS_KEY", raising=False)
     cfg.config.servers["ds"] = {"type": "llamacpp", "base_url": "http://ds/v1"}
     cfg.config.servers["keyed"] = {"type": "llamacpp", "base_url": "http://k/v1",
-                                   "api_key_env": "DS_KEY"}
+                                   "api_key": "$DS_KEY"}
     cfg.config.active_server = "gone"
     agent = SimpleNamespace(endpoint=None, role=None)
 

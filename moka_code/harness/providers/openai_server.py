@@ -21,5 +21,5 @@ class OpenAICompatibleServer(OpenAICompatible):
 # [servers.custom]
 # type = "openai-compatible"
 # base_url = "http://localhost:8000/v1"
-# api_key_env = "CUSTOM_API_KEY"
+# api_key = "$CUSTOM_API_KEY"
 """

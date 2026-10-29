@@ -140,7 +140,7 @@ def test_type_defaults_to_the_table_name_only_when_it_is_a_type(tmp_path):
     type again (it needs a ``base_url``). Skipped servers are not loaded."""
     _write(tmp_path / "servers.toml", {
         "servers": {
-            "openrouter": {"api_key_env": "K"},
+            "openrouter": {"api_key": "$K"},
             "deepseek": {},
             "local": {"base_url": "http://localhost:8080/v1"},
             "old": {"type": "openai", "base_url": "http://localhost:8000/v1"},
@@ -303,6 +303,16 @@ def test_retired_openrouter_keys_name_their_replacement_and_skip(tmp_path):
     assert "[servers.or].enabled_models was replaced by" in joined
     assert "unknown key" not in joined
     assert "or" not in config.servers
+
+
+def test_retired_api_key_env_names_its_replacement_and_skips(tmp_path):
+    _write(tmp_path / "servers.toml", {"servers": {"ds": {
+        "type": "deepseek", "api_key_env": "DEEPSEEK_API_KEY"}}})
+    config = Config(config_dir=tmp_path, state_path=tmp_path / "state.toml")
+
+    assert config.load_errors == [
+        'servers.toml: [servers.ds].api_key_env was replaced by \'api_key = "$NAME"\'; server skipped']
+    assert "ds" not in config.servers
 
 
 def test_openrouter_routing_values_are_validated(tmp_path):

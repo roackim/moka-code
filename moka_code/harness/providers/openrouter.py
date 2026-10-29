@@ -20,7 +20,7 @@ class OpenRouter(OpenAICompatible):
     label = "OpenRouter"
     template = """\
 # [servers.openrouter]
-# api_key_env = "OPENROUTER_API_KEY"
+# api_key = "$OPENROUTER_API_KEY"
 # models = ["deepseek/deepseek-v4.1-flash", "qwen/qwen3-coder"]  # what /model lists
 # providers = ["deepseek"]                                        # only these, in order
 

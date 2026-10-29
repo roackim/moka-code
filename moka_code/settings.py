@@ -350,8 +350,9 @@ DEFAULT_SERVERS_TOML = """\
 """ + "".join(f"{_rule(cls.label)}\n\n{cls.template}\n" for cls in REGISTRY.values()) + f"""\
 {_rule("Technical settings")}
 
-## Any server: api_key (or api_key_env), timeout = 30.0,
-## retry_attempts = 3, retry_delay = 2.0.
+## Any server: api_key ("$NAME" reads the NAME environment variable,
+## anything else is the key itself), timeout = 30.0, retry_attempts = 3,
+## retry_delay = 2.0.
 """
 
 # Help heading a ``themes/<name>.toml`` file (written by ``/theme create`` and
@@ -855,7 +856,7 @@ _STYLE_SECTIONS = {"markdown_styles", "syntax_highlight"}
 
 # Keys every server table may have; a provider adds its ``extra_keys``.
 _SERVER_KEYS = {
-    "type", "base_url", "api_key", "api_key_env",
+    "type", "base_url", "api_key",
     "timeout", "retry_attempts", "retry_delay",
 }
 # Retired keys -> what replaces them (retired types: no replacement). A server still using one is
@@ -865,9 +866,10 @@ _RETIRED_SERVER_KEYS = {
     "provider": "'providers = [...]' (only these, in order)",
     "enabled_models": "'models = [...]'",
     "model_providers": "[servers.<name>.providers_by_model]",
+    "api_key_env": "'api_key = \"$NAME\"'",
 }
 _RETIRED_SERVER_TYPES = {"openai"}
-_SERVER_STR_KEYS = {"type", "base_url", "api_key", "api_key_env"}
+_SERVER_STR_KEYS = {"type", "base_url", "api_key"}
 _SERVER_INT_KEYS = {"retry_attempts"}
 _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
 

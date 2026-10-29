@@ -691,7 +691,7 @@ overlay only.
 Two places say what needs fixing, each line as `problem → fix`:
 
 - **Notice band** (`NoticeBand`, the scaffold's top slot): what is wrong
-  *right now* — no server, server unreachable, `api_key_env` unset, no models
+  *right now* — no server, server unreachable, `api_key` `$NAME` unset, no models
   listed, role requires a sandbox, sandbox runtime/image missing
   (`Harness.sandbox_problem`), selected model no longer served.
   `status_presenter.notices(agent)` recomputes it on every status refresh, so
