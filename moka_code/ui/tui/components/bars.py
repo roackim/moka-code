@@ -60,16 +60,29 @@ def _first_color(nodes: list, colors: dict) -> Any:
     return None
 
 
+def _first_value(nodes: list) -> Optional[str]:
+    for kind, payload in nodes:
+        if kind == "value":
+            return payload
+        if kind == "group":
+            found = _first_value(payload)
+            if found is not None:
+                return found
+    return None
+
+
 def _layout(nodes: list, values: dict, colors: dict, color: Any,
-            in_group: bool = False) -> Optional[list[tuple[str, Any, Optional[str]]]]:
+            in_group: bool = False,
+            owner: Optional[str] = None) -> Optional[list[tuple[str, Any, Optional[str]]]]:
     """``[(text, color, value name or None)]`` for ``nodes``; ``None`` when a
     value directly in a group is empty (the group is dropped). A group is drawn
     whole in the color of its first colored value; outside groups a value has
-    its own color."""
+    its own color. A group's text is named after its first value (``owner``),
+    so focusing or clicking that value takes the whole block."""
     out: list[tuple[str, Any, Optional[str]]] = []
     for kind, payload in nodes:
         if kind == "text":
-            out.append((payload, color, None))
+            out.append((payload, color, owner))
         elif kind == "value":
             value = values.get(payload, "")
             if not value:
@@ -80,7 +93,8 @@ def _layout(nodes: list, values: dict, colors: dict, color: Any,
         else:
             group_color = _first_color(payload, colors)
             inner = _layout(payload, values, colors,
-                            group_color if group_color is not None else color, True)
+                            group_color if group_color is not None else color, True,
+                            _first_value(payload) or owner)
             if inner:
                 out += inner
     return out
@@ -187,12 +201,34 @@ class StatusBar(Component):
             left, right = self.runs()
             self._value_spans = {}
 
+            # The focused block is inverted, but not the spaces at its edges
+            # (a group's separator): ``lead``/``trail`` characters stay plain.
+            focused = "".join(text for text, _, name in left + right
+                              if name is not None and name == self.focused_value)
+            lead = len(focused) - len(focused.lstrip())
+            trail = len(focused) - len(focused.rstrip())
+            seen = [0]      # focused characters drawn so far
+
             def draw(at: int, text: str, fg, name: Optional[str], limit: int) -> None:
-                buffer.write_str(at, self.y, text, fg=fg, bg=self.style.bg,
-                                 reverse=name is not None and name == self.focused_value,
-                                 max_width=max(0, limit - at))
+                if name is None or name != self.focused_value:
+                    buffer.write_str(at, self.y, text, fg=fg, bg=self.style.bg,
+                                     max_width=max(0, limit - at))
+                else:
+                    start = seen[0]
+                    seen[0] += len(text)
+                    cut_a = min(len(text), max(0, lead - start))
+                    cut_b = max(cut_a, min(len(text), len(focused) - trail - start))
+                    cursor = at
+                    for part, reverse in ((text[:cut_a], False), (text[cut_a:cut_b], True),
+                                          (text[cut_b:], False)):
+                        if part:
+                            buffer.write_str(cursor, self.y, part, fg=fg, bg=self.style.bg,
+                                             reverse=reverse, max_width=max(0, limit - cursor))
+                            cursor += display_width(part)
                 if name:
-                    self._value_spans[name] = (at, min(limit, at + display_width(text)))
+                    end = min(limit, at + display_width(text))
+                    first, _ = self._value_spans.get(name, (at, end))
+                    self._value_spans[name] = (min(first, at), end)
 
             right_width = sum(display_width(text) for text, _, _ in right)
             if right and edge - right_width > x:

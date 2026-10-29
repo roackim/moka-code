@@ -49,6 +49,16 @@ the next request). It also streams: `on_output
 `ToolOutput` event per chunk, and the UI routes them to the activity surface.
 The same callback path serves in-process and sandboxed `bash`.
 
+One call runs at a time (`Harness._running_tool`, a `RunningTool`: id, name,
+args, start time, task); a command backgrounded with `&` still holds the call
+until it exits, since the pipes stay open. `Harness.cancel_tool(id)` kills just
+that call (same `transport.cancel_active`) without stopping the turn: its
+result becomes `outcome="cancelled"` (`cancelled by the user after Ns` plus the
+output so far), the model gets `[TOOL CANCELLED] …` and is asked again. The UI
+reaches it three ways: `k` (`MsgAction.KILL`) on a running bash line, `/running`
+(a picker of the running bash calls with their elapsed time; picking one kills
+it), and the status bar's `{running}` count (Enter on it opens `/running`).
+
 The tool *bodies* are stateless functions in `worker.py` (stdlib-only). The
 `Harness` owns all state and passes a `cwd` in. The only stateful adapter is
 `ShellTool`, which remembers the live process so it can be cancelled; the tool

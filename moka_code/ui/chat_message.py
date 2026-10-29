@@ -583,7 +583,9 @@ class Message:
             return [MsgAction.EDIT, MsgAction.CANCEL, *fold, MsgAction.COPY]
         if isinstance(self.type, msg_types.UserMsg) and self.harness_message_ids:
             return [MsgAction.EDIT, *fold, MsgAction.COPY]
-        return [*fold, *self.type.actions]
+        kill = ([MsgAction.KILL] if self.is_tool_message() and self.tool_name == "bash"
+                and self.tool_state() == "running" else [])
+        return [*kill, *fold, *self.type.actions]
 
     def set_queued(self, position: Optional[int]) -> None:
         """Mark this user message as waiting in the queue (``position`` 1 is next),

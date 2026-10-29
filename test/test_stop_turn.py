@@ -112,3 +112,58 @@ def test_presenter_unblocks_input_after_stop_during_permission(monkeypatch):
     asyncio.run(scenario())
     assert ui.pending_permission_prompt is None
     assert all(not m.is_tool_message() or m.finalized for m in ui.chat_history_panel.messages)
+
+
+def test_killing_one_command_answers_it_and_the_turn_goes_on(tmp_path):
+    """2026-10-29: ``cancel_tool`` kills just the running bash call; the model
+    gets a cancelled result and is asked again (the turn is not stopped)."""
+    with patch("moka_code.harness.harness.get_active_endpoint",
+               return_value=LlamaCpp(name="t")):
+        harness = Harness(workspace_path=str(tmp_path))
+    harness.set_role(Role(name="t", tools={"bash": "yes"}))
+    requests = []
+
+    async def completion(messages, tools=None):
+        requests.append(messages)
+        if len(requests) == 1:
+            yield _tool_chunk("c1", "bash", {"command": "echo $$ > pid; echo started; exec sleep 30"})
+        else:
+            yield Chunk(text="ok")
+
+    harness.endpoint.stream = completion
+
+    async def scenario():
+        async def consume():
+            produced = []
+            async for event in harness.chat("go"):
+                if isinstance(event, events.ToolStarted):
+                    # The UI refreshes {running} here: the call must be listed.
+                    assert [t.id for t in harness.running_tools()] == ["c1"]
+                produced.append(event)
+            return produced
+
+        task = asyncio.create_task(consume())
+        for _ in range(100):
+            await asyncio.sleep(0.05)
+            if harness.running_tools() and (tmp_path / "pid").exists():
+                break
+        [running] = harness.running_tools()
+        assert (running.id, running.name) == ("c1", "bash")
+        assert harness.cancel_tool("c1") is True
+        assert harness.cancel_tool("c1") is False           # already cancelled
+        return await asyncio.wait_for(task, 5)
+
+    started = time.monotonic()
+    produced = asyncio.run(scenario())
+
+    assert time.monotonic() - started < 5
+    assert not _is_alive(int((tmp_path / "pid").read_text()))
+    assert [e.id for e in produced if isinstance(e, events.ToolStarted)] == ["c1"]
+    [result] = [e for e in produced if isinstance(e, events.ToolResult)]
+    assert result.outcome == "cancelled"
+    assert result.output.startswith("cancelled by the user after")
+    [tool_msg] = [m for m in harness.history if m.get("role") == "tool"]
+    assert tool_msg["content"].startswith("[TOOL CANCELLED] The user stopped this command")
+    assert "started" in tool_msg["content"]                  # the output so far
+    assert len(requests) == 2                                # the turn went on
+    assert harness.running_tools() == []

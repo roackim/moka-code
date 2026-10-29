@@ -14,6 +14,7 @@ from moka_code import settings
 from moka_code.harness.endpoint import env_ref
 from moka_code.ui.tui.colors import theme, resolve_color
 from moka_code.ui.tui.components.box import SPINNER_FRAMES
+from moka_code.ui.commands.core import running_commands
 
 
 def _format_cost(cost: float | None) -> str:
@@ -288,6 +289,8 @@ def _set_fields(app, agent, server: str, model: str, effort: str | None, spinner
         "sandbox": sandbox_label,
         # Empty (so left out) until the provider reports a cost.
         "cost": _format_cost(getattr(agent, "conversation_cost", None)),
+        # Empty (so left out) while no bash command runs.
+        "running": str(len(running_commands(agent)) or ""),
     })
     role_color = resolve_color(getattr(getattr(agent, "role", None), "color", ""), theme.DEFAULT)
     app.status_bar.set_field_colors({
@@ -298,4 +301,5 @@ def _set_fields(app, agent, server: str, model: str, effort: str | None, spinner
         "role": role_color,
         "context": _context_color(context_used, context_max),
         "sandbox": sandbox_color,
+        "running": theme.WARNING,
     })

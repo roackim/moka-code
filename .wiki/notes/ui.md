@@ -59,14 +59,15 @@ The chat workspace includes a one-line `StatusBar` drawn from one template,
 `ui.status_bar` (`bars.render_template`); the default is
 
 ```toml
-status_bar = "[{spinner} ][{endpoint}:]{model}[:{effort}][  role {role}][  ctx {context}][  {cost}][  ⬢ sandbox:{sandbox}]"
+status_bar = "[{spinner} ]{model}[:{effort}][  mode:{role}][  ctx {context}][  {cost}] | [  shells:{running}][  sandbox:{sandbox}]"
 ```
 
-drawn as `local:qwen3:high  role agent  ctx 12.4k/32k  $0.12  ⬢ sandbox:none`.
+drawn as `qwen3:high  mode:agent  ctx 12.4k/32k  $0.12`, with `  shells:1  sandbox:none` right-aligned.
 
 - `{name}` is a value (`settings.STATUS_BAR_VALUES`, filled by
   `status_presenter._set_fields`): `endpoint`, `model`, `effort`, `role`,
-  `context` (`12.4k/32k`, `~` while estimated), `cost`, `sandbox`, `state`,
+  `context` (`12.4k/32k`, `~` while estimated), `cost`, `running` (bash calls
+  running, empty when none; `Harness.running_tools`), `sandbox`, `state`,
   `workspace`, `spinner` (a frame while the server is checked).
 - `[ … ]` is a group: left out when a value directly in it is empty (a nested
   group can go on its own), so a separator belongs inside it. A group is drawn
@@ -91,10 +92,11 @@ supplies authoritative usage data.
 Keyboard focus: the status bar is the third app focus target (`_FOCUS_IDS`:
 input, history, status). ↓ on the input's last line
 (`InputComponent.is_cursor_on_last_line`) focuses it when it shows a value of
-`app.STATUS_PICKERS` (`model`, `effort`, `role`, `sandbox`); that value is drawn inverted
-(`StatusBar.focused_value`; template runs carry their value name). ←/→ move
-between those values in screen order, Enter sends `/model`, `/effort`, `/role select` or
-`/sandbox` (their pickers) and returns to the input, ↑/Esc return to it, any other key is
+`app.STATUS_PICKERS` (`model`, `effort`, `role`, `sandbox`, `running`); that value is drawn inverted
+(`StatusBar.focused_value`; template runs carry their value name, and a `[ … ]` group's text
+carries its first value's, so the whole block inverts and is clickable, minus the spaces at its edges). ←/→ move
+between those values in screen order, Enter sends `/model`, `/effort`, `/role select`,
+`/sandbox` or `/running` (their pickers) and returns to the input, ↑/Esc return to it, any other key is
 typed into it. A click on the bar focuses it on the value under the pointer
 (`StatusBar.value_at`); a click on the value already focused opens it, like Enter. The action line reads `←→ field · [ENTER] open · [ESC] back`.
 
@@ -780,6 +782,8 @@ with no gap; prose, user turns and notices keep the gap. A thought belongs to
 the message it precedes: it sits directly on top of it, and when that message
 needs a gap the gap goes above the thought. `ui.thought_gap` (default `true`)
 spaces thoughts like any message; `false` sticks them to what follows.
+With it on, `ui.stack_activity` (default `true`) still drops the gap between a
+thought and an adjacent tool line, either way round (`_thought_and_tool`).
 `ui.tool_gap = true` spaces tool lines; by default they stack (`_clamped`).
 
 Thought colors: `ui.thought_color` colors the folded line and its bar,

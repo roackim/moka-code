@@ -5,6 +5,7 @@ import json
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import AsyncGenerator, Any, Dict, List, Optional, Tuple
 
@@ -40,6 +41,21 @@ _API_FIELDS = ("role", "content", "tool_calls", "tool_call_id")
 # a large streamed body (e.g. a file write) neither emits an event per delta
 # nor freezes the draft line for seconds between size-based strides.
 _TOOL_DRAFT_INTERVAL = 0.1
+
+@dataclass
+class RunningTool:
+    """The tool call executing now (tools run one at a time)."""
+    id: str
+    name: str
+    args: Dict[str, Any]
+    started: float              # ``time.monotonic()``
+    task: Any = None
+    cancelled: bool = False
+
+    @property
+    def elapsed(self) -> float:
+        return time.monotonic() - self.started
+
 
 class Harness:
     # Why the last stream ended ("stop", "tool_calls", "length", ...).
@@ -390,6 +406,24 @@ class Harness:
         
         return msg_id
 
+    def running_tools(self) -> List[RunningTool]:
+        """The tool calls executing now (at most one)."""
+        running = getattr(self, "_running_tool", None)
+        return [running] if running is not None and not running.cancelled else []
+
+    def cancel_tool(self, tool_call_id: str) -> bool:
+        """Kill one running tool call without stopping the turn: the model gets
+        a cancelled result and carries on. False when it is not running."""
+        running = getattr(self, "_running_tool", None)
+        if running is None or running.id != tool_call_id or running.cancelled:
+            return False
+        running.cancelled = True
+        try:
+            self.transport.cancel_active(running.name)
+        except Exception:  # pragma: no cover - best effort
+            logger.warning("Could not stop tool %s", running.name, exc_info=True)
+        return True
+
     def set_user_response(self, text: str):
         """Called by the UI when a response to a tool's prompt is ready."""
         self._permission_gate.set_user_response(text)
@@ -406,12 +440,11 @@ class Harness:
         """
         running = getattr(self, "_running_tool", None)
         if running is not None:
-            name, task = running
             try:
-                self.transport.cancel_active(name)
+                self.transport.cancel_active(running.name)
             except Exception:  # pragma: no cover - best effort
-                logger.warning("Could not stop tool %s", name, exc_info=True)
-            task.cancel()
+                logger.warning("Could not stop tool %s", running.name, exc_info=True)
+            running.task.cancel()
             self._running_tool = None
 
         answered = {m.get("tool_call_id") for m in self.history if m.get("role") == "tool"}
@@ -1082,8 +1115,11 @@ class Harness:
                     return result
 
                 task = asyncio.ensure_future(_run_tool())
-                # Known to ``_abort_tool_calls`` so a stop can kill it.
-                self._running_tool = (tool_name, task)
+                # Known to ``_abort_tool_calls`` (a stop kills it) and to
+                # ``cancel_tool`` (the user kills just this call).
+                running = RunningTool(tool_call_id, tool_name, args, time.monotonic(), task)
+                self._running_tool = running
+                yield events.ToolStarted(id=tool_call_id, name=tool_name)
                 while not task.done():
                     try:
                         stream, data = await asyncio.wait_for(
@@ -1102,6 +1138,25 @@ class Harness:
                     )
 
                 self._running_tool = None
+                if running.cancelled:
+                    # Killed by the user: whatever it returned (or raised) is
+                    # replaced by a cancelled result, and the turn goes on.
+                    seconds = f"{running.elapsed:.0f}s"
+                    if not task.cancelled() and task.exception() is None:
+                        partial = str(task.result())
+                    else:
+                        partial = ""
+                    yield events.ToolResult(
+                        id=tool_call_id, name=tool_name, outcome="cancelled",
+                        output=f"cancelled by the user after {seconds}\n{partial}".rstrip(),
+                    )
+                    self._add_message_to_history(
+                        role="tool",
+                        content=elide(f"[TOOL CANCELLED] The user stopped this command after "
+                                      f"{seconds}. Output so far:\n{partial}".rstrip()),
+                        tool_call_id=tool_call_id,
+                    )
+                    continue
                 result = task.result()
 
                 if isinstance(result, dict) and "image" in result:

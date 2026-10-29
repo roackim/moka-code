@@ -215,15 +215,16 @@ def _rule(name: str, width: int = 60) -> str:
 _TABLES_HEADING = _rule("Markdown and syntax-highlight styles")
 
 #: The values a ``ui.status_bar`` template can name (``status_presenter`` fills them).
-STATUS_BAR_VALUES = ("endpoint", "model", "effort", "role", "context", "cost",
+STATUS_BAR_VALUES = ("endpoint", "model", "effort", "role", "context", "cost", "running",
                      "sandbox", "state", "workspace", "spinner")
 
-DEFAULT_STATUS_BAR = ("[{spinner} ][{endpoint}:]{model}[:{effort}][  role {role}]"
-                      "[  ctx {context}][  {cost}][  ⬢ sandbox:{sandbox}]")
+DEFAULT_STATUS_BAR = ("[{spinner} ]{model}[:{effort}][  mode:{role}][  ctx {context}]"
+                      "[  {cost}] | [  shells:{running}][  sandbox:{sandbox}]")
 
 _STATUS_BAR_BLOCK = f'# status_bar = "{DEFAULT_STATUS_BAR}"' + """
 ## {endpoint} server · {model} model · {effort} reasoning effort · {role} role
 ## {context} tokens used/window · {cost} $ spent · {sandbox} sandbox (or none)
+## {running} bash commands running (empty when none; Enter on it: /running)
 ## {state} idle/thinking · {workspace} folder · {spinner} while the server is checked
 ## [ … ] is left out when a value in it is empty (keep its separator inside),
 ## and drawn in that value's color. | right-aligns everything after it."""
@@ -243,6 +244,7 @@ DEFAULT_UI_TOML = f"""\
 # thought_expanded_color = "MUTED"      # unfolded thought text and its bar
 # thought_gap = true                    # blank lines between a thought and what follows it
 # tool_gap = false                      # blank lines between tool lines
+# stack_activity = true                 # with thought_gap: no blank line between a thought and a tool line
 # show_banner = true                    # moka art in an empty transcript
 
 {_rule("Look")}
@@ -392,6 +394,7 @@ _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
     "thought_expanded_color": ("ui_thought_expanded_color", "color", "MUTED"),
     "thought_gap": ("ui_thought_gap", "bool", True),
     "tool_gap": ("ui_tool_gap", "bool", False),
+    "stack_activity": ("ui_stack_activity", "bool", True),
     "show_banner": ("ui_show_banner", "bool", True),
     # Look
     "use_bg_color": ("ui_use_bg_color", "bool", False),
@@ -671,11 +674,17 @@ def _repair_structure(lines: "list[str]", blocks: "list[_TemplateBlock]") -> Non
                 continue
             end = _anchor_index(lines, following) if following else None
             end = len(lines) if end is None else end
-            existing = {line.rstrip("\r\n")
-                        for line in lines[start + 1:end]}
-            missing = [line for line in help_lines if line not in existing]
-            for offset, line in enumerate(missing):
-                lines.insert(start + 1 + offset, line + "\n")
+            # Each missing line goes after the template line before it.
+            at = start + 1
+            for line in help_lines:
+                found = next((i for i in range(at, end)
+                              if lines[i].rstrip("\r\n") == line), None)
+                if found is None:
+                    lines.insert(at, line + "\n")
+                    end += 1
+                    at += 1
+                else:
+                    at = found + 1
 
 
 _TABLE_LINE_RE = re.compile(r"^\s*#?\s*\[")
@@ -709,12 +718,15 @@ def _merge_template(original: str, template: str, retired: "set[str]") -> str:
         for key, line in block.keys:
             known.setdefault(key, line)
 
-    # Drop retired keys; every other line is kept byte-for-byte.
+    # Drop retired keys and refresh commented template keys (they only show
+    # the default, which may have changed); set lines are kept byte-for-byte.
     kept: list[str] = []
     for line in lines:
         match = _KEY_LINE_RE.match(line)
         if match and match.group(1) in retired:
             continue
+        if match and _is_commented_key(line) and match.group(1) in known:
+            line = known[match.group(1)] + "\n"
         kept.append(line)
 
     for block_index, block in enumerate(blocks):
@@ -760,6 +772,12 @@ def _merge_template(original: str, template: str, retired: "set[str]") -> str:
     if tail and (merged != head or added_tail) and merged.strip():
         merged = merged.rstrip("\n") + "\n\n"
     return merged + tail
+
+
+def _is_commented_key(line: str) -> bool:
+    """A ``# key = ...`` line (a default to uncomment), not ``##`` help."""
+    stripped = line.lstrip()
+    return stripped.startswith("#") and not stripped.startswith("##")
 
 
 def _template_documentation(template: str) -> "set[str]":
@@ -832,9 +850,12 @@ def _sync_flat_file(path: Path, template: str, retired: "set[str]") -> bool:
         raise _SyncSkipped("verification failed: user values would change")
     original_lines = original.splitlines(keepends=True)
     documentation = _template_documentation(template)
+    refreshed = {key for key, _ in _template_key_lines(template)}
     kept_lines = [line for line in original_lines
                   if (not (match := _KEY_LINE_RE.match(line))
-                      or match.group(1) not in retired)
+                      or (match.group(1) not in retired
+                          and not (_is_commented_key(line)
+                                   and match.group(1) in refreshed)))
                   and line.rstrip("\r\n") not in documentation]
     if not _is_subsequence(kept_lines, updated.splitlines(keepends=True)):
         raise _SyncSkipped("verification failed: a user line would be lost")

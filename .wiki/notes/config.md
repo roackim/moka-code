@@ -45,7 +45,11 @@ are seeded by `roles.ensure_roles_dir()` on startup.
 Existing **flat** files (`ui`, `context`, `debug`) are kept in sync
 with their templates: on startup (`settings.sync_config_files()` in `main()`) and
 when `/config <section>` opens one, `_sync_flat_file()` merges missing template
-keys and removes lines whose key is in that section's `_RETIRED_*` set. The
+keys and removes lines whose key is in that section's `_RETIRED_*` set. A
+commented template key (`# key = ...`, which only shows the default) is
+rewritten to the current template line, so a changed default shows up; a set
+value is never touched. Missing `##` help lines go after the template line
+that precedes them. The
 template is parsed into blocks (a `##` heading plus its help and settings); a
 key missing from an existing block is inserted next to its siblings, and a
 completely missing block brings its heading and help with it at the
@@ -243,7 +247,8 @@ retired too, and so are `box_style` / `box_style_focused` (only the popups
 read them; every frame is square) and `theme` (state only). Colour keys (`sandbox_*_color`, `thought_color`,
 `thought_expanded_color`) are validated at load: a palette name or `#rrggbb`,
 else a load error and the default is kept. `thought_gap` (default on) / `tool_gap`
-(default off) space thoughts / tool lines like other messages (see [ui.md](./ui.md)).
+(default off) space thoughts / tool lines like other messages; `stack_activity`
+(default on) keeps a thought on an adjacent tool line (see [ui.md](./ui.md)).
 
 The status bar is one template, `ui.status_bar` (kind `status_bar`: every
 `{name}` must be one of `settings.STATUS_BAR_VALUES` and `[ ]` must balance,

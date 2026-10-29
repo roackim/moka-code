@@ -170,6 +170,15 @@ class ChatActionHandlers:
         if message in panel.messages:
             panel._scroll_to_show_message(panel.messages.index(message), prefer_top=True)
 
+    def handle_kill_action(self, message):
+        """``k`` on a running bash call: kill it; the model gets a cancelled
+        result and the turn goes on (Esc stops the whole turn)."""
+        tool_id = next((tid for tid, msg in self.active_tool_messages.items()
+                        if msg is message), None)
+        cancel = getattr(self.agent, "cancel_tool", None)
+        if tool_id is not None and callable(cancel) and cancel(tool_id):
+            self.flash_hint("command killed")
+
     def _unqueue(self, message) -> bool:
         """Take a waiting user message out of the queue (the worker skips it).
         False when it was already picked up."""

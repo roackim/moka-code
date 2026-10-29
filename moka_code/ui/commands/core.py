@@ -317,6 +317,31 @@ async def cmd_terminal(ui: ChatUIProtocol, args: List[str]):
     await open_shell(ui, [os.environ.get("SHELL") or "/bin/sh"], "host")
 
 
+def running_commands(agent) -> list:
+    """The bash calls running now (``Harness.running_tools``)."""
+    running = getattr(agent, "running_tools", None)
+    return [tool for tool in (running() if callable(running) else []) if tool.name == "bash"]
+
+
+async def cmd_running(ui: ChatUIProtocol, args: List[str]):
+    """``/running``: the bash calls running now, with how long; picking one
+    kills it (the turn goes on)."""
+    agent = getattr(ui, "agent", None)
+    tools = running_commands(agent)
+    if not tools:
+        ui.flash_hint("no command running")
+        return
+    labels = {}
+    for tool in tools:
+        command = " ".join(str(tool.args.get("command", "")).split())
+        labels[f"{command[:60]}  ({tool.id[-6:]})"] = tool
+    pick(ui, "Kill a running command", list(labels),
+         lambda choice: choice in labels and agent.cancel_tool(labels[choice].id)
+         and ui.flash_hint("command killed"),
+         descriptions={label: f"running {tool.elapsed:.0f}s" for label, tool in labels.items()},
+         ordered=True)
+
+
 async def cmd_stop(ui: ChatUIProtocol, args: List[str]):
     if hasattr(ui, "stop_generation"):
         if ui.stop_generation():

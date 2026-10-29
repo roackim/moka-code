@@ -218,3 +218,43 @@ def test_the_focused_status_value_is_drawn_inverted():
     assert [cell.reverse for cell in buffer.cells[0][1:7]] == [
         False, False, False, False, True, True]
     assert bar.value_at(5) == "role" and bar.value_at(1) == "model"
+
+
+def test_running_commands_show_in_the_status_bar_and_running_kills_them():
+    """2026-10-29: ``{running}`` counts the bash calls running (empty when none),
+    Enter on it opens ``/running``; ``/running`` picks one to kill, and ``k`` on
+    the running line kills it too."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from moka_code.ui.commands.core import cmd_running
+    from moka_code.ui.tui.msg_types import MsgAction
+
+    ui, _ = _ui_with_screen()
+    tool = SimpleNamespace(id="call_abc123", name="bash", args={"command": "npm  install"},
+                           elapsed=12.4)
+    killed = []
+    ui.agent.running_tools = lambda: [tool] if not killed else []
+    ui.agent.cancel_tool = lambda tool_id: killed.append(tool_id) or True
+
+    ui.refresh_status_bar()
+    assert ui.status_bar.values["running"] == "1"
+
+    picked = {}
+    ui.show_search_modal = lambda title, items, descriptions=None, on_accept=None, **_: (
+        picked.update(title=title, items=items, descriptions=descriptions) or on_accept(items[0]))
+    asyncio.run(cmd_running(ui, []))
+    assert picked["items"] == ["npm install  (abc123)"]
+    assert picked["descriptions"] == {"npm install  (abc123)": "running 12s"}
+    assert killed == ["call_abc123"]
+    ui.refresh_status_bar()
+    assert ui.status_bar.values["running"] == ""
+
+    killed.clear()
+    message = ui.chat_history_panel.add_message("", msg_type=ToolCallMsg())
+    message.tool_name = "bash"
+    message.set_tool_status("running")
+    ui.active_tool_messages["call_abc123"] = message
+    assert MsgAction.KILL in message.get_active_actions()
+    ui._handle_message_action(message, MsgAction.KILL)
+    assert killed == ["call_abc123"]

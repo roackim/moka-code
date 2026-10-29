@@ -9,13 +9,15 @@ class MsgAction(Enum):
     Only non-destructive, non-editing actions are exposed on messages. Actions
     that change conversation state (retry/stop/steer/pause/resume) or remove
     content (delete/edit) are intentionally not message actions; when needed
-    they belong to explicit commands. The exception is the user's own message
+    they belong to explicit commands. The exceptions are the user's own message
     (EDIT): a queued one is not in the conversation yet, and a sent one is cut
-    back, with everything after it, to be edited and sent again.
+    back, with everything after it, to be edited and sent again; and a running
+    bash call (KILL): it is killed, the model gets a cancelled result.
     """
     COPY = ("c", "copy")
     OUTPUT = ("o", "output")
     PROMPT = ("o", "prompt")    # ``!prompt`` message: fold/unfold the prompt
+    KILL = ("k", "kill")        # running bash call: kill it, the turn goes on
     ALLOW = ("a", "allow")
     DENY = ("x", "deny")
     EDIT = ("e", "edit")        # user message: back to the input

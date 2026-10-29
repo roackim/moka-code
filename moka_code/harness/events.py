@@ -73,12 +73,20 @@ class PermissionRequest:
 class ToolResult:
     """Final outcome of a tool call.
 
-    ``outcome`` is one of ``"completed"``, ``"denied"`` or ``"error"``.
+    ``outcome`` is one of ``"completed"``, ``"denied"``, ``"cancelled"`` (the
+    user killed it, ``Harness.cancel_tool``) or ``"error"``.
     """
     id: str
     name: str
     outcome: str
     output: str = ""
+
+
+@dataclass
+class ToolStarted:
+    """A tool call began executing (``Harness.running_tools`` lists it now)."""
+    id: str
+    name: str
 
 
 @dataclass
@@ -153,6 +161,6 @@ class Done:
 
 Event = Union[
     Start, Token, Reasoning, ToolCallDraft, ToolCall, PermissionRequest,
-    ToolOutput, ToolResult, Usage, Error, Notice,
+    ToolStarted, ToolOutput, ToolResult, Usage, Error, Notice,
     CompactionStarted, CompactionText, Compacted, CompactionFailed, Done
 ]

@@ -56,6 +56,22 @@ def test_sync_does_not_duplicate_active_key(tmp_path):
     assert "stream_smoothing = false" in text
 
 
+def test_sync_refreshes_a_stale_commented_default(tmp_path):
+    """2026-10-29: a commented key only shows the default; when the default
+    changes, sync rewrites that line. A set value is never touched."""
+    (tmp_path / "ui.toml").write_text(
+        '# status_bar = "{model} old default"\nmsg_v_margin = 2\n'
+        '# msg_h_padding = 99                  # stale\n', encoding="utf-8")
+
+    _config(tmp_path).sync_section_files()
+
+    text = (tmp_path / "ui.toml").read_text(encoding="utf-8")
+    assert "old default" not in text and "99" not in text
+    assert f'# status_bar = "{settings.DEFAULT_STATUS_BAR}"' in text
+    assert "{running} bash commands running" in text
+    assert "msg_v_margin = 2" in text
+
+
 def test_sync_removes_retired_key(tmp_path, monkeypatch):
     monkeypatch.setitem(
         settings._FLAT_SECTION_SYNC, "ui",

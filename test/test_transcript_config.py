@@ -27,7 +27,20 @@ def test_activity_stacks_without_gaps(monkeypatch):
 def test_thought_gap_sets_a_thought_apart(monkeypatch):
     monkeypatch.setattr(settings.config, "ui_tool_gap", False)
     monkeypatch.setattr(settings.config, "ui_thought_gap", True)
+    monkeypatch.setattr(settings.config, "ui_stack_activity", False)
     assert _gaps(_turn()) == [False, True, True, False, True]
+
+
+def test_stack_activity_keeps_thoughts_on_tool_lines(monkeypatch):
+    """2026-10-29: ``stack_activity`` (on by default) drops the blank line between
+    a thought and a tool line, either way round; the answer stays apart."""
+    monkeypatch.setattr(settings.config, "ui_tool_gap", True)
+    monkeypatch.setattr(settings.config, "ui_thought_gap", True)
+    monkeypatch.setattr(settings.config, "ui_stack_activity", True)
+    turn = _turn()
+    turn.insert(4, Message("t2", msg_type=ThinkingMsg()))
+    # user, thought, tool, tool, thought, answer
+    assert _gaps(turn) == [False, True, False, True, False, True]
 
 
 def test_tool_gap_sets_tool_lines_apart(monkeypatch):

@@ -29,6 +29,7 @@ from .core import (
     cmd_help,
     cmd_private,
     cmd_reload,
+    cmd_running,
     cmd_stop,
     cmd_terminal,
 )
@@ -93,6 +94,8 @@ COMMANDS: Dict[str, Command] = {
                             handler=cmd_compact),
     "exit":         Command("exit", "Close the application", handler=cmd_exit),
     "stop":         Command("stop", "Stop current generation", handler=cmd_stop),
+    "running":      Command("running", "Running commands, with how long; pick one to kill it",
+                            handler=cmd_running),
     "terminal":     Command("terminal", "Open a shell on the host; exit returns",
                             handler=cmd_terminal),
     "debug":        Command("debug", "View the debug log full screen (c copies, Esc closes)",

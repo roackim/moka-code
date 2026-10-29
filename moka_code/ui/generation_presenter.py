@@ -314,6 +314,9 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                 current_msg = msg
                 current_msg_type = type(msg.type)
 
+            elif isinstance(event, events.ToolStarted):
+                app.refresh_status_bar()            # {running}
+
             elif isinstance(event, events.ToolOutput):
                 # Interim output from a running tool (bash streaming): the last
                 # lines show under the running line; the activity surface keeps
@@ -335,12 +338,12 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                     # The outcome (denied / error reason / exit code) is on the
                     # collapsed line; the full output stays behind ``o``.
                     msg.tool_output = event.output
-                    msg.set_tool_status(
-                        event.outcome if event.outcome in ("completed", "denied") else "error"
-                    )
+                    msg.set_tool_status(event.outcome if event.outcome in (
+                        "completed", "denied", "cancelled") else "error")
                     msg.finalize()
                     del app.active_tool_messages[tool_id]
                 app.pending_permission_prompt = None
+                app.refresh_status_bar()            # {running}
 
             elif isinstance(event, events.Usage):
                 # Usage arrived: the status bar's context and cost follow it.

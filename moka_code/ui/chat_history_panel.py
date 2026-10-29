@@ -46,6 +46,13 @@ def _is_thought(msg: Message) -> bool:
     return isinstance(msg.type, ThinkingMsg)
 
 
+def _thought_and_tool(a: Message, b: Message) -> bool:
+    """One is a thought and the other a tool line."""
+    def tool(m: Message) -> bool:
+        return getattr(m.type, "clamped", False) and not _is_thought(m)
+    return (_is_thought(a) and tool(b)) or (tool(a) and _is_thought(b))
+
+
 def _needs_gap(prev: Message, msg: Optional[Message]) -> bool:
     """Blank line between two messages: none inside a block of activity."""
     return not (_clamped(prev) and (msg is None or _clamped(msg)))
@@ -56,7 +63,8 @@ def _gap_before(messages: list, i: int) -> bool:
 
     A thought belongs to the message it precedes: it sits directly on top of
     it, and when that message needs a gap the gap goes above the thought.
-    With ``ui.thought_gap`` it is spaced like any message.
+    With ``ui.thought_gap`` it is spaced like any message, except that
+    ``ui.stack_activity`` keeps it on an adjacent tool line.
     """
     if i == 0:
         return False
@@ -64,6 +72,8 @@ def _gap_before(messages: list, i: int) -> bool:
     if prev.group is not None and prev.group is msg.group:
         return False  # segments of one split answer touch
     if settings.config.ui_thought_gap:
+        if settings.config.ui_stack_activity and _thought_and_tool(prev, msg):
+            return False
         return _needs_gap(prev, msg)
     if _is_thought(prev):
         return False

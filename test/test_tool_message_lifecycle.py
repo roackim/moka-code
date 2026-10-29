@@ -152,15 +152,18 @@ def test_panel_tick_refreshes_live_labels_at_a_steady_cadence(clock):
 
 
 def test_tool_message_exposes_only_non_destructive_actions():
-    """Tool messages expose output/copy; state-changing actions are commands."""
+    """Tool messages expose output/copy; state-changing actions are commands.
+    The one exception (2026-10-29): ``k`` kills a running bash call."""
     from moka_code.ui.tui.msg_types import MsgAction
 
     running = _tool(status="approved | executing", finalized=False)
-    actions = running.get_active_actions()
+    assert running.get_active_actions() == [MsgAction.KILL, MsgAction.OUTPUT, MsgAction.COPY]
 
-    assert MsgAction.OUTPUT in actions
-    assert MsgAction.COPY in actions
-    assert all(a in (MsgAction.OUTPUT, MsgAction.COPY) for a in actions)
+    for message in (_tool(status="approved | executing", name="read"),
+                    _tool(status="completed", finalized=True)):
+        actions = message.get_active_actions()
+        assert MsgAction.OUTPUT in actions and MsgAction.COPY in actions
+        assert all(a in (MsgAction.OUTPUT, MsgAction.COPY) for a in actions)
 
 
 def test_bash_tool_schema_name_is_bash():

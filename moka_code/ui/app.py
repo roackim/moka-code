@@ -48,7 +48,7 @@ from moka_code.harness import images
 
 #: Status bar values that Enter opens a picker for (keyboard focus on the bar).
 STATUS_PICKERS = {"model": "/model", "effort": "/effort", "role": "/role select",
-                  "sandbox": "/sandbox"}
+                  "sandbox": "/sandbox", "running": "/running"}
 #: Application focus targets, in ``_focus_targets`` order.
 _FOCUS_IDS = ("input", "history", "status")
 
@@ -612,6 +612,7 @@ class chatTUI(ChatActionHandlers):
             MsgAction.COPY: self.handle_copy_action,
             MsgAction.OUTPUT: self.handle_output_action,
             MsgAction.PROMPT: self.handle_prompt_action,
+            MsgAction.KILL: self.handle_kill_action,
             MsgAction.ALLOW: self.handle_allow_action,
             MsgAction.DENY: self.handle_deny_action,
             MsgAction.EDIT: self.handle_edit_action,
