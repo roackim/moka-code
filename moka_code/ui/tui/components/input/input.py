@@ -46,6 +46,9 @@ class InputComponent(Component):
             lambda: self.height
         )
         self.cursor_renderer = CursorRenderer(lambda: self.config)
+        # The completion menus this input opens: typing still reaches it while
+        # they show, so they keep its cursor (any other overlay hides it).
+        self._own_menus: list = []
         
         # Input handlers
         self.keyboard_handler = KeyboardHandler()
@@ -147,6 +150,7 @@ class InputComponent(Component):
             content_color=self.content_color
         )
         completion = make(menu)
+        self._own_menus.append(menu)
         menu.on_click = lambda: self._accept_completion(completion)
         return completion
 
@@ -475,6 +479,13 @@ class InputComponent(Component):
         remaining = self.prompt_params(parts[0][1:])[len(parts) - 1:]
         return " " + " ".join(f"<{n}>" for n in remaining) if remaining else ""
 
+    def keys_elsewhere(self) -> bool:
+        """True while an overlay other than this input's menus (a popup, a
+        picker) is open: it takes the keys, so the cursor is not drawn."""
+        overlays = getattr(getattr(self, "compositor_ref", None), "overlays", ())
+        return any(overlay not in self._own_menus and not getattr(overlay, "passes_keys", False)
+                   for overlay in overlays)
+
     def tick_cursor(self):
         """Advance the cursor blink phase and request a redraw when focused.
 
@@ -483,6 +494,15 @@ class InputComponent(Component):
         """
         if not self.focused:
             return False
+        if self.keys_elsewhere():
+            # Repaint once to erase a cursor drawn before the overlay opened
+            # (only changed regions are redrawn); the blink resumes after.
+            if not self.cursor_renderer.cursor_visible:
+                return False
+            self.cursor_renderer.cursor_visible = False
+            if self.parent is not None:
+                self.parent.mark_changed()
+            return True
         return self.cursor_renderer.advance(parent_box=self.parent)
 
     def render_cursor(self, buffer: Buffer):
@@ -491,7 +511,7 @@ class InputComponent(Component):
         This is called by Box after blitting SubBuffer to main buffer,
         ensuring cursor blinks even when content hasn't changed.
         """
-        if not self.focused:
+        if not self.focused or self.keys_elsewhere():
             return
         
         # Get cursor position

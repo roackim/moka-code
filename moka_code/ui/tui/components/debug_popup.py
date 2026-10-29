@@ -21,6 +21,9 @@ class DebugPopup(Component):
     
     The DebugLogPanel auto-scrolls to bottom on new entries.
     """
+
+    # Typing still reaches the input while it shows (``InputComponent.keys_elsewhere``).
+    passes_keys = True
     
     def __init__(self,
                  debug_panel: DebugLogPanel,

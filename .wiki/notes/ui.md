@@ -413,7 +413,7 @@ then stays in the input (used when an image cannot be attached).
   `text.paint_spans`). The references travel through `message_queue`
   as `(text, message, attached)` to `agent.chat(text, attached)`.
 | `scroll_manager.py` | Scroll offset for large input |
-| `cursor_renderer.py` | Cursor visibility and animation |
+| `cursor_renderer.py` | Cursor visibility and animation; not drawn while the input is unfocused or an overlay other than its own completion menus (or one with `passes_keys`, the debug log) is open (`InputComponent.keys_elsewhere`); `Popup` lets `TickEvent`s through so the input can erase it |
 | `coordinate_mapper.py` | Screen position → text offset |
 
 ### Completion menu styling

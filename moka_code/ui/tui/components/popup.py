@@ -5,7 +5,7 @@ from moka_code.ui.tui.components.base import Component
 from moka_code.ui.tui.components.box import Box
 from moka_code.ui.tui.components.text import TextComponent
 from moka_code.ui.tui.buffer import Buffer
-from moka_code.ui.tui.events import KeyEvent, MouseEvent
+from moka_code.ui.tui.events import KeyEvent, MouseEvent, TickEvent
 from moka_code.ui.tui.colors import RGB, theme
 from moka_code.ui.tui.screen import Screen
 
@@ -278,8 +278,9 @@ class Popup(Component):
                 elif event.button == 65:  # Scroll down
                     self._scroll_to(self._scroll_offset + step)
         
-        # Consume all input when popup is open
-        return True
+        # Consume all input when popup is open, but not idle ticks (they drive
+        # the blink and live labels underneath).
+        return not isinstance(event, TickEvent)
     
     def render(self, buffer: Buffer):
         """Render the popup overlay."""

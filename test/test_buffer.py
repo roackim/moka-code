@@ -279,6 +279,50 @@ class TestInputComponentSubBuffer:
         assert input_comp.tick_cursor() is False
         assert box.subbuffer.has_changed is False
 
+    def test_input_cursor_hides_while_an_overlay_takes_the_keys(self):
+        """2026-10-29: a popup or picker takes the keys, so the input cursor is
+        erased (one repaint) and stops blinking; its own completion menus and
+        overlays that pass keys (debug log) keep it."""
+        from types import SimpleNamespace
+
+        input_comp = InputComponent('')
+        input_comp.focused = True
+        compositor = SimpleNamespace(overlays=[])
+        input_comp.set_compositor(compositor)
+        box = Box(input_comp, title='Input')
+        box.set_layout(0, 0, 40, 5)
+
+        def cursor_drawn():
+            main = Buffer(80, 24)
+            box.render(main)
+            return any(cell.reverse for row in main.cells for cell in row)
+
+        assert cursor_drawn()
+        input_comp._own_menus.append(own := object())
+        compositor.overlays.append(own)
+        compositor.overlays.append(SimpleNamespace(passes_keys=True))
+        assert cursor_drawn()
+
+        compositor.overlays.append(object())             # a popup
+        box.subbuffer.has_changed = False
+        assert input_comp.tick_cursor() is True          # erase it once
+        assert box.subbuffer.has_changed is True
+        assert input_comp.tick_cursor() is False         # then no blinking
+        assert not cursor_drawn()
+
+        compositor.overlays.pop()
+        assert cursor_drawn()
+
+    def test_popup_lets_idle_ticks_through(self):
+        """The popup consumes keys and mouse, but ticks still reach the input."""
+        from moka_code.ui.tui.components.popup import Popup
+        from moka_code.ui.tui.events import TickEvent
+
+        popup = Popup()
+        popup.show("t", "body")
+        assert popup.handle_input(TickEvent(0.0)) is False
+        assert popup.handle_input("x") is True
+
     def test_input_box_prefix_and_child_offset(self):
         """Lines-only input box draws ▸ at col 0, content starts at col 1."""
         input_comp = InputComponent('')
