@@ -17,12 +17,14 @@ def _turn():
             Message("done", msg_type=AssistantMsg())]
 
 
-def test_activity_stacks_by_default():
+def test_activity_stacks_without_gaps(monkeypatch):
+    monkeypatch.setattr(settings.config, "ui_tool_gap", False)
     # The gap before the thought belongs to the tool line it sits on.
     assert _gaps(_turn()) == [False, True, False, False, True]
 
 
 def test_thought_gap_sets_a_thought_apart(monkeypatch):
+    monkeypatch.setattr(settings.config, "ui_tool_gap", False)
     monkeypatch.setattr(settings.config, "ui_thought_gap", True)
     assert _gaps(_turn()) == [False, True, True, False, True]
 

@@ -750,8 +750,8 @@ Messages are separated by `ui_msg_v_margin` blank lines (default `1`; set it in
 with no gap; prose, user turns and notices keep the gap. A thought belongs to
 the message it precedes: it sits directly on top of it, and when that message
 needs a gap the gap goes above the thought. `ui.thought_gap = true` spaces
-thoughts like any message (no longer stuck to what follows); `ui.tool_gap = true`
-spaces tool lines (`_clamped`).
+thoughts like any message (no longer stuck to what follows); `ui.tool_gap` (default
+`true`) spaces tool lines; `false` stacks them (`_clamped`).
 
 Thought colors: `ui.thought_color` colors the folded line and its bar,
 `ui.thought_expanded_color` the unfolded text and its bar (both `MUTED` by

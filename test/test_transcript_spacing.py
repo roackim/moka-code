@@ -74,7 +74,8 @@ def _gaps(*types):
     return [starts[i] - ends[i - 1] for i in range(1, len(types))]
 
 
-def test_a_thought_sits_on_the_message_it_precedes():
+def test_a_thought_sits_on_the_message_it_precedes(monkeypatch):
+    monkeypatch.setattr(settings.config, "ui_tool_gap", False)
     gap = settings.config.ui_msg_v_margin
     # tool, thought, tool: one activity block, no gaps.
     assert _gaps(ToolCallMsg, ThinkingMsg, ToolCallMsg) == [0, 0]
