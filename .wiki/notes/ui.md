@@ -618,7 +618,10 @@ them). Navigation has two levels:
 - **↑/↓** move between messages; a split answer (or an expanded tool call) is
   one stop, selected whole (bright `▌` on all its segments), and `c` copies the
   whole answer;
-- **→** enters it (`inside_group`): the selected segment gets a wide `█`, the
+- **PgUp/PgDn** jump to the previous/next user message
+  (`ChatHistoryPanel.move_focus_to_user`); PgUp from the input starts at the
+  last one, PgDn past the last one returns to the input;
+- **→** enters a split answer (`inside_group`): the selected segment gets a wide `█`, the
   action line reads `code 2/5` with `↑↓ part · ← back`; ↑/↓ move between
   segments and stop at the edges; `c` copies the segment (`copy_text_for`: code
   without fences). **←**/**Esc** return to the whole answer. **→** on a single

@@ -12,7 +12,7 @@ from moka_code.ui.tui.events import MouseEvent, TickEvent
 from moka_code import settings
 from moka_code.ui.message_selection import MessageSelection
 from moka_code.ui.tui.colors import theme, RGB
-from moka_code.ui.tui.msg_types import MsgType, MsgAction, ThinkingMsg
+from moka_code.ui.tui.msg_types import MsgType, MsgAction, ThinkingMsg, UserMsg
 
 from moka_code.ui.chat_message import Message, reference_spans
 
@@ -516,6 +516,26 @@ class ChatHistoryPanel(TextComponent):
         self._scroll_to_show_message(shown, prefer_top=False)
         return True
 
+    def move_focus_to_user(self, step: int) -> bool:
+        """Move focus to the previous (``step=-1``, PgUp) or next (``1``, PgDn)
+        user message. With nothing focused, PgUp starts from the bottom.
+
+        Returns:
+            True if focus moved, False when there is no such user message
+        """
+        index = self.focused_message_index
+        if index is None:
+            index = len(self.messages) if step < 0 else -1
+        positions = (range(index - 1, -1, -1) if step < 0
+                     else range(index + 1, len(self.messages)))
+        target = next((i for i in positions
+                       if isinstance(self.messages[i].type, UserMsg)), None)
+        if target is None:
+            return False
+        self.set_focused_message(target)
+        self._scroll_to_show_message(self.focused_message_index, prefer_top=True)
+        return True
+
     def clear_focus(self):
         """Clear the focused message."""
         self.set_focused_message(None)
@@ -872,6 +892,10 @@ class ChatHistoryPanel(TextComponent):
                 return self.enter_group()
             elif event == '\x1b[D':  # Left arrow: back to the whole answer
                 return self.exit_group()
+            elif event == '\x1b[5~':  # PgUp: previous user message
+                return self.move_focus_to_user(-1)
+            elif event == '\x1b[6~':  # PgDn: next user message
+                return self.move_focus_to_user(1)
             
             # Handle action keys when a message is focused
             if self.focused_message_index is not None:

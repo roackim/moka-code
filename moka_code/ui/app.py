@@ -983,6 +983,20 @@ class chatTUI(ChatActionHandlers):
                         return True
                 # Otherwise: if in input, let DOWN work normally for cursor movement
                 # If in history (not at bottom), let it navigate messages normally
+
+            elif key == '\x1b[5~':  # PgUp: from the input, the last user message
+                if self._last_focus_id == "input":
+                    if self.chat_history_panel.move_focus_to_user(-1):
+                        self._set_app_focus("history")
+                    return True
+
+            elif key == '\x1b[6~':  # PgDn: past the last user message, the input
+                panel = self.chat_history_panel
+                if self._last_focus_id == "history" and panel.focused_message_index is not None:
+                    if not panel.move_focus_to_user(1):
+                        panel.clear_focus()
+                        self._set_app_focus("input")
+                    return True
         
         # Handle mouse click focus changes
         if isinstance(event, MouseEvent):

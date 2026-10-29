@@ -114,3 +114,32 @@ def test_action_line_has_hint():
     assert "esc back" in ui.action_bar.hint
 
 
+
+
+def test_pgup_pgdown_move_between_user_messages():
+    """PgUp/PgDn jump to the previous/next user message; PgUp from the input
+    starts at the last one, PgDn past the last one returns to the input."""
+    from moka_code.ui.tui.msg_types import AssistantMsg
+
+    ui, _ = _ui_with_screen()
+    panel = ui.chat_history_panel
+    for text, msg_type in [("q1", UserMsg), ("a1", AssistantMsg), ("t", ToolCallMsg),
+                           ("q2", UserMsg), ("a2", AssistantMsg)]:
+        panel.add_message(text, msg_type=msg_type()).finalize()
+    ui._set_app_focus("input")
+
+    def press(key):
+        if not ui.handle_global_input(key):
+            panel.handle_input(key)
+
+    press("\x1b[5~")
+    assert (ui._last_focus_id, panel.focused_message_index) == ("history", 3)
+    press("\x1b[5~")
+    assert panel.focused_message_index == 0
+    press("\x1b[5~")                                 # no earlier user message
+    assert panel.focused_message_index == 0
+    press("\x1b[6~")
+    assert panel.focused_message_index == 3
+    press("\x1b[6~")                                 # past the last: the input
+    assert ui._last_focus_id == "input"
+    assert panel.focused_message_index is None
