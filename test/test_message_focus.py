@@ -56,7 +56,7 @@ def test_input_hints_while_input_focused():
     assert ui.action_bar.expanded is True
     assert ui.action_bar.actions == []
     assert "[/] command" in ui.action_bar.hint
-    assert "[@] file" in ui.action_bar.hint
+    assert "[@] file  [!] prompt  [↑↓] move" in ui.action_bar.hint
     assert "move" in ui.action_bar.hint
 
     # @ works mid-text, so the hint stays visible while typing.

@@ -663,11 +663,11 @@ class chatTUI(ChatActionHandlers):
             self.action_bar.set_expanded(True)
         elif self._last_focus_id == "input":
             # Subtle right-aligned reminder of the input prefixes and the
-            # history-move keys. ``@`` works mid-text; ``/``/``$`` are
+            # history-move keys. ``@`` works mid-text; ``/``/``!`` are
             # line-start prefixes.
             self.action_bar.set_actions([])
             self.action_bar.set_prefix("")
-            self.action_bar.set_hint("[/] command  [@] file  [↑↓] move")
+            self.action_bar.set_hint("[/] command  [@] file  [!] prompt  [↑↓] move")
             self.action_bar.set_focused(False)
             self.action_bar.set_expanded(True)
         else:

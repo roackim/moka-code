@@ -664,7 +664,7 @@ two modes:
   `ChatHistoryPanel.handle_input` → `on_action`. `ChatHistoryPanel` notifies the
   app via `on_selection_changed`.
 - **Input focused** — shows a single muted, right-aligned hint:
-  `[/] command  [@] file  [↑↓] move`. `@` works mid-text, so the line
+  `[/] command  [@] file  [!] prompt  [↑↓] move`. `@` works mid-text, so the line
   stays visible while typing. `InputComponent.on_change` (fired on every text
   change) refreshes it.
 
