@@ -46,6 +46,13 @@ from moka_code.ui.clipboard import read_clipboard
 from moka_code.harness import images
 
 
+#: Status bar values that Enter opens a picker for (keyboard focus on the bar).
+STATUS_PICKERS = {"model": "/model", "effort": "/effort", "role": "/role select",
+                  "sandbox": "/sandbox"}
+#: Application focus targets, in ``_focus_targets`` order.
+_FOCUS_IDS = ("input", "history", "status")
+
+
 class _AppFocusTarget:
     """Adapter exposing an application focus target to the TUI focus API."""
 
@@ -144,11 +151,6 @@ class chatTUI(ChatActionHandlers):
         self.input_component.set_content_color_provider(lambda: (
             None if self.input_box.focused else theme.MUTED
         ))
-        self._focus_targets = [
-            _AppFocusTarget(self.input_component, self._set_input_focus, self.input_component.handle_input),
-            _AppFocusTarget(self.chat_history_panel, self._set_history_focus, self.chat_history_panel.handle_input),
-        ]
-        self._focus_scope = FocusScope(self._focus_targets)
         self.debug_panel = DebugLogPanel(max_lines=1000, frame_color=theme.ERROR, content_color=theme.MUTED, left_pad=1, right_pad=0)
         # Activity surface: non-conversation output (command status,
         # notices) lives here, not in the transcript.
@@ -165,6 +167,12 @@ class chatTUI(ChatActionHandlers):
             style=BarStyle(theme.DEFAULT, theme.get_bg(), theme.FOCUSED, padding=1),
         )
         self._status_spinner_frame = 0
+        self._focus_targets = [
+            _AppFocusTarget(self.input_component, self._set_input_focus, self.input_component.handle_input),
+            _AppFocusTarget(self.chat_history_panel, self._set_history_focus, self.chat_history_panel.handle_input),
+            _AppFocusTarget(self.status_bar, self._set_status_focus, self._handle_status_input),
+        ]
+        self._focus_scope = FocusScope(self._focus_targets)
         # Top band: what needs fixing right now (``status_presenter.notices``).
         self.notice_band = NoticeBand(max_lines=settings.config.ui_notice_lines,
                                       more="+{n} more · /activity")
@@ -662,6 +670,12 @@ class chatTUI(ChatActionHandlers):
             self.action_bar.set_hint(hint)
             self.action_bar.set_focused(False)
             self.action_bar.set_expanded(True)
+        elif self._last_focus_id == "status":
+            self.action_bar.set_actions([])
+            self.action_bar.set_prefix("")
+            self.action_bar.set_hint("←→ field · [ENTER] open · [ESC] back")
+            self.action_bar.set_focused(False)
+            self.action_bar.set_expanded(True)
         elif self._last_focus_id == "input":
             # Subtle right-aligned reminder of the input prefixes and the
             # history-move keys. ``@`` works mid-text; ``/``/``!`` are
@@ -850,8 +864,7 @@ class chatTUI(ChatActionHandlers):
         if self._last_focus_id is None:
             self._last_focus_id = "input"
 
-        target_index = 0 if self._last_focus_id == "input" else 1
-        self._focus_scope.manager.focus(target_index)
+        self._focus_scope.manager.focus(_FOCUS_IDS.index(self._last_focus_id))
         
         is_input_focused = (self._last_focus_id == "input")
         
@@ -867,11 +880,45 @@ class chatTUI(ChatActionHandlers):
     def _set_history_focus(self, focused: bool):
         self.chat_history_panel.set_keyboard_focus(focused)
 
+    def _set_status_focus(self, focused: bool):
+        """Keyboard focus on the status bar: one picker value drawn inverted."""
+        fields = self._status_fields()
+        if not focused or not fields:
+            self.status_bar.set_focused_value(None)
+        elif self.status_bar.focused_value not in fields:
+            self.status_bar.set_focused_value(fields[0])
+
+    def _status_fields(self) -> list[str]:
+        """The status bar values with a picker, as shown left to right."""
+        return [name for name in self.status_bar.shown_values() if name in STATUS_PICKERS]
+
+    def _handle_status_input(self, event) -> bool:
+        """←/→ pick a value, Enter opens its picker, ↑/Esc go back to the input;
+        any other key goes to the input."""
+        if not isinstance(event, (str, KeyEvent)):
+            return False
+        key = event.key if isinstance(event, KeyEvent) else event
+        fields = self._status_fields()
+        current = self.status_bar.focused_value
+        if key in ('\x1b[C', '\x1b[D') and fields:
+            index = fields.index(current) if current in fields else 0
+            index = max(0, min(len(fields) - 1, index + (1 if key == '\x1b[C' else -1)))
+            self.status_bar.set_focused_value(fields[index])
+            return True
+        self._set_app_focus("input")
+        if key in ('\r', '\n'):
+            if current in fields:
+                self.on_command_submit(STATUS_PICKERS[current])
+            return True
+        if key in ('\x1b', '\x1b[A'):
+            return True
+        return self.input_component.handle_input(event)
+
     def _set_app_focus(self, focus_id: str):
-        if focus_id not in ("input", "history"):
+        if focus_id not in _FOCUS_IDS:
             raise ValueError(f"Unknown application focus target: {focus_id}")
         self._last_focus_id = focus_id
-        self._focus_scope.manager.focus(0 if focus_id == "input" else 1)
+        self._focus_scope.manager.focus(_FOCUS_IDS.index(focus_id))
         self._update_focus_states()
         self._update_action_strip()
 
@@ -907,7 +954,7 @@ class chatTUI(ChatActionHandlers):
                 window_focused = key == '\x1b[I'
                 if self._last_focus_id == "input":
                     self._set_input_focus(window_focused)
-                else:
+                elif self._last_focus_id == "history":
                     self._set_history_focus(window_focused)
                 if self.compositor:
                     self.compositor.request_render()
@@ -959,7 +1006,7 @@ class chatTUI(ChatActionHandlers):
                 return True
 
             # Shortcuts to focus input: 'i' or Enter (when not already in input)
-            if (key == 'i' or key == '\r') and self._last_focus_id != "input":
+            if (key == 'i' or key == '\r') and self._last_focus_id == "history":
                 self.chat_history_panel.clear_focus()
                 self._set_app_focus("input")
                 return True
@@ -975,7 +1022,12 @@ class chatTUI(ChatActionHandlers):
                 # Otherwise, let the event pass through to the active component
             
             elif key == '\x1b[B':  # Down arrow
-                # Only handle focus change when in history (not when in input)
+                # From the input's last line: down to the status bar.
+                if (self._last_focus_id == "input" and self.input_component.is_cursor_on_last_line()
+                        and self._status_fields()):
+                    self._set_app_focus("status")
+                    return True
+                # In history, at the last message: back to the input.
                 if self._last_focus_id == "history" and self.chat_history_panel.focused_message_index is not None:
                     if self.chat_history_panel.at_last_message():
                         # At the bottom of history, switch to input
@@ -1011,6 +1063,9 @@ class chatTUI(ChatActionHandlers):
             # Ignore wheel scroll events for focus purposes — they shouldn't
             # change focus, only scroll the panel under the cursor.
             if event.pressed and event.button not in (64, 65):
+                # A click on the status value that already has focus opens it.
+                focused_value = (self.status_bar.focused_value
+                                 if self._last_focus_id == "status" else None)
                 clicked_focus = self._focus_scope.focus_at(event.x, event.y)
                 # Clicking the input box (including its top/bottom bars) or the
                 # status bar should always return focus to the input field.
@@ -1024,7 +1079,13 @@ class chatTUI(ChatActionHandlers):
                     self.chat_history_panel.clear_focus()
                     return True
                 elif clicked_focus:
-                    target_id = "input" if self._focus_scope.focused_index == 0 else "history"
+                    target_id = _FOCUS_IDS[self._focus_scope.focused_index]
+                    if target_id == "status":
+                        clicked = self.status_bar.value_at(event.x)
+                        if clicked is not None and clicked == focused_value:
+                            return self._handle_status_input("\r")
+                        if clicked in STATUS_PICKERS:
+                            self.status_bar.set_focused_value(clicked)
                     if target_id == "input":
                     # Clear focused message when clicking input
                         self.chat_history_panel.clear_focus()

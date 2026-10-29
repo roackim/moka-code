@@ -73,7 +73,7 @@ def test_a_bracket_is_only_literal_when_unbalanced():
     from moka_code.ui.tui.components.bars import render_template
 
     left, right = render_template("a]b", {}, {}, None)
-    assert "".join(t for t, _ in left) == "a]b" and right == []
+    assert "".join(t for t, _, _ in left) == "a]b" and right == []
 
 
 def test_action_bar_activates_by_key_and_mouse():

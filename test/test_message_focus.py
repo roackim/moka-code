@@ -143,3 +143,78 @@ def test_pgup_pgdown_move_between_user_messages():
     press("\x1b[6~")                                 # past the last: the input
     assert ui._last_focus_id == "input"
     assert panel.focused_message_index is None
+
+
+def test_status_bar_values_open_their_picker_from_the_keyboard():
+    """↓ from the input's last line focuses the status bar (one picker value
+    inverted); ←/→ move between model, role and sandbox, Enter opens that
+    picker, Esc returns to the input, other keys type into it."""
+    ui, _ = _ui_with_screen()
+    bar = ui.status_bar
+    bar.set_template("{model}[:{effort}][  role {role}][  ctx {context}][  {sandbox}]")
+    bar.set_values({"model": "m", "effort": "high", "role": "agent", "context": "1k",
+                    "sandbox": "none"})
+    ui._set_app_focus("input")
+
+    assert ui.handle_global_input("\x1b[B") is True
+    assert (ui._last_focus_id, bar.focused_value) == ("status", "model")
+    assert ui._focus_scope.focused.handle_input("\x1b[C") is True
+    assert bar.focused_value == "effort"
+    ui._focus_scope.focused.handle_input("\x1b[C")
+    assert bar.focused_value == "role"
+    ui._focus_scope.focused.handle_input("\r")
+    assert ui.command_queue.get_nowait() == "/role select"       # the picker, not the subcommands
+    ui.handle_global_input("\x1b[B")
+    bar.set_focused_value("role")
+    ui._focus_scope.focused.handle_input("\x1b[C")
+    ui._focus_scope.focused.handle_input("\x1b[C")          # context is skipped; stops at the end
+    assert bar.focused_value == "sandbox"
+    assert ui.action_bar.hint == "←→ field · [ENTER] open · [ESC] back"
+
+    ui._focus_scope.focused.handle_input("\r")
+    assert ui.command_queue.get_nowait() == "/sandbox"
+    assert (ui._last_focus_id, bar.focused_value) == ("input", None)
+
+    ui.handle_global_input("\x1b[B")
+    ui._focus_scope.focused.handle_input("\x1b")
+    assert ui._last_focus_id == "input"
+    ui.handle_global_input("\x1b[B")
+    ui._focus_scope.focused.handle_input("x")
+    assert (ui._last_focus_id, ui.input_component.buffer.text) == ("input", "x")
+
+
+def test_clicking_the_focused_status_value_opens_it():
+    from moka_code.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.terminal import MouseEvent
+
+    ui, _ = _ui_with_screen()
+    bar = ui.status_bar
+    bar.set_template("{model}  {role}")
+    bar.set_values({"model": "mm", "role": "rr"})
+    bar.set_layout(0, 10, 20, 1)
+    bar.render(Buffer(20, 11))                                   # records where values are
+    ui._set_app_focus("input")
+
+    ui.handle_global_input(MouseEvent(5, 10, 0, True))           # first click: focus role
+    assert (ui._last_focus_id, bar.focused_value) == ("status", "role")
+    assert ui.command_queue.empty()
+    ui.handle_global_input(MouseEvent(5, 10, 0, False))
+    ui.handle_global_input(MouseEvent(5, 10, 0, True))           # again: like Enter
+    assert ui.command_queue.get_nowait() == "/role select"
+    assert ui._last_focus_id == "input"
+
+
+def test_the_focused_status_value_is_drawn_inverted():
+    from moka_code.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.components.bars import StatusBar
+
+    bar = StatusBar(template="{model}  {role}")
+    bar.set_values({"model": "mm", "role": "rr"})
+    bar.set_layout(0, 0, 20, 1)
+    bar.set_focused_value("role")
+    buffer = Buffer(20, 1)
+    bar.render(buffer)
+
+    assert [cell.reverse for cell in buffer.cells[0][1:7]] == [
+        False, False, False, False, True, True]
+    assert bar.value_at(5) == "role" and bar.value_at(1) == "model"

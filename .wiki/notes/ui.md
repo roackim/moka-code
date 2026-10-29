@@ -88,6 +88,16 @@ is (green below 33%, orange below 66%, red above); `sandbox` is green
 Provider-reported prompt usage replaces the context estimate after a response
 supplies authoritative usage data.
 
+Keyboard focus: the status bar is the third app focus target (`_FOCUS_IDS`:
+input, history, status). ↓ on the input's last line
+(`InputComponent.is_cursor_on_last_line`) focuses it when it shows a value of
+`app.STATUS_PICKERS` (`model`, `effort`, `role`, `sandbox`); that value is drawn inverted
+(`StatusBar.focused_value`; template runs carry their value name). ←/→ move
+between those values in screen order, Enter sends `/model`, `/effort`, `/role select` or
+`/sandbox` (their pickers) and returns to the input, ↑/Esc return to it, any other key is
+typed into it. A click on the bar focuses it on the value under the pointer
+(`StatusBar.value_at`); a click on the value already focused opens it, like Enter. The action line reads `←→ field · [ENTER] open · [ESC] back`.
+
 The `role` value reflects the active conversation role and is refreshed
 whenever the role changes (via `/role select <name>` or a conversation import that
 applies a saved role). A role file's `color` (palette name or `#rrggbb`) colors

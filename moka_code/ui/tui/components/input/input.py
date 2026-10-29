@@ -337,6 +337,16 @@ class InputComponent(Component):
         )
         return cursor_row == 0
 
+    def is_cursor_on_last_line(self) -> bool:
+        """Whether the cursor is on the last row of the text (wrapped rows count)."""
+        cursor_row, _ = self.coord_mapper.get_cursor_coords(
+            self.buffer.text, self.buffer.cursor_pos
+        )
+        last_row, _ = self.coord_mapper.get_cursor_coords(
+            self.buffer.text, len(self.buffer.text)
+        )
+        return cursor_row == last_row
+
     def set_content_color_provider(self, provider: Optional[callable]):
         """Set a dynamic content-color provider.
 

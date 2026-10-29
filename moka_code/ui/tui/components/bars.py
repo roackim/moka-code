@@ -61,21 +61,22 @@ def _first_color(nodes: list, colors: dict) -> Any:
 
 
 def _layout(nodes: list, values: dict, colors: dict, color: Any,
-            in_group: bool = False) -> Optional[list[tuple[str, Any]]]:
-    """``[(text, color)]`` for ``nodes``; ``None`` when a value directly in a
-    group is empty (the group is dropped). A group is drawn whole in the color
-    of its first colored value; outside groups a value has its own color."""
-    out: list[tuple[str, Any]] = []
+            in_group: bool = False) -> Optional[list[tuple[str, Any, Optional[str]]]]:
+    """``[(text, color, value name or None)]`` for ``nodes``; ``None`` when a
+    value directly in a group is empty (the group is dropped). A group is drawn
+    whole in the color of its first colored value; outside groups a value has
+    its own color."""
+    out: list[tuple[str, Any, Optional[str]]] = []
     for kind, payload in nodes:
         if kind == "text":
-            out.append((payload, color))
+            out.append((payload, color, None))
         elif kind == "value":
             value = values.get(payload, "")
             if not value:
                 if in_group:
                     return None
                 continue
-            out.append((value, color if in_group else colors.get(payload, color)))
+            out.append((value, color if in_group else colors.get(payload, color), payload))
         else:
             group_color = _first_color(payload, colors)
             inner = _layout(payload, values, colors,
@@ -85,9 +86,9 @@ def _layout(nodes: list, values: dict, colors: dict, color: Any,
     return out
 
 
-def render_template(template: str, values: dict, colors: dict, color: Any
-                    ) -> tuple[list[tuple[str, Any]], list[tuple[str, Any]]]:
-    """The left and right ``[(text, color)]`` runs of a status bar template."""
+def render_template(template: str, values: dict, colors: dict, color: Any) -> tuple[list, list]:
+    """The left and right ``[(text, color, value name or None)]`` runs of a
+    status bar template."""
     left, right = _parse_template(template)
     return (_layout(left, values, colors, color) or [],
             _layout(right, values, colors, color) or [])
@@ -120,6 +121,24 @@ class StatusBar(Component):
         self.template = template
         self.values: dict[str, str] = {}
         self.field_colors: dict[str, Any] = {}
+        # The value drawn inverted (keyboard focus on the bar), and where each
+        # value was last drawn (``value_at``).
+        self.focused_value: Optional[str] = None
+        self._value_spans: dict[str, tuple[int, int]] = {}
+
+    def set_focused_value(self, name: Optional[str]):
+        self.focused_value = name
+        self.mark_changed()
+
+    def shown_values(self) -> list[str]:
+        """The names of the values the template shows, left to right."""
+        left, right = self.runs()
+        return list(dict.fromkeys(name for _, _, name in left + right if name))
+
+    def value_at(self, x: int) -> Optional[str]:
+        """The value drawn at column ``x``, if any."""
+        return next((name for name, (start, end) in self._value_spans.items()
+                     if start <= x < end), None)
 
     def set_field_colors(self, colors: dict[str, Any]):
         """Set per-value foreground colors (value name -> RGB/ANSIColor)."""
@@ -138,16 +157,16 @@ class StatusBar(Component):
         self.values = {key: str(value) for key, value in values.items()}
         self.mark_changed()
 
-    def runs(self) -> tuple[list[tuple[str, Any]], list[tuple[str, Any]]]:
-        """The left and right ``[(text, color)]`` runs the template draws."""
+    def runs(self) -> tuple[list, list]:
+        """The left and right ``[(text, color, value name)]`` runs the template draws."""
         return render_template(self.template or "", self.values, self.field_colors,
                                self.style.fg)
 
     def text(self) -> str:
         """The bar as plain text (left part, then right part after a space)."""
         left, right = self.runs()
-        return " ".join(part for part in ("".join(t for t, _ in left).strip(),
-                                          "".join(t for t, _ in right).strip()) if part)
+        return " ".join(part for part in ("".join(t for t, _, _ in left).strip(),
+                                          "".join(t for t, _, _ in right).strip()) if part)
 
     def render(self, buffer: Buffer):
         if self.width <= 0 or self.height <= 0:
@@ -166,19 +185,26 @@ class StatusBar(Component):
             x = self.x + self.style.padding
             edge = self.x + self.width - self.style.padding
             left, right = self.runs()
-            right_width = sum(display_width(text) for text, _ in right)
+            self._value_spans = {}
+
+            def draw(at: int, text: str, fg, name: Optional[str], limit: int) -> None:
+                buffer.write_str(at, self.y, text, fg=fg, bg=self.style.bg,
+                                 reverse=name is not None and name == self.focused_value,
+                                 max_width=max(0, limit - at))
+                if name:
+                    self._value_spans[name] = (at, min(limit, at + display_width(text)))
+
+            right_width = sum(display_width(text) for text, _, _ in right)
             if right and edge - right_width > x:
                 tail_x = edge - right_width
-                for text, fg in right:
-                    buffer.write_str(tail_x, self.y, text, fg=fg, bg=self.style.bg,
-                                     max_width=max(0, edge - tail_x))
+                for text, fg, name in right:
+                    draw(tail_x, text, fg, name, edge)
                     tail_x += display_width(text)
                 edge -= right_width + 1         # keep a cell between the halves
-            for text, fg in left:               # too narrow: the right half went first
+            for text, fg, name in left:         # too narrow: the right half went first
                 if x >= edge:
                     break
-                buffer.write_str(x, self.y, text, fg=fg, bg=self.style.bg,
-                                 max_width=max(0, edge - x))
+                draw(x, text, fg, name, edge)
                 x += display_width(text)
         else:
             left = self.left[:max(0, self.width - self.style.padding * 2)]
