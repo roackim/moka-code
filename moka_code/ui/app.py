@@ -328,7 +328,7 @@ class chatTUI(ChatActionHandlers):
         return changed
 
     def _on_input_change(self) -> None:
-        question_form.input_changed(self)     # an open form mirrors the typed answer
+        question_form.input_changed(self)     # typing takes an open form's highlight
         self._update_action_strip()
 
     def _input_box_fg(self):
@@ -694,7 +694,8 @@ class chatTUI(ChatActionHandlers):
             self.action_bar.set_actions([])
             self.action_bar.set_prefix("")
             self.action_bar.set_hint(
-                self.question_form.hint() if self.question_form is not None
+                self.question_form.hint(bool(self.input_component.buffer.text.strip()))
+                if self.question_form is not None
                 else "[/] command  [@] file  [!] prompt  [↑↓] move")
             self.action_bar.set_focused(False)
             self.action_bar.set_expanded(True)

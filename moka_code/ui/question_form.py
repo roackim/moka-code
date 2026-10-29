@@ -2,9 +2,10 @@
 
 A run of adjacent ``ask`` calls (``events.Questions``) is one form, drawn in a
 selector above the input (like the ``@`` file menu): the tabs in its top
-border, the question wrapped above the options, and a last row for the user's
-own answer, which mirrors what they type in the input. The keys go to the
-input line as usual and the app routes the form's keys here (``handle_key``).
+border, the question wrapped above the options, a kept own answer in its
+bottom border. The user's own answer is typed in the input (its placeholder
+says so). The keys go to the input line as usual and the app routes the
+form's keys here (``handle_key``).
 One tab per question, plus a last ``Send`` tab when there are several; Enter on
 it answers every call (``Harness.answer_questions``) and the transcript gets
 one line per question. Esc first asks whether to dismiss them.
@@ -20,13 +21,12 @@ _SEND = "Send"
 #: The input's placeholder while a form is open.
 PLACEHOLDER = "your own answer…"
 _KEEP, _DISMISS = "Keep answering", "Dismiss"
+# The only row of a question without options.
+_WRITE = "(type your answer below)"
 
 
 class QuestionForm:
-    """Tabs, highlights, picks and own text of one form (no drawing).
-
-    On a question, rows ``0..n-1`` are its options and row ``n`` is the own
-    answer (``own_row``)."""
+    """Tabs, highlights, picks and own text of one form (no drawing)."""
 
     def __init__(self, items: List[events.Question]):
         self.items = list(items)
@@ -34,7 +34,6 @@ class QuestionForm:
         self.highlight = [0] * len(self.items)
         self.picked: List[List[int]] = [[] for _ in self.items]
         self.texts = [""] * len(self.items)
-        self.typed = ""             # the input's text, mirrored on the own row
         self.confirming = False     # Esc was pressed: dismiss?
         self.confirm_index = 0      # 0 keep answering, 1 dismiss
 
@@ -47,9 +46,6 @@ class QuestionForm:
     def _tabs(self) -> int:
         """Tab count: a lone question has no Send tab (Enter sends it)."""
         return len(self.items) + (1 if len(self.items) > 1 else 0)
-
-    def own_row(self, index: int) -> int:
-        return len(self.items[index].options)
 
     def answered(self, index: int) -> bool:
         return bool(self.picked[index] or self.texts[index])
@@ -82,25 +78,15 @@ class QuestionForm:
     def move_option(self, step: int) -> None:
         if self.confirming:
             self.confirm_index = 1 - self.confirm_index
-        elif not self.on_send:
-            rows = self.own_row(self.tab) + 1
+        elif not self.on_send and self.items[self.tab].options:
+            rows = len(self.items[self.tab].options)
             self.highlight[self.tab] = (self.highlight[self.tab] + step) % rows
 
-    def set_typed(self, text: str) -> None:
-        """The input changed: typing goes to the own-answer row."""
-        self.typed = text
-        if text.strip() and not self.on_send:
-            self.highlight[self.tab] = self.own_row(self.tab)
-
     def toggle(self) -> None:
-        """Space on a ``multiple`` question: pick or unpick the highlight (on
-        the own row: drop the own answer)."""
-        if self.on_send:
+        """Space on a ``multiple`` question: pick or unpick the highlight."""
+        if self.on_send or not self.items[self.tab].options:
             return
         option = self.highlight[self.tab]
-        if option == self.own_row(self.tab):
-            self.texts[self.tab] = ""
-            return
         picked = self.picked[self.tab]
         if option in picked:
             picked.remove(option)
@@ -110,18 +96,17 @@ class QuestionForm:
 
     def enter(self, text: str) -> str:
         """Enter with the input's ``text``. Returns ``"send"`` (Enter on Send,
-        or on a lone question), ``"write"`` (the own row with nothing to keep:
-        the user must type first) or ``""`` (answered: on to the next tab)."""
+        or on a lone question), ``"write"`` (no options and nothing typed or
+        kept: the user must type first) or ``""`` (answered: on to the next tab)."""
         if self.on_send:
             return "send"
         question, index = self.items[self.tab], self.tab
         text = text.strip()
-        on_own = self.highlight[index] == self.own_row(index)
         if text:
             self.texts[index] = text
             if not question.multiple:
                 self.picked[index] = []         # their own answer instead of one offered
-        elif on_own:
+        elif not question.options:
             if not self.texts[index]:
                 return "write"
         elif not question.multiple:
@@ -154,9 +139,12 @@ class QuestionForm:
         return " · ".join(f"[{name}]" if i == self.tab else name
                           for i, name in enumerate(names))
 
-    def show(self, menu) -> None:
-        """Draw the current tab (or the dismiss warning) into the selector."""
+    def show(self, menu, typing: bool = False) -> None:
+        """Draw the current tab (or the dismiss warning) into the selector;
+        while the user is ``typing`` no option is highlighted (Enter keeps
+        their text)."""
         menu.frame_color = theme.WARNING if self.confirming else theme.PERMISSION
+        menu.status_text = ""
         if self.confirming:
             menu.title = "dismiss?"
             count = "this question" if len(self.items) == 1 else "these questions"
@@ -175,20 +163,16 @@ class QuestionForm:
         question = self.items[self.tab]
         menu.header = question.question + ("\n(several answers: [SPACE] picks)"
                                            if question.multiple else "")
-        rows = [self.row(i) for i in range(self.own_row(self.tab) + 1)]
+        rows = [self.row(i) for i in range(len(question.options))] or [_WRITE]
         menu.set_items(rows, descriptions={})
-        menu.selected_index = self.highlight[self.tab]
+        menu.selected_index = (self.highlight[self.tab]
+                               if question.options and not typing else -1)
+        text = self.texts[self.tab]
+        menu.status_text = f" ✎ {text} " if text else ""
 
     def row(self, option: int) -> str:
-        """A row: an option (numbered, or a checkbox on a ``multiple``
-        question), or the own answer, showing what is typed."""
+        """An option's row: numbered, or a checkbox on a ``multiple`` question."""
         question, index = self.items[self.tab], self.tab
-        if option == self.own_row(index):
-            text = self.typed.strip() or self.texts[index]
-            if not text:
-                return "✎ your own answer (type it below)"
-            done = "  ✓" if text == self.texts[index] and not self.typed.strip() else ""
-            return f"✎ {text}{done}"
         if question.multiple:
             box = "[x]" if option in self.picked[index] else "[ ]"
             return f"{box} {question.options[option]}"
@@ -203,7 +187,7 @@ class QuestionForm:
             + (self.summary(i) if outcome == "sent" else outcome)
             for i, question in enumerate(self.items))
 
-    def hint(self) -> str:
+    def hint(self, typing: bool = False) -> str:
         """The action line while the form is open."""
         if self.confirming:
             return "↑↓ choose · [ENTER] confirm · [ESC] keep answering"
@@ -211,10 +195,13 @@ class QuestionForm:
         if self.on_send:
             return f"{tabs}[ENTER] send all · [ESC] dismiss"
         question = self.items[self.tab]
-        if self.highlight[self.tab] == self.own_row(self.tab):
+        if typing:
+            return "[ENTER] keep your answer · [ESC] dismiss"
+        if not question.options:
             return f"{tabs}type your answer · [ENTER] keep it · [ESC] dismiss"
         space = "[SPACE] toggle · " if question.multiple else ""
-        return f"{tabs}↑↓ option · [ENTER] pick · {space}or type your own · [ESC] dismiss"
+        return (f"{tabs}↑↓ option · [ENTER] pick · {space}"
+                "or type your own answer · [ESC] dismiss")
 
 
 # -- the app side -------------------------------------------------------------
@@ -273,14 +260,18 @@ def close_form(app, outcome: str) -> None:
 
 
 def input_changed(app) -> None:
-    """The input's text changed (``InputComponent.on_change``)."""
+    """The input's text changed (``InputComponent.on_change``): typing takes
+    the highlight off the options."""
     if app.question_form is not None:
-        app.question_form.set_typed(app.input_component.buffer.text)
         _refresh(app)
 
 
+def _typing(app) -> bool:
+    return bool(app.input_component.buffer.text.strip())
+
+
 def _click(app) -> None:
-    """A click on a row: like Enter on it (Space on a ``multiple`` option)."""
+    """A click on an option: like Enter on it (Space on a ``multiple`` one)."""
     form, menu = app.question_form, app.question_menu
     if form is None or form.on_send:
         return
@@ -288,8 +279,10 @@ def _click(app) -> None:
         form.confirm_index = menu.selected_index
         _confirm(app)
         return
+    if not form.items[form.tab].options:
+        return
     form.highlight[form.tab] = menu.selected_index
-    if form.items[form.tab].multiple and menu.selected_index != form.own_row(form.tab):
+    if form.items[form.tab].multiple:
         form.toggle()
         _refresh(app)
     else:
@@ -309,7 +302,7 @@ def _enter(app) -> None:
     form = app.question_form
     result = form.enter(app.input_component.buffer.text)
     if result == "write":
-        app.flash_hint("type your answer in the input first")
+        app.flash_hint("type your answer first")
         return
     app.input_component.clear()
     if result == "send":
@@ -355,7 +348,7 @@ def handle_key(app, key: str) -> bool:
 
 def _refresh(app) -> None:
     if app.question_form is not None:
-        app.question_form.show(app.question_menu)
+        app.question_form.show(app.question_menu, _typing(app))
         app.question_menu.mark_changed()
         if app.compositor is not None:
             app.compositor.request_render()

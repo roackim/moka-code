@@ -1116,12 +1116,14 @@ border holds the tab strip, the `header` (a `SelectionMenu` option: text
 wrapped above the items, then a blank row; `header_rows(width)` is added to the
 placed height and to click mapping) holds the question, the rows are the
 options (`1. Postgres`, or `[x] unit` / `[ ] slow` on a `multiple` question),
-then a last row for the user's own answer: `✎ your own answer (type it below)`,
-mirroring the input as it is typed (`input_changed`, from the input's
-`on_change`; typing moves the highlight there). While the form is open the
-input bars take the PERMISSION color (`_input_box_fg`) and the empty input shows
-a muted `InputComponent.placeholder` (`your own answer…`). The Send tab lists
-each label with its answer. `ask` calls get no tool line (their drafts and
+or `(type your answer below)` for a question without options. The user's own
+answer is typed in the input only (never echoed in the selector): while the
+form is open the input bars take the PERMISSION color (`_input_box_fg`) and the
+empty input shows a muted `InputComponent.placeholder` (`your own answer…`);
+while it holds text no option is highlighted (`input_changed`, from the
+input's `on_change`) and the hint reads `[ENTER] keep your answer`. A kept own
+answer shows in the bottom border (`✎ …`). The Send tab lists each label with
+its answer. `ask` calls get no tool line (their drafts and
 `ToolCall` are skipped by the presenter; an invalid one's error goes to the
 notice band). The app routes keys to `question_form.handle_key` while
 `app.question_form` is set and the input is focused, after the completion menu
@@ -1136,8 +1138,8 @@ and before Esc-stops-the-turn:
   replaces the pick) or picks the highlight, then goes to the next unanswered
   question, else to Send; Enter on Send (or on a lone question) answers every
   call (`Harness.answer_questions`); a `/` line still runs as a command;
-- Enter on the own row with nothing typed (and nothing kept) flashes "type your
-  answer in the input first";
+- Enter on a question without options, with nothing typed or kept, flashes
+  "type your answer first";
 - Esc first turns the selector into a warning (WARNING frame, `dismiss?`:
   `Keep answering` highlighted, `Dismiss` below); ↑↓ choose, Enter confirms,
   Esc again keeps answering. Dismissing answers each call as dismissed; a turn that ends while the form is open

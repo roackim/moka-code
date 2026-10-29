@@ -66,7 +66,6 @@ def test_a_form_is_filled_question_by_question_then_sent_all_at_once():
         "│                                                │",
         "│ 1. Postgres                                    │",
         "│ 2. SQLite                                      │",
-        "│ ✎ your own answer (type it below)              │",
         "└────────────────────────────────────────────────┘",
     ]
     assert ui.question_menu.y + ui.question_menu.height == 20      # right above the input
@@ -87,14 +86,17 @@ def test_a_form_is_filled_question_by_question_then_sent_all_at_once():
     ]
     assert "[SPACE] toggle" in ui.action_bar.hint
 
-    press(" ", "\x1b[B", " ", *"on CI")               # unit + slow, typing own words
-    assert "│ ✎ on CI   " in shown()                    # the own row mirrors the input
-    assert ui.action_bar.hint == "←→ question · type your answer · [ENTER] keep it · [ESC] dismiss"
+    press(" ", "\x1b[B", " ")                         # unit + slow
+    assert ui.question_menu.selected_index == 1
+    press(*"on CI")                                   # own words: typed in the input only
+    assert "on CI" not in shown()
+    assert ui.question_menu.selected_index == -1       # Enter keeps the text, not an option
+    assert ui.action_bar.hint == "[ENTER] keep your answer · [ESC] dismiss"
     press("\r")
     assert ui.question_form.tab == 2
     press("\x1b[D")                                   # back to Tests to look
     assert "│ [x] unit" in shown() and "│ [x] slow" in shown()
-    assert "│ ✎ on CI  ✓" in shown()
+    assert "└ ✎ on CI ─" in shown()                    # a kept answer: bottom border
     press("\x1b[C", "\x1b[C")                         # → on an empty input: Send
     assert "│ Name      — no answer" in shown()
     press("\x1b[D", *"moka", "\r")                    # back to Name; answered: to Send
@@ -156,11 +158,12 @@ def test_a_lone_question_is_sent_by_enter_and_own_words_replace_the_pick():
     assert ui.agent.answered == [{"q1": events.Answer([], "MySQL")}]
 
 
-def test_the_own_row_needs_typed_text():
-    ui, press, shown = _ui(DB, NAME)
-    press("\x1b[A", "\r")                              # ↑ wraps to the own row
+def test_a_question_without_options_needs_typed_text():
+    ui, press, shown = _ui(NAME, DB)
+    assert "│ (type your answer below)" in shown()
+    press("\r")
     assert ui.question_form.tab == 0                   # nothing to keep: stays
-    assert ui.action_bar.hint == "type your answer in the input first"
+    assert ui.action_bar.hint == "type your answer first"
 
 
 def test_escape_asks_before_dismissing_and_a_command_line_still_runs():
