@@ -241,8 +241,8 @@ DEFAULT_UI_TOML = f"""\
 # thought_min_tokens = 0                # hide shorter reasoning lines (0 = show all)
 # thought_color = "MUTED"               # folded thought line and its bar (palette name or #rrggbb)
 # thought_expanded_color = "MUTED"      # unfolded thought text and its bar
-# thought_gap = false                   # blank lines between a thought and what follows it
-# tool_gap = true                       # blank lines between tool lines
+# thought_gap = true                    # blank lines between a thought and what follows it
+# tool_gap = false                      # blank lines between tool lines
 # show_banner = true                    # moka art in an empty transcript
 
 {_rule("Look")}
@@ -390,8 +390,8 @@ _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
     "thought_min_tokens": ("ui_thought_min_tokens", "int", 0),
     "thought_color": ("ui_thought_color", "color", "MUTED"),
     "thought_expanded_color": ("ui_thought_expanded_color", "color", "MUTED"),
-    "thought_gap": ("ui_thought_gap", "bool", False),
-    "tool_gap": ("ui_tool_gap", "bool", True),
+    "thought_gap": ("ui_thought_gap", "bool", True),
+    "tool_gap": ("ui_tool_gap", "bool", False),
     "show_banner": ("ui_show_banner", "bool", True),
     # Look
     "use_bg_color": ("ui_use_bg_color", "bool", False),

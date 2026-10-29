@@ -141,6 +141,35 @@ def test_expand_reports_what_is_wrong(workspace, text, message):
         prompts.expand(text, workspace)
 
 
+def test_the_config_prompt_is_seeded_once_and_a_deleted_one_stays_deleted(workspace):
+    """2026-10-29: ``!moka-config`` ships as a global file, like the built-in roles."""
+    [path] = prompts.seed_global_prompts()
+    assert path == _glob(workspace) / "moka-config.md"
+    path.unlink()
+    assert prompts.seed_global_prompts() == []
+
+    _write(_glob(workspace), "moka-config", prompts.SEEDED["moka-config"])
+    config = prompts.list_prompts(workspace)["moka-config"]
+    assert config.params == ["request"]
+    assert config.description.startswith("Configure moka")
+    text = prompts.expand("!moka-config a node sandbox\nthen start it", workspace).text
+    assert text.startswith("Help me configure moka, the terminal chat app you are running in: "
+                           "a node sandbox\n")
+    assert "{moka:<name>}" in text and text.endswith("\n\nthen start it")
+
+
+def test_the_config_prompt_names_every_sandbox_type_key_and_config_file():
+    """Guard: the seeded prompt states facts from the code; a new sandbox type
+    or key, or a new config file, must be described there too."""
+    from moka_code import projects
+
+    text = prompts.SEEDED["moka-config"]
+    for name in (*projects.SANDBOX_TYPES, *projects._SANDBOX_KEYS):
+        assert f"`{name}`" in text, name
+    for filename in settings.CONFIG_FILES.values():
+        assert f"`{filename}`" in text, filename
+
+
 def test_ensure_prompt_file_creates_a_starter_once_in_the_scope(workspace):
     path = prompts.ensure_prompt_file("review", "local", workspace)
     path.write_text("mine {x}")

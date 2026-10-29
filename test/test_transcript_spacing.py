@@ -16,7 +16,8 @@ def _panel():
     return panel
 
 
-def test_thoughts_and_tools_clamp_but_the_answer_does_not():
+def test_thoughts_and_tools_clamp_but_the_answer_does_not(monkeypatch):
+    monkeypatch.setattr(settings.config, "ui_thought_gap", False)
     panel = _panel()
     panel.add_message("can you ls ?", msg_type=UserMsg())
     panel.add_message("", msg_type=ThinkingMsg())
@@ -76,6 +77,7 @@ def _gaps(*types):
 
 def test_a_thought_sits_on_the_message_it_precedes(monkeypatch):
     monkeypatch.setattr(settings.config, "ui_tool_gap", False)
+    monkeypatch.setattr(settings.config, "ui_thought_gap", False)
     gap = settings.config.ui_msg_v_margin
     # tool, thought, tool: one activity block, no gaps.
     assert _gaps(ToolCallMsg, ThinkingMsg, ToolCallMsg) == [0, 0]

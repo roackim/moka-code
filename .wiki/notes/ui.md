@@ -449,6 +449,14 @@ edit; `/prompt edit [name]` opens one (never creates), `/prompt create <name>
 the file the name resolves to, `/prompt remove <name>` deletes it after *Remove* /
 *Cancel*.
 
+On first run (`main`, when `<config>/prompts/` does not exist yet)
+`prompts.seed_global_prompts()` writes `prompts.SEEDED`: `moka-config.md`, the
+`!moka-config <request>` prompt. It tells an unsandboxed agent where every config file
+lives, points it at the self-documenting ones (settings, servers, roles, themes)
+and details sandboxes and prompts; the model edits files, the user runs the slash
+command it names. A deleted seed stays deleted. `test_the_config_prompt_names_every_sandbox_type_key_and_config_file`
+guards it against the sandbox types/keys and `settings.CONFIG_FILES`.
+
 ### Schema-Driven Parameter Hints
 
 When typing a `/command`, the input component shows grey hints for upcoming parameters. This is driven by the `Param` dataclass on each `Command`:
@@ -760,9 +768,9 @@ Messages are separated by `ui_msg_v_margin` blank lines (default `1`; set it in
 (`MsgType.clamped`: `ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`) stacks
 with no gap; prose, user turns and notices keep the gap. A thought belongs to
 the message it precedes: it sits directly on top of it, and when that message
-needs a gap the gap goes above the thought. `ui.thought_gap = true` spaces
-thoughts like any message (no longer stuck to what follows); `ui.tool_gap` (default
-`true`) spaces tool lines; `false` stacks them (`_clamped`).
+needs a gap the gap goes above the thought. `ui.thought_gap` (default `true`)
+spaces thoughts like any message; `false` sticks them to what follows.
+`ui.tool_gap = true` spaces tool lines; by default they stack (`_clamped`).
 
 Thought colors: `ui.thought_color` colors the folded line and its bar,
 `ui.thought_expanded_color` the unfolded text and its bar (both `MUTED` by
@@ -917,8 +925,6 @@ not from a hand-rolled `get_completions`.
 - `/edit ` completes the workspace files and folders (the same list as the `@`
   menu: bounded, gitignore-aware, filtered as you type); `Param(path=True)` means
   a workspace file. A typed `@` is dropped by `unmention`, as for any command.
-- An expanded thought (focused) ends on one blank row (`Message.trailing_blank_row`,
-  added in `MessageView.get_preferred_height`); the message text is never changed.
 
 ### One behaviour for every choice (guarded by `test_command_contract.py`)
 

@@ -19,6 +19,7 @@ def _turn():
 
 def test_activity_stacks_without_gaps(monkeypatch):
     monkeypatch.setattr(settings.config, "ui_tool_gap", False)
+    monkeypatch.setattr(settings.config, "ui_thought_gap", False)
     # The gap before the thought belongs to the tool line it sits on.
     assert _gaps(_turn()) == [False, True, False, False, True]
 
@@ -31,6 +32,7 @@ def test_thought_gap_sets_a_thought_apart(monkeypatch):
 
 def test_tool_gap_sets_tool_lines_apart(monkeypatch):
     monkeypatch.setattr(settings.config, "ui_tool_gap", True)
+    monkeypatch.setattr(settings.config, "ui_thought_gap", False)
     assert _gaps(_turn()) == [False, True, False, True, True]
 
 

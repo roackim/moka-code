@@ -726,11 +726,6 @@ class Message:
             return [(start, start + len(stripped), theme.MUTED)]
         return []
 
-    @property
-    def trailing_blank_row(self) -> bool:
-        """An expanded collapsible message (a thought) ends on a blank row."""
-        return self.collapsible and not self.collapsed
-
     def begin_phase(self, phase: str):
         """Label this message with the current wait phase (``processing``/``thinking``).
 
