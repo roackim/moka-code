@@ -30,6 +30,7 @@ from moka_code.ui.commands import (
 from moka_code.ui.generation_presenter import process_generation
 from moka_code.ui.stream_revealer import StreamRevealer
 from moka_code.ui.status_presenter import refresh_status_bar
+from moka_code.ui import question_form
 from moka_code.ui.tui.focus import FocusScope
 from moka_code.ui.tui.navigation import ModalHost
 from moka_code.ui.tui.chat_screen import ChatScreen
@@ -204,6 +205,9 @@ class chatTUI(ChatActionHandlers):
         self._stop_requested = False
         self.active_tool_messages = {}
         self.pending_permission_prompt = None
+        # The open ``ask`` form and its transcript message (``question_form``).
+        self.question_form = None
+        self.question_message = None
         self._active_user_msg = None
         # Images pasted into the input draft, by their ``[image #N]`` number.
         self._pasted_images = {}
@@ -680,10 +684,12 @@ class chatTUI(ChatActionHandlers):
         elif self._last_focus_id == "input":
             # Subtle right-aligned reminder of the input prefixes and the
             # history-move keys. ``@`` works mid-text; ``/``/``!`` are
-            # line-start prefixes.
+            # line-start prefixes. An open ``ask`` form shows its keys instead.
             self.action_bar.set_actions([])
             self.action_bar.set_prefix("")
-            self.action_bar.set_hint("[/] command  [@] file  [!] prompt  [↑↓] move")
+            self.action_bar.set_hint(
+                self.question_form.hint() if self.question_form is not None
+                else "[/] command  [@] file  [!] prompt  [↑↓] move")
             self.action_bar.set_focused(False)
             self.action_bar.set_expanded(True)
         else:
@@ -968,6 +974,11 @@ class chatTUI(ChatActionHandlers):
             if self._last_focus_id == "input" and self.input_component.has_active_completion():
                 if key in ('\x1b', '\x1b[A', '\x1b[B', '\t', '\r', '\n'):
                     return self.input_component.handle_input(event)
+
+            # An open ``ask`` form takes its keys from the input.
+            if (self.question_form is not None and self._last_focus_id == "input"
+                    and question_form.handle_key(self, key)):
+                return True
 
             # On an empty input (or from history), Tab cycles roles and
             # Shift+Tab sandboxes, through the commands so their busy checks

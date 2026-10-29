@@ -14,7 +14,7 @@ from moka_code.harness.debug import get_debug_stream
 from moka_code.harness.compaction import (
     CHARS_PER_TOKEN, COMPACTION_MARKER_PREFIX, cut_index, estimate_tokens, is_marker, transcript)
 from moka_code.harness.elision import elide
-from moka_code.harness import events, images
+from moka_code.harness import ask, events, images
 from moka_code.harness.endpoint import Endpoint, get_active_endpoint
 from moka_code.harness.permissions import PermissionGate
 from moka_code.harness.usage import MetricsState, TokenUsage
@@ -104,8 +104,10 @@ class Harness:
         # (None until one is recorded): lets ``set_sandbox``/``/reload`` avoid
         # re-announcing an unchanged sandbox (see ``_record_sandbox_change``).
         self._sandbox_announced: tuple[str, str] | None = None
-        # (tool name, task) while a tool runs; see _abort_tool_calls.
+        # The tool call executing now (``RunningTool``); see _abort_tool_calls.
         self._running_tool = None
+        # Set while questions wait for ``answer_questions``.
+        self._answers: Optional[asyncio.Future] = None
         # USD spent on this conversation, when the provider reports costs
         # (None until one does, so local servers show nothing).
         self.conversation_cost: Optional[float] = None
@@ -423,6 +425,23 @@ class Harness:
         except Exception:  # pragma: no cover - best effort
             logger.warning("Could not stop tool %s", running.name, exc_info=True)
         return True
+
+    def answer_questions(self, answers: Optional[Dict[str, events.Answer]]) -> bool:
+        """Answer the questions of the pending ``events.Questions``: an
+        ``Answer`` per question id (a missing id is left unanswered), or
+        ``None`` when the user dismissed them. False when nothing is waiting."""
+        pending = self._answers
+        if pending is None or pending.done():
+            return False
+        pending.set_result(answers)
+        return True
+
+    async def _wait_for_answers(self) -> Optional[Dict[str, events.Answer]]:
+        self._answers = asyncio.get_running_loop().create_future()
+        try:
+            return await self._answers
+        finally:
+            self._answers = None
 
     def set_user_response(self, text: str):
         """Called by the UI when a response to a tool's prompt is ready."""
@@ -987,8 +1006,11 @@ class Harness:
         # (providers do not accept images in ``tool`` messages).
         tool_images: List[Dict[str, Any]] = []
         tool_image_paths: List[str] = []
+        # ``(outcome, text)`` per ``ask`` call, filled for a whole run of
+        # adjacent asks when its first one comes up.
+        ask_results: Dict[str, Tuple[str, str]] = {}
 
-        for tc in tool_calls_list:
+        for index, tc in enumerate(tool_calls_list):
             tool_name = tc["function"]["name"]
             tool_args = tc["function"]["arguments"]
             tool_call_id = tc["id"]
@@ -1032,6 +1054,30 @@ class Harness:
                 )
                 continue
             
+            if tool_name == ask.NAME and ask.NAME in self.tools_map:
+                # Asking needs no approval; adjacent asks are one form, and
+                # each call is still answered here, in call order.
+                parsed = ask.parse(tool_call_id, args)
+                if isinstance(parsed, str):
+                    outcome, output = "error", f"Invalid ask: {parsed}"
+                else:
+                    if tool_call_id not in ask_results:
+                        questions = ask.group(tool_calls_list, index)
+                        yield events.Questions(items=questions)
+                        answers = await self._wait_for_answers()
+                        for question in questions:
+                            ask_results[question.id] = ask.result(
+                                (answers or {}).get(question.id), answers is None)
+                    outcome, output = ask_results.pop(tool_call_id)
+                yield events.ToolResult(id=tool_call_id, name=tool_name,
+                                        outcome=outcome, output=output)
+                self._add_message_to_history(
+                    role="tool",
+                    content=f"Error: {output}" if outcome == "error" else output,
+                    tool_call_id=tool_call_id,
+                )
+                continue
+
             permission_decision = self._check_tool_permission(tool_name, args)
             prompt = self._build_permission_prompt(tool_name, args)
             diff = await self._edit_preview(args) if tool_name == "edit" else ""

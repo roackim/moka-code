@@ -534,6 +534,7 @@ Every message displayed in the chat history has a `MsgType` that controls its ti
 | `ToolCallMsg` | "tool" | TOOL | OUTPUT, COPY |
 | `ToolOutputMsg` | "output" | MUTED | OUTPUT, COPY |
 | `AskPermissionMsg` | "permission" | PERMISSION | ALLOW, DENY, OUTPUT, COPY |
+| `QuestionMsg` | "question" | PERMISSION | COPY |
 
 `clamped` types (`ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`) are
 *activity*: they stack with no gap; see the spacing rule below.
@@ -1103,3 +1104,28 @@ Styles are driven by `settings.config.markdown_styles` (see [config.md](./config
 ### Tables
 
 Markdown tables (`| ... | ... |` with a `---` separator row) are detected by `BlockParser`, grouped into `TableLine` runs, and emitted by `Markdown.parse` as one `TableSegment` placeholder line (cells stripped of inline markers such as `` ` `` and `**`). `MarkdownComponent._wrap_all` renders it via `AsciiTable(..., total_width=<width>)` with the `squared` style, so tables are laid out for the actual width and again on resize: columns keep their natural width when the table fits; otherwise the widest shrink first (`_fit_widths`, floor 6 cells) and their cells word-wrap onto several lines, and rows are then separated by horizontal lines (`├───┼───┤`). No blank line is added before or after a table. Column alignment (`:--`/`--:`/`:-:`) is read from the separator row. Rendered lines use `code_block=True` so they are never re-wrapped. Cells measure/pad by display width (`layout_utils.display_width`, grapheme-aware). `Buffer`/`SubBuffer.write_str` iterate grapheme clusters (`buffer._text_tokens`) so emoji sequences (variation selectors, ZWJ, keycaps) occupy one cell with the correct width — the previous per-code-point walk split them and broke alignment. `Markdown._hard_break_line`/`_break_segments` are cluster-aware too, so wide emoji count as 2 when wrapping (otherwise a line was left unbroken and clipped at the right edge).
+
+## The `ask` form (`question_form.py`)
+
+`events.Questions` (a run of adjacent `ask` calls, see
+[tools-and-permissions.md](./tools-and-permissions.md)) opens a `QuestionForm`:
+a `QuestionMsg` in the transcript redrawn from the form's state
+(`Message.replace_text`), with the input focused. `ask` calls get no tool line
+(their drafts and `ToolCall` are skipped by the presenter; an invalid one's
+error goes to the notice band). The app routes keys to
+`question_form.handle_key` while `app.question_form` is set and the input is
+focused, after the completion menu and before Esc-stops-the-turn:
+
+- one tab per question (its `label`, else `Q<n>`; `✓` once answered) plus a
+  last `Send` tab when there are several; ←/→ change tab on an empty input
+  (else they move the text cursor), Tab/Shift+Tab always;
+- ↑/↓ move the option highlight; Space toggles it on a `multiple` question;
+- Enter keeps the typed text as the own answer (on a single-choice question it
+  replaces the pick) or picks the highlight, then goes to the next unanswered
+  question, else to Send; Enter on Send (or on a lone question) answers every
+  call (`Harness.answer_questions`); a `/` line still runs as a command;
+- Esc dismisses (each call: dismissed); a turn that ends while the form is open
+  folds it as `stopped` (`close_form` from the presenter's `finally`).
+
+The action line shows `QuestionForm.hint()`. Closed, the message folds to one
+`? question → answer` line per question.

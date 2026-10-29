@@ -14,7 +14,7 @@ per-project sandbox (`/sandbox`, containers/bubblewrap); see
 
 ## Tools
 
-Four tools, declared in `tools.py` (schemas) with bodies in `worker.py`:
+Five tools, declared in `tools.py` (schemas); the first four have bodies in `worker.py`:
 
 | Tool | Operation |
 |------|-----------|
@@ -22,6 +22,20 @@ Four tools, declared in `tools.py` (schemas) with bodies in `worker.py`:
 | `write` | Create or overwrite a file |
 | `edit` | Replace one exact text block in a file |
 | `bash` | Run a shell command in the workspace |
+| `ask` | Ask the user a question (answered by the harness, never by a transport) |
+
+`ask` (`harness/ask.py`) takes `question`, `options` (up to 6 suggested answers;
+the user may write their own), `multiple` and a short `label`. It needs no
+approval (a role's `ask` and `yes` both enable it; `no` hides it). In the tool
+loop the first `ask` of a run of adjacent `ask` calls yields one
+`events.Questions` holding the valid ones (an invalid one is answered with its
+error instead) and waits for `Harness.answer_questions(answers)`: an
+`events.Answer(choices, text)` per question id (a missing id is unanswered), or
+`None` when the user dismissed the form (outcome `cancelled`). Each call is then
+answered at its own place, so results stay in call order, whatever order the
+user answered in. Several calls in one response are what models are trained to
+send; llama.cpp's server enables them by default when the chat template
+supports it, so moka sends no `parallel_tool_calls`.
 
 `read` accepts optional `offset` (zero-based first line) and `limit` (number of
 lines) values for targeted reads, `max_chars` for bounded output, and
@@ -90,7 +104,8 @@ a role file lists.
 handler against one `MinimalToolset` — preferring the async handler so shell
 commands stay cancellable. `create_toolset(workspace_path, transport=None)` —
 factory that builds an `InProcessTransport` when none is given. Registers
-`read`, `write`, `edit`, `bash`.
+`read`, `write`, `edit`, `bash`, `ask` (whose handler only raises: the harness
+answers it before any transport).
 
 ## Approval Flow
 
@@ -146,7 +161,10 @@ the file, refusing to remove the last role.
 `ensure_roles_dir()` also migrates retired tool keys in existing role files,
 preserving comments and everything else: `patch → edit`, `run_command → bash`,
 and the removed `subagent` / `wait_for_subagents` keys are dropped. The same
-aliases are applied on load, so an unmigrated file still round-trips.
+aliases are applied on load, so an unmigrated file still round-trips. A
+registered tool a file does not list (e.g. `ask`, added 2026-10-29) is inserted
+as `"no"` after the last tool line, aligned with it: an upgrade never enables a
+tool.
 
 Unknown tool names and values other than `no`/`ask`/`yes` are reported as
 `roles/<name>.toml: ...` by `validate_roles()`, surfaced by `/reload` and

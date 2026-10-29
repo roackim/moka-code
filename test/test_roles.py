@@ -154,6 +154,40 @@ def test_retired_tool_keys_are_migrated_on_startup(tmp_path, monkeypatch):
     assert validate_roles() == []
 
 
+def test_a_new_tool_is_listed_disabled_in_existing_role_files(tmp_path, monkeypatch):
+    """2026-10-29: a registered tool missing from a role file (``ask``) is added
+    as ``"no"`` after the last tool line, aligned with it; nothing else moves,
+    and an upgrade never enables a tool."""
+    monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
+    (tmp_path / "roles").mkdir()
+    path = tmp_path / "roles" / "mine.toml"
+    path.write_text(
+        'description = "mine"\n'
+        'read  = "yes"\n'
+        'write = "ask"\n'
+        'edit  = "ask"\n'
+        'bash  = "yes"\n'
+        '\n# tool_timeout = 30\n',
+        encoding="utf-8",
+    )
+
+    ensure_roles_dir()
+
+    assert path.read_text(encoding="utf-8") == (
+        'description = "mine"\n'
+        'read  = "yes"\n'
+        'write = "ask"\n'
+        'edit  = "ask"\n'
+        'bash  = "yes"\n'
+        'ask   = "no"\n'
+        '\n# tool_timeout = 30\n'
+    )
+    assert load_role("mine").permission_for("ask") == "no"
+    migrated = path.read_text(encoding="utf-8")
+    ensure_roles_dir()
+    assert path.read_text(encoding="utf-8") == migrated
+
+
 def test_old_tool_aliases_load_without_migration(tmp_path, monkeypatch):
     monkeypatch.setattr(roles_module, "_ROLES_DIR", tmp_path / "roles")
     (tmp_path / "roles").mkdir()

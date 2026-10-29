@@ -15,7 +15,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from moka_code.harness import events
+from moka_code.harness import ask, events
+from moka_code.ui import question_form
 from moka_code.ui.chat_message import Message, thought_worth_showing
 from moka_code.ui.tui.msg_types import (
     AskPermissionMsg,
@@ -127,6 +128,9 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
     status_is_processing = True
     begin_text_message(current_msg)
 
+    # ``ask`` calls being streamed: no draft line, the form is their record.
+    ask_drafts: set = set()
+
     # Process streaming events from Harness
     expansion = getattr(user_msg, "prompt", None)
     stream = agent.chat(user_input, list(attached),
@@ -194,6 +198,10 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
 
                 emit_text(event.text)
 
+            elif isinstance(event, events.ToolCallDraft) and (
+                    event.name == ask.NAME or event.id in ask_drafts):
+                ask_drafts.add(event.id)        # later pieces may come without the name
+
             elif isinstance(event, events.ToolCallDraft):
                 # A tool call's arguments are still streaming: open (or refresh)
                 # the tool line itself, which grows live (e.g. ``+12 lines``)
@@ -217,6 +225,16 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                 msg.rebuild_tool_display()
                 # Deliberately do not take over current_msg: any content that
                 # follows must go back to the message above this line.
+
+            elif isinstance(event, events.ToolCall) and event.name == ask.NAME:
+                # No tool line: the form (``Questions``) is the record of an ask.
+                continue
+
+            elif isinstance(event, events.Questions):
+                flush_text()
+                if current_msg_type in (ThinkingMsg, AssistantMsg) and current_msg:
+                    end_status_message()
+                question_form.open_form(app, event.items)
 
             elif isinstance(event, events.ToolCall):
                 tool_id = event.id
@@ -328,6 +346,10 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                 if text:
                     app.activity(f"[{event.name}:{event.stream}] {text}")
 
+            elif isinstance(event, events.ToolResult) and event.name == ask.NAME:
+                if event.outcome == "error":    # the model gets the error and may ask again
+                    app.notify(f"ask: {event.output}", "warning")
+
             elif isinstance(event, events.ToolResult):
                 tool_id = event.id
                 msg = app.active_tool_messages.get(tool_id)
@@ -427,6 +449,7 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
         chat.drop_live_compaction()         # stopped while summarizing: nothing changed
         # A stopped permission prompt must not keep blocking user input.
         app.pending_permission_prompt = None
+        question_form.close_form(app, "stopped")    # an open form ends with its turn
         if not natural_done or not smoothing:
             end_status_message()
             if smoothing:

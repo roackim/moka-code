@@ -463,6 +463,47 @@ def _bash_tool(toolset: MinimalToolset, command: str,
         return str(e)
 
 
+@tool(
+    name="ask",
+    description=(
+        "Ask the user a question and wait for the answer. Use it only for a decision "
+        "that is the user's to make and that the request, the files or a sensible "
+        "default cannot settle. Offer the likely answers as options; the user can "
+        "always write their own instead. To ask several questions, make several ask "
+        "calls in the same response: they are shown together, as one form. Each "
+        "answer is the result of its call, so don't put a call that depends on an "
+        "answer in the same response."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "question": {
+                "type": "string",
+                "description": "The question, complete and specific",
+            },
+            "options": {
+                "type": "array",
+                "items": {"type": "string"},
+                "maxItems": 6,
+                "description": "Suggested answers (up to 6); the user may write another",
+            },
+            "multiple": {
+                "type": "boolean",
+                "description": "Whether several options may be picked (default false)",
+            },
+            "label": {
+                "type": "string",
+                "description": "A short name for the question (12 characters at most)",
+            },
+        },
+        "required": ["question"],
+    },
+)
+def _ask_tool(toolset: MinimalToolset, **_args) -> str:
+    # The harness answers ``ask`` itself (``harness/ask.py``); no transport runs it.
+    raise ToolError("ask is answered by the harness, not run as a tool")
+
+
 __all__ = [
     "ToolError",
     "FileTools",

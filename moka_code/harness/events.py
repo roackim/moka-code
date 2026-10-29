@@ -4,7 +4,7 @@ The harness yields a stream of these events; the UI renders them. There is a
 single union — no parallel chunk/status types.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Union
 
 
@@ -74,12 +74,37 @@ class ToolResult:
     """Final outcome of a tool call.
 
     ``outcome`` is one of ``"completed"``, ``"denied"``, ``"cancelled"`` (the
-    user killed it, ``Harness.cancel_tool``) or ``"error"``.
+    user killed it, ``Harness.cancel_tool``, or dismissed an ``ask``) or ``"error"``.
     """
     id: str
     name: str
     outcome: str
     output: str = ""
+
+
+@dataclass
+class Question:
+    """One ``ask`` call: a question, the answers offered (the user may also
+    type their own) and a short tab ``label``."""
+    id: str
+    question: str
+    options: list = field(default_factory=list)
+    multiple: bool = False
+    label: str = ""
+
+
+@dataclass
+class Questions:
+    """Adjacent ``ask`` calls, shown together; the harness waits for
+    ``Harness.answer_questions``."""
+    items: list
+
+
+@dataclass
+class Answer:
+    """The user's answer to one question: the options picked and/or own text."""
+    choices: list = field(default_factory=list)
+    text: str = ""
 
 
 @dataclass
@@ -161,6 +186,6 @@ class Done:
 
 Event = Union[
     Start, Token, Reasoning, ToolCallDraft, ToolCall, PermissionRequest,
-    ToolStarted, ToolOutput, ToolResult, Usage, Error, Notice,
+    Questions, ToolStarted, ToolOutput, ToolResult, Usage, Error, Notice,
     CompactionStarted, CompactionText, Compacted, CompactionFailed, Done
 ]

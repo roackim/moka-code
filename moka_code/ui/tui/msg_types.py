@@ -134,6 +134,16 @@ class ToolOutputMsg(MsgType):
     clamped = True
 
 
+class QuestionMsg(MsgType):
+    """The ``ask`` form (``ui/question_form.py``), folded once answered."""
+    name = "question"
+    title = "question"
+    frame_color = "PERMISSION"
+    content_color = None
+    actions = [MsgAction.COPY]
+    gutter = "▌"
+
+
 class AskPermissionMsg(MsgType):
     name = "permission"
     title = "permission"

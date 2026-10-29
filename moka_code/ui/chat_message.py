@@ -990,6 +990,12 @@ class Message:
         self.ingest(text)
         self.reveal_to(len(self.base_text))
     
+    def replace_text(self, text: str) -> None:
+        """Show ``text`` instead of the current text (a redrawn form)."""
+        self.base_text = text
+        self._reveal_len = len(text)
+        self._render_revealed()
+
     def rebuild_tool_display(self):
         """Rebuild the tool message from its metadata.
 

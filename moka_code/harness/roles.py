@@ -225,21 +225,30 @@ def _role_from_dict(name: str, data: dict[str, Any]) -> Role:
 
 
 def _migrate_role_file(path: Path) -> bool:
-    """Rename/drop retired tool keys in a role file, preserving everything else.
+    """Rename/drop retired tool keys in a role file and list new tools,
+    preserving everything else.
 
-    Only top-level ``<tool> = "..."`` lines are touched, and only keys in
-    ``_RETIRED_TOOL_ALIASES`` / ``_RETIRED_TOOLS``. Comments, ordering,
-    ``description``/``prompt`` and every other key are left intact; unknown
-    keys still surface through validation. Returns True when the file changed.
+    Only top-level ``<tool> = "..."`` lines are touched: keys in
+    ``_RETIRED_TOOL_ALIASES`` / ``_RETIRED_TOOLS`` are renamed or dropped, and
+    a registered tool the file does not list is added as ``"no"`` (disabled:
+    a new tool is enabled by the user, never by an upgrade) after the last
+    tool line. Comments, ordering, ``description``/``prompt`` and every other
+    key are left intact; unknown keys still surface through validation.
+    Returns True when the file changed.
     """
+    from moka_code.harness.tools import registered_tool_names
+
     try:
         lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     except OSError:
         return False
 
+    registered = registered_tool_names()
     changed = False
     result: list[str] = []
     in_table = False
+    listed: set[str] = set()
+    last_tool_line: Optional[int] = None
     for line in lines:
         stripped = line.strip()
         if stripped.startswith("["):
@@ -247,13 +256,27 @@ def _migrate_role_file(path: Path) -> bool:
         if not in_table and stripped and not stripped.startswith("#") and "=" in stripped:
             key = stripped.split("=", 1)[0].strip()
             if key in _RETIRED_TOOL_ALIASES:
-                result.append(line.replace(key, _RETIRED_TOOL_ALIASES[key], 1))
+                line = line.replace(key, _RETIRED_TOOL_ALIASES[key], 1)
+                key = _RETIRED_TOOL_ALIASES[key]
+                changed = True
+            elif key in _RETIRED_TOOLS:
                 changed = True
                 continue
-            if key in _RETIRED_TOOLS:
-                changed = True
-                continue
+            if key in registered:
+                listed.add(key)
+                last_tool_line = len(result)
         result.append(line)
+
+    missing = [name for name in registered if name not in listed]
+    if missing and last_tool_line is not None:
+        # Align with the last tool line: its key is padded to the ``=`` column.
+        key_part = result[last_tool_line].split("=", 1)[0]
+        width = len(key_part) - 1 if key_part.endswith(" ") else len(key_part)
+        if not result[last_tool_line].endswith("\n"):
+            result[last_tool_line] += "\n"
+        added = [f'{name.ljust(width)} = "no"\n' for name in missing]
+        result[last_tool_line + 1:last_tool_line + 1] = added
+        changed = True
 
     if changed:
         path.write_text("".join(result), encoding="utf-8")
@@ -306,6 +329,7 @@ def _role_template(role: Role) -> str:
         f"{color}\n"
         f"{_rule('Tools')}\n\n"
         f"## All available tools: no = disabled (hidden from the model) · ask = confirm · yes = auto\n"
+        f"## (ask, the model's questions to you, is never confirmed: ask and yes both enable it)\n"
         f"{tools}\n"
         f"{_rule('Technical settings')}\n\n"
         f"## require_sandbox: true locks the conversation unless a sandbox is active.\n"
