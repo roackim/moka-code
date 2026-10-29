@@ -213,7 +213,8 @@ class Endpoint:
     fixed_url: Optional[str] = None
     # Server-table keys beyond the common ones, passed to the constructor.
     extra_keys: frozenset[str] = frozenset()
-    # This provider's block of the ``servers.toml`` template.
+    # This provider's section heading and block in the ``servers.toml`` template.
+    label: str = ""
     template: str = ""
 
     def __init__(

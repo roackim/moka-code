@@ -36,10 +36,10 @@ The old `styles.toml` and `themes.toml` are no longer read (merged into
 Missing files are created from fully commented templates
 (`settings.DEFAULT_CONFIG_TEMPLATES`) by `Config.ensure_section_file()`.
 Sections are headed by one-line rules (`settings._rule`: `## ── Look ───…`, 60
-columns) and run from the most used to the most technical; the specs list the
+columns) and run from the most used to the most technical. Every config file uses them: `servers.toml` has one section per provider (`Endpoint.label`) then Technical settings, theme files a Palette section, role files Role, Tools and Technical settings; the specs list the
 keys in the same order (`test_template_and_spec_list_keys_in_the_same_order`). In every template a single `#` marks a setting to
 uncomment (a bare `#` spaces a block of settings) and `##` marks help
-(guarded by `test_template_help_lines_use_double_hash`; role files, from `roles._role_template`: description, prompt, tools, then a `## Technical settings` block, guarded by `test_role_template_layout_and_uncommentable_settings`). The built-in role files (`agent.toml`, `chat.toml`)
+(guarded by `test_template_help_lines_use_double_hash`; role files, from `roles._role_template`: Role (description, prompt, color), Tools, then Technical settings, guarded by `test_role_template_layout_and_uncommentable_settings`). The built-in role files (`agent.toml`, `chat.toml`)
 are seeded by `roles.ensure_roles_dir()` on startup.
 
 Existing **flat** files (`ui`, `context`, `debug`) are kept in sync

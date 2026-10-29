@@ -268,9 +268,11 @@ def test_role_template_layout_and_uncommentable_settings():
     template = roles_module._role_template(
         Role(name="agent", description="d", prompt="p", tools={"read": "yes", "bash": "ask"}))
 
-    assert template.startswith("## Moka role: agent\n\ndescription = ")
+    assert template.startswith("## Moka role: agent\n")
+    assert template.index("## ── Role ") < template.index("description = ")
+    assert template.index("## ── Tools ") < template.index('read = "yes"')
     assert 'read = "yes"\nbash = "ask"\n' in template
-    assert template.index("## Technical settings") > template.index('bash = "ask"')
+    assert template.index("## ── Technical settings ") > template.index('bash = "ask"')
     assert [l for l in template.splitlines() if l.startswith("# ")] == [
         '# color = "USER"', "# require_sandbox = true", "# tool_timeout = 300"]
     uncommented = re.sub(r"^# ", "", template, flags=re.M)

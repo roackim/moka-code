@@ -338,29 +338,34 @@ DEFAULT_DEBUG_TOML = f"""\
 # log_enabled = false                   # write debug_stream.log
 """
 
-# The servers template: a legend, then each provider's own block
-# (``Endpoint.template``), in registry order.
+# The servers template: a legend, then one section per provider
+# (``Endpoint.label`` and ``Endpoint.template``), in registry order.
 DEFAULT_SERVERS_TOML = """\
 ## Moka servers
-
+## Apply with /reload, or /config servers.
+## A line starting with # is a setting to uncomment; ## is help.
 ## One table per server; the name is yours (shown by /model).
 ## A table named after its type (openrouter, deepseek) needs no type.
 
-""" + "\n".join(cls.template for cls in REGISTRY.values()) + """
-## Technical settings, any server: api_key (or api_key_env), timeout = 30.0,
+""" + "".join(f"{_rule(cls.label)}\n\n{cls.template}\n" for cls in REGISTRY.values()) + f"""\
+{_rule("Technical settings")}
+
+## Any server: api_key (or api_key_env), timeout = 30.0,
 ## retry_attempts = 3, retry_delay = 2.0.
 """
 
 # Help heading a ``themes/<name>.toml`` file (written by ``/theme create`` and
 # ``/theme edit``, followed by the palette lines).
-THEME_FILE_HELP = """\
+THEME_FILE_HELP = f"""\
 ## Moka color theme; the file name is the theme name.
 ## Select with /theme select; apply edits with /reload (or /theme edit).
-##
+
+{_rule("Palette")}
+
 ## Each palette entry is a hex RGB string or an ANSI slot table:
 ##   USER       = "#4EC9B0"
-##   MUTED      = { ansi = 90 }            # standard ANSI fg code
-##   BACKGROUND = { ansi = 39, bg = 49 }   # fg and/or bg codes
+##   MUTED      = {{ ansi = 90 }}            # standard ANSI fg code
+##   BACKGROUND = {{ ansi = 39, bg = 49 }}   # fg and/or bg codes
 ##
 ## Missing entries inherit from the built-in of the same name (or terminal).
 """

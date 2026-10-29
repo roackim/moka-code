@@ -287,6 +287,7 @@ def _role_template(role: Role) -> str:
     """Render a role file: description, prompt, one line per tool, then the
     technical settings. ``##`` is help; a single ``#`` is a setting to uncomment."""
     import json
+    from moka_code.settings import _rule
 
     width = max((len(name) for name in role.tools), default=0)
     tools = "".join(f'{name.ljust(width)} = "{value}"\n' for name, value in role.tools.items())
@@ -295,14 +296,18 @@ def _role_template(role: Role) -> str:
     color = (f"color = {json.dumps(role.color)}\n" if role.color
              else '# color = "USER"\n')
     return (
-        f"## Moka role: {role.name}\n\n"
+        f"## Moka role: {role.name}\n"
+        f"## Apply with /reload, or /role edit.\n"
+        f"## A line starting with # is a setting to uncomment; ## is help.\n\n"
+        f"{_rule('Role')}\n\n"
         f"description = {json.dumps(role.description)}\n"
         f"prompt = {json.dumps(role.prompt)}\n"
         f"## color: input bars and status bar role field (palette name or #rrggbb)\n"
         f"{color}\n"
+        f"{_rule('Tools')}\n\n"
         f"## All available tools: no = disabled (hidden from the model) · ask = confirm · yes = auto\n"
         f"{tools}\n"
-        f"## Technical settings\n\n"
+        f"{_rule('Technical settings')}\n\n"
         f"## require_sandbox: true locks the conversation unless a sandbox is active.\n"
         f"{sandbox}\n"
         f"## preserve_thinking: send the model's earlier reasoning back with each request\n"
