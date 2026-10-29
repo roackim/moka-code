@@ -180,14 +180,6 @@ def test_set_active_writes_project_toml(config_dir, workspace):
     assert toml.load(projects.project_file(workspace)) == {"path": str(workspace.resolve())}
 
 
-def test_ensure_project_is_idempotent(config_dir, workspace):
-    path = projects.ensure_project(workspace)
-    projects.set_active(workspace, "dev")
-
-    assert projects.ensure_project(workspace) == path
-    assert toml.load(path)["active"] == "dev"              # not reset
-
-
 @pytest.mark.parametrize("stype", projects.SANDBOX_TYPES)
 def test_every_starter_template_loads_cleanly(config_dir, workspace, stype):
     path = projects.create_sandbox(workspace, "local", stype, "starter")

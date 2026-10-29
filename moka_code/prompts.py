@@ -37,7 +37,7 @@ _STARTER = """\
 Review {moka:file}, focusing on {moka:focus}.
 """
 
-#: The global prompts seeded on first run (``seed_global_prompts``).
+#: The global prompts written when missing (``seed_global_prompts``).
 SEEDED = {"moka-config": """\
 # Configure moka: sandboxes, prompts, roles, servers, settings
 
@@ -65,6 +65,10 @@ context, debug, servers): it writes the commented template.
 - One file per sandbox. Global: `<config>/sandboxes/<name>.toml`. This project
   only: `<config>/projects/<dir>_<hash>/sandboxes/<name>.toml`, in the folder
   whose `project.toml` has `path` = this workspace. Names are unique across both.
+  `/sandbox path <name>` prints a sandbox's file.
+- That project folder exists only once this project has a local sandbox (or
+  started one); no folder means no local sandbox. Never create it yourself (moka
+  computes the hash): ask me to run `/sandbox create <name> <type> local`.
 - `type` is `podman`, `docker` or `bubblewrap`:
   - `bubblewrap`: the host's own binaries, read-only, and the workspace; no
     image, no build. Enough when the host already has the tools.
@@ -293,15 +297,15 @@ def expand(text: str, workspace: str | Path,
 # --- creating -------------------------------------------------------------------
 
 def seed_global_prompts() -> list[Path]:
-    """First run: write the ``SEEDED`` prompts into the global folder. Only when
-    it does not exist yet (a deleted prompt stays deleted, like a role)."""
+    """Write each ``SEEDED`` prompt missing from the global folder; an existing
+    file is the user's and is never touched. Returns the paths written."""
     directory = settings.get_config_dir() / PROMPTS_DIRNAME
-    if directory.exists():
-        return []
-    directory.mkdir(parents=True)
     written = []
     for name, text in SEEDED.items():
         path = directory / f"{name}.md"
+        if path.exists():
+            continue
+        directory.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
         written.append(path)
     return written

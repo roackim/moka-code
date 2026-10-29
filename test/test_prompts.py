@@ -141,14 +141,19 @@ def test_expand_reports_what_is_wrong(workspace, text, message):
         prompts.expand(text, workspace)
 
 
-def test_the_config_prompt_is_seeded_once_and_a_deleted_one_stays_deleted(workspace):
-    """2026-10-29: ``!moka-config`` ships as a global file, like the built-in roles."""
+def test_the_config_prompt_is_seeded_per_file_and_never_overwritten(workspace):
+    """2026-10-29: ``!moka-config`` ships as a global file, written whenever it is
+    missing (a prompts folder that already exists gets it too); an existing file
+    is the user's."""
+    _write(_glob(workspace), "hello", "Hi")
     [path] = prompts.seed_global_prompts()
     assert path == _glob(workspace) / "moka-config.md"
-    path.unlink()
+    path.write_text("mine")
     assert prompts.seed_global_prompts() == []
+    assert path.read_text() == "mine"
+    path.unlink()
+    assert prompts.seed_global_prompts() == [path]
 
-    _write(_glob(workspace), "moka-config", prompts.SEEDED["moka-config"])
     config = prompts.list_prompts(workspace)["moka-config"]
     assert config.params == ["request"]
     assert config.description.startswith("Configure moka")

@@ -449,12 +449,12 @@ edit; `/prompt edit [name]` opens one (never creates), `/prompt create <name>
 the file the name resolves to, `/prompt remove <name>` deletes it after *Remove* /
 *Cancel*.
 
-On first run (`main`, when `<config>/prompts/` does not exist yet)
-`prompts.seed_global_prompts()` writes `prompts.SEEDED`: `moka-config.md`, the
+On startup (`main`) `prompts.seed_global_prompts()` writes each `prompts.SEEDED`
+file missing from `<config>/prompts/` (an existing one is never touched): `moka-config.md`, the
 `!moka-config <request>` prompt. It tells an unsandboxed agent where every config file
 lives, points it at the self-documenting ones (settings, servers, roles, themes)
 and details sandboxes and prompts; the model edits files, the user runs the slash
-command it names. A deleted seed stays deleted. `test_the_config_prompt_names_every_sandbox_type_key_and_config_file`
+command it names. A deleted seed comes back on the next start. `test_the_config_prompt_names_every_sandbox_type_key_and_config_file`
 guards it against the sandbox types/keys and `settings.CONFIG_FILES`.
 
 ### Schema-Driven Parameter Hints

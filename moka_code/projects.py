@@ -434,14 +434,6 @@ def moved_project_notes(workspace: str | Path) -> list[str]:
     return notes
 
 
-def ensure_project(workspace: str | Path) -> Path:
-    """Create the project's folder and ``project.toml`` if missing."""
-    path = project_file(workspace)
-    if not path.exists():
-        _write_meta(workspace, None)
-    return path
-
-
 def _write_meta(workspace: str | Path, active: Optional[str]) -> None:
     path = project_file(workspace)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -484,6 +476,5 @@ __all__ = [
     "seed_default_sandbox",
     "moved_project_notes",
     "DEFAULT_SANDBOX",
-    "ensure_project",
     "set_active",
 ]
