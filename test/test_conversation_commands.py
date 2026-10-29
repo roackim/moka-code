@@ -33,7 +33,7 @@ class FakePanel:
         self.messages.append(msg)
         return msg
 
-    def add_user_message(self, text, attached=(), harness_message_ids=None):
+    def add_user_message(self, text, attached=(), harness_message_ids=None, prompt=None):
         msg = self.add_message(text, msg_type=UserMsg(), harness_message_ids=harness_message_ids)
         msg.attached = list(attached)
         return msg

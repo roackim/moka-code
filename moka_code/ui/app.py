@@ -603,6 +603,7 @@ class chatTUI(ChatActionHandlers):
         handlers = {
             MsgAction.COPY: self.handle_copy_action,
             MsgAction.OUTPUT: self.handle_output_action,
+            MsgAction.PROMPT: self.handle_prompt_action,
             MsgAction.ALLOW: self.handle_allow_action,
             MsgAction.DENY: self.handle_deny_action,
             MsgAction.EDIT: self.handle_edit_action,
@@ -806,16 +807,16 @@ class chatTUI(ChatActionHandlers):
             self.flash_hint("can't send: this role requires a sandbox", 3.0, theme.ERROR)
             return False
 
-        # ``!name args`` expands a prompt file; the expansion is what is shown and
-        # sent, the typed call is what [e] edit puts back.
-        typed, expanded = text, None
+        # ``!name args`` expands a prompt file; the expansion is what is sent,
+        # shown folded to the call; the typed call is what [e] edit puts back.
+        typed, expansion = text, None
         try:
-            expanded = prompts.expand(text, self._workspace(), clean_args=unmention)
+            expansion = prompts.expand(text, self._workspace(), clean_args=unmention)
         except prompts.PromptError as error:
             self.chat_history_panel.add_message(str(error), msg_type=SysMsgError(), title="prompt")
             return False
-        if expanded is not None:
-            text = expanded
+        if expansion is not None:
+            text = expansion.text
 
         self._ensure_worker()
 
@@ -834,10 +835,10 @@ class chatTUI(ChatActionHandlers):
 
             # Create user message and queue it
             user_msg = self.chat_history_panel.add_user_message(
-                text, attached, queued=self.is_generating())
+                text, attached, queued=self.is_generating(), prompt=expansion)
             user_msg.draft = (typed, list(attached))    # what [e] puts back in the input
 
-            self._enqueue_message(text if expanded is not None else unmention(text),
+            self._enqueue_message(text if expansion is not None else unmention(text),
                                   user_msg, attached)
             
             # Enable auto-scroll to show the new message

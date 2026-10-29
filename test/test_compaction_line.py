@@ -217,7 +217,7 @@ def test_compact_command_shows_the_live_line_and_drops_it_on_failure(monkeypatch
 def _compacting_chat(ui, gate=None):
     from moka_code.harness import events
 
-    async def chat(text, attached=None):
+    async def chat(text, attached=None, prompt=None):
         ui.agent.history.append({"id": "u9", "role": "user", "content": text})
         yield events.Start(message_id="u9", role="user")
         yield events.CompactionStarted()

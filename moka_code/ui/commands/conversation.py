@@ -8,6 +8,7 @@ import time
 from typing import Any, Dict, List
 
 from .base import ChatUIProtocol, stop_before
+from moka_code import prompts
 from moka_code.harness.compaction import is_marker as _is_marker
 from moka_code.ui.chat_message import thought_worth_showing
 from moka_code.ui.tui.msg_types import (
@@ -231,8 +232,9 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
         if _is_marker(message):
             continue
         if role == "user":
-            ui.chat_history_panel.add_user_message(content or "", message.get("images") or (),
-                                                   harness_message_ids=ids)
+            ui.chat_history_panel.add_user_message(
+                content or "", message.get("images") or (), harness_message_ids=ids,
+                prompt=prompts.from_history(content or "", message.get("prompt")))
         elif role == "assistant":
             # content may be None for tool-call-only assistant messages.
             content = content or ""

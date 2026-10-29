@@ -1247,13 +1247,16 @@ class Harness:
         return status
 
     async def chat(self, user_input: str,
-                   attached: Optional[List[Dict[str, Any]]] = None) -> AsyncGenerator[events.Event, None]:
+                   attached: Optional[List[Dict[str, Any]]] = None,
+                   prompt: Optional[Dict[str, Any]] = None) -> AsyncGenerator[events.Event, None]:
         """
         Main chat loop orchestrator.
         Handles: User Input -> LLM -> [Tool Calls -> Tool Execution -> LLM]* -> Final Answer
 
         ``attached``: image references (``harness.images``) sent with the
-        user message.
+        user message. ``prompt``: the ``!name`` call it was expanded from
+        (``prompts.Expansion.meta``), kept in history so a restored transcript
+        folds it again; never sent.
 
         Yields: events from ``moka_code.harness.events``.
         """
@@ -1275,6 +1278,8 @@ class Harness:
 
         # The user message joins history; every request is built from it.
         extra = {"images": list(attached)} if attached else {}
+        if prompt:
+            extra["prompt"] = prompt
         self._last_user_message_id = self._add_message_to_history("user", user_input, **extra)
         
         # Emit user message start with its ID

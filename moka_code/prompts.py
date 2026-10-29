@@ -5,8 +5,9 @@ the workspace's ``.moka/prompts/`` (a local one wins over a global one of the
 same name). The whole file is the template; ``{moka:name}`` is a parameter
 (namespaced, so braces in code or JSON are just text). The parameters are the
 distinct names in order of first appearance, an argument is a bare word or a
-quoted phrase, and the last parameter takes the rest of the line. The menu
-description is the first non-empty line. Files are read when used: nothing is
+quoted phrase, and the last parameter takes the rest of the line. The call is
+the first line: what follows is the user's own text, sent after the prompt. The menu
+description is the first non-empty line; a ``#`` one is only that, never sent. Files are read when used: nothing is
 cached or watched.
 """
 
@@ -15,7 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from moka_code import settings
 
@@ -42,6 +43,43 @@ class PromptError(Exception):
 
 
 @dataclass(frozen=True)
+class Expansion:
+    """A ``!name args`` call expanded: ``prompt`` is the filled template, ``rest``
+    the user's own text from the second line on (sent after the prompt)."""
+    call: str
+    prompt: str
+    rest: str = ""
+
+    @property
+    def name(self) -> str:
+        return _CALL_RE.match(self.call).group(1)
+
+    @property
+    def text(self) -> str:
+        """What is sent."""
+        return f"{self.prompt}\n\n{self.rest}" if self.rest else self.prompt
+
+    @property
+    def typed(self) -> str:
+        """What the user typed (``[e]`` edit puts it back)."""
+        return f"{self.call}\n\n{self.rest}" if self.rest else self.call
+
+    @property
+    def meta(self) -> Dict[str, Any]:
+        """The history entry's ``prompt`` field: ``text`` is ``prompt`` then ``rest``."""
+        return {"call": self.call, "chars": len(self.prompt)}
+
+
+def from_history(content: str, meta: Any) -> Optional[Expansion]:
+    """The expansion a history entry was sent from (its ``prompt`` field), if any."""
+    if not (isinstance(meta, dict) and isinstance(meta.get("call"), str)
+            and isinstance(meta.get("chars"), int) and _CALL_RE.match(meta["call"])):
+        return None
+    chars = meta["chars"]
+    return Expansion(meta["call"], content[:chars], content[chars:].strip())
+
+
+@dataclass(frozen=True)
 class Prompt:
     name: str
     scope: str                      # "global" or "local"
@@ -52,8 +90,13 @@ class Prompt:
         return self.path.read_text(encoding="utf-8")
 
     @property
+    def body(self) -> str:
+        """The template sent: the text without its ``#`` description line."""
+        return body_of(self.text)
+
+    @property
     def params(self) -> List[str]:
-        return params_of(self.text)
+        return params_of(self.body)
 
     @property
     def description(self) -> str:
@@ -99,6 +142,15 @@ def list_prompts(workspace: str | Path) -> Dict[str, Prompt]:
     return dict(sorted(found.items()))
 
 
+def body_of(text: str) -> str:
+    """``text`` without a ``#`` description line (its first non-empty line)."""
+    lines = text.splitlines()
+    first = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if first is None or not lines[first].lstrip().startswith("#"):
+        return text
+    return "\n".join(lines[first + 1:])
+
+
 def params_of(template: str) -> List[str]:
     """The distinct parameter names of ``template``, in order of first appearance."""
     names: List[str] = []
@@ -141,12 +193,14 @@ def split_args(rest: str, count: int) -> List[str]:
 
 
 def expand(text: str, workspace: str | Path,
-           clean_args: Callable[[str], str] = lambda arguments: arguments) -> Optional[str]:
-    """``text`` with its ``!name args`` call expanded, or ``None`` when ``text``
-    is not a call (it is sent as typed). Raises ``PromptError`` for an unknown
+           clean_args: Callable[[str], str] = lambda arguments: arguments) -> Optional[Expansion]:
+    """``text``'s ``!name args`` call expanded, or ``None`` when ``text`` is not a
+    call (it is sent as typed). The arguments end with the first line; the lines
+    after it are the user's own text. Raises ``PromptError`` for an unknown
     prompt or the wrong arguments. ``clean_args`` prepares the arguments (the UI
     turns ``@path`` mentions into plain paths)."""
-    call = _CALL_RE.match(text)
+    line, _, rest = text.partition("\n")
+    call = _CALL_RE.match(line)
     if call is None:
         return None
     name = call.group(1)
@@ -154,15 +208,16 @@ def expand(text: str, workspace: str | Path,
     if name not in prompts:
         available = ", ".join(f"!{n}" for n in prompts) or "none (see /prompt)"
         raise PromptError(f"Unknown prompt: !{name}. Available: {available}")
-    template = prompts[name].text
+    template = prompts[name].body
     names = params_of(template)
-    values = split_args(clean_args(text[call.end():]), len(names))
+    values = split_args(clean_args(line[call.end():]), len(names))
     if not names and values:
         raise PromptError(f"!{name} takes no arguments")
     if len(values) < len(names):
         missing = " ".join(f"<{n}>" for n in names[len(values):])
         raise PromptError(f"!{name} needs {' '.join(f'<{n}>' for n in names)}; missing {missing}")
-    return render(template, dict(zip(names, values)))
+    prompt = render(template, dict(zip(names, values))).strip()
+    return Expansion(line.rstrip(), prompt, clean_args(rest).strip())
 
 
 # --- creating -------------------------------------------------------------------

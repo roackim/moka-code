@@ -428,9 +428,17 @@ in `<config>/prompts/`, local in the workspace's `.moka/prompts/` (local wins).
 The file is the template, read when used (no cache, no watcher); `{moka:param}`
 is a parameter (distinct names, in order of first appearance; the last takes the
 rest of the line; quotes group an earlier argument); every other brace is text;
-the menu description is the file's first non-empty line. `on_user_submit`
-expands it, so the transcript and the model get the expansion while the typed
-call is the message's `draft` (what `[e]` edit restores). `@path` in the
+the menu description is the file's first non-empty line; a `#` one is only
+the description, never sent (`prompts.body_of`). The call is the first
+line: the lines after it are the user's own text, sent after the prompt with a
+blank line between (`prompts.Expansion`: `call`, `prompt`, `rest`; `text` is what
+is sent, `typed` what `[e]` edit restores). `on_user_submit` expands it; the model
+gets the expansion, the transcript shows it folded: the call, a muted
+`── name · N lines ──` rule, then the user's text. `o` (`MsgAction.PROMPT`)
+unfolds the prompt between rules and folds it back; `c` copies what was sent.
+The user's history entry keeps `prompt = {call, chars}` (`Expansion.meta`, never
+sent; `content[:chars]` is the prompt), so `/session` and `/import` fold it again
+(`prompts.from_history`). `@path` in the
 arguments becomes a plain path; the template itself is never `unmention`ed. An
 unknown name or wrong argument count is an error and the text stays in the input;
 a leading space (or `!` followed by a space) sends it literally. `!` is a second

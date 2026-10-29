@@ -128,7 +128,9 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
     begin_text_message(current_msg)
 
     # Process streaming events from Harness
-    stream = agent.chat(user_input, list(attached))
+    expansion = getattr(user_msg, "prompt", None)
+    stream = agent.chat(user_input, list(attached),
+                        prompt=expansion.meta if expansion is not None else None)
     try:
         async for event in stream:
             if isinstance(event, events.Start):

@@ -31,7 +31,7 @@ def test_one_generation_at_a_time_and_queued_message_stays_last(monkeypatch):
     running, overlap = [], []
     gate = {}
 
-    async def chat(text, attached=None):
+    async def chat(text, attached=None, prompt=None):
         running.append(text)
         if len(running) > 1:
             overlap.append(list(running))
@@ -73,7 +73,7 @@ def test_one_generation_at_a_time_and_queued_message_stays_last(monkeypatch):
 def test_stop_cancels_the_generation_but_not_the_worker(monkeypatch):
     started = []
 
-    async def chat(text, attached=None):
+    async def chat(text, attached=None, prompt=None):
         started.append(text)
         yield events.Start(message_id=text, role="assistant")
         yield events.Token(text=f"answer to {text}")
@@ -101,7 +101,7 @@ def test_stop_cancels_the_generation_but_not_the_worker(monkeypatch):
 
 
 def test_submitting_never_starts_a_second_worker(monkeypatch):
-    async def chat(text, attached=None):
+    async def chat(text, attached=None, prompt=None):
         yield events.Done()
 
     async def scenario():
@@ -122,7 +122,7 @@ def test_dollar_prefix_is_an_ordinary_message(monkeypatch):
     message starting with ``$`` goes to the model like any other."""
     sent = []
 
-    async def chat(text, attached=None):
+    async def chat(text, attached=None, prompt=None):
         sent.append(text)
         yield events.Done()
 
@@ -138,7 +138,7 @@ def test_dollar_prefix_is_an_ordinary_message(monkeypatch):
 
 
 def test_escape_while_generating_stops_it(monkeypatch):
-    async def chat(text, attached=None):
+    async def chat(text, attached=None, prompt=None):
         yield events.Start(message_id=text, role="assistant")
         yield events.Token(text="partial")
         await asyncio.sleep(10)
@@ -165,7 +165,7 @@ def _queue_two(monkeypatch, scenario_body):
     started = []
     gate = asyncio.Event
 
-    async def chat(text, attached=None):
+    async def chat(text, attached=None, prompt=None):
         started.append(text)
         yield events.Start(message_id=text, role="assistant")
         yield events.Token(text=f"answer to {text}")
@@ -235,7 +235,7 @@ def test_a_queued_message_offers_edit_and_cancel_only_while_waiting(monkeypatch)
 
 def _history_chat(ui):
     """A chat() that records each turn in ``ui.agent.history`` like the harness."""
-    async def chat(text, attached=None):
+    async def chat(text, attached=None, prompt=None):
         n = len(ui.agent.history)
         ui.agent.history.append({"id": f"u{n}", "role": "user", "content": text})
         yield events.Start(message_id=f"u{n}", role="user")
@@ -281,7 +281,7 @@ def test_editing_a_sent_user_message_cuts_the_conversation_back(monkeypatch):
 
 
 def test_editing_is_refused_while_a_response_is_generating(monkeypatch):
-    async def chat(text, attached=None):
+    async def chat(text, attached=None, prompt=None):
         yield events.Start(message_id="u0", role="user")
         await asyncio.sleep(10)
         yield events.Done()

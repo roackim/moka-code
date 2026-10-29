@@ -1178,9 +1178,12 @@ class ChatHistoryPanel(TextComponent):
             pass
 
     def add_user_message(self, text: str, attached=(), harness_message_ids: list = None,
-                         queued: bool = False) -> Message:
+                         queued: bool = False, prompt=None) -> Message:
         """Add a user message; its attached images are listed under the text
-        (``▣ image #N · name · W×H · size``). ``c`` copies only the text."""
+        (``▣ image #N · name · W×H · size``). ``c`` copies only the text.
+
+        ``prompt`` (``prompts.Expansion``): ``text`` came from a ``!name`` call;
+        the message shows folded, ``o`` unfolds the prompt and folds it back."""
         from moka_code.harness import images
         from moka_code.ui.tui.msg_types import UserMsg
 
@@ -1192,6 +1195,14 @@ class ChatHistoryPanel(TextComponent):
         msg.component.highlighter = reference_spans
         if lines:
             msg.copy_text = text
+        if prompt is not None:
+            msg.prompt = prompt
+            msg.attachment_lines = lines
+            msg.copy_text = text
+            msg.draft = (prompt.typed, list(attached))   # what [e] puts back
+            msg.component.highlighter = lambda line: (
+                reference_spans(line) + msg.prompt_rule_spans(line))
+            msg.set_prompt_folded(True)
         return msg
 
     def add_compaction(self, history: list, marker_id: str,

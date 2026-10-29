@@ -15,6 +15,7 @@ class MsgAction(Enum):
     """
     COPY = ("c", "copy")
     OUTPUT = ("o", "output")
+    PROMPT = ("o", "prompt")    # ``!prompt`` message: fold/unfold the prompt
     ALLOW = ("a", "allow")
     DENY = ("x", "deny")
     EDIT = ("e", "edit")        # user message: back to the input

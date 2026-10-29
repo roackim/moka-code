@@ -163,6 +163,13 @@ class ChatActionHandlers:
             logger.warning("Output action called on non-tool message")
 
 
+    def handle_prompt_action(self, message):
+        """``o`` on a ``!prompt`` message: unfold the prompt, or fold it back."""
+        message.set_prompt_folded(not message.prompt_folded)
+        panel = self.chat_history_panel
+        if message in panel.messages:
+            panel._scroll_to_show_message(panel.messages.index(message), prefer_top=True)
+
     def _unqueue(self, message) -> bool:
         """Take a waiting user message out of the queue (the worker skips it).
         False when it was already picked up."""

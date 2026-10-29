@@ -88,8 +88,38 @@ def test_the_last_param_takes_the_rest_and_quotes_group_earlier_ones():
 def test_expand_fills_the_template(workspace):
     _write(_glob(workspace), "review", "Review {moka:file}, focusing on {moka:focus}.")
 
-    assert prompts.expand("!review a.py error handling", workspace) == \
-        "Review a.py, focusing on error handling."
+    expansion = prompts.expand("!review a.py error handling", workspace)
+    assert expansion.text == "Review a.py, focusing on error handling."
+    assert (expansion.name, expansion.call, expansion.rest) == (
+        "review", "!review a.py error handling", "")
+
+
+def test_a_hash_description_line_is_not_sent(workspace):
+    """2026-10-29: the ``#`` description is the menu's, not the model's; a first
+    line without ``#`` is content (it is still the description)."""
+    _write(_glob(workspace), "review", "# Review a file {moka:x}\n\nReview {moka:file}.\n# Notes\nbe brief")
+    _write(_glob(workspace), "plain", "Review the repo.\nThoroughly.")
+
+    assert prompts.list_prompts(workspace)["review"].params == ["file"]
+    assert prompts.expand("!review a.py", workspace).text == "Review a.py.\n# Notes\nbe brief"
+    assert prompts.expand("!plain", workspace).text == "Review the repo.\nThoroughly."
+    assert prompts.list_prompts(workspace)["plain"].description == "Review the repo."
+
+
+def test_the_call_is_the_first_line_and_the_rest_follows_the_prompt(workspace):
+    """2026-10-29: arguments end with the line; the lines after are the user's
+    own text, sent after the prompt (a prompt without parameters takes them too)."""
+    _write(_glob(workspace), "audit", "Audit {moka:file} thoroughly.")
+    _write(_glob(workspace), "plain", "Review the repo.")
+
+    audit = prompts.expand("!audit file.py\n\nand commit the report", workspace)
+    assert audit.text == "Audit file.py thoroughly.\n\nand commit the report"
+    assert audit.typed == "!audit file.py\n\nand commit the report"
+    assert prompts.expand("!plain\nthen push", workspace).text == "Review the repo.\n\nthen push"
+
+    restored = prompts.from_history(audit.text, audit.meta)
+    assert restored == audit
+    assert prompts.from_history(audit.text, None) is None
 
 
 def test_text_that_is_not_a_call_is_left_alone(workspace):
@@ -128,9 +158,12 @@ def _app(workspace, monkeypatch, sent):
     agent = StubAgent()
     agent.workspace = str(workspace)
 
-    async def chat(text, attached=None):
+    async def chat(text, attached=None, prompt=None):
         sent.append(text)
+        agent.prompts.append(prompt)
         yield events.Done()
+
+    agent.prompts = []
 
     agent.chat = chat
     return chatTUI(agent)
@@ -151,9 +184,37 @@ def test_submitting_a_call_sends_and_shows_the_expansion_and_edit_restores_the_c
     ui = asyncio.run(scenario())
 
     assert sent == ["Review src/app.py, focusing on tests."]
+    assert ui.agent.prompts == [{"call": "!review @src/app.py tests", "chars": 37}]
     message = next(m for m in ui.chat_history_panel.messages if m.base_text)
-    assert message.base_text == "Review src/app.py, focusing on tests."
+    assert message.copy_text == "Review src/app.py, focusing on tests."
     assert message.draft[0] == "!review @src/app.py tests"
+
+
+def test_a_prompt_message_folds_to_its_call_and_o_toggles_it(workspace, monkeypatch):
+    _write(_glob(workspace), "audit", "# Audit\n\nAudit {moka:file} thoroughly.")
+    sent = []
+
+    async def scenario():
+        ui = _app(workspace, monkeypatch, sent)
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        ui.on_user_submit("!audit file.py\n\nand commit the report")
+        await asyncio.sleep(0.1)
+        ui.worker_task.cancel()
+        return ui
+
+    ui = asyncio.run(scenario())
+    message = next(m for m in ui.chat_history_panel.messages if m.prompt is not None)
+
+    assert sent == ["Audit file.py thoroughly.\n\nand commit the report"]
+    assert message.base_text == "!audit file.py\n── audit · 1 line ──\nand commit the report"
+    assert "o" in [action.key for action in message.get_active_actions()]
+
+    ui.handle_prompt_action(message)
+    assert message.base_text == ("!audit file.py\n── audit · 1 line ──\n"
+                                 "Audit file.py thoroughly.\n──\nand commit the report")
+    ui.handle_prompt_action(message)
+    assert message.prompt_folded is True
+    assert message.copy_text == sent[0]
 
 
 def test_a_template_with_an_at_sign_is_not_mangled(workspace, monkeypatch):

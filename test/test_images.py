@@ -230,7 +230,7 @@ class _Panel:
     def __init__(self):
         self.users = []
 
-    def add_user_message(self, text, attached=(), harness_message_ids=None):
+    def add_user_message(self, text, attached=(), harness_message_ids=None, prompt=None):
         self.users.append((text, list(attached)))
 
     def add_message(self, *args, **kwargs):

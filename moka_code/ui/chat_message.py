@@ -478,6 +478,13 @@ class Message:
         self.collapsible = isinstance(msg_type, (msg_types.ThinkingMsg, msg_types.CompactionMsg))
         # The folded line of a compaction (``compaction.compaction_view``).
         self.fold_label: Optional[str] = None
+        # A user message sent from a ``!name`` call (``prompts.Expansion``):
+        # folded, it shows the call, a rule and the user's own text.
+        self.prompt = None
+        self.prompt_folded = False
+        self._prompt_rules: tuple[str, ...] = ()
+        # Lines shown under a user message's text (its attached images).
+        self.attachment_lines: list[str] = []
         # Live wait-phase label for a collapsible status message (e.g.
         # "processing", "thinking"); rendered collapsed while in flight.
         self.status_phase: Optional[str] = None
@@ -571,11 +578,12 @@ class Message:
         The exposed set is deliberately small (copy/output/permission); actions
         that alter or remove conversation state live behind commands.
         """
+        fold = [MsgAction.PROMPT] if self.prompt is not None else []
         if self.is_queued:
-            return [MsgAction.EDIT, MsgAction.CANCEL, MsgAction.COPY]
+            return [MsgAction.EDIT, MsgAction.CANCEL, *fold, MsgAction.COPY]
         if isinstance(self.type, msg_types.UserMsg) and self.harness_message_ids:
-            return [MsgAction.EDIT, MsgAction.COPY]
-        return list(self.type.actions)
+            return [MsgAction.EDIT, *fold, MsgAction.COPY]
+        return [*fold, *self.type.actions]
 
     def set_queued(self, position: Optional[int]) -> None:
         """Mark this user message as waiting in the queue (``position`` 1 is next),
@@ -692,6 +700,31 @@ class Message:
             self.layout_revision += 1
             self._apply_thought_colors()
             self.box.mark_changed()
+
+    def set_prompt_folded(self, folded: bool) -> None:
+        """Show a ``!prompt`` message folded (the call, a rule, the user's own
+        text) or unfolded (the prompt as sent, between rules)."""
+        prompt = self.prompt
+        self.prompt_folded = folded
+        count = len(prompt.prompt.splitlines())
+        rule = f"── {prompt.name} · {count} line{'' if count == 1 else 's'} ──"
+        self._prompt_rules = (rule, "──")
+        lines = [prompt.call, rule]
+        if not folded:
+            lines += [prompt.prompt, "──"]
+        if prompt.rest:
+            lines.append(prompt.rest)
+        self.base_text = "\n".join(lines + self.attachment_lines)
+        self._reveal_len = len(self.base_text)
+        self._render_revealed()
+
+    def prompt_rule_spans(self, line: str) -> list[tuple[int, int, Any]]:
+        """The fold rules of a ``!prompt`` message, muted."""
+        stripped = line.strip()
+        if stripped and stripped in self._prompt_rules:
+            start = line.index(stripped)
+            return [(start, start + len(stripped), theme.MUTED)]
+        return []
 
     @property
     def trailing_blank_row(self) -> bool:
