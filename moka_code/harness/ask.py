@@ -14,6 +14,12 @@ NAME = "ask"
 MAX_OPTIONS = 6
 MAX_LABEL = 12
 
+# What ``result`` tells the model (a replayed transcript reads them back).
+DISMISSED = "The user dismissed the question without answering."
+UNANSWERED = "The user left this question unanswered."
+PICKED = "The user picked: "
+WROTE = "The user wrote: "
+
 
 def parse(call_id: str, args: Any) -> Union[events.Question, str]:
     """The question an ``ask`` call holds, or why its arguments are invalid."""
@@ -59,12 +65,12 @@ def group(tool_calls: List[Dict[str, Any]], start: int) -> List[events.Question]
 def result(answer: Optional[events.Answer], dismissed: bool) -> Tuple[str, str]:
     """``(outcome, text for the model)`` for one question."""
     if dismissed:
-        return "cancelled", "The user dismissed the question without answering."
+        return "cancelled", DISMISSED
     if answer is None or not (answer.choices or answer.text.strip()):
-        return "completed", "The user left this question unanswered."
+        return "completed", UNANSWERED
     lines = []
     if answer.choices:
-        lines.append("The user picked: " + ", ".join(answer.choices))
+        lines.append(PICKED + ", ".join(answer.choices))
     if answer.text.strip():
-        lines.append("The user wrote: " + answer.text.strip())
+        lines.append(WROTE + answer.text.strip())
     return "completed", "\n".join(lines)

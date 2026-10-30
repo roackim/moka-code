@@ -9,10 +9,13 @@ from typing import Any, Dict, List
 
 from .base import ChatUIProtocol, stop_before
 from moka_code import prompts
+from moka_code.harness import ask
 from moka_code.harness.compaction import is_marker as _is_marker
 from moka_code.ui.chat_message import thought_worth_showing
+from moka_code.ui.question_form import answer_from_result, record_line
 from moka_code.ui.tui.msg_types import (
     AssistantMsg,
+    QuestionMsg,
     SysMsg,
     SysMsgError,
     SysMsgWarning,
@@ -215,6 +218,46 @@ def _with_compaction_lines(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
             ui.chat_history_panel.add_compaction(history, marker_id)
 
 
+def _show_asks(record) -> None:
+    lines = [record_line(question, answer, answered)
+             for _id, question, answer, answered in record.asked]
+    record.replace_text("\n".join(line for line, _spans in lines))
+    record.set_line_spans(lines)
+
+
+def _add_ask(ui: ChatUIProtocol, call_id: str, arguments, record):
+    """Replay an ``ask`` call as the live form's record: a ``question →
+    answer`` line, "stopped" until its result says otherwise. Returns the
+    record the next adjacent ask joins."""
+    try:
+        question = ask.parse(call_id, json.loads(arguments or "{}"))
+    except (json.JSONDecodeError, TypeError):
+        return record
+    if isinstance(question, str):
+        return record   # invalid arguments: the model got an error, no form was shown
+    if record is None:
+        record = ui.chat_history_panel.add_message("", msg_type=QuestionMsg())
+        record.asked = []
+    record.asked.append((call_id, question.question, "stopped", False))
+    if call_id:
+        record.harness_message_ids.append(call_id)
+    _show_asks(record)
+    return record
+
+
+def _answer_ask(ui: ChatUIProtocol, call_id: str, content: str) -> bool:
+    """Fill the replayed record of ``ask`` call ``call_id`` from its result."""
+    for record in reversed(ui.chat_history_panel.messages):
+        asked = getattr(record, "asked", None)
+        if not asked or not call_id or call_id not in record.harness_message_ids:
+            continue
+        record.asked = [(cid, q, *answer_from_result(content)) if cid == call_id
+                        else (cid, q, a, ok) for cid, q, a, ok in asked]
+        _show_asks(record)
+        return True
+    return False
+
+
 def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
     """Reconstruct visible messages from imported harness history.
 
@@ -247,11 +290,16 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
                 think.finalize()
             if content:
                 _add_answer(ui, content, ids)
+            record = None   # adjacent ask calls share one record, as live
             for tool_call in message.get("tool_calls", []):
                 if not isinstance(tool_call, dict) or "function" not in tool_call:
                     continue
                 function = tool_call["function"]
                 tool_call_id = tool_call.get("id", "")
+                if function.get("name") == ask.NAME:
+                    record = _add_ask(ui, tool_call_id, function.get("arguments"), record)
+                    continue
+                record = None
                 tool_message = ui.chat_history_panel.add_message(
                     "", msg_type=ToolCallMsg(),
                     harness_message_ids=[tool_call_id] if tool_call_id else None)
@@ -263,6 +311,8 @@ def _rebuild_ui_from_history(ui: ChatUIProtocol, history: List[Dict[str, Any]]):
                 tool_message.finalize()
         elif role == "tool" and content:
             tool_call_id = message.get("tool_call_id", "")
+            if _answer_ask(ui, tool_call_id, content):
+                continue
             found = False
             for existing in reversed(ui.chat_history_panel.messages):
                 if (isinstance(existing.type, ToolCallMsg)

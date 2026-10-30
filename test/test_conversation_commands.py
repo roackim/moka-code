@@ -231,6 +231,40 @@ def test_import_splits_answers_like_live_ones(tmp_path):
     assert kinds == ["text", "code"]
 
 
+def test_import_replays_ask_calls_as_the_form_record():
+    """2026-10-30: replayed ``ask`` calls are the live form's folded record
+    (adjacent calls in one, answers read back from their results), not raw
+    tool lines."""
+    from moka_code.harness import ask
+    from moka_code.ui.chat_history_panel import ChatHistoryPanel
+    from moka_code.ui.commands.conversation import _rebuild_ui_from_history
+    from moka_code.ui.tui.colors import theme
+    from moka_code.ui.tui.msg_types import QuestionMsg
+
+    def call(cid, question):
+        return {"id": cid, "function": {"name": "ask", "arguments": json.dumps(
+            {"question": question, "options": ["SQLite", "Postgres"]})}}
+
+    ui = FakeUI()
+    ui.chat_history_panel = ChatHistoryPanel()
+    _rebuild_ui_from_history(ui, [
+        {"id": "u", "role": "user", "content": "q"},
+        {"id": "a", "role": "assistant", "content": None,
+         "tool_calls": [call("q1", "Which database?"), call("q2", "Name?"), call("q3", "Why?")]},
+        {"role": "tool", "tool_call_id": "q1", "content": ask.PICKED + "SQLite"},
+        {"role": "tool", "tool_call_id": "q2", "content": ask.WROTE + "moka"},
+        {"role": "tool", "tool_call_id": "q3", "content": ask.DISMISSED},
+    ])
+
+    messages = ui.chat_history_panel.messages
+    assert not any(m.is_tool_message() for m in messages)
+    [record] = [m for m in messages if isinstance(m.type, QuestionMsg)]
+    assert record.base_text.splitlines() == [
+        "Which database? → SQLite", "Name? → ✎ moka", "Why? → dismissed"]
+    spans = record.component.highlighter("Which database? → SQLite")
+    assert spans[0][2] is theme.PERMISSION and spans[-1][2] is theme.USER_TEXT
+
+
 def test_import_rebuilds_system_notices(tmp_path):
     """Role/sandbox change notices stored in history are shown on replay, not
     silently dropped (they are how a resumed conversation shows what changed)."""

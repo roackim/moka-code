@@ -793,8 +793,8 @@ default; palette name or `#rrggbb`, resolved by `colors.resolve_color`;
 `Message._apply_thought_colors` re-applies them on fold, theme switch and reload).
 
 Bullets: `ui.user_bullet`, `answer_bullet`, `thought_bullet`, `tool_bullet`
-(calls and output), `ask_bullet` (questions and permissions), all `true` by
-default. Focus is drawn by the panel (below). Unfocused, a message of
+(calls and output), `ask_bullet` (questions and permissions); by default
+user, answer and ask are `true`, thought and tool `false`. Focus is drawn by the panel (below). Unfocused, a message of
 these types shows `ui.bullet` (default `•`) on its first row, or nothing when
 its toggle is `false` (`MessageView.bullet`: glyph, `""` for nothing, `None`
 for a type that keeps its gutter, such as system lines; set by
@@ -802,7 +802,7 @@ for a type that keeps its gutter, such as system lines; set by
 Contiguous answer blocks (the segments of a split answer) show the bullet on
 the first only: the render loop sets `MessageView.bullet_continued` from
 `_continues_answer`.
-Below the bullet, unfocused, `ui.wall_char` (default `│`, `""`/`" "` = none)
+Below the bullet, unfocused, `ui.wall_char` (default `" "`: none; `""`/`" "` = none)
 runs down the message in `MUTED` (`MessageView.wall`), the whole height of a
 continued block. Focused, the panel draws `ui.focus_wall_char` (default `┃`)
 on every row in `FOCUSED`, bullet included (a one-line message must still read
@@ -1169,4 +1169,11 @@ and before Esc-stops-the-turn:
   closes it as `stopped` (`close_form` from the presenter's `finally`).
 
 The action line shows `QuestionForm.hint()`. Once closed, a `QuestionMsg` in the
-transcript records one `? question → answer` line per question.
+transcript records one `question → answer` line per question: the question in
+`PERMISSION` (the form's color), `→` in `MUTED`, the answer in `USER_TEXT`
+(`MUTED` when dismissed or stopped). `question_form.record_line` gives a line
+and its spans by theme color name; `Message.set_line_spans` maps them onto the
+wrapped rows (`wrapped_spans`), so they survive wrapping and a theme switch.
+On `/import` / resume, `ask` calls replay as the same record (adjacent calls in
+one; `answer_from_result` reads the answer back from the stored result, using
+`harness.ask`'s `PICKED` / `WROTE` / `DISMISSED` texts), not as tool lines.

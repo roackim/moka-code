@@ -120,9 +120,9 @@ def test_a_form_is_filled_question_by_question_then_sent_all_at_once():
     assert ui.question_form is None
     assert not ui.compositor or ui.question_menu not in ui.compositor.overlays
     assert ui.chat_history_panel.messages[-1].base_text.splitlines() == [
-        "? Which database? → SQLite",
-        "? Which tests? → unit, slow · ✎ on CI",
-        "? Name? → ✎ moka",
+        "Which database? → SQLite",
+        "Which tests? → unit, slow · ✎ on CI",
+        "Name? → ✎ moka",
     ]
     assert ui.action_bar.hint.startswith("[/] command")
 
@@ -189,11 +189,36 @@ def test_escape_asks_before_dismissing_and_a_command_line_still_runs():
     assert ui.agent.answered == [None]
     assert ui.input_component.placeholder == ""
     assert ui.chat_history_panel.messages[-1].base_text.splitlines() == [
-        "? Which database? → dismissed", "? Name? → dismissed"]
+        "Which database? → dismissed", "Name? → dismissed"]
 
 
 def test_a_stopped_turn_folds_the_form_without_answering():
     ui, _, _ = _ui(DB)
     question_form.close_form(ui, "stopped")
     assert ui.agent.answered == []
-    assert ui.chat_history_panel.messages[-1].base_text == "? Which database? → stopped"
+    assert ui.chat_history_panel.messages[-1].base_text == "Which database? → stopped"
+
+
+def test_the_folded_record_colors_the_question_and_the_answer():
+    """2026-10-30: no ``?`` prefix; the question in the form's color
+    (PERMISSION), the answer in the user's, also on a wrapped row."""
+    from moka_code.ui.chat_message import Message, wrapped_spans
+    from moka_code.ui.tui.colors import theme
+    from moka_code.ui.tui.msg_types import QuestionMsg
+
+    ui, _, _ = _ui(DB)
+    lines = ui.question_form.folded_lines("dismissed")
+    line, spans = lines[0]
+    assert line == "Which database? → dismissed"
+    assert spans[0] == (0, len("Which database?"), "PERMISSION")
+    assert spans[-1][2] == "MUTED"                    # no answer: muted
+
+    logical = [("What is the name? → moka chat", [(0, 17, "ASSISTANT_TEXT"), (17, 20, "MUTED"),
+                                                  (20, 29, "USER_TEXT")])]
+    rows = wrapped_spans(logical, "What is the name?\n→ moka chat")
+    assert rows["What is the name?"] == [(0, 17, "ASSISTANT_TEXT")]
+    assert rows["→ moka chat"] == [(0, 2, "MUTED"), (2, 11, "USER_TEXT")]
+
+    msg = Message(logical[0][0], msg_type=QuestionMsg(), max_width=40)
+    msg.set_line_spans(logical)
+    assert msg.component.highlighter(logical[0][0])[-1] == (20, 29, theme.USER_TEXT)

@@ -193,4 +193,4 @@ def test_the_form_answers_the_harness_end_to_end(tmp_path, monkeypatch):
     messages = ui.chat_history_panel.messages
     assert not any(m.is_tool_message() for m in messages)
     [form] = [m for m in messages if isinstance(m.type, QuestionMsg)]
-    assert form.base_text == "? Which database? → SQLite\n? Name? → ✎ moka"
+    assert form.base_text == "Which database? → SQLite\nName? → ✎ moka"

@@ -13,7 +13,7 @@ one line per question. Esc first asks whether to dismiss them.
 
 from typing import Dict, List
 
-from moka_code.harness import events
+from moka_code.harness import ask, events
 from moka_code.ui.tui.colors import theme
 from moka_code.ui.tui.components.menu import SelectionMenu
 
@@ -23,6 +23,27 @@ PLACEHOLDER = "your own answer…"
 _KEEP, _DISMISS = "Keep answering", "Dismiss"
 # The only row of a question without options.
 _WRITE = "(type your answer below)"
+
+
+def record_line(question: str, answer: str, answered: bool) -> tuple:
+    """One ``question → answer`` line of the transcript record and its spans
+    (theme color names): the question in the form's color, ``→`` muted, the
+    answer in the user's text color (muted when there is none)."""
+    q = len(question)
+    line = f"{question} → {answer}"
+    return line, [(0, q, "PERMISSION"), (q, q + 3, "MUTED"),
+                  (q + 3, len(line), "USER_TEXT" if answered else "MUTED")]
+
+
+def answer_from_result(text: str) -> tuple:
+    """``(answer, answered)`` read back from a stored ``ask`` result
+    (``harness.ask.result``), as the live form would have folded it."""
+    if text.startswith(ask.DISMISSED):
+        return "dismissed", False
+    lines = text.splitlines()
+    picked = [line[len(ask.PICKED):] for line in lines if line.startswith(ask.PICKED)]
+    wrote = [f"✎ {line[len(ask.WROTE):]}" for line in lines if line.startswith(ask.WROTE)]
+    return " · ".join(picked + wrote) or "— no answer", True
 
 
 class QuestionForm:
@@ -182,10 +203,14 @@ class QuestionForm:
     def folded(self, outcome: str) -> str:
         """One line per question once the form is closed; ``outcome`` is
         ``"sent"``, ``"dismissed"`` or ``"stopped"``."""
-        return "\n".join(
-            f"? {question.question} → "
-            + (self.summary(i) if outcome == "sent" else outcome)
-            for i, question in enumerate(self.items))
+        return "\n".join(line for line, _spans in self.folded_lines(outcome))
+
+    def folded_lines(self, outcome: str) -> list:
+        """``folded``'s lines with their spans (``record_line``)."""
+        return [record_line(question.question,
+                            self.summary(i) if outcome == "sent" else outcome,
+                            answered=outcome == "sent")
+                for i, question in enumerate(self.items)]
 
     def hint(self, typing: bool = False) -> str:
         """The action line while the form is open."""
@@ -253,7 +278,8 @@ def close_form(app, outcome: str) -> None:
         app.input_component._own_menus.remove(menu)
     app.input_component.placeholder = ""
     app.input_box.mark_changed()
-    app.chat_history_panel.add_message(form.folded(outcome), msg_type=QuestionMsg())
+    record = app.chat_history_panel.add_message(form.folded(outcome), msg_type=QuestionMsg())
+    record.set_line_spans(form.folded_lines(outcome))
     if outcome != "stopped":
         app.agent.answer_questions(form.answers() if outcome == "sent" else None)
     app._update_action_strip()

@@ -199,6 +199,30 @@ def reference_spans(line: str) -> list[tuple[int, int, Any]]:
     return [(m.start(), m.end(), theme.FOCUSED) for m in _REFERENCE_RE.finditer(line)]
 
 
+def wrapped_spans(logical: list, formatted: str) -> dict:
+    """Spans per wrapped row of ``formatted``, from spans over its unwrapped
+    lines: ``logical`` pairs each line with ``(start, end, color)`` spans. A
+    row starts where it is found in its line (wrapping only cuts at spaces)."""
+    spans_of: dict = {}
+    rows = iter(formatted.split("\n"))
+    for text, spans in logical:
+        pos = 0
+        while pos < len(text):
+            row = next(rows, None)
+            if row is None:
+                return spans_of
+            start = text.find(row, pos)
+            if not row or start < 0:
+                break
+            end = start + len(row)
+            spans_of[row] = [(max(s, start) - start, min(e, end) - start, color)
+                             for s, e, color in spans if s < end and e > start]
+            pos = end
+            while pos < len(text) and text[pos] == " ":
+                pos += 1
+    return spans_of
+
+
 def thought_worth_showing(reasoning: str) -> bool:
     """Whether reasoning earns its own transcript line (``ui.thought_min_tokens``).
 
@@ -718,6 +742,22 @@ class Message:
         # permission prompt would show just its header.
         if changed and self.is_tool_message():
             self.rebuild_tool_display()
+
+    def set_line_spans(self, logical: list) -> None:
+        """Color parts of this plain message: ``logical`` pairs each line of
+        its text with ``(start, end, color name)`` spans, which follow the line
+        through wrapping and the theme through a switch."""
+        cache: dict = {}
+
+        def highlight(line: str) -> list:
+            if cache.get("text") is not self.formatted_text:
+                cache["text"] = self.formatted_text
+                cache["spans"] = wrapped_spans(logical, self.formatted_text)
+            return [(s, e, getattr(theme, name, theme.DEFAULT))
+                    for s, e, name in cache["spans"].get(line, [])]
+
+        self.component.highlighter = highlight
+        self.box.mark_changed()
 
     def set_collapsed(self, collapsed: bool):
         """Fold/unfold this message to a single summary line.

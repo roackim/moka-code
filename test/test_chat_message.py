@@ -106,7 +106,7 @@ def test_thinking_line_ticks_and_previews_then_summarizes(monkeypatch):
     done = row()
     assert "thought for 4.2s" in done
     assert "parser" not in done
-    assert "•" in done
+    assert done.startswith(" ")   # thought_bullet is off by default: no marker
 
 def test_empty_message_keeps_minimum_row():
     """An empty message must not collapse to zero rows.

@@ -255,13 +255,13 @@ DEFAULT_UI_TOML = f"""\
 ## Unfocused, a message shows the bullet on its first row (nothing when its
 ## type's toggle is false) and a muted wall below it; focused, a thick wall.
 # bullet = "•"                          # the unfocused marker
-# wall_char = "│"                       # muted line below the bullet ("" or " " = none)
+# wall_char = " "                       # muted line below the bullet ("" or " " = none)
 # focus_wall_char = "┃"                 # focused: every row, in the focus color
 # code_prefix = "│  "                   # muted, before every row of a code block ("" = none)
 # user_bullet = true                    # your messages
 # answer_bullet = true                  # answers
-# thought_bullet = true                 # thoughts
-# tool_bullet = true                    # tool lines and their output
+# thought_bullet = false                # thoughts
+# tool_bullet = false                   # tool lines and their output
 # ask_bullet = true                     # questions and permission prompts
 # thought_gap = true                    # blank lines between a thought and what follows it
 # tool_gap = false                      # blank lines between tool lines
@@ -415,13 +415,13 @@ _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
     "thought_color": ("ui_thought_color", "color", "MUTED"),
     "thought_expanded_color": ("ui_thought_expanded_color", "color", "MUTED"),
     "bullet": ("ui_bullet", "str", "•"),
-    "wall_char": ("ui_wall_char", "str", "│"),
+    "wall_char": ("ui_wall_char", "str", " "),
     "focus_wall_char": ("ui_focus_wall_char", "str", "┃"),
     "code_prefix": ("ui_code_prefix", "str", "│  "),
     "user_bullet": ("ui_user_bullet", "bool", True),
     "answer_bullet": ("ui_answer_bullet", "bool", True),
-    "thought_bullet": ("ui_thought_bullet", "bool", True),
-    "tool_bullet": ("ui_tool_bullet", "bool", True),
+    "thought_bullet": ("ui_thought_bullet", "bool", False),
+    "tool_bullet": ("ui_tool_bullet", "bool", False),
     "ask_bullet": ("ui_ask_bullet", "bool", True),
     "thought_gap": ("ui_thought_gap", "bool", True),
     "tool_gap": ("ui_tool_gap", "bool", False),
