@@ -129,14 +129,21 @@ class MessageSelection:
     # -- highlight overlay --------------------------------------------
 
     def render(self, buffer, start_y: int) -> None:
-        """Reverse the selected cells; ``start_y`` is the first visible row."""
+        """Reverse the selected cells; ``start_y`` is the first visible row.
+        Trailing blanks stay as they are, like the copy that drops them."""
         if not self.has_selection:
             return
         panel = self.panel
-        for row, cells, _box_left, lo, hi in self._spans():
+        for row, cells, box_left, lo, hi in self._spans():
             y = panel.y + row - start_y
             if cells is None or not (panel.y <= y < panel.y + panel.height) or y >= buffer.height:
                 continue
+            while hi >= lo:
+                x = hi - box_left
+                if 0 <= x < len(cells) and (cells[x].char.strip()
+                                            or cells[x].is_wide_char_continuation):
+                    break
+                hi -= 1
             for col in range(lo, hi + 1):
                 x = panel.x + col
                 if 0 <= x < buffer.width:

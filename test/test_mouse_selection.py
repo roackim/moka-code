@@ -80,6 +80,18 @@ def test_drag_copies_exactly_the_cells_under_the_pointer(copied):
     assert not any(cell.reverse for cell in buffer.cells[y])
 
 
+def test_highlight_stops_at_the_text_not_the_fill(copied):
+    """2026-10-30: a row's blank fill after its text is not reversed (the copy
+    drops it too); spaces between words still are."""
+    panel, buffer = _panel(("a short one\nand a longer second line", UserMsg))
+    y0, x0 = _row_of(buffer, "a short one")
+    y1, _ = _row_of(buffer, "and a longer")
+    _drag(panel, (x0, y0), (W - 1, y1), copy=False)
+    buffer = _render(panel)
+    reversed_cols = [x for x in range(W) if buffer.cells[y0][x].reverse]
+    assert reversed_cols == list(range(x0, x0 + len("a short one")))
+
+
 def test_first_row_of_a_message_is_selectable(copied):
     panel, buffer = _panel(("only row", UserMsg))
     y, x = _row_of(buffer, "only row")
