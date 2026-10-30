@@ -60,3 +60,41 @@ def test_thought_colors_follow_the_fold(monkeypatch):
     msg.set_collapsed(True)
     assert msg.box.gutter_color is theme.WARNING
     assert rgb(msg.component.fg) == (0x11, 0x22, 0x33)
+
+
+def _first_column(msg):
+    from moka_code.ui.tui.buffer import Buffer
+    box = msg.get_component()
+    height = box.get_preferred_height(12)
+    box.set_layout(0, 0, 12, height)
+    buf = Buffer(12, height)
+    box.render(buf)
+    return [row[0].char for row in buf.cells]
+
+
+def test_bullet_stands_for_the_bar_until_focused(monkeypatch):
+    """2026-10-30: unfocused, a message shows ``ui.bullet`` on its first row, or
+    nothing with its ``ui.<type>_bullet`` off; the bar is for the focused one."""
+    monkeypatch.setattr(settings.config, "ui_bullet", "*")
+    monkeypatch.setattr(settings.config, "ui_answer_bullet", True)
+    monkeypatch.setattr(settings.config, "ui_user_bullet", False)
+    answer = Message("one two three four five six", msg_type=AssistantMsg(), max_width=10)
+    user = Message("q", msg_type=UserMsg(), max_width=10)
+    assert _first_column(answer) == ["*", " ", " "]
+    assert _first_column(user) == [" "]
+
+    answer.set_focused(True)
+    assert _first_column(answer) == ["▌"] * 3
+
+
+def test_contiguous_answer_blocks_bullet_only_the_first():
+    """2026-10-30: the segments of a split answer touch; only the first shows
+    ``ui.bullet``. An answer after a gap gets its own."""
+    from moka_code.ui.chat_history_panel import _continues_answer
+
+    split = [Message("a", msg_type=AssistantMsg()), Message("b", msg_type=AssistantMsg())]
+    split[0].group = split[1].group = object()
+    turn = [Message("q", msg_type=UserMsg()), *split,
+            Message("t", msg_type=ToolCallMsg()), Message("c", msg_type=AssistantMsg())]
+    assert [_continues_answer(turn, i) for i in range(len(turn))] == [
+        False, False, True, False, False]

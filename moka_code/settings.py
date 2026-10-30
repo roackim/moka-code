@@ -242,6 +242,14 @@ DEFAULT_UI_TOML = f"""\
 # thought_min_tokens = 0                # hide shorter reasoning lines (0 = show all)
 # thought_color = "MUTED"               # folded thought line and its bar (palette name or #rrggbb)
 # thought_expanded_color = "MUTED"      # unfolded thought text and its bar
+## The bar shows on the focused message only; unfocused, a message shows
+## the bullet on its first row, or nothing when its type's toggle is false.
+# bullet = "•"                          # the unfocused marker
+# user_bullet = true                    # your messages
+# answer_bullet = true                  # answers
+# thought_bullet = true                 # thoughts
+# tool_bullet = true                    # tool lines and their output
+# ask_bullet = true                     # questions and permission prompts
 # thought_gap = true                    # blank lines between a thought and what follows it
 # tool_gap = false                      # blank lines between tool lines
 # stack_activity = true                 # with thought_gap: no blank line between a thought and a tool line
@@ -392,6 +400,12 @@ _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
     "thought_min_tokens": ("ui_thought_min_tokens", "int", 0),
     "thought_color": ("ui_thought_color", "color", "MUTED"),
     "thought_expanded_color": ("ui_thought_expanded_color", "color", "MUTED"),
+    "bullet": ("ui_bullet", "str", "•"),
+    "user_bullet": ("ui_user_bullet", "bool", True),
+    "answer_bullet": ("ui_answer_bullet", "bool", True),
+    "thought_bullet": ("ui_thought_bullet", "bool", True),
+    "tool_bullet": ("ui_tool_bullet", "bool", True),
+    "ask_bullet": ("ui_ask_bullet", "bool", True),
     "thought_gap": ("ui_thought_gap", "bool", True),
     "tool_gap": ("ui_tool_gap", "bool", False),
     "stack_activity": ("ui_stack_activity", "bool", True),
@@ -459,6 +473,8 @@ _RETIRED_UI: set[str] = {  # nothing read these: spinner (elapsed-time labels), 
     # Replaced by the status_bar template.
     "status_bar_fields", "status_bar_separator", "show_provider", "provider_separator",
     "show_effort", "effort_separator", "sandbox_glyph", "sandbox_prefix",
+    # Replaced by bullet and the per-type *_bullet toggles.
+    "thought_bar", "answer_bar",
 }
 # preserve_reasoning_traces: reasoning is no longer sent back (PLAN.md step 2).
 _RETIRED_CONTEXT: set[str] = {"preserve_reasoning_traces", "format"}  # format: the project tree was never sent

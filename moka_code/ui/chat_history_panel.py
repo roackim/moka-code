@@ -12,7 +12,7 @@ from moka_code.ui.tui.events import MouseEvent, TickEvent
 from moka_code import settings
 from moka_code.ui.message_selection import MessageSelection
 from moka_code.ui.tui.colors import theme, RGB
-from moka_code.ui.tui.msg_types import MsgType, MsgAction, ThinkingMsg, UserMsg
+from moka_code.ui.tui.msg_types import AssistantMsg, MsgType, MsgAction, ThinkingMsg, UserMsg
 
 from moka_code.ui.chat_message import Message, reference_spans
 
@@ -81,6 +81,15 @@ def _gap_before(messages: list, i: int) -> bool:
         following = next((m for m in messages[i + 1:] if not _is_thought(m)), None)
         return _needs_gap(prev, following)
     return _needs_gap(prev, msg)
+
+
+def _continues_answer(messages: list, i: int) -> bool:
+    """Answer block ``i`` touches the answer block above it (the segments of a
+    split answer): only the first of them shows ``ui.bullet``."""
+    def answer(m: Message) -> bool:
+        return type(m.type) is AssistantMsg
+    return (i > 0 and answer(messages[i]) and answer(messages[i - 1])
+            and not _gap_before(messages, i))
 
 
 class ChatHistoryPanel(TextComponent):
@@ -773,6 +782,10 @@ class ChatHistoryPanel(TextComponent):
             child_h = ends[i] - starts[i]
             child_y = self.y - start_y + starts[i]
 
+            continued = _continues_answer(self.messages, i)
+            if child.bullet_continued != continued:
+                child.bullet_continued = continued
+                child.mark_changed()
             child.set_layout(self.x + msg.left_margin, child_y, child_w, child_h)
             child.render(buffer)
 

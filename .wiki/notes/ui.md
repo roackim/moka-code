@@ -791,6 +791,17 @@ Thought colors: `ui.thought_color` colors the folded line and its bar,
 `ui.thought_expanded_color` the unfolded text and its bar (both `MUTED` by
 default; palette name or `#rrggbb`, resolved by `colors.resolve_color`;
 `Message._apply_thought_colors` re-applies them on fold, theme switch and reload).
+
+Bullets: `ui.user_bullet`, `answer_bullet`, `thought_bullet`, `tool_bullet`
+(calls and output), `ask_bullet` (questions and permissions), all `true` by
+default. The bar shows only on the focused message. Unfocused, a message of
+these types shows `ui.bullet` (default `•`) on its first row, or nothing when
+its toggle is `false` (`MessageView.bullet`: glyph, `""` for nothing, `None`
+for a type that keeps its gutter, such as system lines; set by
+`Message._apply_bullet` at construction and on theme switch and reload).
+Contiguous answer blocks (the segments of a split answer) show the bullet on
+the first only: the render loop sets `MessageView.bullet_continued` from
+`_continues_answer`.
 `ChatHistoryPanel` is the owner of the message list — it handles layout,
 selection, scrolling, and width-change reformatting.
 

@@ -543,6 +543,27 @@ class Message:
             ),
         )
         self._apply_thought_colors()
+        self._apply_bullet()
+
+    def _apply_bullet(self) -> None:
+        """Unfocused, a bar type shows ``ui.bullet`` on its first row, or
+        nothing with ``ui.<type>_bullet`` off; the bar is for focus. Other
+        types (system lines, compaction) keep their gutter."""
+        t = self.type
+        if isinstance(t, msg_types.UserMsg):
+            on = settings.config.ui_user_bullet
+        elif isinstance(t, msg_types.ThinkingMsg):
+            on = settings.config.ui_thought_bullet
+        elif isinstance(t, msg_types.AssistantMsg):
+            on = settings.config.ui_answer_bullet
+        elif isinstance(t, (msg_types.ToolCallMsg, msg_types.ToolOutputMsg)):
+            on = settings.config.ui_tool_bullet
+        elif isinstance(t, (msg_types.QuestionMsg, msg_types.AskPermissionMsg)):
+            on = settings.config.ui_ask_bullet
+        else:
+            self.box.bullet = None
+            return
+        self.box.bullet = settings.config.ui_bullet if on else ""
 
     def _apply_thought_colors(self) -> None:
         """A thought's bar and text: ``ui.thought_color`` folded,
@@ -665,6 +686,7 @@ class Message:
         self.box.bg = theme.get_bg()
         self.box.gutter_color = gutter_color
         self._apply_thought_colors()
+        self._apply_bullet()
         if self.is_tool_message():
             # The cached header/body carry colors of the previous theme.
             self._tool_display_cache_key = None

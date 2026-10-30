@@ -106,7 +106,7 @@ def test_thinking_line_ticks_and_previews_then_summarizes(monkeypatch):
     done = row()
     assert "thought for 4.2s" in done
     assert "parser" not in done
-    assert "▌" in done
+    assert "•" in done
 
 def test_empty_message_keeps_minimum_row():
     """An empty message must not collapse to zero rows.
@@ -156,7 +156,7 @@ def test_thread_render_smoke_text_message():
 
     joined = "\n".join(rows)
     assert "hello world" in joined
-    assert "▌" in joined  # heavy prefix bar (unfocused)
+    assert "•" in joined  # unfocused: the bullet (the bar is for focus)
 
 
 def test_thread_render_smoke_markdown_message():
@@ -169,7 +169,7 @@ def test_thread_render_smoke_markdown_message():
 
     joined = "\n".join(rows)
     assert "bold" in joined
-    assert "▌" in joined  # heavy prefix bar (unfocused)
+    assert "•" in joined  # unfocused: the bullet (the bar is for focus)
 
 def test_expanded_thought_has_no_trailing_blank_row():
     """2026-10-29: an expanded thought is as tall as its text (the blank row it

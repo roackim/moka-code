@@ -37,6 +37,11 @@ class MessageView(Box):
         self.gutter = gutter
         self.gutter_color = gutter_color
         self.full_height_gutter = gutter_full_height
+        # Unfocused, draw this glyph on the first row instead of the gutter
+        # ("" draws nothing); None keeps the gutter.
+        self.bullet: Optional[str] = None
+        # Continues the block above (set by the transcript): no bullet.
+        self.bullet_continued = False
         self.content_pad_left = max(0, content_pad_left)
         self.content_pad_right = max(0, content_pad_right)
         # Blank rows above and below the content (a code block's separation).
@@ -134,8 +139,11 @@ class MessageView(Box):
 
         # Draw the role gutter in the first column. User/assistant messages use a
         # full-height prefix bar (every row); status gutters stay on row 0.
+        bulleted = self.bullet is not None and not self.focused
+        if bulleted:
+            gutter = "" if self.bullet_continued else self.bullet
         if gutter and self.width > 0:
-            if self.full_height_gutter:
+            if self.full_height_gutter and not bulleted:
                 rows = range(start, self.height)
             else:
                 rows = (0,) if start == 0 else ()
