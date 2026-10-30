@@ -32,7 +32,7 @@ class SearchModal(SelectionMenu):
         self._on_highlight: Optional[Callable[[str], None]] = None
 
         # Same look as the /cmd and @ popups.
-        self.frame_color = theme.USER
+        self.frame_color = theme.FOCUSED
         self.content_color = theme.DEFAULT
         self.fill_width = False
         self.min_width = 40  # enough room for the filter line and columns

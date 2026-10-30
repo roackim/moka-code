@@ -56,14 +56,28 @@ def test_empty_thought_stays_a_summary_when_focused():
     assert thought.collapsed is True
     assert thought._thinking_label() == "thought"
 
-def test_nonempty_thought_expands_when_focused():
+def test_a_thought_unfolds_with_o_not_on_focus():
+    """2026-10-30: focusing a thought only selects it; ``o`` unfolds it, like
+    a tool's output, and leaving folds it back."""
+    from types import SimpleNamespace
+    from moka_code.ui.chat_action_handlers import ChatActionHandlers
+    from moka_code.ui.tui.msg_types import MsgAction
+
     panel = _panel()
     thought = panel.add_message("reasoning text", msg_type=ThinkingMsg())
+    panel.add_message("answer", msg_type=AssistantMsg())
     thought.set_collapsed(True)
 
     panel.set_focused_message(0)
+    assert thought.collapsed is True
+    assert MsgAction.EXPAND in thought.get_active_actions()
 
+    ChatActionHandlers.handle_thought_action(SimpleNamespace(chat_history_panel=panel, _update_action_strip=lambda: None), thought)
     assert thought.collapsed is False
+    assert MsgAction.COLLAPSE in thought.get_active_actions()
+
+    panel.set_focused_message(1)
+    assert thought.collapsed is True
 
 
 def _gaps(*types):

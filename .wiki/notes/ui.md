@@ -423,7 +423,7 @@ picker) share **one** look, applied by `Completer._apply_selector_style()` in
 `input/completion.py`:
 
 - `set_fill_width(True)` — span the full screen width;
-- `frame_color = theme.USER` — accent frame;
+- `frame_color = theme.FOCUSED` — accent frame (the selected row is `FOCUSED` too; `USER` stays on the input and the user's turns);
 - `content_color = theme.DEFAULT` — normal suggestion text;
 - descriptions rendered as muted, right-aligned tails
   (`SelectionMenu.item_descriptions`, optionally a `footer` tag).
@@ -671,8 +671,8 @@ into it (focus shows the summary so far). On `Compacted` it becomes one muted
 rule, `─ compacted · 30 turns summarized, 9 kept · ~85k → ~12k tokens ───`; on
 `CompactionFailed`, an error, or a stop it is removed (`drop_live_compaction`)
 and the error goes to the activity overlay. A request's empty "waiting" thought
-is dropped when a compaction starts before it. The folded line folds like a
-thought: focused, it unfolds to what the model now sees, the summary (markdown)
+is dropped when a compaction starts before it. The folded line unfolds
+when focused (a thought waits for `o`): it unfolds to what the model now sees, the summary (markdown)
 then one line per kept turn, whose messages are above (`compaction.compaction_view`). On resume/import the
 marker is never drawn as an answer: its line comes after the marker's `until`
 entry, where it appeared live (`conversation._with_compaction_lines`).
@@ -819,7 +819,7 @@ frozen. There is no spinner: the label ticks (`Message._thinking_label`).
 - at the first content/tool boundary (`end_status_message()`): if the
   reasoning earns a line (`thought_worth_showing`: ≥ `ui.thought_min_tokens`,
   default 100, estimated at ~4 chars/token; `0` shows every non-empty thought)
-  it is finalized to `thought for Xs` (focus expands the reasoning); otherwise
+  it is finalized to `thought for Xs` (`o` on the focused thought unfolds the reasoning, `MsgAction.EXPAND` / `COLLAPSE` by state; leaving folds it); otherwise
   the line was only a wait indicator and is **removed**
   (`ChatHistoryPanel.remove_message`). Short reasoning stays in history and
   exports; `/import` applies the same threshold. A tool loop with little
@@ -1007,7 +1007,8 @@ every RGB palette against its background and black — DEFAULT and USER_TEXT
 WARNING, SUCCESS, HEADING, EMPHASIS, CODE ≥ 4.5:1; MUTED ≥ 3:1 and dimmer than
 DEFAULT; bars/markers ≥ 3:1 — the hues (ERROR red, WARNING amber, SUCCESS
 green), and that the user's turns and the answers tell apart: USER / ASSISTANT
-CIE76 ΔE ≥ 40, USER_TEXT / ASSISTANT_TEXT ΔE ≥ 10. In the RGB built-ins, USER_TEXT is the body text tinted toward USER
+CIE76 ΔE ≥ 40, USER_TEXT / ASSISTANT_TEXT ΔE ≥ 10; and FOCUSED (the selected
+row of a picker or menu, drawn among body text) ΔE ≥ 20 from DEFAULT. In the RGB built-ins, USER_TEXT is the body text tinted toward USER
 and ASSISTANT_TEXT a slightly dimmed (warmer where the theme allows) body
 text; `terminal` leaves both at the terminal's default fg.
 

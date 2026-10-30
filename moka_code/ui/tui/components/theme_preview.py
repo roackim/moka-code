@@ -105,14 +105,14 @@ class ThemePreview(Component):
             for xx in range(width):
                 buffer.set(x + xx, y + yy, " ", bg=bg)
 
-        buffer.set(x, y, "┌", fg=theme.USER, bg=bg)
-        buffer.set(x + width - 1, y, "┐", fg=theme.USER, bg=bg)
-        buffer.set(x, y + _HEIGHT - 1, "└", fg=theme.USER, bg=bg)
-        buffer.set(x + width - 1, y + _HEIGHT - 1, "┘", fg=theme.USER, bg=bg)
+        buffer.set(x, y, "┌", fg=theme.FOCUSED, bg=bg)
+        buffer.set(x + width - 1, y, "┐", fg=theme.FOCUSED, bg=bg)
+        buffer.set(x, y + _HEIGHT - 1, "└", fg=theme.FOCUSED, bg=bg)
+        buffer.set(x + width - 1, y + _HEIGHT - 1, "┘", fg=theme.FOCUSED, bg=bg)
         for i in range(1, width - 1):
-            buffer.set(x + i, y, "─", fg=theme.USER, bg=bg)
-            buffer.set(x + i, y + _HEIGHT - 1, "─", fg=theme.USER, bg=bg)
-        buffer.write_str(x + 2, y, f" theme: {theme.name} ", fg=theme.USER, bg=bg,
+            buffer.set(x + i, y, "─", fg=theme.FOCUSED, bg=bg)
+            buffer.set(x + i, y + _HEIGHT - 1, "─", fg=theme.FOCUSED, bg=bg)
+        buffer.write_str(x + 2, y, f" theme: {theme.name} ", fg=theme.FOCUSED, bg=bg,
                          max_width=max(0, width - 4))
 
         # Rows 1 and 2: a swatch over the word it names, in the same column.

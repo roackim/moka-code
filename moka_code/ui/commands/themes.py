@@ -75,7 +75,7 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
             apply_theme = getattr(modal, "apply_theme", None)
             if callable(apply_theme):
                 apply_theme()
-            modal.frame_color = theme.USER
+            modal.frame_color = theme.FOCUSED
             modal.content_color = theme.DEFAULT
 
     def _apply(name: str, persist: bool) -> None:

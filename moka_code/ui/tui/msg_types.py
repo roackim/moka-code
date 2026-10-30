@@ -17,6 +17,8 @@ class MsgAction(Enum):
     COPY = ("c", "copy")
     OUTPUT = ("o", "output")
     PROMPT = ("o", "prompt")    # ``!prompt`` message: fold/unfold the prompt
+    EXPAND = ("o", "expand")    # folded thought: unfold the reasoning
+    COLLAPSE = ("o", "collapse")  # unfolded thought: fold it back
     KILL = ("k", "kill")        # running bash call: kill it, the turn goes on
     ALLOW = ("a", "allow")
     DENY = ("x", "deny")

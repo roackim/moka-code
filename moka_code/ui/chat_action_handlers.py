@@ -170,6 +170,15 @@ class ChatActionHandlers:
         if message in panel.messages:
             panel._scroll_to_show_message(panel.messages.index(message), prefer_top=True)
 
+    def handle_thought_action(self, message):
+        """``o`` on a thought: unfold the reasoning, or fold it back (leaving
+        the thought folds it too)."""
+        message.set_collapsed(not message.collapsed)
+        panel = self.chat_history_panel
+        if message in panel.messages:
+            panel._scroll_to_show_message(panel.messages.index(message), prefer_top=True)
+        self._update_action_strip()  # expand <-> collapse
+
     def handle_kill_action(self, message):
         """``k`` on a running bash call: kill it; the model gets a cancelled
         result and the turn goes on (Esc stops the whole turn)."""

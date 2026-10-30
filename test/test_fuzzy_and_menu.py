@@ -45,7 +45,7 @@ def test_menu_selection_is_bold_accent_not_reverse():
     assert selected.char == "b"
     assert selected.reverse is False
     assert selected.bold is True
-    assert selected.fg == theme.USER
+    assert selected.fg == theme.FOCUSED
     assert unselected.fg == theme.DEFAULT
 
 

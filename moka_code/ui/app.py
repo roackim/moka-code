@@ -622,6 +622,8 @@ class chatTUI(ChatActionHandlers):
             MsgAction.COPY: self.handle_copy_action,
             MsgAction.OUTPUT: self.handle_output_action,
             MsgAction.PROMPT: self.handle_prompt_action,
+            MsgAction.EXPAND: self.handle_thought_action,
+            MsgAction.COLLAPSE: self.handle_thought_action,
             MsgAction.KILL: self.handle_kill_action,
             MsgAction.ALLOW: self.handle_allow_action,
             MsgAction.DENY: self.handle_deny_action,

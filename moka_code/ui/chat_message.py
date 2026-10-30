@@ -600,6 +600,8 @@ class Message:
         that alter or remove conversation state live behind commands.
         """
         fold = [MsgAction.PROMPT] if self.prompt is not None else []
+        if isinstance(self.type, msg_types.ThinkingMsg) and (self.base_text or "").strip():
+            fold = [MsgAction.EXPAND if self.collapsed else MsgAction.COLLAPSE]
         if self.is_queued:
             return [MsgAction.EDIT, MsgAction.CANCEL, *fold, MsgAction.COPY]
         if isinstance(self.type, msg_types.UserMsg) and self.harness_message_ids:

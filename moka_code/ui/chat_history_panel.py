@@ -226,11 +226,12 @@ class ChatHistoryPanel(TextComponent):
             current = self.messages[index]
             for msg in ([current] if inside else self.messages[start:end]):
                 msg.set_focused(True)
-            # Collapsible messages (thinking) expand when focused — but only
-            # when there is text to reveal: an empty thought stays a summary
-            # line instead of collapsing to a bare prefix.
+            # The compaction line unfolds when focused (a thought waits for
+            # ``o``) — only with text to reveal, so it never shrinks to a bare
+            # prefix.
             if (hasattr(current, "set_collapsed")
                     and getattr(current, "collapsible", False)
+                    and not isinstance(current.type, ThinkingMsg)
                     and (current.base_text or "").strip()):
                 current.set_collapsed(False)
             # Disable auto-scroll when focusing a message, UNLESS it's the last message

@@ -18,7 +18,7 @@ def test_argument_menu_matches_the_shared_selector_style():
     comp = ArgumentCompletion(SelectionMenu(), _registry())
 
     assert comp.menu.fill_width is True
-    assert comp.menu.frame_color == theme.USER
+    assert comp.menu.frame_color == theme.FOCUSED
     assert comp.menu.content_color == theme.DEFAULT
 
 

@@ -62,7 +62,7 @@ class SelectionMenu(Component):
         self.frame_color = frame_color if frame_color is not None else theme.DEFAULT
         self.content_color = content_color if content_color is not None else self.frame_color
         # Color of the selected row (falls back to the frame color).
-        self.highlight_color = theme.USER
+        self.highlight_color = theme.FOCUSED
         self.bg = theme.get_bg()
         self.left_pad = left_pad
         self.right_pad = right_pad
@@ -109,7 +109,7 @@ class SelectionMenu(Component):
         """Re-resolve theme-derived colors after a theme switch."""
         self.frame_color = theme.DEFAULT
         self.content_color = self.frame_color
-        self.highlight_color = theme.USER
+        self.highlight_color = theme.FOCUSED
         self.footer_color = theme.SUCCESS
         self.bg = theme.get_bg()
         self.mark_changed()

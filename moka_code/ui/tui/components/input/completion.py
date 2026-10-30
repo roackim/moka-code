@@ -120,7 +120,7 @@ class Completer:
         if callable(apply_theme):
             apply_theme()
         self.menu.set_fill_width(True)
-        self.menu.frame_color = theme.USER
+        self.menu.frame_color = theme.FOCUSED
         self.menu.content_color = theme.DEFAULT
 
     def refresh_theme(self) -> None:

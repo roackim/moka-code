@@ -224,7 +224,7 @@ def test_modal_refresh_theme():
         assert popup.frame_color == colors.theme.DEFAULT
         assert popup._box.fg == colors.theme.DEFAULT
         assert menu.frame_color == colors.theme.DEFAULT
-        assert menu.highlight_color == colors.theme.USER
+        assert menu.highlight_color == colors.theme.FOCUSED
         assert menu.bg == colors.theme.get_bg()
     finally:
         colors.set_theme(original)
@@ -242,7 +242,7 @@ def test_completion_menu_refresh_theme():
     try:
         colors.set_theme("moka")
         comp.refresh_theme()
-        assert comp.menu.frame_color == colors.theme.USER
+        assert comp.menu.frame_color == colors.theme.FOCUSED
         assert comp.menu.bg == colors.theme.get_bg()
         assert comp.menu.fill_width is True
     finally:
@@ -470,6 +470,8 @@ def test_builtin_palettes_are_legible_and_coherent(palette):
     # rose next to a caramel was 18; gold next to caramel is 40).
     assert _delta_e(palette.USER, palette.ASSISTANT) >= 40, "USER / ASSISTANT look alike"
     assert _delta_e(palette.USER_TEXT, palette.ASSISTANT_TEXT) >= 10
+    # A selected row is drawn in FOCUSED among rows of body text.
+    assert _delta_e(palette.FOCUSED, palette.DEFAULT) >= 20, "FOCUSED looks like text"
 
     error, warning, success = _hue(palette.ERROR), _hue(palette.WARNING), _hue(palette.SUCCESS)
     assert error >= 340 or error <= 20                        # red

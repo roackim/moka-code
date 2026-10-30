@@ -157,12 +157,12 @@ def _palette(name: str, **colors: str) -> _theme:
 
 
 moka = _palette(
-    "moka",  # espresso, cream text, latte answers, sunflower user, cream focus
+    "moka",  # espresso, cream text, latte answers, sunflower user and focus
     BACKGROUND="#1A1412", DEFAULT="#ECDCCF", MUTED="#8E7A6E",
     ERROR="#E5705F", WARNING="#E2B266", SUCCESS="#A3BC7E",
-    PERMISSION="#B98BC0", TOOL="#B39AB8", USER="#F0C24A", ASSISTANT="#8E7A6E",
-    FOCUSED="#FFF0D0", HEADING="#E39A6E", EMPHASIS="#F0D3A0", CODE="#B4C08F",
-    USER_TEXT="#f7ca88", ASSISTANT_TEXT="#CEB9A5",
+    PERMISSION="#B98BC0", TOOL="#B39AB8", USER="#F7CA88", ASSISTANT="#CEB9A5",
+    FOCUSED="#F7CA88", HEADING="#E39A6E", EMPHASIS="#F0D3A0", CODE="#B4C08F",
+    USER_TEXT="#F7CA88", ASSISTANT_TEXT="#CEB9A5",
 )
 
 nord = _palette(
@@ -170,7 +170,7 @@ nord = _palette(
     BACKGROUND="#2E3440", DEFAULT="#E5E9F0", MUTED="#7B88A1",
     ERROR="#E0848C", WARNING="#EBCB8B", SUCCESS="#A3BE8C",
     PERMISSION="#B48EAD", TOOL="#81A1C1", USER="#88C0D0", ASSISTANT="#D08770",
-    FOCUSED="#ECEFF4", HEADING="#88C0D0", EMPHASIS="#F7E09B", CODE="#8FBCBB",
+    FOCUSED="#EBCB8B", HEADING="#88C0D0", EMPHASIS="#F7E09B", CODE="#8FBCBB",
     USER_TEXT="#BCE0EC", ASSISTANT_TEXT="#CBD1DC",
 )
 
