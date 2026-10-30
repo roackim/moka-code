@@ -562,8 +562,11 @@ class Message:
             on = settings.config.ui_ask_bullet
         else:
             self.box.bullet = None
+            self.box.wall = ""
             return
         self.box.bullet = settings.config.ui_bullet if on else ""
+        wall = settings.config.ui_wall_char
+        self.box.wall = wall if on and wall.strip() else ""
 
     def _apply_thought_colors(self) -> None:
         """A thought's bar and text: ``ui.thought_color`` folded,

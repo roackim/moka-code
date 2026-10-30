@@ -242,9 +242,11 @@ DEFAULT_UI_TOML = f"""\
 # thought_min_tokens = 0                # hide shorter reasoning lines (0 = show all)
 # thought_color = "MUTED"               # folded thought line and its bar (palette name or #rrggbb)
 # thought_expanded_color = "MUTED"      # unfolded thought text and its bar
-## The bar shows on the focused message only; unfocused, a message shows
-## the bullet on its first row, or nothing when its type's toggle is false.
+## Unfocused, a message shows the bullet on its first row (nothing when its
+## type's toggle is false) and a muted wall below it; focused, a thick wall.
 # bullet = "•"                          # the unfocused marker
+# wall_char = "│"                       # muted line below the bullet ("" or " " = none)
+# focus_wall_char = "┃"                 # focused: every row, in the focus color
 # user_bullet = true                    # your messages
 # answer_bullet = true                  # answers
 # thought_bullet = true                 # thoughts
@@ -402,6 +404,8 @@ _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
     "thought_color": ("ui_thought_color", "color", "MUTED"),
     "thought_expanded_color": ("ui_thought_expanded_color", "color", "MUTED"),
     "bullet": ("ui_bullet", "str", "•"),
+    "wall_char": ("ui_wall_char", "str", "│"),
+    "focus_wall_char": ("ui_focus_wall_char", "str", "┃"),
     "user_bullet": ("ui_user_bullet", "bool", True),
     "answer_bullet": ("ui_answer_bullet", "bool", True),
     "thought_bullet": ("ui_thought_bullet", "bool", True),

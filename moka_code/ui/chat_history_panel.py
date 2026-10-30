@@ -790,20 +790,24 @@ class ChatHistoryPanel(TextComponent):
             child.set_layout(self.x + msg.left_margin, child_y, child_w, child_h)
             child.render(buffer)
 
-            # Selected message: draw a bright selection bar in the left margin.
-            # A whole split answer gets ``▌`` on every segment; a single
-            # selected segment gets the wider ``█`` (the rest keep their bar).
+            # Selected message: ``ui.focus_wall_char`` on every row, in the
+            # focus color (the bullet gives way, so a one-line message still
+            # shows it is selected). Inside a split answer the selected segment
+            # gets ``▐`` and the other segments keep the wall, muted.
             marker = None
+            marker_fg = theme.FOCUSED
             if focus_start <= i < focus_end:
-                if not self.inside_group:
-                    marker = "▌"
-                elif i == self.focused_message_index:
-                    marker = "█"
+                marker = settings.config.ui_focus_wall_char.strip() or "┃"
+                if self.inside_group:
+                    if i == self.focused_message_index:
+                        marker = "▐"
+                    else:
+                        marker_fg = theme.MUTED
             if marker is not None:
                 top = max(child_y, viewport_top)
                 bottom = min(child_y + child_h, viewport_bottom)
                 for row_y in range(top, bottom):
-                    buffer.write_str(self.x, row_y, marker, fg=theme.FOCUSED,
+                    buffer.write_str(self.x, row_y, marker, fg=marker_fg,
                                      bg=theme.get_bg(), max_width=1)
 
 

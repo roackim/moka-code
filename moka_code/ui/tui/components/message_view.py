@@ -42,6 +42,9 @@ class MessageView(Box):
         self.bullet: Optional[str] = None
         # Continues the block above (set by the transcript): no bullet.
         self.bullet_continued = False
+        # Unfocused, a muted wall below the bullet (and down a continued
+        # block); "" draws none.
+        self.wall = ""
         self.content_pad_left = max(0, content_pad_left)
         self.content_pad_right = max(0, content_pad_right)
         # Blank rows above and below the content (a code block's separation).
@@ -149,6 +152,10 @@ class MessageView(Box):
                 rows = (0,) if start == 0 else ()
             for row in rows:
                 self.subbuffer.set(0, row, gutter, fg=fg, bg=bg)
+        if bulleted and self.wall and self.width > 0:
+            first = 0 if self.bullet_continued else 1
+            for row in range(max(start, first), self.height):
+                self.subbuffer.set(0, row, self.wall, fg=theme.MUTED, bg=bg)
 
         # Collapsed messages (e.g. thinking folded by default) render a single
         # summary line instead of the full content.

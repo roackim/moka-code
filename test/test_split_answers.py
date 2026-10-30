@@ -122,8 +122,11 @@ def test_right_on_a_plain_message_only_hints():
     assert hints == ["single block"]
 
 
-def test_selected_segment_gets_the_wide_marker():
+def test_selected_segment_gets_the_shifted_marker():
+    """2026-10-30: ``▐`` on the selected segment; the others keep the thick
+    focus wall, muted, so the whole answer still reads as selected."""
     from moka_code.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.colors import theme
 
     panel = _panel_with_answer()
     panel.set_layout(0, 0, 60, 40)
@@ -133,7 +136,9 @@ def test_selected_segment_gets_the_wide_marker():
     buffer = Buffer(60, 40)
     panel.render(buffer)
     column = [row[0].char for row in buffer.cells]
-    assert "█" in column
+    assert "▐" in column
+    walls = [row[0] for row in buffer.cells if row[0].char == "┃"]
+    assert walls and all(cell.fg is theme.MUTED for cell in walls)
 
 
 def test_answers_split_when_the_generation_ends(monkeypatch):

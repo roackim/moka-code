@@ -650,7 +650,7 @@ them). Navigation has two levels:
 - **PgUp/PgDn** jump to the previous/next user message
   (`ChatHistoryPanel.move_focus_to_user`); PgUp from the input starts at the
   last one, PgDn past the last one returns to the input;
-- **→** enters a split answer (`inside_group`): the selected segment gets a wide `█`, the
+- **→** enters a split answer (`inside_group`): the selected segment gets `▐` (the others keep the thick wall, in `MUTED`), the
   action line reads `code 2/5` with `↑↓ part · ← back`; ↑/↓ move between
   segments and stop at the edges; `c` copies the segment (`copy_text_for`: code
   without fences). **←**/**Esc** return to the whole answer. **→** on a single
@@ -794,7 +794,7 @@ default; palette name or `#rrggbb`, resolved by `colors.resolve_color`;
 
 Bullets: `ui.user_bullet`, `answer_bullet`, `thought_bullet`, `tool_bullet`
 (calls and output), `ask_bullet` (questions and permissions), all `true` by
-default. The bar shows only on the focused message. Unfocused, a message of
+default. Focus is drawn by the panel (below). Unfocused, a message of
 these types shows `ui.bullet` (default `•`) on its first row, or nothing when
 its toggle is `false` (`MessageView.bullet`: glyph, `""` for nothing, `None`
 for a type that keeps its gutter, such as system lines; set by
@@ -802,6 +802,11 @@ for a type that keeps its gutter, such as system lines; set by
 Contiguous answer blocks (the segments of a split answer) show the bullet on
 the first only: the render loop sets `MessageView.bullet_continued` from
 `_continues_answer`.
+Below the bullet, unfocused, `ui.wall_char` (default `│`, `""`/`" "` = none)
+runs down the message in `MUTED` (`MessageView.wall`), the whole height of a
+continued block. Focused, the panel draws `ui.focus_wall_char` (default `┃`)
+on every row in `FOCUSED`, bullet included (a one-line message must still read
+as selected); inside a split answer the selected segment gets `▐` and the others the thick wall in `MUTED`.
 `ChatHistoryPanel` is the owner of the message list — it handles layout,
 selection, scrolling, and width-change reformatting.
 
