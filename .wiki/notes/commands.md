@@ -106,7 +106,8 @@ A command that selects among values follows one behaviour (guarded by
 A command that also has verbs puts the choice under a `select` subcommand instead
 (`/role select [name]`, `/theme select [name]`), never as values beside its verbs:
 names mixed into the `/cmd ` menu got confused with the subcommands. Its bare
-`/cmd` lists the subcommands (`base.show_subcommands`).
+`/cmd` lists the subcommands (`base.show_subcommands`), except `/theme`, which
+is `/theme select` (the picker); an unknown word after it still lists them.
 
 ## Things handlers must get right
 

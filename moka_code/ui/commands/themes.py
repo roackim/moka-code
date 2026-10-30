@@ -244,9 +244,12 @@ def _theme_remove(reload: Reload):
 
 def theme_command(reload: Reload) -> Command:
     """``/theme`` and its subcommands; ``reload`` applies an edited theme file
-    (the registry passes ``reload_and_apply``). Bare ``/theme`` lists the
-    subcommands."""
-    async def theme_help(ui: ChatUIProtocol, args: List[str]) -> None:
+    (the registry passes ``reload_and_apply``). Bare ``/theme`` is
+    ``/theme select`` (the picker); an unknown word lists the subcommands."""
+    async def theme_bare(ui: ChatUIProtocol, args: List[str]) -> None:
+        if not args:
+            await theme_select(ui, [])
+            return
         show_subcommands(ui, command, args)
 
     def _name(required: bool, completions=theme_name_completions) -> Param:
@@ -266,8 +269,8 @@ def theme_command(reload: Reload) -> Command:
                           handler=_theme_remove(reload),
                           params=[_name(True, theme_file_completions)]),
     }
-    command = Command("theme", "Themes: select, edit, create, path, remove",
-                      handler=theme_help, subcommands=subcommands)
+    command = Command("theme", "Pick the color theme; also edit, create, path, remove",
+                      handler=theme_bare, subcommands=subcommands)
     return command
 
 

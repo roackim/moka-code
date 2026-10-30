@@ -169,13 +169,13 @@ def _palette(name: str, **colors: str) -> _theme:
 
 
 moka = _palette(
-    "moka",  # espresso, cream text, latte answers, sunflower user and focus
+    "moka",  # espresso, cream text, latte answers, honey-gold user and focus
     BACKGROUND="#1A1412", DEFAULT="#ECDCCF", MUTED="#8E7A6E",
     ERROR="#E5705F", WARNING="#E2B266", SUCCESS="#A3BC7E",
     PERMISSION="#B98BC0", TOOL="#B39AB8", USER="#F7CA88", ASSISTANT="#CEB9A5",
     FOCUSED="#F7CA88", HEADING="#E39A6E", EMPHASIS="#F0D3A0", CODE="#B4C08F",
     KEYWORD="#E0876A", FUNCTION="#E8C07A", STRING="#B4C08F", NUMBER="#C9A3C0", TYPE="#9FC2A8",
-    USER_TEXT="#F7CA88", ASSISTANT_TEXT="#CEB9A5",
+    USER_TEXT="#F7CA88", ASSISTANT_TEXT="#DCC4A8",
 )
 
 nord = _palette(

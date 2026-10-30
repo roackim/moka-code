@@ -999,8 +999,8 @@ See [commands.md](./commands.md).
 ### Built-in themes (`tui/colors.py`)
 
 `terminal` (ANSI slots: follows the terminal's own palette) plus five RGB
-palettes for dark terminals: `moka`, `nord`, `dracula`, `gruvbox`,
-`tokyo-night` (the earlier set was removed on purpose, 2026-09-28). Palette
+palettes for dark terminals: `moka` (hand-tuned: honey-gold user and focus,
+latte answers), `nord`, `dracula`, `gruvbox`, `tokyo-night` (the earlier set was removed on purpose, 2026-09-28). Palette
 keys: `BACKGROUND DEFAULT MUTED ERROR WARNING SUCCESS PERMISSION TOOL USER
 ASSISTANT FOCUSED`, `USER_TEXT ASSISTANT_TEXT` (message text, `DEFAULT` unless
 set), for answers `HEADING EMPHASIS CODE`, and for code blocks `KEYWORD

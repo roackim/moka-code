@@ -88,15 +88,21 @@ def test_role_select_without_a_compositor_lists_them_as_text(monkeypatch, tmp_pa
     assert "active: agent" in ui.popups[-1] and "chat" in ui.popups[-1]
 
 
-def test_bare_role_and_theme_list_their_subcommands_and_a_name_is_not_one():
+def test_bare_role_lists_its_subcommands_and_a_name_is_not_one():
     """2026-10-26: role names beside the verbs got mixed up with them, so
-    switching is ``/role select <name>`` and ``/role <name>`` is an error."""
+    switching is ``/role select <name>`` and ``/role <name>`` is an error.
+    2026-10-30: bare ``/theme`` is ``/theme select`` (the picker)."""
+    ui = _UI(with_modal=True)
+    asyncio.run(COMMANDS["role"].execute(ui, []))
+    assert "select" in ui.popups[-1] and "remove" in ui.popups[-1]
+    assert ui.modal is None
+
+    ui = _UI(with_modal=True)
+    asyncio.run(COMMANDS["theme"].execute(ui, []))
+    assert ui.modal["title"] == "Themes" and "moka" in ui.modal["items"]
+
     for name in ("role", "theme"):
         ui = _UI(with_modal=True)
-        asyncio.run(COMMANDS[name].execute(ui, []))
-        assert "select" in ui.popups[-1] and "remove" in ui.popups[-1]
-        assert ui.modal is None
-
         asyncio.run(COMMANDS[name].execute(ui, ["agent"]))
         assert "Unknown subcommand 'agent'" in ui.messages[-1]
         assert ui.switched == []

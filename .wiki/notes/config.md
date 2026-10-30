@@ -179,8 +179,8 @@ Missing entries inherit the built-in base of the same name (or `terminal`),
 except `USER_TEXT` / `ASSISTANT_TEXT` (user and answer message text), which
 default to the theme's own `DEFAULT` (built-ins too).
 Built-ins are always available and are listed by `/theme select` (or
-`colors.theme_names()`): `terminal` (default), `moka`, `nord`, `dracula`,
-`gruvbox`, `tokyo-night`.
+`colors.theme_names()`): `terminal` (default), `moka`, `nord`,
+`dracula`, `gruvbox`, `tokyo-night`.
 `colors.available_themes()` merges them with the user definitions and
 `set_theme()` applies one in place. Markdown/syntax styles remain a separate
 global layer in the tables of `ui.toml`.
