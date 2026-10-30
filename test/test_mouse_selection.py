@@ -6,7 +6,7 @@ import pytest
 
 from moka_code.ui.chat_history_panel import ChatHistoryPanel
 from moka_code.ui.tui.buffer import Buffer
-from moka_code.ui.tui.components.markdown import CODE_INDENT
+from moka_code.ui.tui.components.markdown import code_indent_width
 from moka_code.ui.tui.events import MouseEvent
 from moka_code.ui.tui.msg_types import AssistantMsg, UserMsg
 
@@ -209,7 +209,7 @@ def test_code_block_copies_without_its_indent_or_blank_rows(copied):
     y_ret, _ = _row_of(buffer, "return 1")
     y_done, _ = _row_of(buffer, "Done.")
     assert y_def == y_intro + 2 and y_done == y_ret + 2   # blank row around the code
-    assert x_def == x_intro + len(CODE_INDENT)             # drawn indented
+    assert x_def == x_intro + code_indent_width()          # drawn after the prefix
 
     _drag(panel, (0, y_def), (W - 1, y_ret))               # from the gutter across both lines
     assert copied == ["def a():\n    return 1"]

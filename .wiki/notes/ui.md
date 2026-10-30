@@ -1003,7 +1003,8 @@ palettes for dark terminals: `moka`, `nord`, `dracula`, `gruvbox`,
 `tokyo-night` (the earlier set was removed on purpose, 2026-09-28). Palette
 keys: `BACKGROUND DEFAULT MUTED ERROR WARNING SUCCESS PERMISSION TOOL USER
 ASSISTANT FOCUSED`, `USER_TEXT ASSISTANT_TEXT` (message text, `DEFAULT` unless
-set) and, for answers, `HEADING EMPHASIS CODE` — the markdown
+set), for answers `HEADING EMPHASIS CODE`, and for code blocks `KEYWORD
+FUNCTION STRING NUMBER TYPE` (the `syntax_highlight` defaults; comments are `MUTED`, diffs `SUCCESS` / `ERROR`) — the markdown
 styles name them (`"fg": "HEADING"`), so a theme recolors answers too
 (`terminal` keeps pink / gold / light blue). Accents are free per theme; the
 semantic keys are not: `test_builtin_palettes_are_legible_and_coherent` checks
@@ -1048,7 +1049,7 @@ Live markdown rendering for chat messages, added to support streaming output wit
 
 - `tui/components/markdown.py` — parser + `MarkdownComponent` (append-only commit path for streaming; `parse(open_tail=True)` renders the open line plain)
 - `tui/ascii_table.py` — `AsciiTable` renders markdown tables with squared-style borders
-- `tui/syntax_highlight.py` — `highlight_line(line, lang)` tokenises code blocks for coloring
+- `tui/syntax_highlight.py` — a per-line regex scanner, no grammar: `scan(line, lang, state)` returns `(text, type)` pairs and what the line leaves open (a `"""` string, a JS template, a `/* */` comment), which the markdown parser hands to the next line (`CodeBlockLine.state`). Types: keyword, function, string, comment, number (numbers and constants such as `None`, `MAX`), type (Capitalized names, builtin types, Rust lifetimes), decorator (`@x`, `#[x]`), variable (`$x`), key (JSON/YAML/TOML keys, CSS properties), operator (`= == -> && |`, keyword color; not punctuation nor a lone `:`; shell: pipes and redirects only; none in data formats), added / removed / hunk (diffs). Languages by name or alias (`py`, `js`, `ts`, `sh`, `rs`, `yml`...): Python, JS, TS, Rust, Go, C, C++, Java, Bash, SQL, Lua, Ruby, PHP, JSON, YAML, TOML, diff, HTML/XML, CSS; another name gets generic rules; no language (or `text`) stays plain, and an unclosed quote is never a string
 
 ### Pipeline
 
@@ -1121,7 +1122,7 @@ Decouples how fast text *arrives* from how fast it *appears*.
 
 ### Styling
 
-Styles are driven by `settings.config.markdown_styles` (see [config.md](./config.md)). Each element (`header1`–`header6`, `bold`, `italic`, `code`, `code_block`, `quote`, `list`, `hr`, `table`, `link`, `paragraph`) maps to `fg`/`bg`/`bold`/`italic`/`underline`/`reverse`; `fg`/`bg` take a hex color or a theme color name (`"MUTED"`, resolved by `_resolve_color` so it follows the active theme, ANSI palettes included). Defaults: color marks structure, weight marks emphasis — headers bold pink `#FF79C6`, `**bold**` bold gold `#FFD700`, `*italic*` italic in the text color, inline code `#9CDCFE`, code blocks in the text color plus syntax highlighting (no `plain` syntax style: unhighlighted code is the text color) and drawn indented by `markdown.CODE_INDENT` (repeated on hard-wrapped rows; a `StyledSegment(indent=True)`). A split code-block message also gets `MessageView.content_pad_y = 1` (a blank row above and below); mouse selection skips both the pad rows and the indent columns, so copies are the code only, quotes `MUTED` with a `│ ` bar, links `#569CD6` underlined, rules `MUTED`. Never `reverse` (it reads as an inversion). `Cell`/`SubBuffer`/`Buffer.render` carry italic (SGR 3/23) and underline (4/24). Unordered list items use pastilles (`•`/`◦`/`▪` by nesting level).
+Styles are driven by `settings.config.markdown_styles` (see [config.md](./config.md)). Each element (`header1`–`header6`, `bold`, `italic`, `code`, `code_block`, `quote`, `list`, `hr`, `table`, `link`, `paragraph`) maps to `fg`/`bg`/`bold`/`italic`/`underline`/`reverse`; `fg`/`bg` take a hex color or a theme color name (`"MUTED"`, resolved by `_resolve_color` so it follows the active theme, ANSI palettes included). Defaults: color marks structure, weight marks emphasis — headers bold pink `#FF79C6`, `**bold**` bold gold `#FFD700`, `*italic*` italic in the text color, inline code `#9CDCFE`, code blocks in the text color plus syntax highlighting (no `plain` syntax style: unhighlighted code is the text color) and drawn after `ui.code_prefix` (default `│  `, in `MUTED`, `""` = none; `markdown.code_indent()`, repeated on hard-wrapped rows; a `StyledSegment(indent=True)`). A split code-block message also gets `MessageView.content_pad_y = 1` (a blank row above and below); mouse selection skips both the pad rows and the prefix columns, so copies are the code only, quotes `MUTED` with a `│ ` bar, links `#569CD6` underlined, rules `MUTED`. Never `reverse` (it reads as an inversion). `Cell`/`SubBuffer`/`Buffer.render` carry italic (SGR 3/23) and underline (4/24). Unordered list items use pastilles (`•`/`◦`/`▪` by nesting level).
 
 ### Tables
 

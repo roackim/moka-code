@@ -144,12 +144,22 @@ DEFAULT_MARKDOWN_STYLES: Dict[str, Dict[str, Any]] = {
 }
 
 # Default syntax highlight element styles.
-# Each key is a highlight type; values are dicts with "fg" as a hex string.
+# Each key is a highlight type; ``fg`` is a theme color name (follows the
+# active theme) or a hex string.
 DEFAULT_SYNTAX_HIGHLIGHT_STYLES: Dict[str, Dict[str, str]] = {
-    "keyword":  {"fg": "#FF6464"},
-    "function": {"fg": "#64DC78"},
-    "string":   {"fg": "#DCC850"},
-    "comment":  {"fg": "#808080"},
+    "keyword":   {"fg": "KEYWORD"},
+    "function":  {"fg": "FUNCTION"},
+    "string":    {"fg": "STRING"},
+    "comment":   {"fg": "MUTED"},
+    "number":    {"fg": "NUMBER"},     # numbers and constants (true, None, MAX)
+    "type":      {"fg": "TYPE"},       # Capitalized names, builtin types, Rust 'a
+    "decorator": {"fg": "FUNCTION"},   # @decorator, #[attribute]
+    "variable":  {"fg": "TYPE"},       # $name in shell and PHP
+    "key":       {"fg": "TYPE"},       # JSON / YAML / TOML keys, CSS properties
+    "operator":  {"fg": "KEYWORD"},    # = == -> && | (not punctuation, not a lone :)
+    "added":     {"fg": "SUCCESS"},    # diff + lines
+    "removed":   {"fg": "ERROR"},      # diff - lines
+    "hunk":      {"fg": "TYPE"},       # diff @@ headers
     # "plain" (unset): ordinary code uses the normal text color.
 }
 
@@ -247,6 +257,7 @@ DEFAULT_UI_TOML = f"""\
 # bullet = "•"                          # the unfocused marker
 # wall_char = "│"                       # muted line below the bullet ("" or " " = none)
 # focus_wall_char = "┃"                 # focused: every row, in the focus color
+# code_prefix = "│  "                   # muted, before every row of a code block ("" = none)
 # user_bullet = true                    # your messages
 # answer_bullet = true                  # answers
 # thought_bullet = true                 # thoughts
@@ -306,7 +317,7 @@ DEFAULT_UI_TOML = f"""\
 # fg = "#9CDCFE"
 
 # [syntax_highlight.keyword]
-# fg = "#FF6464"
+# fg = "KEYWORD"
 """
 
 DEFAULT_CONTEXT_TOML = f"""\
@@ -406,6 +417,7 @@ _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
     "bullet": ("ui_bullet", "str", "•"),
     "wall_char": ("ui_wall_char", "str", "│"),
     "focus_wall_char": ("ui_focus_wall_char", "str", "┃"),
+    "code_prefix": ("ui_code_prefix", "str", "│  "),
     "user_bullet": ("ui_user_bullet", "bool", True),
     "answer_bullet": ("ui_answer_bullet", "bool", True),
     "thought_bullet": ("ui_thought_bullet", "bool", True),
@@ -925,7 +937,7 @@ _STATE_SECTIONS = {"last_server", "active_model", "last_model", "model_catalog",
 _THEME_PALETTE = {
     "BACKGROUND", "DEFAULT", "MUTED", "ERROR", "WARNING", "SUCCESS",
     "PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED", "USER_TEXT", "ASSISTANT_TEXT",
-    "HEADING", "EMPHASIS", "CODE",
+    "HEADING", "EMPHASIS", "CODE", "KEYWORD", "FUNCTION", "STRING", "NUMBER", "TYPE",
 }
 
 

@@ -15,6 +15,7 @@ from wcwidth import wcswidth
 from moka_code import settings
 from moka_code.ui.tui.colors import RGB, theme
 from moka_code.ui.tui.graphemes import split_clusters
+from moka_code.ui.tui.syntax_highlight import scan
 from moka_code.ui.tui.buffer import Buffer
 from moka_code.ui.tui.components.base import Component
 
@@ -56,7 +57,13 @@ def _get_style(element: str) -> dict:
 # ---------------------------------------------------------------------------
 
 # Fenced code is drawn indented by this much; mouse selection skips it.
-CODE_INDENT = "  "
+def code_indent() -> str:
+    """``ui.code_prefix``: drawn (muted) before every row of a code block."""
+    return settings.config.ui_code_prefix
+
+
+def code_indent_width() -> int:
+    return max(0, wcswidth(code_indent()))
 
 
 @dataclass
@@ -126,6 +133,7 @@ class CodeBlockLine:
     text: str
     lang: str = ""
     highlighted: bool = False  # Whether syntax highlighting was applied
+    state: str = ""  # what the line above left open (``syntax_highlight.scan``)
 
 
 @dataclass
@@ -217,6 +225,7 @@ class BlockParser:
         in_code_block = False
         code_fence = ""  # the opening fence (``` or ~~~) optionally with lang
         _current_code_lang = ""
+        code_state = ""  # a string or comment left open by the code line above
 
         # --- Table state machine ---
         in_table = False
@@ -248,7 +257,8 @@ class BlockParser:
                     i += 1
                     continue
                 # Preserve raw line (including leading whitespace) for code blocks
-                emit(CodeBlockLine(text=line, lang=_current_code_lang), i)
+                emit(CodeBlockLine(text=line, lang=_current_code_lang, state=code_state), i)
+                code_state = scan(line, _current_code_lang, code_state)[1]
                 i += 1
                 continue
 
@@ -259,6 +269,7 @@ class BlockParser:
                 code_fence = fence_char * 3
                 lang = stripped[len(code_fence):].strip()
                 _current_code_lang = lang
+                code_state = ""
                 in_code_block = True
                 i += 1
                 continue
@@ -722,8 +733,9 @@ class Markdown:
             base_fg = style["fg"]
             # Apply syntax highlighting
             from moka_code.ui.tui.syntax_highlight import highlight_line, _get_highlight_color
-            hl_segments = [(block.text, "")] if plain_inline else highlight_line(block.text, block.lang)
-            result_segs = [StyledSegment(CODE_INDENT, code_block=True, indent=True)]
+            hl_segments = ([(block.text, "")] if plain_inline
+                           else highlight_line(block.text, block.lang, block.state))
+            result_segs = [StyledSegment(code_indent(), fg=theme.MUTED, code_block=True, indent=True)]
             for text, hl_type in hl_segments:
                 seg_fg = _get_highlight_color(hl_type)
                 if seg_fg is None:
@@ -1064,7 +1076,7 @@ class MarkdownComponent(Component):
         # Code block lines: hard-break to preserve indentation; the block's
         # own indent starts every wrapped row.
         if segments and segments[0].indent:
-            rows = self._hard_break_line(segments[1:], max(1, max_width - len(CODE_INDENT)))
+            rows = self._hard_break_line(segments[1:], max(1, max_width - code_indent_width()))
             return [[segments[0], *row] for row in rows]
         if segments and segments[0].code_block:
             return self._hard_break_line(segments, max_width)

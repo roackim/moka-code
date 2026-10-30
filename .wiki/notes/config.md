@@ -170,9 +170,10 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 ## Themes
 
 A theme is a palette file (`themes/<name>.toml`, top-level keys) mapping the
-sixteen `colors.PALETTE_FIELDS` (`BACKGROUND`, `DEFAULT`, `MUTED`, `ERROR`,
+twenty-one `colors.PALETTE_FIELDS` (`BACKGROUND`, `DEFAULT`, `MUTED`, `ERROR`,
 `WARNING`, `SUCCESS`, `PERMISSION`, `TOOL`, `USER`, `ASSISTANT`, `FOCUSED`,
-`HEADING`, `EMPHASIS`, `CODE`, `USER_TEXT`, `ASSISTANT_TEXT`) to either a
+`HEADING`, `EMPHASIS`, `CODE`, `KEYWORD`, `FUNCTION`, `STRING`, `NUMBER`, `TYPE`,
+`USER_TEXT`, `ASSISTANT_TEXT`) to either a
 `"#RRGGBB"` hex string or an ANSI table (`{ ansi = 90 }`, `{ ansi = 39, bg = 49 }`).
 Missing entries inherit the built-in base of the same name (or `terminal`),
 except `USER_TEXT` / `ASSISTANT_TEXT` (user and answer message text), which

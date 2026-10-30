@@ -15,7 +15,7 @@ from __future__ import annotations
 import bisect
 from typing import Optional
 
-from moka_code.ui.tui.components.markdown import CODE_INDENT
+from moka_code.ui.tui.components.markdown import code_indent_width
 from moka_code.ui.tui.layout_utils import strip_ansi
 
 Point = tuple[int, int]
@@ -91,7 +91,7 @@ class MessageSelection:
         first = box_left + (child.x - box.x)
         last = first + child.width - 1
         if getattr(msg, "segment_kind", None) == "code":
-            first += len(CODE_INDENT)   # the drawn indent is not code
+            first += code_indent_width()   # the drawn prefix is not code
         return box.subbuffer.cells[local], box_left, first, last
 
     def _spans(self):

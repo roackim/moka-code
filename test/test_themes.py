@@ -460,7 +460,8 @@ def test_builtin_palettes_are_legible_and_coherent(palette):
     assert worst(palette.DEFAULT) >= 7                       # body text
     assert worst(palette.USER_TEXT) >= 7                     # the user's messages
     assert 7 <= worst(palette.ASSISTANT_TEXT) < worst(palette.DEFAULT)  # answers, dimmed
-    for key in ("ERROR", "WARNING", "SUCCESS", "HEADING", "EMPHASIS", "CODE"):
+    for key in ("ERROR", "WARNING", "SUCCESS", "HEADING", "EMPHASIS", "CODE",
+                "KEYWORD", "FUNCTION", "STRING", "NUMBER", "TYPE"):
         assert worst(getattr(palette, key)) >= 4.5, key      # readable text
     assert 3 <= worst(palette.MUTED) < worst(palette.DEFAULT)   # muted, not gone
     for key in ("PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED"):
@@ -509,5 +510,30 @@ def test_message_text_colors_default_to_the_theme_default():
         colors.theme.ASSISTANT_TEXT = colors.RGB("#303030")
         assert Message("a", msg_type=AssistantMsg()).component.fg is colors.theme.ASSISTANT_TEXT
         assert Message("q", msg_type=UserMsg()).component.fg is colors.theme.USER_TEXT
+    finally:
+        colors.set_theme(original)
+
+
+def test_code_colors_follow_the_theme():
+    """2026-10-30: code blocks take KEYWORD / FUNCTION / STRING from the theme
+    and comments MUTED; a hex in ``[syntax_highlight.*]`` still wins."""
+    from moka_code import settings
+    from moka_code.ui.tui.syntax_highlight import _get_highlight_color
+
+    original = colors.theme.name
+    try:
+        for name in ("nord", "terminal"):
+            colors.set_theme(name)
+            assert _get_highlight_color("keyword") is colors.theme.KEYWORD
+            assert _get_highlight_color("function") is colors.theme.FUNCTION
+            assert _get_highlight_color("string") is colors.theme.STRING
+            assert _get_highlight_color("comment") is colors.theme.MUTED
+        assert _get_highlight_color("plain") is None
+        styles = dict(settings.config.syntax_highlight_styles, keyword={"fg": "#010203"})
+        settings.config.syntax_highlight_styles, saved = styles, settings.config.syntax_highlight_styles
+        try:
+            assert _get_highlight_color("keyword") == (1, 2, 3)
+        finally:
+            settings.config.syntax_highlight_styles = saved
     finally:
         colors.set_theme(original)

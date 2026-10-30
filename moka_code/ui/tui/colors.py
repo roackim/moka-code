@@ -95,6 +95,13 @@ class _theme:
     EMPHASIS: RGB    # **bold**
     CODE: RGB        # `inline code`
 
+    # Code blocks (``syntax_highlight`` refers to these; comments are MUTED).
+    KEYWORD: RGB
+    FUNCTION: RGB
+    STRING: RGB
+    NUMBER: RGB      # numbers and constants
+    TYPE: RGB        # types, keys, variables
+
     # Message text; a theme that leaves them out uses its DEFAULT.
     USER_TEXT: Optional[RGB] = None
     ASSISTANT_TEXT: Optional[RGB] = None
@@ -143,6 +150,11 @@ terminal = _theme(
     HEADING     = RGB("#FF79C6"),           # pink
     EMPHASIS    = RGB("#FFD700"),           # gold
     CODE        = RGB("#9CDCFE"),           # light blue
+    KEYWORD     = ANSIColor(fg=31),         # red     (maps to user's red)
+    FUNCTION    = ANSIColor(fg=32),         # green
+    STRING      = ANSIColor(fg=33),         # yellow
+    NUMBER      = ANSIColor(fg=35),         # magenta
+    TYPE        = ANSIColor(fg=36),         # cyan
 )
 
 # --- Built-in RGB palettes ------------------------------------------------
@@ -162,6 +174,7 @@ moka = _palette(
     ERROR="#E5705F", WARNING="#E2B266", SUCCESS="#A3BC7E",
     PERMISSION="#B98BC0", TOOL="#B39AB8", USER="#F7CA88", ASSISTANT="#CEB9A5",
     FOCUSED="#F7CA88", HEADING="#E39A6E", EMPHASIS="#F0D3A0", CODE="#B4C08F",
+    KEYWORD="#E0876A", FUNCTION="#E8C07A", STRING="#B4C08F", NUMBER="#C9A3C0", TYPE="#9FC2A8",
     USER_TEXT="#F7CA88", ASSISTANT_TEXT="#CEB9A5",
 )
 
@@ -171,6 +184,7 @@ nord = _palette(
     ERROR="#E0848C", WARNING="#EBCB8B", SUCCESS="#A3BE8C",
     PERMISSION="#B48EAD", TOOL="#81A1C1", USER="#88C0D0", ASSISTANT="#D08770",
     FOCUSED="#EBCB8B", HEADING="#88C0D0", EMPHASIS="#F7E09B", CODE="#8FBCBB",
+    KEYWORD="#81A1C1", FUNCTION="#88C0D0", STRING="#A3BE8C", NUMBER="#BE9BB8", TYPE="#8FBCBB",
     USER_TEXT="#BCE0EC", ASSISTANT_TEXT="#CBD1DC",
 )
 
@@ -180,6 +194,7 @@ dracula = _palette(
     ERROR="#EE7B7B", WARNING="#E6C07B", SUCCESS="#7DD39A",
     PERMISSION="#EE90C8", TOOL="#9AA5CE", USER="#B49CF0", ASSISTANT="#8FD8E8",
     FOCUSED="#F0B57E", HEADING="#EE90C8", EMPHASIS="#F0B57E", CODE="#7DD39A",
+    KEYWORD="#EE90C8", FUNCTION="#7DD39A", STRING="#E6C07B", NUMBER="#B49CF0", TYPE="#8FD8E8",
     USER_TEXT="#E0D6F6", ASSISTANT_TEXT="#DCDAD0",
 )
 
@@ -189,6 +204,7 @@ gruvbox = _palette(
     ERROR="#FC5D48", WARNING="#FABD2F", SUCCESS="#A9C26A",
     PERMISSION="#D3869B", TOOL="#83A598", USER="#8EC07C", ASSISTANT="#FE8019",
     FOCUSED="#FABD2F", HEADING="#FE8019", EMPHASIS="#FABD2F", CODE="#8EC07C",
+    KEYWORD="#FC5D48", FUNCTION="#8EC07C", STRING="#B8BB26", NUMBER="#D3869B", TYPE="#FABD2F",
     USER_TEXT="#D3E2B4", ASSISTANT_TEXT="#D5C4A1",
 )
 
@@ -198,6 +214,7 @@ tokyo_night = _palette(
     ERROR="#F7768E", WARNING="#E0AF68", SUCCESS="#9ECE6A",
     PERMISSION="#BB9AF7", TOOL="#7DCFFF", USER="#73DACA", ASSISTANT="#7AA2F7",
     FOCUSED="#FF9E64", HEADING="#BB9AF7", EMPHASIS="#FF9E64", CODE="#7DCFFF",
+    KEYWORD="#BB9AF7", FUNCTION="#7AA2F7", STRING="#9ECE6A", NUMBER="#FF9E64", TYPE="#2AC3DE",
     USER_TEXT="#C8F2EA", ASSISTANT_TEXT="#A9B1D6",
 )
 
@@ -297,7 +314,8 @@ def theme_names() -> list:
 PALETTE_FIELDS = (
     "BACKGROUND", "DEFAULT", "MUTED", "ERROR", "WARNING",
     "SUCCESS", "PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED",
-    "HEADING", "EMPHASIS", "CODE", "USER_TEXT", "ASSISTANT_TEXT",
+    "HEADING", "EMPHASIS", "CODE", "KEYWORD", "FUNCTION", "STRING",
+    "NUMBER", "TYPE", "USER_TEXT", "ASSISTANT_TEXT",
 )
 
 

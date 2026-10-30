@@ -1,6 +1,6 @@
 """Markdown presentation: emphasis colors, list pastilles, cluster-aware wrap."""
 
-from moka_code.ui.tui.components.markdown import CODE_INDENT, Markdown, MarkdownComponent
+from moka_code.ui.tui.components.markdown import code_indent, code_indent_width, Markdown, MarkdownComponent
 from moka_code.ui.tui.buffer import Buffer
 from moka_code.ui.tui.layout_utils import display_width
 
@@ -64,8 +64,8 @@ def test_hard_break_counts_emoji_clusters():
 
     assert all(display_width(line) <= 40 for line in rendered)
     # Every wrapped row starts with the block's indent.
-    assert all(line.startswith(CODE_INDENT) for line in rendered)
-    assert sum(display_width(line) - len(CODE_INDENT) for line in rendered) == 80
+    assert all(line.startswith(code_indent()) for line in rendered)
+    assert sum(display_width(line) - code_indent_width() for line in rendered) == 80
 
 
 def test_header_marker_matches_the_source_level():
@@ -73,3 +73,20 @@ def test_header_marker_matches_the_source_level():
         src = "#" * level + " Title"
         (line,) = Markdown().parse(src)
         assert "".join(seg.text for seg in line) == src
+
+
+def test_code_prefix_is_configurable_and_muted(monkeypatch):
+    """2026-10-30: ``ui.code_prefix`` starts every row of a code block, in
+    MUTED; ``""`` draws none."""
+    from moka_code import settings
+    from moka_code.ui.tui.colors import theme
+
+    monkeypatch.setattr(settings.config, "ui_code_prefix", "> ")
+    lines = [line for line in _rendered_lines("```\nx = 1\ny = 2\n```") if line]
+    assert lines == ["> x = 1", "> y = 2"]
+    prefix = Markdown().parse("```\nx = 1\n```")
+    first = next(line for line in prefix if line and line[0].indent)[0]
+    assert first.text == "> " and first.fg is theme.MUTED
+
+    monkeypatch.setattr(settings.config, "ui_code_prefix", "")
+    assert [line for line in _rendered_lines("```\nx = 1\n```") if line] == ["x = 1"]
