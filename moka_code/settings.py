@@ -378,7 +378,8 @@ THEME_FILE_HELP = f"""\
 ##   MUTED      = {{ ansi = 90 }}            # standard ANSI fg code
 ##   BACKGROUND = {{ ansi = 39, bg = 49 }}   # fg and/or bg codes
 ##
-## Missing entries inherit from the built-in of the same name (or terminal).
+## Missing entries inherit from the built-in of the same name (or terminal);
+## USER_TEXT and ASSISTANT_TEXT (message text) default to this file's DEFAULT.
 """
 
 DEFAULT_CONFIG_TEMPLATES = {
@@ -919,7 +920,8 @@ _STATE_SECTIONS = {"last_server", "active_model", "last_model", "model_catalog",
 # Palette keys a ``themes/<name>.toml`` file may define (``colors.PALETTE_FIELDS``).
 _THEME_PALETTE = {
     "BACKGROUND", "DEFAULT", "MUTED", "ERROR", "WARNING", "SUCCESS",
-    "PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED", "HEADING", "EMPHASIS", "CODE",
+    "PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED", "USER_TEXT", "ASSISTANT_TEXT",
+    "HEADING", "EMPHASIS", "CODE",
 }
 
 

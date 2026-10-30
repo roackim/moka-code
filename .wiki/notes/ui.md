@@ -997,14 +997,19 @@ See [commands.md](./commands.md).
 palettes for dark terminals: `moka`, `nord`, `dracula`, `gruvbox`,
 `tokyo-night` (the earlier set was removed on purpose, 2026-09-28). Palette
 keys: `BACKGROUND DEFAULT MUTED ERROR WARNING SUCCESS PERMISSION TOOL USER
-ASSISTANT FOCUSED` and, for answers, `HEADING EMPHASIS CODE` — the markdown
+ASSISTANT FOCUSED`, `USER_TEXT ASSISTANT_TEXT` (message text, `DEFAULT` unless
+set) and, for answers, `HEADING EMPHASIS CODE` — the markdown
 styles name them (`"fg": "HEADING"`), so a theme recolors answers too
 (`terminal` keeps pink / gold / light blue). Accents are free per theme; the
 semantic keys are not: `test_builtin_palettes_are_legible_and_coherent` checks
-every RGB palette against its background and black — DEFAULT ≥ 7:1; ERROR,
+every RGB palette against its background and black — DEFAULT and USER_TEXT
+≥ 7:1; ASSISTANT_TEXT ≥ 7:1 and dimmer than DEFAULT; ERROR,
 WARNING, SUCCESS, HEADING, EMPHASIS, CODE ≥ 4.5:1; MUTED ≥ 3:1 and dimmer than
-DEFAULT; bars/markers ≥ 3:1 — and the hues (ERROR red, WARNING amber, SUCCESS
-green).
+DEFAULT; bars/markers ≥ 3:1 — the hues (ERROR red, WARNING amber, SUCCESS
+green), and that the user's turns and the answers tell apart: USER / ASSISTANT
+CIE76 ΔE ≥ 40, USER_TEXT / ASSISTANT_TEXT ΔE ≥ 10. In the RGB built-ins, USER_TEXT is the body text tinted toward USER
+and ASSISTANT_TEXT a slightly dimmed (warmer where the theme allows) body
+text; `terminal` leaves both at the terminal's default fg.
 
 ### Theme switching
 

@@ -430,6 +430,22 @@ def _hue(color):
     return colorsys.rgb_to_hls(color.r / 255, color.g / 255, color.b / 255)[0] * 360
 
 
+def _lab(color):
+    def lin(v):
+        v /= 255
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = lin(color.r), lin(color.g), lin(color.b)
+    x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
+    f = lambda t: t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116
+    return 116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))
+
+
+def _delta_e(a, b):
+    return sum((p - q) ** 2 for p, q in zip(_lab(a), _lab(b))) ** 0.5
+
+
 RGB_THEMES = [t for t in colors.BUILTIN_THEMES.values() if hasattr(t.DEFAULT, "r")]
 
 
@@ -442,11 +458,18 @@ def test_builtin_palettes_are_legible_and_coherent(palette):
         return min(_contrast(color, bg) for bg in backgrounds)
 
     assert worst(palette.DEFAULT) >= 7                       # body text
+    assert worst(palette.USER_TEXT) >= 7                     # the user's messages
+    assert 7 <= worst(palette.ASSISTANT_TEXT) < worst(palette.DEFAULT)  # answers, dimmed
     for key in ("ERROR", "WARNING", "SUCCESS", "HEADING", "EMPHASIS", "CODE"):
         assert worst(getattr(palette, key)) >= 4.5, key      # readable text
     assert 3 <= worst(palette.MUTED) < worst(palette.DEFAULT)   # muted, not gone
     for key in ("PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED"):
         assert worst(getattr(palette, key)) >= 3, key        # bars and markers
+
+    # The user's turns and the answers tell apart at a glance (CIE76 ΔE: a
+    # rose next to a caramel was 18; gold next to caramel is 40).
+    assert _delta_e(palette.USER, palette.ASSISTANT) >= 40, "USER / ASSISTANT look alike"
+    assert _delta_e(palette.USER_TEXT, palette.ASSISTANT_TEXT) >= 10
 
     error, warning, success = _hue(palette.ERROR), _hue(palette.WARNING), _hue(palette.SUCCESS)
     assert error >= 340 or error <= 20                        # red
@@ -454,7 +477,7 @@ def test_builtin_palettes_are_legible_and_coherent(palette):
     assert 70 <= success <= 170                               # green
 
 
-def test_refresh_theme_keeps_user_text_in_the_normal_color():
+def test_refresh_theme_keeps_user_text_in_its_theme_color():
     from moka_code.ui.chat_message import Message
     from moka_code.ui.tui.msg_types import UserMsg
 
@@ -464,6 +487,25 @@ def test_refresh_theme_keeps_user_text_in_the_normal_color():
         message = Message("hi", msg_type=UserMsg())
         colors.set_theme("moka")
         message.refresh_theme()
-        assert message.component.fg == colors.theme.DEFAULT
+        assert message.component.fg is colors.theme.USER_TEXT
+    finally:
+        colors.set_theme(original)
+
+
+def test_message_text_colors_default_to_the_theme_default():
+    """2026-10-30: USER_TEXT / ASSISTANT_TEXT color user and answer text; a
+    theme file that leaves them out uses its own DEFAULT."""
+    from moka_code.ui.chat_message import Message
+    from moka_code.ui.tui.msg_types import AssistantMsg, UserMsg
+
+    custom = colors._theme_from_palette("mine", {"DEFAULT": "#101010", "user_text": "#202020"})
+    assert (custom.USER_TEXT.r, custom.ASSISTANT_TEXT.r) == (0x20, 0x10)
+
+    original = colors.theme.name
+    try:
+        colors.set_theme("moka")
+        colors.theme.ASSISTANT_TEXT = colors.RGB("#303030")
+        assert Message("a", msg_type=AssistantMsg()).component.fg is colors.theme.ASSISTANT_TEXT
+        assert Message("q", msg_type=UserMsg()).component.fg is colors.theme.USER_TEXT
     finally:
         colors.set_theme(original)

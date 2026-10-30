@@ -1,5 +1,6 @@
 
 from dataclasses import dataclass
+from typing import Optional
 from pathlib import Path
 
 from moka_code import settings
@@ -68,6 +69,10 @@ class ANSIColor:
         return f"\033[{self.bg}m"
 
 
+#: Text colors that default to the theme's own DEFAULT.
+_TEXT_FIELDS = ("USER_TEXT", "ASSISTANT_TEXT")
+
+
 @dataclass
 class _theme:    
     name: str
@@ -89,6 +94,15 @@ class _theme:
     HEADING: RGB
     EMPHASIS: RGB    # **bold**
     CODE: RGB        # `inline code`
+
+    # Message text; a theme that leaves them out uses its DEFAULT.
+    USER_TEXT: Optional[RGB] = None
+    ASSISTANT_TEXT: Optional[RGB] = None
+
+    def __post_init__(self):
+        for field in _TEXT_FIELDS:
+            if getattr(self, field) is None:
+                setattr(self, field, self.DEFAULT)
 
     def copy(self) -> "_theme":
         return _theme(**self.__dict__)
@@ -143,43 +157,48 @@ def _palette(name: str, **colors: str) -> _theme:
 
 
 moka = _palette(
-    "moka",  # roasted browns, cream text, honey focus, mint user
-    BACKGROUND="#1C1714", DEFAULT="#EADFD3", MUTED="#8C7B6E",
-    ERROR="#E5705F", WARNING="#E8B45A", SUCCESS="#9CC27A",
-    PERMISSION="#C98BB9", TOOL="#8DB4C8", USER="#8FC1B5", ASSISTANT="#B89478",
-    FOCUSED="#F5CB7A", HEADING="#E8956A", EMPHASIS="#F5CB7A", CODE="#8DB4C8",
+    "moka",  # espresso, cream text, latte answers, sunflower user, cream focus
+    BACKGROUND="#1A1412", DEFAULT="#ECDCCF", MUTED="#8E7A6E",
+    ERROR="#E5705F", WARNING="#E2B266", SUCCESS="#A3BC7E",
+    PERMISSION="#B98BC0", TOOL="#B39AB8", USER="#F0C24A", ASSISTANT="#8E7A6E",
+    FOCUSED="#FFF0D0", HEADING="#E39A6E", EMPHASIS="#F0D3A0", CODE="#B4C08F",
+    USER_TEXT="#f7ca88", ASSISTANT_TEXT="#CEB9A5",
 )
 
 nord = _palette(
-    "nord",
-    BACKGROUND="#2E3440", DEFAULT="#D8DEE9", MUTED="#7B88A1",
+    "nord",  # snow text, frost user, aurora orange answers
+    BACKGROUND="#2E3440", DEFAULT="#E5E9F0", MUTED="#7B88A1",
     ERROR="#E0848C", WARNING="#EBCB8B", SUCCESS="#A3BE8C",
-    PERMISSION="#B48EAD", TOOL="#81A1C1", USER="#88C0D0", ASSISTANT="#8FBCBB",
-    FOCUSED="#ECEFF4", HEADING="#88C0D0", EMPHASIS="#EBCB8B", CODE="#8FBCBB",
+    PERMISSION="#B48EAD", TOOL="#81A1C1", USER="#88C0D0", ASSISTANT="#D08770",
+    FOCUSED="#ECEFF4", HEADING="#88C0D0", EMPHASIS="#F7E09B", CODE="#8FBCBB",
+    USER_TEXT="#BCE0EC", ASSISTANT_TEXT="#CBD1DC",
 )
 
 dracula = _palette(
-    "dracula",
-    BACKGROUND="#282A36", DEFAULT="#F8F8F2", MUTED="#7C86B0",
-    ERROR="#FF6E6E", WARNING="#F1FA8C", SUCCESS="#50FA7B",
-    PERMISSION="#FF79C6", TOOL="#8BE9FD", USER="#BD93F9", ASSISTANT="#8BE9FD",
-    FOCUSED="#FFB86C", HEADING="#FF79C6", EMPHASIS="#FFB86C", CODE="#8BE9FD",
+    "dracula",  # softened: purple user, cyan answers, orange focus, amber warnings
+    BACKGROUND="#282A36", DEFAULT="#EEEEE8", MUTED="#7C86B0",
+    ERROR="#EE7B7B", WARNING="#E6C07B", SUCCESS="#7DD39A",
+    PERMISSION="#EE90C8", TOOL="#9AA5CE", USER="#B49CF0", ASSISTANT="#8FD8E8",
+    FOCUSED="#F0B57E", HEADING="#EE90C8", EMPHASIS="#F0B57E", CODE="#7DD39A",
+    USER_TEXT="#E0D6F6", ASSISTANT_TEXT="#DCDAD0",
 )
 
 gruvbox = _palette(
-    "gruvbox",
+    "gruvbox",  # fg1 text, fg2 answers, aqua user, orange answers
     BACKGROUND="#282828", DEFAULT="#EBDBB2", MUTED="#928374",
     ERROR="#FC5D48", WARNING="#FABD2F", SUCCESS="#A9C26A",
-    PERMISSION="#D3869B", TOOL="#83A598", USER="#FE8019", ASSISTANT="#8EC07C",
+    PERMISSION="#D3869B", TOOL="#83A598", USER="#8EC07C", ASSISTANT="#FE8019",
     FOCUSED="#FABD2F", HEADING="#FE8019", EMPHASIS="#FABD2F", CODE="#8EC07C",
+    USER_TEXT="#D3E2B4", ASSISTANT_TEXT="#D5C4A1",
 )
 
 tokyo_night = _palette(
-    "tokyo-night",
+    "tokyo-night",  # light teal user, fg_dark answers under a blue bar
     BACKGROUND="#1A1B26", DEFAULT="#C0CAF5", MUTED="#737AA2",
     ERROR="#F7768E", WARNING="#E0AF68", SUCCESS="#9ECE6A",
-    PERMISSION="#BB9AF7", TOOL="#7DCFFF", USER="#7AA2F7", ASSISTANT="#2AC3DE",
+    PERMISSION="#BB9AF7", TOOL="#7DCFFF", USER="#73DACA", ASSISTANT="#7AA2F7",
     FOCUSED="#FF9E64", HEADING="#BB9AF7", EMPHASIS="#FF9E64", CODE="#7DCFFF",
+    USER_TEXT="#C8F2EA", ASSISTANT_TEXT="#A9B1D6",
 )
 
 
@@ -241,6 +260,10 @@ def _theme_from_palette(name: str, palette: dict) -> "_theme":
     base.name = name
     for key, spec in palette.items():
         setattr(base, key.upper(), _color_from_spec(spec))
+    given = {key.upper() for key in palette}
+    for field in _TEXT_FIELDS:
+        if field not in given:
+            setattr(base, field, base.DEFAULT)
     return base
 
 
@@ -274,7 +297,7 @@ def theme_names() -> list:
 PALETTE_FIELDS = (
     "BACKGROUND", "DEFAULT", "MUTED", "ERROR", "WARNING",
     "SUCCESS", "PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED",
-    "HEADING", "EMPHASIS", "CODE",
+    "HEADING", "EMPHASIS", "CODE", "USER_TEXT", "ASSISTANT_TEXT",
 )
 
 
