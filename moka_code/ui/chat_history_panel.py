@@ -20,14 +20,6 @@ from moka_code.ui.chat_message import Message, reference_spans
 _LIVE_TICK_INTERVAL = 0.25
 
 
-def _clamped(msg: Message) -> bool:
-    """True for activity lines (thoughts, tool calls) that stack without gaps;
-    ``ui.thought_gap`` / ``ui.tool_gap`` space them like any message."""
-    if _is_thought(msg):
-        return not settings.config.ui_thought_gap
-    return getattr(msg.type, "clamped", False) and not settings.config.ui_tool_gap
-
-
 class AnswerGroup:
     """Shared by the segments of one split answer (see ``split_answer``)."""
 
@@ -42,45 +34,25 @@ class ToolGroup:
         self.text = text  # terminal-like command + output, copied as a whole
 
 
-def _is_thought(msg: Message) -> bool:
-    return isinstance(msg.type, ThinkingMsg)
-
-
-def _thought_and_tool(a: Message, b: Message) -> bool:
-    """One is a thought and the other a tool line."""
-    def tool(m: Message) -> bool:
-        return getattr(m.type, "clamped", False) and not _is_thought(m)
-    return (_is_thought(a) and tool(b)) or (tool(a) and _is_thought(b))
-
-
-def _needs_gap(prev: Message, msg: Optional[Message]) -> bool:
-    """Blank line between two messages: none inside a block of activity."""
-    return not (_clamped(prev) and (msg is None or _clamped(msg)))
+def _activity(msg: Message) -> bool:
+    """Thoughts, tool lines and permission prompts (``MsgType.clamped``)."""
+    return getattr(msg.type, "clamped", False)
 
 
 def _gap_before(messages: list, i: int) -> bool:
-    """Whether message ``i`` starts after a blank line.
-
-    A thought belongs to the message it precedes: it sits directly on top of
-    it, and when that message needs a gap the gap goes above the thought.
-    With ``ui.thought_gap`` it is spaced like any message, except that
-    ``ui.stack_activity`` keeps it on an adjacent tool line.
-    """
+    """Whether message ``i`` starts after a blank line: always, except
+    between activity lines with ``ui.group_thoughts_and_calls`` and from
+    activity to the answer after it with ``ui.group_reasoning_and_answers``."""
     if i == 0:
         return False
     prev, msg = messages[i - 1], messages[i]
     if prev.group is not None and prev.group is msg.group:
         return False  # segments of one split answer touch
-    if settings.config.ui_thought_gap:
-        if settings.config.ui_stack_activity and _thought_and_tool(prev, msg):
-            return False
-        return _needs_gap(prev, msg)
-    if _is_thought(prev):
-        return False
-    if _is_thought(msg):
-        following = next((m for m in messages[i + 1:] if not _is_thought(m)), None)
-        return _needs_gap(prev, following)
-    return _needs_gap(prev, msg)
+    if _activity(prev) and _activity(msg):
+        return not settings.config.ui_group_thoughts_and_calls
+    if _activity(prev) and type(msg.type) is AssistantMsg:
+        return not settings.config.ui_group_reasoning_and_answers
+    return True
 
 
 def _continues_answer(messages: list, i: int) -> bool:

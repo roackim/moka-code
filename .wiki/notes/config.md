@@ -249,9 +249,10 @@ metrics keys (`show_metrics`, `metrics_show_*`; nothing displayed them) are
 retired too, and so are `box_style` / `box_style_focused` (only the popups
 read them; every frame is square) and `theme` (state only). Colour keys (`sandbox_*_color`, `thought_color`,
 `thought_expanded_color`) are validated at load: a palette name or `#rrggbb`,
-else a load error and the default is kept. `thought_gap` (default on) / `tool_gap`
-(default off) space thoughts / tool lines like other messages; `stack_activity`
-(default on) keeps a thought on an adjacent tool line (see [ui.md](./ui.md)).
+else a load error and the default is kept. `group_thoughts_and_calls` (default
+off) joins adjacent thoughts and tool lines; `group_reasoning_and_answers`
+(default off) joins them to the answer after; they replaced the retired
+`thought_gap`, `tool_gap` and `stack_activity` (see [ui.md](./ui.md)).
 
 The status bar is one template, `ui.status_bar` (kind `status_bar`: every
 `{name}` must be one of `settings.STATUS_BAR_VALUES` and `[ ]` must balance,

@@ -173,7 +173,7 @@ def test_thread_render_smoke_markdown_message():
 
 def test_expanded_thought_has_no_trailing_blank_row():
     """2026-10-29: an expanded thought is as tall as its text (the blank row it
-    used to end on is gone; ``ui.thought_gap`` spaces thoughts); folded, one row."""
+    used to end on is gone; the gap between messages spaces thoughts); folded, one row."""
     from moka_code.ui.tui.msg_types import AssistantMsg, ThinkingMsg
 
     thought = Message("line one\nline two", msg_type=ThinkingMsg(), max_width=40)

@@ -784,15 +784,14 @@ is `ingest` + `reveal_to(len(base_text))` for non-streamed callers and drops
 leading whitespace on the first chunk, since models often open with a space.
 
 Messages are separated by `ui_msg_v_margin` blank lines (default `1`; set it in
-`ui.toml`). Spacing rule (`chat_history_panel._gap_before`): adjacent activity
-(`MsgType.clamped`: `ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`) stacks
-with no gap; prose, user turns and notices keep the gap. A thought belongs to
-the message it precedes: it sits directly on top of it, and when that message
-needs a gap the gap goes above the thought. `ui.thought_gap` (default `true`)
-spaces thoughts like any message; `false` sticks them to what follows.
-With it on, `ui.stack_activity` (default `true`) still drops the gap between a
-thought and an adjacent tool line, either way round (`_thought_and_tool`).
-`ui.tool_gap = true` spaces tool lines; by default they stack (`_clamped`).
+`ui.toml`). Spacing rule (`chat_history_panel._gap_before`): every message gets
+the gap, except the segments of one split answer and two groupings, both off by
+default. `ui.group_thoughts_and_calls` drops it between adjacent activity
+lines (`MsgType.clamped`: `ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`;
+thought↔tool, tool↔tool, thought↔thought). `ui.group_reasoning_and_answers`
+drops it between an activity line and the answer (`AssistantMsg`) right after
+it; an answer followed by activity keeps it. They replaced `thought_gap`,
+`tool_gap` and `stack_activity` (2026-11-02, retired).
 
 Thought colors: `ui.thought_color` colors the folded line and its bar,
 `ui.thought_expanded_color` the unfolded text and its bar (both `MUTED` by

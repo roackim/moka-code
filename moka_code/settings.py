@@ -265,9 +265,8 @@ DEFAULT_UI_TOML = f"""\
 # thought_bullet = false                # thoughts
 # tool_bullet = false                   # tool lines and their output
 # ask_bullet = true                     # questions and permission prompts
-# thought_gap = true                    # blank lines between a thought and what follows it
-# tool_gap = false                      # blank lines between tool lines
-# stack_activity = true                 # with thought_gap: no blank line between a thought and a tool line
+# group_thoughts_and_calls = false      # no blank line between thoughts and tool lines
+# group_reasoning_and_answers = false   # no blank line between them and the answer after
 # show_banner = true                    # moka art in an empty transcript
 
 {_rule("Look")}
@@ -425,9 +424,8 @@ _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
     "thought_bullet": ("ui_thought_bullet", "bool", False),
     "tool_bullet": ("ui_tool_bullet", "bool", False),
     "ask_bullet": ("ui_ask_bullet", "bool", True),
-    "thought_gap": ("ui_thought_gap", "bool", True),
-    "tool_gap": ("ui_tool_gap", "bool", False),
-    "stack_activity": ("ui_stack_activity", "bool", True),
+    "group_thoughts_and_calls": ("ui_group_thoughts_and_calls", "bool", False),
+    "group_reasoning_and_answers": ("ui_group_reasoning_and_answers", "bool", False),
     "show_banner": ("ui_show_banner", "bool", True),
     # Look
     "use_bg_color": ("ui_use_bg_color", "bool", False),
@@ -494,6 +492,8 @@ _RETIRED_UI: set[str] = {  # nothing read these: spinner (elapsed-time labels), 
     "show_effort", "effort_separator", "sandbox_glyph", "sandbox_prefix",
     # Replaced by bullet and the per-type *_bullet toggles.
     "thought_bar", "answer_bar",
+    # Replaced by group_thoughts_and_calls and group_reasoning_and_answers.
+    "thought_gap", "tool_gap", "stack_activity",
 }
 # preserve_reasoning_traces: reasoning is no longer sent back (PLAN.md step 2).
 _RETIRED_CONTEXT: set[str] = {"preserve_reasoning_traces", "format"}  # format: the project tree was never sent

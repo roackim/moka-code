@@ -1,8 +1,6 @@
-"""Transcript spacing: thoughts and tool calls clamp; answers do not.
-
-Adjacent clamped messages (thinking lines, tool calls) render with no
-inter-message gap. Everything else — the final answer, user turns, notices —
-keeps the configured ``ui_msg_v_margin`` blank lines.
+"""Transcript spacing: with ``ui.group_thoughts_and_calls`` thoughts and tool
+calls touch; the answer, user turns and notices keep ``ui_msg_v_margin``
+blank lines unless ``ui.group_reasoning_and_answers`` joins the answer.
 """
 
 from moka_code import settings
@@ -17,7 +15,8 @@ def _panel():
 
 
 def test_thoughts_and_tools_clamp_but_the_answer_does_not(monkeypatch):
-    monkeypatch.setattr(settings.config, "ui_thought_gap", False)
+    monkeypatch.setattr(settings.config, "ui_group_thoughts_and_calls", True)
+    monkeypatch.setattr(settings.config, "ui_group_reasoning_and_answers", False)
     panel = _panel()
     panel.add_message("can you ls ?", msg_type=UserMsg())
     panel.add_message("", msg_type=ThinkingMsg())
@@ -89,15 +88,10 @@ def _gaps(*types):
     return [starts[i] - ends[i - 1] for i in range(1, len(types))]
 
 
-def test_a_thought_sits_on_the_message_it_precedes(monkeypatch):
-    monkeypatch.setattr(settings.config, "ui_tool_gap", False)
-    monkeypatch.setattr(settings.config, "ui_thought_gap", False)
+def test_both_groupings_render_one_block_after_the_question(monkeypatch):
+    monkeypatch.setattr(settings.config, "ui_group_thoughts_and_calls", True)
+    monkeypatch.setattr(settings.config, "ui_group_reasoning_and_answers", True)
     gap = settings.config.ui_msg_v_margin
-    # tool, thought, tool: one activity block, no gaps.
-    assert _gaps(ToolCallMsg, ThinkingMsg, ToolCallMsg) == [0, 0]
-    # tool, thought, prose: the prose needs a gap, so it goes above the thought.
-    assert _gaps(ToolCallMsg, ThinkingMsg, AssistantMsg) == [gap, 0]
-    # user, thought, prose: same; the thought hugs the answer.
-    assert _gaps(UserMsg, ThinkingMsg, AssistantMsg) == [gap, 0]
-    # prose, thought, tool: the tool block needs a gap after prose.
+    assert _gaps(UserMsg, ThinkingMsg, ToolCallMsg, AssistantMsg) == [gap, 0, 0]
+    # prose, thought, tool: activity after prose keeps its gap.
     assert _gaps(AssistantMsg, ThinkingMsg, ToolCallMsg) == [gap, 0]

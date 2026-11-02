@@ -17,36 +17,40 @@ def _turn():
             Message("done", msg_type=AssistantMsg())]
 
 
-def test_activity_stacks_without_gaps(monkeypatch):
-    monkeypatch.setattr(settings.config, "ui_tool_gap", False)
-    monkeypatch.setattr(settings.config, "ui_thought_gap", False)
-    # The gap before the thought belongs to the tool line it sits on.
-    assert _gaps(_turn()) == [False, True, False, False, True]
+def _group(monkeypatch, calls, answers):
+    monkeypatch.setattr(settings.config, "ui_group_thoughts_and_calls", calls)
+    monkeypatch.setattr(settings.config, "ui_group_reasoning_and_answers", answers)
 
 
-def test_thought_gap_sets_a_thought_apart(monkeypatch):
-    monkeypatch.setattr(settings.config, "ui_tool_gap", False)
-    monkeypatch.setattr(settings.config, "ui_thought_gap", True)
-    monkeypatch.setattr(settings.config, "ui_stack_activity", False)
-    assert _gaps(_turn()) == [False, True, True, False, True]
+def test_everything_is_spaced_by_default(monkeypatch):
+    """2026-11-02: both groupings are off by default."""
+    _group(monkeypatch, False, False)
+    assert _gaps(_turn()) == [False, True, True, True, True]
 
 
-def test_stack_activity_keeps_thoughts_on_tool_lines(monkeypatch):
-    """2026-10-29: ``stack_activity`` (on by default) drops the blank line between
-    a thought and a tool line, either way round; the answer stays apart."""
-    monkeypatch.setattr(settings.config, "ui_tool_gap", True)
-    monkeypatch.setattr(settings.config, "ui_thought_gap", True)
-    monkeypatch.setattr(settings.config, "ui_stack_activity", True)
+def test_group_thoughts_and_calls_joins_all_activity(monkeypatch):
+    """2026-11-02: thought↔tool, tool↔tool and thought↔thought; the answer
+    and the user turn stay apart."""
+    _group(monkeypatch, True, False)
     turn = _turn()
-    turn.insert(4, Message("t2", msg_type=ThinkingMsg()))
-    # user, thought, tool, tool, thought, answer
-    assert _gaps(turn) == [False, True, False, True, False, True]
+    turn.insert(2, Message("t2", msg_type=ThinkingMsg()))
+    # user, thought, thought, tool, tool, answer
+    assert _gaps(turn) == [False, True, False, False, False, True]
 
 
-def test_tool_gap_sets_tool_lines_apart(monkeypatch):
-    monkeypatch.setattr(settings.config, "ui_tool_gap", True)
-    monkeypatch.setattr(settings.config, "ui_thought_gap", False)
-    assert _gaps(_turn()) == [False, True, False, True, True]
+def test_group_reasoning_and_answers_joins_activity_to_the_answer_after(monkeypatch):
+    """2026-11-02: activity -> answer only; an answer before a tool line and
+    the user turn stay apart."""
+    _group(monkeypatch, False, True)
+    assert _gaps(_turn()) == [False, True, True, True, False]
+    turn = [Message("q", msg_type=UserMsg()), Message("x", msg_type=AssistantMsg()),
+            Message("a", msg_type=ToolCallMsg())]
+    assert _gaps(turn) == [False, True, True]
+
+
+def test_both_groupings_make_one_block(monkeypatch):
+    _group(monkeypatch, True, True)
+    assert _gaps(_turn()) == [False, True, False, False, False]
 
 
 def test_thought_colors_follow_the_fold(monkeypatch):
