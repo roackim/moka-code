@@ -113,7 +113,7 @@ def test_notices_are_sent_folded_into_the_next_user_message():
     harness._record_sandbox_change("bubblewrap")
     harness._add_message_to_history("user", "hello")
     harness._add_message_to_history("assistant", "hi")
-    harness._record_role_change("chat", "agent")
+    harness.history.append({"id": "r", "role": "system", "content": "[Role changed from chat to agent]"})
     harness._add_message_to_history("user", "again")
 
     api = harness._api_history()

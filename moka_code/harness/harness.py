@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 # Fields of a history entry that are sent to the model (see ``_to_api_message``).
 _API_FIELDS = ("role", "content", "tool_calls", "tool_call_id")
 
+# Start of a role notice (``_role_notice``); older sessions hold ``[Role changed from …]``.
+_ROLE_NOTICE_PREFIX = "<system-reminder>\nRole "
+
 # Minimum wall-clock seconds between live ``ToolCallDraft`` updates for one
 # call. The first named chunk always emits; later updates are time-throttled so
 # a large streamed body (e.g. a file write) neither emits an event per delta
@@ -131,13 +134,14 @@ class Harness:
             raise TypeError("role must be a Role")
         from moka_code.harness import roles
 
-        previous_name = getattr(self, "role", role).name
+        previous = getattr(self, "role", None)
         self.role = role
         self._role_stat = roles.role_file_stat(role.name)
         self._permission_gate.set_role(role)
         self._rebuild_tools()
         self.debug_stream.log("ROLE", {"name": role.name, "tools": sorted(role.enabled_tool_names())})
-        self._record_role_change(previous_name, role.name)
+        if previous is not None and previous != role:
+            self._record_role_change(previous)
 
     def role_problem(self) -> Optional[str]:
         """How the running role (kept in memory) differs from its file: ``"none"``
@@ -299,20 +303,60 @@ class Harness:
             if self.tools_map else None
         )
 
-    def _record_role_change(self, previous_name: str, role_name: str) -> None:
-        """Record a role change without stacking consecutive role notices."""
-        if previous_name == role_name:
-            return
+    def _role_notice(self, previous_name: str) -> str:
+        """What the model is told when the role changes: the role's own prompt
+        and the tools it has now, and that the earlier role no longer holds (a
+        bare name change is lost against a history written under the old role)."""
+        role = self.role
+        head = (f"Role changed: {previous_name} → {role.name}." if previous_name != role.name
+                else f"Role updated: {role.name}.")
+        prompt = (role.prompt or "").strip()
+        tools = sorted(getattr(self, "tools_map", None) or {})
+        return "\n".join([
+            "<system-reminder>",
+            f"{head} This notice is from moka, the harness, not from the user.",
+            "Instructions and limits from earlier in this conversation no longer apply, "
+            "and what was said earlier about your abilities may no longer hold.",
+            f"Your instructions now: {prompt}" if prompt else "There are no role instructions now.",
+            f"Tools available now: {', '.join(tools)}." if tools
+            else "No tools are available now: answer in text, do not attempt tool calls.",
+            "</system-reminder>",
+        ])
 
-        content = f"[Role changed from {previous_name} to {role_name}]"
-        if (
-            self.history
-            and self.history[-1].get("role") == "system"
-            and str(self.history[-1].get("content", "")).startswith("[Role changed from ")
-        ):
-            self.history[-1]["content"] = content
+    @staticmethod
+    def _is_role_notice(message: Dict[str, Any]) -> bool:
+        content = str(message.get("content", ""))
+        return message.get("role") == "system" and (
+            content.startswith(_ROLE_NOTICE_PREFIX) or content.startswith("[Role changed from "))
+
+    def _record_role_change(self, previous) -> None:
+        """Record a change to the active role (``previous`` is the role before it).
+
+        Switches the model has not seen yet collapse into one notice: a pending
+        role notice (one among the notices after the last message) is replaced,
+        and counted from the role the model last saw (``_role_seen``, the
+        ``previous`` of the first pending switch). Back on that same role, no
+        notice is left at all.
+        """
+        pending = None
+        for index in range(len(self.history) - 1, -1, -1):
+            entry = self.history[index]
+            if entry.get("role") != "system":
+                break
+            if self._is_role_notice(entry):
+                pending = index
+                break
+        if pending is not None:
+            seen = getattr(self, "_role_seen", None)
+            if seen is not None and seen.name == self.history[pending].get("role_from"):
+                previous = seen
+            del self.history[pending]
+        else:
+            self._role_seen = previous
+        if previous == self.role:
             return
-        self._add_message_to_history("system", content)
+        self._add_message_to_history("system", self._role_notice(previous.name),
+                                     role_from=previous.name)
 
     def switch_server(self, new_endpoint: Optional[Endpoint]) -> None:
         """Switch to a different LLM endpoint at runtime (``None``: none).
@@ -700,6 +744,12 @@ class Harness:
         if announced and announced[0] != "none" and not any(self._is_sandbox_notice(e) for e in tail):
             inserted.append({"id": uuid.uuid4().hex[:8], "role": "system",
                              "content": self._sandbox_notice(*announced)})
+        # Likewise the last role notice: the summary was written from turns under
+        # an earlier role, and must not outweigh the role the model runs now.
+        dropped = [e for e in self.history[:position] if self._is_role_notice(e)]
+        if dropped and not any(self._is_role_notice(e) for e in tail):
+            inserted.append({"id": uuid.uuid4().hex[:8], "role": "system",
+                             "content": dropped[-1]["content"]})
         self.history[position:position] = inserted
         self._last_usage = None         # the count no longer matches the history
         tokens_after = self.context_estimate()

@@ -55,6 +55,27 @@ def test_compaction_reeimits_the_active_sandbox_notice(harness_stub_compaction):
     assert effective[1]["content"] == "[Sandbox: bubblewrap]\nNo network."
 
 
+def test_compaction_reemits_the_last_role_notice(harness_stub_compaction):
+    """A role notice in the summarized turns is re-emitted after the marker: the
+    summary was written under the earlier role and must not outweigh it."""
+    harness = harness_stub_compaction
+    notice = "<system-reminder>\nRole changed: chat → agent.\n</system-reminder>"
+    harness.history += [
+        {"id": "u1", "role": "user", "content": "first"},
+        {"id": "a1", "role": "assistant", "content": "first answer"},
+        {"id": "r", "role": "system", "content": notice},
+        {"id": "u2", "role": "user", "content": "second"},
+        {"id": "a2", "role": "assistant", "content": "second answer"},
+    ]
+
+    result = asyncio.run(harness.compact_history())
+
+    assert result["ok"] is True
+    effective = harness._get_effective_history()
+    assert effective[0]["content"].startswith(COMPACTION_MARKER_PREFIX)
+    assert effective[1]["content"] == notice
+
+
 def test_compaction_does_not_reemit_a_cleared_sandbox(harness_stub_compaction):
     harness = harness_stub_compaction
     harness._record_sandbox_change("bubblewrap", "")

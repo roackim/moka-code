@@ -53,27 +53,119 @@ def test_system_message_is_the_role_prompt():
     assert harness._system_messages() == []
 
 
-def test_true_role_change_history_replaces_consecutive_notices():
+def _role_harness(name="agent", prompt="", tools=()):
     harness = Harness.__new__(Harness)
     harness.history = []
+    harness.role = Role(name=name, prompt=prompt)
+    harness.tools_map = {tool: object() for tool in tools}
+    return harness
 
-    harness._record_role_change("agent", "chat")
-    harness._record_role_change("chat", "agent")
+
+def test_role_notice_says_what_the_new_role_is_and_cancels_the_old_one():
+    harness = _role_harness("agent", "You can use a computer.", ("read", "bash"))
+
+    harness._record_role_change(Role(name="chat"))
+
+    assert harness.history[0]["role"] == "system"
+    assert harness.history[0]["content"] == "\n".join([
+        "<system-reminder>",
+        "Role changed: chat → agent. This notice is from moka, the harness, not from the user.",
+        "Instructions and limits from earlier in this conversation no longer apply, "
+        "and what was said earlier about your abilities may no longer hold.",
+        "Your instructions now: You can use a computer.",
+        "Tools available now: bash, read.",
+        "</system-reminder>",
+    ])
+
+
+def test_role_notice_without_tools_forbids_tool_calls():
+    harness = _role_harness("chat")
+
+    harness._record_role_change(Role(name="agent"))
+
+    content = harness.history[0]["content"]
+    assert "There are no role instructions now." in content
+    assert "No tools are available now: answer in text, do not attempt tool calls." in content
+
+
+def _switch(harness, name):
+    previous, harness.role = harness.role, Role(name=name)
+    harness._record_role_change(previous)
+
+
+def test_unsent_switches_collapse_into_one_notice_from_the_role_last_seen():
+    harness = _role_harness("agent")
+    _switch(harness, "chat")
+    _switch(harness, "plan")
 
     assert len(harness.history) == 1
-    assert harness.history[0]["content"] == "[Role changed from chat to agent]"
+    assert "Role changed: agent → plan." in harness.history[0]["content"]
 
 
-def test_role_change_history_preserves_notice_after_other_messages():
-    harness = Harness.__new__(Harness)
-    harness.history = []
+def test_unsent_switches_back_to_the_role_last_seen_leave_no_notice():
+    harness = _role_harness("agent")
+    _switch(harness, "chat")
+    _switch(harness, "agent")
 
-    harness._record_role_change("agent", "chat")
+    assert harness.history == []
+
+
+def test_a_sandbox_notice_in_between_still_collapses_role_notices():
+    harness = _role_harness("agent")
+    _switch(harness, "chat")
+    harness._record_sandbox_change("bubblewrap")
+    _switch(harness, "plan")
+
+    notices = [e["content"] for e in harness.history]
+    assert notices[0] == "[Sandbox: bubblewrap]"
+    assert len(notices) == 2 and "Role changed: agent → plan." in notices[1]
+
+
+def test_role_notice_replaces_a_legacy_notice():
+    harness = _role_harness("agent")
+    harness.history = [{"id": "s", "role": "system", "content": "[Role changed from agent to chat]"}]
+
+    harness._record_role_change(Role(name="chat"))
+
+    assert len(harness.history) == 1
+    assert "Role changed: chat → agent." in harness.history[0]["content"]
+
+
+def test_a_switch_after_a_message_adds_a_new_notice():
+    harness = _role_harness("agent")
+    _switch(harness, "chat")
     harness._add_message_to_history("user", "hello")
-    harness._record_role_change("chat", "agent")
+    _switch(harness, "agent")
 
     assert len(harness.history) == 3
-    assert harness.history[-1]["content"] == "[Role changed from chat to agent]"
+    assert "Role changed: agent → chat." in harness.history[0]["content"]
+    assert "Role changed: chat → agent." in harness.history[-1]["content"]
+
+
+def _set_role_harness(role):
+    harness = _role_harness(role.name, role.prompt)
+    harness.debug_stream = NoopDebugStream()
+    harness._permission_gate = PermissionGate(role=role)
+    harness.role = role
+    harness._rebuild_tools = lambda: None
+    return harness
+
+
+def test_reloading_a_changed_role_tells_the_model():
+    harness = _set_role_harness(Role(name="agent", prompt="old"))
+
+    harness.set_role(Role(name="agent", prompt="new"))
+
+    assert "Role updated: agent." in harness.history[-1]["content"]
+    assert "Your instructions now: new" in harness.history[-1]["content"]
+
+
+def test_setting_the_same_role_adds_no_notice():
+    harness = _set_role_harness(Role(name="agent", prompt="same"))
+
+    harness.set_role(Role(name="agent", prompt="same"))
+
+    assert harness.history == []
 
 
 def _build_harness_stub(tmp_path, read_tool, role):

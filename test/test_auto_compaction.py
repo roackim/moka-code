@@ -98,7 +98,7 @@ def _harness(tmp_path, window, stream, tools=None):
     harness.set_role(Role(name="t", tools=tools or {}))
     harness.endpoint.context_window = lambda: window
     harness.endpoint.stream = stream
-    harness.history += _turn(1)
+    harness.history = _turn(1)          # without set_role's notice: not what is tested here
     return harness
 
 
