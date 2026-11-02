@@ -276,6 +276,8 @@ DEFAULT_UI_TOML = f"""\
 # code_highlight_pad = true             # a highlighted empty code row above and below them
 # group_thoughts_and_calls = false      # no blank line between thoughts and tool lines
 # group_reasoning_and_answers = false   # no blank line between them and the answer after
+# indent_thoughts_and_calls = 0         # cells thoughts, tool lines and their output are indented
+# tree_thoughts_and_calls = true        # draw them as a tree (┌─ ├─ └─) instead of bullets
 # show_banner = true                    # moka art in an empty transcript
 
 {_rule("Look")}
@@ -445,6 +447,8 @@ _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
     "code_highlight_pad": ("ui_code_highlight_pad", "bool", True),
     "group_thoughts_and_calls": ("ui_group_thoughts_and_calls", "bool", False),
     "group_reasoning_and_answers": ("ui_group_reasoning_and_answers", "bool", False),
+    "indent_thoughts_and_calls": ("ui_indent_thoughts_and_calls", "int", 0),
+    "tree_thoughts_and_calls": ("ui_tree_thoughts_and_calls", "bool", True),
     "show_banner": ("ui_show_banner", "bool", True),
     # Look
     "use_bg_color": ("ui_use_bg_color", "bool", False),

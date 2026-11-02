@@ -470,7 +470,9 @@ the file the name resolves to, `/prompt remove <name>` deletes it after *Remove*
 
 On startup (`main`) `prompts.seed_global_prompts()` writes each `prompts.SEEDED`
 file missing from `<config>/prompts/` (an existing one is never touched): `moka-config.md`, the
-`!moka-config <request>` prompt. It tells an unsandboxed agent where every config file
+`!moka-config` prompt (no parameter: bare, the model first asks what to configure;
+text on the lines below the call is the request). It says the config folder is
+almost always `~/.config/moka`, and tells an unsandboxed agent where every config file
 lives, points it at the self-documenting ones (settings, servers, roles, themes)
 and details sandboxes and prompts; the model edits files, the user runs the slash
 command it names. A deleted seed comes back on the next start. `test_the_config_prompt_names_every_sandbox_type_key_and_config_file`
@@ -797,6 +799,19 @@ Thought colors: `ui.thought_color` colors the folded line and its bar,
 `ui.thought_expanded_color` the unfolded text and its bar (both `MUTED` by
 default; palette name or `#rrggbb`, resolved by `colors.resolve_color`;
 `Message._apply_thought_colors` re-applies them on fold, theme switch and reload).
+
+Indent: `ui.indent_thoughts_and_calls` (cells, default `0`) shifts thoughts,
+tool lines and their output right (`Message._apply_indent` sets their
+`left_margin`, which the panel lays out after; re-applied on reload).
+
+Tree: `ui.tree_thoughts_and_calls` (default `true`) draws a run of activity
+(thoughts, tool lines, permission prompts) as `┌─` / `├─` / `└─` branches (`──`
+for a run of one) in place of their bullets and walls, muted, or in the focus
+color for the selected one (no focus wall). Their text moves one cell right
+(after `├─ `; `Message._apply_indent`). Rows below a branch carry `│` unless it
+is the last; with `group_thoughts_and_calls` off the blank row between branches
+does too. The segments of one expanded tool call are one branch
+(`chat_history_panel._tree_marks`, drawn by the panel after each message).
 
 Highlight: `ui.user_highlight` (default `true`), `answer_highlight`,
 `thought_highlight`, `tool_highlight` (default `false`) draw the message (box

@@ -270,3 +270,72 @@ def test_code_highlight_pad_lights_an_empty_code_row_at_each_end(monkeypatch):
     monkeypatch.setattr(settings.config, "ui_code_highlight_pad", False)
     msg.refresh_theme()
     assert box.get_preferred_height(width) == 1
+
+
+def test_indent_thoughts_and_calls_shifts_only_them(monkeypatch):
+    """2026-11-03: ``ui.indent_thoughts_and_calls`` lays thoughts and tool
+    lines out that many cells right (and narrower); other messages stay."""
+    from moka_code.ui.chat_history_panel import ChatHistoryPanel
+    from moka_code.ui.tui.buffer import Buffer
+
+    monkeypatch.setattr(settings.config, "ui_indent_thoughts_and_calls", 3)
+    panel = ChatHistoryPanel()
+    thought = panel.add_message("t", msg_type=ThinkingMsg())
+    call = panel.add_message("c", msg_type=ToolCallMsg())
+    answer = panel.add_message("a", msg_type=AssistantMsg())
+    panel.set_layout(0, 0, 40, 20)
+    panel.render(Buffer(40, 20))
+
+    assert [m.get_component().x for m in (thought, call, answer)] == [3, 3, 0]
+    assert thought.get_component().width == answer.get_component().width - 3
+
+    monkeypatch.setattr(settings.config, "ui_indent_thoughts_and_calls", 0)
+    thought.refresh_theme()
+    assert thought.left_margin == 0
+
+
+def _tree_rows(monkeypatch, grouped, items):
+    from moka_code.ui.chat_history_panel import ChatHistoryPanel
+    from moka_code.ui.tui.buffer import Buffer
+
+    monkeypatch.setattr(settings.config, "ui_tree_thoughts_and_calls", True)
+    monkeypatch.setattr(settings.config, "ui_group_thoughts_and_calls", grouped)
+    panel = ChatHistoryPanel()
+    panel.add_message("question", msg_type=UserMsg())
+    for text, msg_type in items:
+        msg = panel.add_message(text, msg_type=msg_type)
+        if isinstance(msg_type, ThinkingMsg):
+            msg.collapsed = True
+            msg.finalize()
+    panel.add_message("the answer", msg_type=AssistantMsg())
+    panel.set_layout(0, 0, 30, 14)
+    buf = Buffer(30, 14)
+    panel.render(buf)
+    rows = ["".join(c.char for c in row).rstrip() for row in buf.cells]
+    return rows[2:rows.index("• the answer") - 1]
+
+
+def test_tree_draws_thoughts_and_calls_as_branches(monkeypatch):
+    """2026-11-03: ``ui.tree_thoughts_and_calls`` replaces their bullets by
+    ``┌─ ├─ └─``; with ``group_thoughts_and_calls`` off a ``│`` crosses the
+    blank row between them."""
+    items = [("t", ThinkingMsg()), ("read README.md", ToolCallMsg()),
+             ("read AGENTS.md", ToolCallMsg()), ("t", ThinkingMsg())]
+    assert _tree_rows(monkeypatch, True, items) == [
+        "┌─ thought", "├─ read README.md", "├─ read AGENTS.md", "└─ thought"]
+    assert _tree_rows(monkeypatch, False, items) == [
+        "┌─ thought", "│", "├─ read README.md", "│", "├─ read AGENTS.md", "│", "└─ thought"]
+
+
+def test_a_tree_of_one_is_a_single_branch(monkeypatch):
+    assert _tree_rows(monkeypatch, True, [("read a.py", ToolCallMsg())]) == ["── read a.py"]
+
+
+def test_segments_of_one_tool_call_are_one_branch():
+    from moka_code.ui.chat_history_panel import _tree_marks
+
+    group = object()
+    msgs = [Message("t", msg_type=ThinkingMsg()), Message("cmd", msg_type=ToolCallMsg()),
+            Message("out", msg_type=ToolCallMsg())]
+    msgs[1].group = msgs[2].group = group
+    assert [_tree_marks(msgs, i)[0] for i in range(3)] == ["┌─", "└─", " "]

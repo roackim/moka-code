@@ -154,13 +154,16 @@ def test_the_config_prompt_is_seeded_per_file_and_never_overwritten(workspace):
     path.unlink()
     assert prompts.seed_global_prompts() == [path]
 
+    # 2026-11-03: no parameter; bare, it asks what to configure, and what is
+    # written below the call is the request.
     config = prompts.list_prompts(workspace)["moka-config"]
-    assert config.params == ["request"]
+    assert config.params == []
     assert config.description.startswith("Configure moka")
-    text = prompts.expand("!moka-config a node sandbox\nthen start it", workspace).text
-    assert text.startswith("Help me configure moka, the terminal chat app you are running in: "
-                           "a node sandbox\n")
-    assert "{moka:<name>}" in text and text.endswith("\n\nthen start it")
+    bare = prompts.expand("!moka-config", workspace).text
+    assert bare.startswith("Help me configure moka, the terminal chat app you are running in.")
+    assert "ask me what I want to configure" in bare and "~/.config/moka" in bare
+    text = prompts.expand("!moka-config\na node sandbox", workspace).text
+    assert "{moka:<name>}" in text and text.endswith("\n\na node sandbox")
 
 
 def test_the_config_prompt_names_every_sandbox_type_key_and_config_file():

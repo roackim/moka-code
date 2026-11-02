@@ -41,11 +41,15 @@ Review {moka:file}, focusing on {moka:focus}.
 SEEDED = {"moka-config": """\
 # Configure moka: sandboxes, prompts, roles, servers, settings
 
-Help me configure moka, the terminal chat app you are running in: {moka:request}
+Help me configure moka, the terminal chat app you are running in. If I wrote
+what I need below, start there. Otherwise, before reading or changing anything,
+ask me what I want to configure (a sandbox, a prompt, a role, a server, a
+setting or a theme) and what I want it to do.
 
 ## Where the configuration lives
 
-- The config folder is `$MOKA_CONFIG_DIR` when it is set, else `~/.config/moka`.
+- The config folder is almost always `~/.config/moka`: look there first. Only
+  when `$MOKA_CONFIG_DIR` is set is it that folder instead.
 - `ui.toml`, `context.toml`, `debug.toml`: settings, one commented line per key
   showing its default. Uncomment and change a line; never invent keys.
 - `servers.toml`: one `[servers.<name>]` table per server, with a commented

@@ -557,7 +557,7 @@ class Message:
             compact_when_unfocused=(isinstance(msg_type, (msg_types.ToolCallMsg, msg_types.AskPermissionMsg))),  # Tool calls and permission requests use compact headers
             gutter=thread_gutter,
             gutter_color=thread_gutter_color,
-            content_pad_left=left_pad,
+            content_pad_left=left_pad + (1 if self.in_tree() else 0),   # see _apply_indent
             content_pad_right=right_pad,
             # User/assistant/tool-call use a `▌` prefix bar that spans every row.
             gutter_full_height=isinstance(
@@ -569,6 +569,25 @@ class Message:
         self._apply_thought_colors()
         self._apply_bullet()
         self._apply_highlight()
+        self._apply_indent()
+
+    def in_tree(self) -> bool:
+        """Drawn as a branch of ``ui.tree_thoughts_and_calls`` (thoughts, tool
+        lines, permission prompts: the activity the transcript groups)."""
+        return bool(settings.config.ui_tree_thoughts_and_calls
+                    and getattr(self.type, "clamped", False))
+
+    def _apply_indent(self) -> None:
+        """``ui.indent_thoughts_and_calls`` shifts thoughts, tool lines and
+        their output right by that many cells (the panel lays a message out
+        after its ``left_margin``). In a tree the text sits one cell further,
+        after ``├─ ``."""
+        if self._kind() in ("thought", "tool"):
+            self.left_margin = max(0, settings.config.ui_indent_thoughts_and_calls)
+        pad = self.left_pad + (1 if self.in_tree() else 0)
+        if pad != self.box.content_pad_left:
+            self.box.content_pad_left = pad
+            self.layout_revision += 1      # the panel's cached height is stale
 
     def _kind(self) -> Optional[str]:
         """The ``<type>`` of this message's ``ui.<type>_*`` settings, or None
@@ -620,6 +639,11 @@ class Message:
         kind = self._kind()
         if kind is None:
             self.box.bullet = None
+            self.box.wall = ""
+            return
+        if self.in_tree():
+            # The transcript draws the tree in place of the bullet and wall.
+            self.box.bullet = ""
             self.box.wall = ""
             return
         on = getattr(settings.config, f"ui_{kind}_bullet")
@@ -751,6 +775,7 @@ class Message:
         self.box.gutter_color = gutter_color
         self._apply_thought_colors()
         self._apply_bullet()
+        self._apply_indent()
         if self.is_tool_message():
             # The cached header/body carry colors of the previous theme.
             self._tool_display_cache_key = None
@@ -953,7 +978,9 @@ class Message:
                 preview = _clip(" ".join(last.split()), room, keep_end=True)
                 if preview:
                     line += f"  {preview}"
-        subbuffer.write_str(2, 0, line, fg=fg, bg=bg, max_width=max(0, max_width))
+        # After the gutter and the padding (one cell more in a tree).
+        col = 1 + self.box.content_pad_left
+        subbuffer.write_str(col, 0, line, fg=fg, bg=bg, max_width=max(0, max_width + 2 - col))
 
     def _format_line_wrap(self, text: Optional[str] = None) -> str:
         """Format the message text with smart word wrapping and padding.

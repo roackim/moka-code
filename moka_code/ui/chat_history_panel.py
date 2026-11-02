@@ -55,6 +55,36 @@ def _gap_before(messages: list, i: int) -> bool:
     return True
 
 
+def _tree_marks(messages: list, i: int) -> tuple[str, str, bool]:
+    """Message ``i``'s branch of ``ui.tree_thoughts_and_calls``: the glyph on
+    its first row, the one on its other rows, and whether a ``│`` crosses the
+    gap above it. A tree is a run of activity; the segments of one expanded
+    tool call (a shared ``group``) are one item."""
+    start = i
+    while start > 0 and _activity(messages[start - 1]):
+        start -= 1
+    end = i + 1
+    while end < len(messages) and _activity(messages[end]):
+        end += 1
+
+    def head(j: int) -> bool:
+        return j == start or messages[j].group is None or messages[j].group is not messages[j - 1].group
+
+    items = sum(1 for j in range(start, end) if head(j))
+    item = sum(1 for j in range(start, i + 1) if head(j)) - 1
+    last = item == items - 1
+    down = " " if last else "│"     # the tree goes on below this item
+    if not head(i):
+        return down, down, False     # a later segment of the same item
+    if items == 1:
+        first = "──"
+    elif item == 0:
+        first = "┌─"
+    else:
+        first = "└─" if last else "├─"
+    return first, down, item > 0
+
+
 def _continues_answer(messages: list, i: int) -> bool:
     """Answer block ``i`` touches the answer block above it (the segments of a
     split answer): only the first of them shows ``ui.bullet``."""
@@ -765,13 +795,30 @@ class ChatHistoryPanel(TextComponent):
             child.set_layout(self.x + msg.left_margin, child_y, child_w, child_h)
             child.render(buffer)
 
+            focused = focus_start <= i < focus_end
+            if msg.in_tree():
+                # The tree over the first column (focused: in the focus color,
+                # in place of the focus wall).
+                first, down, gap_above = _tree_marks(self.messages, i)
+                x = self.x + msg.left_margin
+                fg = theme.FOCUSED if focused else theme.MUTED
+                bg = child.bg
+                for row_y in range(max(child_y, viewport_top), min(child_y + child_h, viewport_bottom)):
+                    glyph = first if row_y == child_y else down
+                    buffer.write_str(x, row_y, glyph, fg=fg, bg=bg, max_width=len(glyph))
+                if gap_above and _gap_before(self.messages, i):
+                    gap = settings.config.ui_msg_v_margin
+                    for row_y in range(max(child_y - gap, viewport_top), min(child_y, viewport_bottom)):
+                        buffer.write_str(x, row_y, "│", fg=theme.MUTED, bg=theme.get_bg(), max_width=1)
+                continue
+
             # Selected message: ``ui.focus_wall_char`` on every row, in the
             # focus color (the bullet gives way, so a one-line message still
             # shows it is selected). Inside a split answer the selected segment
             # gets ``▐`` and the other segments keep the wall, muted.
             marker = None
             marker_fg = theme.FOCUSED
-            if focus_start <= i < focus_end:
+            if focused:
                 marker = settings.config.ui_focus_wall_char.strip() or "┃"
                 if self.inside_group:
                     if i == self.focused_message_index:
