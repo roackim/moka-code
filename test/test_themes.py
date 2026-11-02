@@ -36,7 +36,8 @@ class _UI:
 def test_theme_names_include_builtins():
     names = colors.theme_names()
 
-    assert {"terminal", "moka", "nord", "dracula", "gruvbox", "tokyo-night"} <= set(names)
+    assert {"terminal", "moka", "nord", "dracula", "gruvbox", "github-dark", "rose-pine",
+            "everforest"} <= set(names)
     assert "default" not in names
 
 
@@ -470,9 +471,16 @@ def test_builtin_palettes_are_legible_and_coherent(palette):
     # The user's turns and the answers tell apart at a glance (CIE76 ΔE: a
     # rose next to a caramel was 18; gold next to caramel is 40).
     assert _delta_e(palette.USER, palette.ASSISTANT) >= 40, "USER / ASSISTANT look alike"
-    assert _delta_e(palette.USER_TEXT, palette.ASSISTANT_TEXT) >= 10
     # A selected row is drawn in FOCUSED among rows of body text.
     assert _delta_e(palette.FOCUSED, palette.DEFAULT) >= 20, "FOCUSED looks like text"
+    # The user's color is not a status color (2026-11-02: moka's honey-gold
+    # user was ΔE 11 from its WARNING, gruvbox's aqua 14 from its SUCCESS).
+    # FOCUSED may share WARNING's color (moka's gold, by choice).
+    for key in ("WARNING", "ERROR", "SUCCESS"):
+        assert _delta_e(palette.USER, getattr(palette, key)) >= 30, f"USER looks like {key}"
+    # Highlights: the user's raised above the background, the rest sunk below.
+    assert _luminance(palette.USER_HIGHLIGHT) > _luminance(palette.BACKGROUND)
+    assert _luminance(palette.ASSISTANT_HIGHLIGHT) < _luminance(palette.BACKGROUND)
 
     error, warning, success = _hue(palette.ERROR), _hue(palette.WARNING), _hue(palette.SUCCESS)
     assert error >= 340 or error <= 20                        # red

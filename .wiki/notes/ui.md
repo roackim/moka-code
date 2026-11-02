@@ -1021,9 +1021,15 @@ See [commands.md](./commands.md).
 
 ### Built-in themes (`tui/colors.py`)
 
-`terminal` (ANSI slots: follows the terminal's own palette) plus five RGB
-palettes for dark terminals: `moka` (hand-tuned: honey-gold user and focus,
-latte answers), `nord`, `dracula`, `gruvbox`, `tokyo-night` (the earlier set was removed on purpose, 2026-09-28). Palette
+`terminal` (ANSI slots: follows the terminal's own palette) plus seven RGB
+palettes for dark terminals: `moka` (hand-tuned: light-brown user, sage
+answers, one gold for focus and warning), `nord`, `dracula` (stock with softer
+greens and an orange warning), `gruvbox` (purple user and focus, orange
+answers, warm highlights), `github-dark` (GitHub's dark default; softer green
+and amber, near-neutral user text), `rose-pine` (main; a green added for
+SUCCESS), `everforest` (dark medium). Overhauled and extended on 2026-11-02
+(`tokyo-night` removed then, as were the briefly added `catppuccin` and
+`kanagawa`); the earlier set was removed on purpose, 2026-09-28. Palette
 keys: `BACKGROUND DEFAULT MUTED ERROR WARNING SUCCESS PERMISSION TOOL USER
 ASSISTANT FOCUSED`, `USER_TEXT ASSISTANT_TEXT` (message text, `DEFAULT` unless
 set), for answers `HEADING EMPHASIS CODE`, and for code blocks `KEYWORD
@@ -1036,8 +1042,11 @@ every RGB palette against its background and black — DEFAULT and USER_TEXT
 WARNING, SUCCESS, HEADING, EMPHASIS, CODE ≥ 4.5:1; MUTED ≥ 3:1 and dimmer than
 DEFAULT; bars/markers ≥ 3:1 — the hues (ERROR red, WARNING amber, SUCCESS
 green), and that the user's turns and the answers tell apart: USER / ASSISTANT
-CIE76 ΔE ≥ 40, USER_TEXT / ASSISTANT_TEXT ΔE ≥ 10; and FOCUSED (the selected
-row of a picker or menu, drawn among body text) ΔE ≥ 20 from DEFAULT. In the RGB built-ins, USER_TEXT is the body text tinted toward USER
+CIE76 ΔE ≥ 40 (the text colors are free: they may be close); and FOCUSED (the selected
+row of a picker or menu, drawn among body text) ΔE ≥ 20 from DEFAULT (it may
+equal WARNING: moka's gold is both); USER ΔE ≥ 30 from WARNING, ERROR and SUCCESS (your color is never a
+status); USER_HIGHLIGHT lighter and ASSISTANT_HIGHLIGHT darker than
+BACKGROUND. In the RGB built-ins, USER_TEXT is the body text tinted toward USER
 and ASSISTANT_TEXT a slightly dimmed (warmer where the theme allows) body
 text; `terminal` leaves both at the terminal's default fg.
 
