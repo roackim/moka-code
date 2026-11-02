@@ -137,7 +137,7 @@ def test_killing_one_command_answers_it_and_the_turn_goes_on(tmp_path):
             produced = []
             async for event in harness.chat("go"):
                 if isinstance(event, events.ToolStarted):
-                    # The UI refreshes {running} here: the call must be listed.
+                    # The UI refreshes {shells} here: the call must be listed.
                     assert [t.id for t in harness.running_tools()] == ["c1"]
                 produced.append(event)
             return produced

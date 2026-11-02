@@ -52,7 +52,7 @@ subclass.
 |------|---------|
 | `registry.py` | The single `COMMANDS` assembly point; `handle_command`, description/completion helpers |
 | `base.py` | `Command`, `Param`, `ChatUIProtocol`, completion helpers (`role_*`, `prompt_*`, `theme_*`) |
-| `core.py` | Core commands: help, clear, private, reload, config, edit, compact, exit, stop, terminal, debug, activity |
+| `core.py` | Core commands: help, clear, private, reload, config, edit, compact, exit, stop, shells, terminal, debug, activity |
 | `conversation.py` | `/import`, `/export`, `/session` |
 | `models.py` | `/model`, `/effort` (picker or direct selection) |
 | `roles.py` | `/role` — `select [name]`, `edit [name]`, `create`, `path`, `remove` |

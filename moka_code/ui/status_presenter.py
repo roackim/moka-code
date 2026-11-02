@@ -290,7 +290,7 @@ def _set_fields(app, agent, server: str, model: str, effort: str | None, spinner
         # Empty (so left out) until the provider reports a cost.
         "cost": _format_cost(getattr(agent, "conversation_cost", None)),
         # Empty (so left out) while no bash command runs.
-        "running": str(len(running_commands(agent)) or ""),
+        "shells": str(len(running_commands(agent)) or ""),
     })
     role_color = resolve_color(getattr(getattr(agent, "role", None), "color", ""), theme.DEFAULT)
     app.status_bar.set_field_colors({
@@ -301,5 +301,5 @@ def _set_fields(app, agent, server: str, model: str, effort: str | None, spinner
         "role": role_color,
         "context": _context_color(context_used, context_max),
         "sandbox": sandbox_color,
-        "running": theme.WARNING,
+        "shells": theme.WARNING,
     })

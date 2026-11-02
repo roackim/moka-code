@@ -120,15 +120,20 @@ class Command:
 
 def pick(ui: ChatUIProtocol, title: str, items: List[str], on_accept: Callable[[str], None],
          descriptions: Optional[Dict[str, str]] = None, footers: Optional[Dict[str, str]] = None,
-         ordered: bool = False, headless: Optional[Callable[[], None]] = None) -> None:
+         ordered: bool = False, headless: Optional[Callable[[], None]] = None,
+         actions: Optional[list] = None):
     """The one way a command offers a choice: a type-to-filter picker over
     ``items`` (the same values and descriptions the ``/cmd <arg>`` suggestions
-    use). ``headless`` shows them as text when there is no compositor."""
+    use), with optional Ctrl+key ``actions`` on the highlighted item
+    (``search_modal.PickerAction``). ``headless`` shows them as text when there
+    is no compositor. Returns the picker (None when headless)."""
     show = getattr(ui, "show_search_modal", None)
+    extra = {"actions": actions} if actions else {}
     modal = show(title, items, descriptions=descriptions, footers=footers,
-                 on_accept=on_accept, ordered=ordered) if callable(show) else None
+                 on_accept=on_accept, ordered=ordered, **extra) if callable(show) else None
     if modal is None and headless is not None:
         headless()
+    return modal
 
 
 REMOVE = "Remove"

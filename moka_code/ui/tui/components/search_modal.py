@@ -8,12 +8,23 @@ Used by ``/model`` but generic over ``(items, descriptions)``.
 """
 from __future__ import annotations
 
-from typing import Callable, List, Optional
+from contextlib import contextmanager
+from typing import Callable, List, Optional, Tuple
 
 from moka_code.ui.tui.buffer import Buffer
 from moka_code.ui.tui.colors import theme
 from moka_code.ui.tui.components.menu import SelectionMenu
 from moka_code.ui.tui.events import KeyEvent, MouseEvent
+
+#: A picker action: ``(key, label, on_item)``. ``key`` is ``"^R"`` for
+#: Ctrl+R (typing filters, so a plain letter can't act); ``on_item`` gets the
+#: highlighted item and decides whether the picker stays open.
+PickerAction = Tuple[str, str, Callable[[str], None]]
+
+
+def _ctrl(key: str) -> str:
+    """The character a terminal sends for ``"^R"``."""
+    return chr(ord(key[1].upper()) - 64)
 
 
 class SearchModal(SelectionMenu):
@@ -30,6 +41,9 @@ class SearchModal(SelectionMenu):
         self._on_accept: Optional[Callable[[str], None]] = None
         self._on_cancel: Optional[Callable[[], None]] = None
         self._on_highlight: Optional[Callable[[str], None]] = None
+        # The row above the box, drawn like the action line above the input.
+        self.actions: List[PickerAction] = []
+        self._action_regions: List[Tuple[int, int, PickerAction]] = []
 
         # Same look as the /cmd and @ popups.
         self.frame_color = theme.FOCUSED
@@ -49,12 +63,14 @@ class SearchModal(SelectionMenu):
              on_accept: Optional[Callable[[str], None]] = None,
              on_cancel: Optional[Callable[[], None]] = None,
              on_highlight: Optional[Callable[[str], None]] = None,
-             initial_index: int = 0, ordered: bool = False) -> None:
+             initial_index: int = 0, ordered: bool = False,
+             actions: Optional[List[PickerAction]] = None) -> None:
         """``initial_index`` indexes ``items`` as given (before sorting);
         ``ordered`` keeps their order (see :meth:`SelectionMenu.update`)."""
         initial = items[initial_index] if 0 <= initial_index < len(items) else None
         self._base_items = list(items)
         self._ordered = ordered
+        self.actions = list(actions or [])
         self._on_accept = on_accept
         self._on_cancel = on_cancel
         self._on_highlight = on_highlight
@@ -93,7 +109,18 @@ class SearchModal(SelectionMenu):
         self._on_accept = None
         self._on_cancel = None
         self._on_highlight = None
+        self.actions = []
         self.hide()
+
+    def _act(self, action: PickerAction) -> None:
+        selected = self.get_selected()
+        if selected is not None:
+            action[2](selected)
+        self._request_render()
+
+    def header_rows(self, width: int) -> int:
+        """The action row sits above the box, so placement makes room for it."""
+        return super().header_rows(width) + (1 if self.actions else 0)
 
     def _accept(self) -> None:
         selected = self.get_selected()
@@ -171,6 +198,10 @@ class SearchModal(SelectionMenu):
             if key in ('\r', '\n'):
                 self._accept()
                 return True
+            for action in self.actions:
+                if key == _ctrl(action[0]):
+                    self._act(action)
+                    return True
             if key in ('\x7f', '\b'):
                 if self._search:
                     self._search = self._search[:-1]
@@ -185,8 +216,15 @@ class SearchModal(SelectionMenu):
         if isinstance(event, MouseEvent):
             # A click accepts the clicked row, the wheel moves the selection
             # (SelectionMenu); the modal traps every other mouse event.
+            if self.actions and self.items and event.y == self.y:
+                if event.button == 0 and event.pressed and not event.drag:
+                    for start, end, action in self._action_regions:
+                        if start <= event.x < end:
+                            self._act(action)
+                return True
             self.on_click = self._accept
-            super().handle_input(event)
+            with self._below_actions():
+                super().handle_input(event)
             self._request_render()
             return True
 
@@ -211,11 +249,41 @@ class SearchModal(SelectionMenu):
             width = self.measure_width(buffer.width)
             visible = min(len(self.items), max(1, self.max_height - 2))
             self.width = width
-            self.height = visible + 2
+            self.height = visible + 2 + (1 if self.actions else 0)
             self.x = max(0, (buffer.width - width) // 2)
             self.y = max(0, (buffer.height - self.height) // 2)
 
-        super().render(buffer)
+        if self.actions:
+            self._render_actions(buffer)
+        with self._below_actions():
+            super().render(buffer)
+
+    @contextmanager
+    def _below_actions(self):
+        """The box's own geometry: below the action row, when there is one."""
+        rows = 1 if self.actions else 0
+        self.y += rows
+        self.height -= rows
+        try:
+            yield
+        finally:
+            self.y -= rows
+            self.height += rows
+
+    def _render_actions(self, buffer: Buffer) -> None:
+        """``[^R] rename  [^D] delete`` on the row above the box."""
+        width = self.measure_width(buffer.width - self.x)
+        buffer.fill(self.x, self.y, width, 1, " ", bg=self.bg)
+        self._action_regions = []
+        x, edge = self.x + 1, self.x + width
+        for action in self.actions:
+            text = f"[{action[0]}] {action[1]}"
+            if x >= edge:
+                break
+            end = min(edge, x + len(text))
+            buffer.write_str(x, self.y, text, fg=theme.DEFAULT, bg=self.bg, max_width=end - x)
+            self._action_regions.append((x, end, action))
+            x = end + 2
 
     def _render_empty(self, buffer: Buffer) -> None:
         msg = f" {self._search or 'no models'} — no matches "

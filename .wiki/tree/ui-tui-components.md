@@ -20,7 +20,7 @@ See [notes/ui.md](../notes/ui.md) for the component model overview.
 | `layout.py` | `EmptyLine`, `SeparatorLine` — spacing primitives |
 | `bars.py` | `BarStyle`, `StatusBar` (a `template` filled from values; `render_template`), `ActionBar` (actions, `set_hint(text, color)`, `set_expanded`), `NoticeBand` (colored notice lines, `+N more`) |
 | `menu.py` | `SelectionMenu` — floating dropdown with fuzzy filtering, item descriptions/footers, `measure_width()`, `title`/`status_text`. With nothing typed it sorts items (`sort_items`, case-insensitive) unless the source passes `ordered=True` (effort levels, sessions, `/model` grouped by server); click accepts (`on_click`), wheel scrolls |
-| `search_modal.py` | `SearchModal(SelectionMenu)` — type-to-filter picker (every picker: `/model`, `/effort`, `/theme`, `/session`, `/sandbox`, bare `/config`), anchored above the input; sorted like the menu unless `ordered`; a click accepts a row; fires `on_highlight` as the selection moves |
+| `search_modal.py` | `SearchModal(SelectionMenu)` — type-to-filter picker (every picker: `/model`, `/effort`, `/theme`, `/session`, `/sandbox`, bare `/config`), anchored above the input; sorted like the menu unless `ordered`; a click accepts a row; fires `on_highlight` as the selection moves; optional `actions` (`PickerAction`: `("^R", "rename", on_item)`) drawn as `[^R] rename` on a row above the box, run on the highlighted item by Ctrl+key or a click (letters keep filtering) |
 | `theme_preview.py` | `ThemePreview` — top-center overlay showing the live palette as swatches while picking a theme |
 | `popup.py` | `Popup` + `PopupScreen` — centered overlay popup on `Box` + `TextComponent` |
 | `debug_panel.py` | `DebugLogPanel` — capped, auto-scrolling log display |

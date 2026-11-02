@@ -323,23 +323,62 @@ def running_commands(agent) -> list:
     return [tool for tool in (running() if callable(running) else []) if tool.name == "bash"]
 
 
-async def cmd_running(ui: ChatUIProtocol, args: List[str]):
-    """``/running``: the bash calls running now, with how long; picking one
-    kills it (the turn goes on)."""
-    agent = getattr(ui, "agent", None)
-    tools = running_commands(agent)
-    if not tools:
-        ui.flash_hint("no command running")
-        return
+def _shell_rows(agent):
+    """The running bash calls by picker row, and each one's ``running Ns``."""
     labels = {}
-    for tool in tools:
+    for tool in running_commands(agent):
         command = " ".join(str(tool.args.get("command", "")).split())
         labels[f"{command[:60]}  ({tool.id[-6:]})"] = tool
-    pick(ui, "Kill a running command", list(labels),
-         lambda choice: choice in labels and agent.cancel_tool(labels[choice].id)
-         and ui.flash_hint("command killed"),
-         descriptions={label: f"running {tool.elapsed:.0f}s" for label, tool in labels.items()},
-         ordered=True)
+    return labels, {label: f"running {tool.elapsed:.0f}s" for label, tool in labels.items()}
+
+
+async def cmd_shells(ui: ChatUIProtocol, args: List[str]):
+    """``/shells``: the bash calls running now, with how long (ticking while
+    the picker is open); Enter selects one's line in the transcript, Ctrl+K
+    kills it (the turn goes on)."""
+    agent = getattr(ui, "agent", None)
+    labels, descriptions = _shell_rows(agent)
+    if not labels:
+        ui.flash_hint("no command running")
+        return
+
+    def _jump(choice):
+        tool = labels.get(choice)
+        message = getattr(ui, "active_tool_messages", {}).get(tool.id) if tool else None
+        if message is None or not ui.focus_message(message):
+            ui.flash_hint("that command has finished")
+
+    def _kill(choice):
+        if choice in labels and agent.cancel_tool(labels[choice].id):
+            ui.flash_hint("command killed")
+
+    modal = pick(ui, "Shells", list(labels), _jump, descriptions=descriptions,
+                 ordered=True, actions=[("^K", "kill", _kill)])
+    compositor = getattr(ui, "compositor", None)
+    if modal is None or compositor is None:
+        return
+    shown = [0.0]
+
+    def _tick(now):
+        """Once a second: the times, and the list (finished calls leave it)."""
+        if not modal.is_visible:
+            compositor.remove_frame_callback(_tick)
+            return False
+        if now - shown[0] < 1.0:
+            return False
+        shown[0] = now
+        rows, details = _shell_rows(agent)
+        labels.clear()
+        labels.update(rows)
+        if not labels:
+            modal.close()
+            compositor.remove_frame_callback(_tick)
+            ui.flash_hint("no command running")
+        else:
+            modal.refresh(list(labels), descriptions=details)
+        return True
+
+    compositor.add_frame_callback(_tick)
 
 
 async def cmd_stop(ui: ChatUIProtocol, args: List[str]):

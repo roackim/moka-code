@@ -148,6 +148,39 @@ def test_anchored_modal_sits_directly_above_input():
     assert buffer.cells[modal.y + modal.height - 1][modal.width - 1].char == "┘"
 
 
+def test_actions_show_above_the_box_and_take_ctrl_keys_and_clicks():
+    """2026-11-02: picker actions are Ctrl+key (typing filters) on the
+    highlighted item, drawn on a row above the box."""
+    from moka_code.ui.tui.events import MouseEvent
+
+    done = []
+    modal = SearchModal(compositor=_Compositor(), title="Sessions")
+    modal.open(["a", "b"], ordered=True,
+               actions=[("^R", "rename", lambda item: done.append(("rename", item))),
+                        ("^D", "delete", lambda item: done.append(("delete", item)))])
+    buffer = Buffer(80, 20)
+    modal.render(buffer)
+
+    row = "".join(c.char for c in buffer.cells[modal.y])
+    assert "[^R] rename  [^D] delete" in row
+    assert buffer.cells[modal.y + 1][modal.x].char == "┌"
+
+    modal.handle_input("\x1b[B")
+    modal.handle_input("\x12")                       # Ctrl+R
+    modal.handle_input("d")                          # a letter still filters
+    assert done == [("rename", "b")] and modal._search == "d"
+    modal.handle_input("\x7f")
+    modal.handle_input("\x1b[B")                     # the empty filter lost the highlight
+
+    x = modal.x + row[modal.x:].index("[^D]")
+    modal.handle_input(MouseEvent(x=x, y=modal.y, button=0, pressed=True))
+    assert done[-1] == ("delete", "b") and modal.is_visible
+
+    # A click on a row still lands on that row (the box is one row lower).
+    modal.handle_input(MouseEvent(x=modal.x + 2, y=modal.y + 2, button=0, pressed=True))
+    assert not modal.is_visible
+
+
 def test_item_footer_is_success_colored():
     from moka_code.ui.tui.colors import theme
     from moka_code.ui.tui.components.menu import SelectionMenu

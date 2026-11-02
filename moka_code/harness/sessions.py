@@ -1,7 +1,9 @@
 """Saved conversations: the conversation file format and per-project sessions.
 
-A conversation file is ``{"role": ..., "model": ..., "history": [...]}`` —
-what ``/export`` writes and ``/import`` reads, and what every session is.
+A conversation file is ``{"role": ..., "model": ..., "title": ..., "history":
+[...]}`` — what ``/export`` writes and ``/import`` reads, and what every session
+is. ``title`` is optional: the name given in the ``/session`` picker (else the
+picker shows the first question).
 Sessions are saved automatically under
 ``~/.local/state/moka/sessions/<project>/`` (state, not cache: they are the
 user's data, and cache folders may be wiped). Image references stay references
@@ -24,16 +26,46 @@ History = List[Dict[str, Any]]
 # -- conversation files --------------------------------------------------
 
 def write(path: str | os.PathLike, role: str, history: History,
-          model: Optional[str] = None) -> None:
+          model: Optional[str] = None, title: Optional[str] = None) -> None:
     """Write a conversation file atomically (a crash never leaves half a file)."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     data: Dict[str, Any] = {"role": role, "history": history}
     if model:
         data["model"] = model
+    if title:
+        data["title"] = title
+    _write_data(Path(path), data)
+
+
+def _write_data(path: Path, data: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, path)
+
+
+def read_title(path: str | os.PathLike) -> Optional[str]:
+    """The file's ``title`` (None when it has none or is unreadable)."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    title = data.get("title") if isinstance(data, dict) else None
+    return title if isinstance(title, str) and title else None
+
+
+def rename(path: str | os.PathLike, title: str) -> None:
+    """Set a saved conversation's ``title``; an empty one removes it (the
+    picker shows the first question again). Raises ``OSError``/``ValueError``."""
+    path = Path(path)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("not a conversation object")
+    title = " ".join(title.split())
+    if title:
+        data["title"] = title
+    else:
+        data.pop("title", None)
+    _write_data(path, data)
 
 
 def read(path: str | os.PathLike) -> Tuple[Optional[str], History]:
@@ -77,7 +109,7 @@ def new_path(workspace: str) -> Path:
 @dataclass
 class Session:
     path: Path
-    title: str          # the first thing the user asked
+    title: str          # its given name, else the first thing the user asked
     messages: int
     model: Optional[str]
     modified: float
@@ -102,7 +134,8 @@ def list_sessions(workspace: str) -> List[Session]:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             history = data["history"]
-            found.append(Session(path, _title(history),
+            title = data.get("title")
+            found.append(Session(path, title if isinstance(title, str) and title else _title(history),
                                  sum(1 for m in history if m.get("role") in ("user", "assistant")),
                                  data.get("model"), path.stat().st_mtime))
         except (OSError, ValueError, KeyError, TypeError, AttributeError):

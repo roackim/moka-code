@@ -49,7 +49,7 @@ from moka_code.harness import images
 
 #: Status bar values that Enter opens a picker for (keyboard focus on the bar).
 STATUS_PICKERS = {"model": "/model", "effort": "/effort", "role": "/role select",
-                  "sandbox": "/sandbox", "running": "/running"}
+                  "sandbox": "/sandbox", "shells": "/shells"}
 #: Application focus targets, in ``_focus_targets`` order.
 _FOCUS_IDS = ("input", "history", "status")
 
@@ -207,6 +207,9 @@ class chatTUI(ChatActionHandlers):
         self.pending_permission_prompt = None
         # The open ``ask`` form and its selector (``question_form``).
         self.question_form = None
+        # ``prompt_text``: ``(on_done, the draft it replaced)`` while the input
+        # takes one line for a command (e.g. a session's new name).
+        self._text_prompt = None
         self.question_menu = None
         self._active_user_msg = None
         # Images pasted into the input draft, by their ``[image #N]`` number.
@@ -214,6 +217,8 @@ class chatTUI(ChatActionHandlers):
         # Where this conversation is saved (``harness.sessions``); a new
         # session until /session resumes an older one.
         self.session_path = None
+        # Its name from the /session picker (None: the first question names it).
+        self.session_title = None
         self.new_session()
         # Stream smoothing: the revealer owns timing, the message owns the
         # canonical arrived text plus its rendered prefix.
@@ -634,6 +639,19 @@ class chatTUI(ChatActionHandlers):
         if handler:
             handler(message)
 
+    def focus_message(self, message) -> bool:
+        """Select ``message`` in the transcript and scroll to it; False when
+        it is no longer there."""
+        panel = self.chat_history_panel
+        if message not in panel.messages:
+            return False
+        index = panel.messages.index(message)
+        self._set_app_focus("history")
+        panel.set_focused_message(index)
+        panel._scroll_to_show_message(index, prefer_top=True)
+        self._update_action_strip()
+        return True
+
     def _selected_message(self):
         """The currently selected message, or None."""
         index = self.chat_history_panel.focused_message_index
@@ -696,7 +714,8 @@ class chatTUI(ChatActionHandlers):
             self.action_bar.set_actions([])
             self.action_bar.set_prefix("")
             self.action_bar.set_hint(
-                self.question_form.hint(bool(self.input_component.buffer.text.strip()))
+                "[ENTER] save · [ESC] cancel" if self._text_prompt is not None
+                else self.question_form.hint(bool(self.input_component.buffer.text.strip()))
                 if self.question_form is not None
                 else "[/] command  [@] file  [!] prompt  [↑↓] move")
             self.action_bar.set_focused(False)
@@ -726,11 +745,13 @@ class chatTUI(ChatActionHandlers):
 
     def show_search_modal(self, title, items, descriptions=None, footers=None,
                           on_accept=None, on_cancel=None, on_highlight=None,
-                          initial_index=0, ordered=False):
+                          initial_index=0, ordered=False, actions=None):
         """Present a centered, type-to-filter selection overlay.
 
         ``on_highlight`` fires with the selected item whenever the highlight
-        moves (preview hook). Items are sorted unless ``ordered``. Returns the modal (so callers can ``refresh`` it)
+        moves (preview hook). Items are sorted unless ``ordered``. ``actions``
+        (``search_modal.PickerAction``) are Ctrl+key actions on the highlighted
+        item, shown above the list. Returns the modal (so callers can ``refresh`` it)
         or None when there is no compositor (headless).
         """
         from moka_code.ui.tui.components.search_modal import SearchModal
@@ -745,7 +766,7 @@ class chatTUI(ChatActionHandlers):
         modal.open(items, descriptions=descriptions, footers=footers,
                    on_accept=on_accept, on_cancel=on_cancel,
                    on_highlight=on_highlight, initial_index=initial_index,
-                   ordered=ordered)
+                   ordered=ordered, actions=actions)
         return modal
 
     def new_session(self) -> None:
@@ -753,6 +774,29 @@ class chatTUI(ChatActionHandlers):
         from moka_code.harness import sessions
 
         self.session_path = sessions.new_path(getattr(self.agent, "workspace", "."))
+        self.session_title = None
+
+    def prompt_text(self, placeholder: str, initial: str, on_done) -> None:
+        """Take one line from the input box: it shows ``initial``, Enter calls
+        ``on_done(text)``, Esc cancels; the draft that was there comes back
+        either way."""
+        if self._text_prompt is not None:
+            self._end_text_prompt(submit=False)
+        self._text_prompt = (on_done, self.input_component.buffer.text)
+        self.input_component.placeholder = placeholder
+        self.input_component.update(initial)
+        self.chat_history_panel.clear_focus()
+        self._set_app_focus("input")
+
+    def _end_text_prompt(self, submit: bool) -> None:
+        on_done, draft = self._text_prompt
+        self._text_prompt = None
+        text = self.input_component.buffer.text
+        self.input_component.placeholder = ""
+        self.input_component.update(draft)
+        self._update_action_strip()
+        if submit:
+            on_done(text)
 
     def save_session(self) -> None:
         """Save the conversation to its session file (``context.sessions``
@@ -769,7 +813,7 @@ class chatTUI(ChatActionHandlers):
         try:
             role = getattr(getattr(self.agent, "role", None), "name", "agent")
             model = getattr(getattr(self.agent, "endpoint", None), "selected_model", None)
-            sessions.write(self.session_path, role, history, model)
+            sessions.write(self.session_path, role, history, model, self.session_title)
             sessions.prune(workspace, keep)
         except Exception:
             logging.getLogger("tui").warning("Could not save the session", exc_info=True)
@@ -983,6 +1027,12 @@ class chatTUI(ChatActionHandlers):
             if self._last_focus_id == "input" and self.input_component.has_active_completion():
                 if key in ('\x1b', '\x1b[A', '\x1b[B', '\t', '\r', '\n'):
                     return self.input_component.handle_input(event)
+
+            # A ``prompt_text`` line ends on Enter (kept) or Esc (cancelled).
+            if (self._text_prompt is not None and self._last_focus_id == "input"
+                    and key in ('\r', '\n', '\x1b')):
+                self._end_text_prompt(submit=key != '\x1b')
+                return True
 
             # An open ``ask`` form takes its keys from the input.
             if (self.question_form is not None and self._last_focus_id == "input"

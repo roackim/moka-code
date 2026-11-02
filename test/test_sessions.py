@@ -146,6 +146,87 @@ def test_session_picker_resumes_into_the_same_file(tmp_path, monkeypatch):
     assert ui.session_path == saved          # continues that session's file
 
 
+def test_rename_titles_the_session_and_empty_restores_the_question(tmp_path):
+    """2026-11-02: a session's name is ``title`` in its file; empty removes it."""
+    path = sessions.sessions_dir(str(tmp_path)) / "s.json"
+    sessions.write(path, "agent", _history("the question"))
+
+    sessions.rename(path, "  my   work ")
+    assert [s.title for s in sessions.list_sessions(str(tmp_path))] == ["my work"]
+    assert sessions.read(path) == ("agent", _history("the question"))
+
+    sessions.rename(path, "")
+    assert sessions.read_title(path) is None
+    assert [s.title for s in sessions.list_sessions(str(tmp_path))] == ["the question"]
+
+
+def test_a_resumed_session_keeps_its_name_when_saved(tmp_path, monkeypatch):
+    from moka_code.ui.commands.conversation import load_conversation
+
+    monkeypatch.setattr(settings.config, "context_sessions", 10)
+    saved = sessions.sessions_dir(str(tmp_path)) / "old.json"
+    sessions.write(saved, "agent", _history(), title="named")
+    ui = _ui(tmp_path)
+    ui.switch_role = lambda role: role
+
+    assert load_conversation(ui, saved)
+    ui.session_path = saved
+    ui.save_session()
+
+    assert ui.session_title == "named" and sessions.read_title(saved) == "named"
+
+
+def _picker(ui):
+    shown = {}
+    ui.show_search_modal = lambda title, items, descriptions=None, on_accept=None, actions=(), **k: \
+        shown.update(items=items, actions={key: act for key, _label, act in actions}) or \
+        SimpleNamespace(close=lambda: shown.update(closed=True),
+                        refresh=lambda items, descriptions=None: shown.update(items=items))
+    return shown
+
+
+def test_session_picker_deletes_at_once(tmp_path):
+    """2026-11-02: Ctrl+D deletes the highlighted session, no confirmation;
+    the list stays open without it."""
+    from moka_code.ui.commands.conversation import conversation_session
+
+    one, two = (sessions.sessions_dir(str(tmp_path)) / name for name in ("1.json", "2.json"))
+    sessions.write(one, "agent", _history("first"))
+    sessions.write(two, "agent", _history("second"))
+    ui = _ui(tmp_path)
+    shown = _picker(ui)
+    asyncio.run(conversation_session(ui, []))
+
+    shown["actions"]["^D"]("first")
+
+    assert not one.exists() and two.exists()
+    assert shown["items"] == ["second"] and "closed" not in shown
+
+
+def test_session_picker_renames_in_the_input_box(tmp_path):
+    """2026-11-02: Ctrl+R puts the title in the input; Enter saves it and the
+    list opens again; the draft comes back."""
+    from moka_code.ui.commands.conversation import conversation_session
+
+    path = sessions.sessions_dir(str(tmp_path)) / "1.json"
+    sessions.write(path, "agent", _history("first"))
+    ui = _ui(tmp_path)
+    ui.input_component.update("my draft")
+    submitted = []
+    ui.on_command_submit = submitted.append
+    shown = _picker(ui)
+    asyncio.run(conversation_session(ui, []))
+
+    shown["actions"]["^R"]("first")
+    assert shown["closed"] and ui.input_component.buffer.text == "first"
+    ui.input_component.update("renamed")
+    ui.handle_global_input("\r")
+
+    assert sessions.read_title(path) == "renamed"
+    assert submitted == ["/session"]
+    assert ui.input_component.buffer.text == "my draft"
+
+
 def test_session_picker_waits_for_the_generation(tmp_path):
     from moka_code.ui.commands.conversation import conversation_session
 

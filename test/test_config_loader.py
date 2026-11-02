@@ -78,6 +78,11 @@ def test_status_bar_template_names_known_values_with_balanced_groups(tmp_path):
     _write(tmp_path / "ui.toml", {"status_bar": "[{model}"})
     assert any("unbalanced" in e for e in config.reload())
 
+    # 2026-11-02: {running} was renamed {shells}; reported, never aliased.
+    _write(tmp_path / "ui.toml", {"status_bar": "{model}[ {running}]"})
+    assert any("{running} is now {shells}" in e for e in config.reload())
+    assert config.ui_status_bar == settings.DEFAULT_STATUS_BAR
+
 
 def test_malformed_toml_reports_error_and_keeps_defaults(tmp_path):
     (tmp_path / "ui.toml").write_text("this is = = not toml", encoding="utf-8")

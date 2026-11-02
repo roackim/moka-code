@@ -225,16 +225,18 @@ def _rule(name: str, width: int = 60) -> str:
 _TABLES_HEADING = _rule("Markdown and syntax-highlight styles")
 
 #: The values a ``ui.status_bar`` template can name (``status_presenter`` fills them).
-STATUS_BAR_VALUES = ("endpoint", "model", "effort", "role", "context", "cost", "running",
+STATUS_BAR_VALUES = ("endpoint", "model", "effort", "role", "context", "cost", "shells",
                      "sandbox", "state", "workspace", "spinner")
+#: Renamed status bar values: old name -> new (reported, never aliased).
+_RENAMED_STATUS_BAR_VALUES = {"running": "shells"}
 
 DEFAULT_STATUS_BAR = ("[{spinner} ]{model}[:{effort}][  mode:{role}][  ctx {context}]"
-                      "[  {cost}] | [  shells:{running}][  sandbox:{sandbox}]")
+                      "[  {cost}] | [  shells:{shells}][  sandbox:{sandbox}]")
 
 _STATUS_BAR_BLOCK = f'# status_bar = "{DEFAULT_STATUS_BAR}"' + """
 ## {endpoint} server · {model} model · {effort} reasoning effort · {role} role
 ## {context} tokens used/window · {cost} $ spent · {sandbox} sandbox (or none)
-## {running} bash commands running (empty when none; Enter on it: /running)
+## {shells} bash commands running (empty when none; Enter on it: /shells)
 ## {state} idle/thinking · {workspace} folder · {spinner} while the server is checked
 ## [ … ] is left out when a value in it is empty (keep its separator inside),
 ## and drawn in that value's color. | right-aligns everything after it."""
@@ -1012,7 +1014,12 @@ def _coerce(kind: str, value: Any) -> tuple[Any, Optional[str]]:
     if kind == "status_bar":
         if not isinstance(value, str):
             return None, "must be a string"
-        unknown = sorted(set(re.findall(r"\{([A-Za-z_]+)\}", value)) - set(STATUS_BAR_VALUES))
+        named = set(re.findall(r"\{([A-Za-z_]+)\}", value))
+        renamed = sorted(named & set(_RENAMED_STATUS_BAR_VALUES))
+        if renamed:
+            return None, ", ".join(f"{{{old}}} is now {{{_RENAMED_STATUS_BAR_VALUES[old]}}}"
+                                   for old in renamed)
+        unknown = sorted(named - set(STATUS_BAR_VALUES))
         if unknown:
             return None, (f"names unknown values {', '.join('{' + n + '}' for n in unknown)} "
                           f"(known: {', '.join(STATUS_BAR_VALUES)})")

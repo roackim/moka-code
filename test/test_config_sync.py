@@ -68,7 +68,7 @@ def test_sync_refreshes_a_stale_commented_default(tmp_path):
     text = (tmp_path / "ui.toml").read_text(encoding="utf-8")
     assert "old default" not in text and "99" not in text
     assert f'# status_bar = "{settings.DEFAULT_STATUS_BAR}"' in text
-    assert "{running} bash commands running" in text
+    assert "{shells} bash commands running" in text
     assert "msg_v_margin = 2" in text
 
 

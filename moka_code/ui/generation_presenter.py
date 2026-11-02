@@ -333,7 +333,7 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                 current_msg_type = type(msg.type)
 
             elif isinstance(event, events.ToolStarted):
-                app.refresh_status_bar()            # {running}
+                app.refresh_status_bar()            # {shells}
 
             elif isinstance(event, events.ToolOutput):
                 # Interim output from a running tool (bash streaming): the last
@@ -365,7 +365,7 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                     msg.finalize()
                     del app.active_tool_messages[tool_id]
                 app.pending_permission_prompt = None
-                app.refresh_status_bar()            # {running}
+                app.refresh_status_bar()            # {shells}
 
             elif isinstance(event, events.Usage):
                 # Usage arrived: the status bar's context and cost follow it.

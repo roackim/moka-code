@@ -7,7 +7,7 @@ import os
 import time
 from typing import Any, Dict, List
 
-from .base import ChatUIProtocol, stop_before
+from .base import ChatUIProtocol, pick, stop_before
 from moka_code import prompts
 from moka_code.harness import ask
 from moka_code.harness.compaction import is_marker as _is_marker
@@ -60,7 +60,8 @@ async def conversation_export(ui: ChatUIProtocol, args: List[str]):
         return
     try:
         # Images are embedded (base64) so the file is self-contained.
-        sessions.write(filename, _role_name(ui), images.embed(history), _model_name(ui))
+        sessions.write(filename, _role_name(ui), images.embed(history), _model_name(ui),
+                       getattr(ui, "session_title", None))
     except Exception as exc:
         ui.chat_history_panel.add_message(
             f"Export failed: {exc}", msg_type=SysMsgError(), title="conversation")
@@ -82,10 +83,12 @@ async def conversation_import(ui: ChatUIProtocol, args: List[str]):
     if not await stop_before(ui, "/import"):
         return
     if load_conversation(ui, filename):
-        # An imported conversation continues as a new session.
+        # An imported conversation continues as a new session, under its name.
         new_session = getattr(ui, "new_session", None)
         if callable(new_session):
+            title = getattr(ui, "session_title", None)
             new_session()
+            ui.session_title = title
         ui.chat_history_panel.add_message(
             f"Conversation imported from {filename}\n({len(ui.agent.history)} messages)",
             msg_type=SysMsg(), title="conversation")
@@ -132,6 +135,7 @@ def load_conversation(ui: ChatUIProtocol, path) -> bool:
         load(history)  # also starts the conversation's cost over
     else:
         ui.agent.history = history
+    ui.session_title = sessions.read_title(path)
     ui.chat_history_panel.clear()
     _rebuild_ui_from_history(ui, history)
     if hasattr(ui, "refresh_status_bar"):
@@ -150,25 +154,16 @@ def _ago(timestamp: float) -> str:
     return "just now"
 
 
-async def conversation_session(ui: ChatUIProtocol, args: List[str]):
-    """Pick a saved session of this project; Enter resumes it."""
+def _session_rows(ui: ChatUIProtocol):
+    """This project's sessions but the current one: ``(by row, descriptions)``,
+    newest first (``list_sessions``' order)."""
     from moka_code.harness import sessions
 
-    if getattr(ui, "is_generating", lambda: False)():
-        ui.chat_history_panel.add_message(
-            "A response is in progress — stop it first (/stop).", msg_type=SysMsgWarning())
-        return
-    workspace = getattr(ui.agent, "workspace", ".")
     current = getattr(ui, "session_path", None)
-    found = [s for s in sessions.list_sessions(workspace) if s.path != current]
-    if not found:
-        ui.chat_history_panel.add_message(
-            f"No saved sessions for this project yet ({sessions.sessions_dir(workspace)}).",
-            msg_type=SysMsg(), title="session")
-        return
-
     by_item, descriptions = {}, {}
-    for session in found:
+    for session in sessions.list_sessions(getattr(ui.agent, "workspace", ".")):
+        if session.path == current:
+            continue
         item = session.title[:70]
         while item in by_item:  # the picker needs distinct rows
             item += " "
@@ -177,6 +172,62 @@ async def conversation_session(ui: ChatUIProtocol, args: List[str]):
         if session.model:
             details.append(session.model)
         descriptions[item] = " · ".join(details)
+    return by_item, descriptions
+
+
+async def conversation_session(ui: ChatUIProtocol, args: List[str]):
+    """Pick a saved session of this project; Enter resumes it, Ctrl+R renames
+    it (in the input box), Ctrl+D deletes it."""
+    from moka_code.harness import sessions
+
+    if getattr(ui, "is_generating", lambda: False)():
+        ui.chat_history_panel.add_message(
+            "A response is in progress — stop it first (/stop).", msg_type=SysMsgWarning())
+        return
+    by_item, descriptions = _session_rows(ui)
+    if not by_item:
+        workspace = getattr(ui.agent, "workspace", ".")
+        ui.chat_history_panel.add_message(
+            f"No saved sessions for this project yet ({sessions.sessions_dir(workspace)}).",
+            msg_type=SysMsg(), title="session")
+        return
+    modal = None
+
+    def _rename(item):
+        session = by_item.get(item)
+        prompt = getattr(ui, "prompt_text", None)
+        if session is None or not callable(prompt):
+            return
+        modal.close()
+
+        def _done(title):
+            try:
+                sessions.rename(session.path, title)
+            except (OSError, ValueError) as exc:
+                ui.chat_history_panel.add_message(
+                    f"Could not rename the session: {exc}", msg_type=SysMsgError(), title="session")
+                return
+            ui.on_command_submit("/session")   # back to the list, renamed
+
+        prompt("session name… (empty: its first question)", session.title, _done)
+
+    def _delete(item):
+        session = by_item.get(item)
+        if session is None:
+            return
+        try:
+            session.path.unlink()
+        except OSError as exc:
+            ui.flash_hint(f"not deleted: {exc}")
+            return
+        rows, details = _session_rows(ui)
+        by_item.clear()
+        by_item.update(rows)
+        if not by_item:
+            modal.close()
+            ui.flash_hint("no other session left")
+            return
+        modal.refresh(list(by_item), descriptions=details)
 
     def _accept(item):
         session = by_item.get(item)
@@ -186,11 +237,8 @@ async def conversation_session(ui: ChatUIProtocol, args: List[str]):
             ui.chat_history_panel.add_message(
                 f"Resumed session: {session.title[:70]}", msg_type=SysMsg(), title="session")
 
-    show = getattr(ui, "show_search_modal", None)
-    if show is not None:
-        # Newest first (list_sessions' order).
-        show("Sessions", list(by_item), descriptions=descriptions, on_accept=_accept,
-             ordered=True)
+    modal = pick(ui, "Sessions", list(by_item), _accept, descriptions=descriptions,
+                 ordered=True, actions=[("^R", "rename", _rename), ("^D", "delete", _delete)])
 
 
 def _add_answer(ui: ChatUIProtocol, text: str, ids) -> None:

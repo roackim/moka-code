@@ -60,6 +60,37 @@ def _render(panel):
     return buffer
 
 
+def test_a_click_on_the_focused_thought_folds_and_unfolds_it():
+    """2026-11-02: the first click focuses a thought, a click on it once
+    focused acts like ``o``; a drag over it still only selects text."""
+    from moka_code.ui.tui.msg_types import MsgAction, ThinkingMsg
+
+    panel, _ = _panel(("let me think\nabout this\nfor a while", ThinkingMsg),
+                      ("answer", AssistantMsg))
+    thought = panel.messages[0]
+    thought.set_collapsed(True)
+    actions = []
+    panel.on_action = lambda msg, action: (actions.append(action),
+                                           msg.set_collapsed(not msg.collapsed))
+    _render(panel)
+    y = next(row for row in range(H) if panel._cached_hit_test(row)[0] == 0)
+
+    def click():
+        panel.handle_input(MouseEvent(4, y, 0, True, False))
+        panel.handle_input(MouseEvent(4, y, 0, False, False))
+        _render(panel)
+
+    click()
+    assert panel.focused_message_index == 0 and thought.collapsed and actions == []
+    click()
+    assert not thought.collapsed and actions == [MsgAction.EXPAND]
+    click()
+    assert thought.collapsed and actions[-1] == MsgAction.COLLAPSE
+
+    _drag(panel, (2, y), (8, y), copy=False)
+    assert thought.collapsed and len(actions) == 2
+
+
 def test_drag_copies_exactly_the_cells_under_the_pointer(copied):
     panel, buffer = _panel(("first line\nsecond line", UserMsg))
     y, x = _row_of(buffer, "second line")

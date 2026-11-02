@@ -59,15 +59,16 @@ The chat workspace includes a one-line `StatusBar` drawn from one template,
 `ui.status_bar` (`bars.render_template`); the default is
 
 ```toml
-status_bar = "[{spinner} ]{model}[:{effort}][  mode:{role}][  ctx {context}][  {cost}] | [  shells:{running}][  sandbox:{sandbox}]"
+status_bar = "[{spinner} ]{model}[:{effort}][  mode:{role}][  ctx {context}][  {cost}] | [  shells:{shells}][  sandbox:{sandbox}]"
 ```
 
 drawn as `qwen3:high  mode:agent  ctx 12.4k/32k  $0.12`, with `  shells:1  sandbox:none` right-aligned.
 
 - `{name}` is a value (`settings.STATUS_BAR_VALUES`, filled by
   `status_presenter._set_fields`): `endpoint`, `model`, `effort`, `role`,
-  `context` (`12.4k/32k`, `~` while estimated), `cost`, `running` (bash calls
-  running, empty when none; `Harness.running_tools`), `sandbox`, `state`,
+  `context` (`12.4k/32k`, `~` while estimated), `cost`, `shells` (bash calls
+  running, empty when none; `Harness.running_tools`; named `running` until
+  2026-11-02, the old name is a load error giving the new one), `sandbox`, `state`,
   `workspace`, `spinner` (a frame while the server is checked).
 - `[ … ]` is a group: left out when a value directly in it is empty (a nested
   group can go on its own), so a separator belongs inside it. A group is drawn
@@ -92,11 +93,11 @@ supplies authoritative usage data.
 Keyboard focus: the status bar is the third app focus target (`_FOCUS_IDS`:
 input, history, status). ↓ on the input's last line
 (`InputComponent.is_cursor_on_last_line`) focuses it when it shows a value of
-`app.STATUS_PICKERS` (`model`, `effort`, `role`, `sandbox`, `running`); that value is drawn inverted
+`app.STATUS_PICKERS` (`model`, `effort`, `role`, `sandbox`, `shells`); that value is drawn inverted
 (`StatusBar.focused_value`; template runs carry their value name, and a `[ … ]` group's text
 carries its first value's, so the whole block inverts and is clickable, minus the spaces at its edges). ←/→ move
 between those values in screen order, Enter sends `/model`, `/effort`, `/role select`,
-`/sandbox` or `/running` (their pickers) and returns to the input, ↑/Esc return to it, any other key is
+`/sandbox` or `/shells` (their pickers) and returns to the input, ↑/Esc return to it, any other key is
 typed into it. A click on the bar focuses it on the value under the pointer
 (`StatusBar.value_at`); a click on the value already focused opens it, like Enter. The action line reads `←→ field · [ENTER] open · [ESC] back`.
 
@@ -123,10 +124,16 @@ atomically) is shared by `/export`, `/import` and autosave
   (default 10; `0` = never saved) via `sessions.prune`. Image references are
   saved as references (`/export` embeds them).
 - `/session` opens the search picker (this project's sessions, newest first,
-  current one excluded; row = first user question, description = age ·
-  messages · model). Enter runs `load_conversation` (shared with `/import`)
-  and sets `session_path` to that file, so a resumed session keeps writing to
-  it. Refused while a response is generating.
+  current one excluded; row = the session's `title`, else its first user
+  question, description = age · messages · model). Enter runs
+  `load_conversation` (shared with `/import`) and sets `session_path` to that
+  file, so a resumed session keeps writing to it. Refused while a response is
+  generating. Its action row: `[^R] rename` puts the title in the input box
+  (`chatTUI.prompt_text`: Enter saves it with `sessions.rename`, empty removes
+  it, Esc cancels; the draft comes back) and reopens the list; `[^D] delete`
+  deletes the file at once (no confirmation) and the list stays open.
+- The title is `chatTUI.session_title` (read by `load_conversation`, cleared by
+  `new_session`, kept by `/import`), written by `save_session` and `/export`.
 - `moka --resume` / `-r` queues `/session` at startup (`chatTUI(resume=True)`).
 
 ### Private mode (`/private`)
@@ -824,7 +831,7 @@ frozen. There is no spinner: the label ticks (`Message._thinking_label`).
 - at the first content/tool boundary (`end_status_message()`): if the
   reasoning earns a line (`thought_worth_showing`: ≥ `ui.thought_min_tokens`,
   default 100, estimated at ~4 chars/token; `0` shows every non-empty thought)
-  it is finalized to `thought for Xs` (`o` on the focused thought unfolds the reasoning, `MsgAction.EXPAND` / `COLLAPSE` by state; leaving folds it); otherwise
+  it is finalized to `thought for Xs` (`o` on the focused thought unfolds the reasoning, `MsgAction.EXPAND` / `COLLAPSE` by state, and so does a click on it once focused — on release, when no drag selected text; leaving folds it); otherwise
   the line was only a wait indicator and is **removed**
   (`ChatHistoryPanel.remove_message`). Short reasoning stays in history and
   exports; `/import` applies the same threshold. A tool loop with little
@@ -874,7 +881,7 @@ The package lives in `moka_code/ui/commands/`:
 ### Registered Commands
 
 `help`, `clear`, `private`, `reload`, `config`, `edit`, `export`, `import`, `session`,
-`compact`, `exit`, `stop`, `terminal`, `debug`, `activity`, `model`, `effort`, `role`,
+`compact`, `exit`, `stop`, `shells`, `terminal`, `debug`, `activity`, `model`, `effort`, `role`,
 `sandbox`, `diff`, `prompt`, `theme`
 
 ### Sandbox (`/sandbox`)

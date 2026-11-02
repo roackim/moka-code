@@ -114,6 +114,9 @@ class ChatHistoryPanel(TextComponent):
         # True while one segment of a split answer is selected (``→``);
         # otherwise a split answer is selected as a whole.
         self.inside_group = False
+        # The focused thought a press landed on: its release, if no drag
+        # selected text, folds or unfolds it.
+        self._click_toggles: Optional[Message] = None
         # Brief hint callback (the app flashes it on the action line).
         self.on_hint: Optional[callable] = None
         # ``on_copy(text)``: copies a mouse selection on ``c`` (the app confirms it).
@@ -950,6 +953,14 @@ class ChatHistoryPanel(TextComponent):
                 return True
             if not event.pressed:
                 self.selection.end()
+                # A click (no drag) on the thought already focused folds or
+                # unfolds it, like ``o``; a drag still selects its text.
+                thought, self._click_toggles = self._click_toggles, None
+                if thought is not None and not self.selection.has_selection:
+                    fold = next((action for action in thought.get_active_actions()
+                                 if action in (MsgAction.EXPAND, MsgAction.COLLAPSE)), None)
+                    if fold is not None:
+                        self._dispatch_action(thought, fold)
                 self._request_repaint()
                 return True
 
@@ -964,11 +975,18 @@ class ChatHistoryPanel(TextComponent):
                     # the first click selects it whole; a click on the
                     # already-selected answer selects the segment.
                     msg_index, _ = self._cached_hit_test(event.y)
+                    self._click_toggles = None
                     if msg_index is not None:
                         start, end = self._group_range(msg_index)
                         focused = self.focused_message_index
                         already = focused is not None and start <= focused < end
-                        self.set_focused_message(msg_index, inside=already)
+                        if focused == msg_index and isinstance(self.messages[msg_index].type,
+                                                               ThinkingMsg):
+                            # Focusing it again would fold it: the release decides.
+                            self._click_toggles = self.messages[msg_index]
+                            self.selection.clear()
+                        else:
+                            self.set_focused_message(msg_index, inside=already)
                     else:
                         self.clear_focus()
                     self.selection.start(self._selection_point(event))

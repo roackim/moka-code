@@ -69,9 +69,11 @@ until it exits, since the pipes stay open. `Harness.cancel_tool(id)` kills just
 that call (same `transport.cancel_active`) without stopping the turn: its
 result becomes `outcome="cancelled"` (`cancelled by the user after Ns` plus the
 output so far), the model gets `[TOOL CANCELLED] …` and is asked again. The UI
-reaches it three ways: `k` (`MsgAction.KILL`) on a running bash line, `/running`
-(a picker of the running bash calls with their elapsed time; picking one kills
-it), and the status bar's `{running}` count (Enter on it opens `/running`).
+reaches it three ways: `k` (`MsgAction.KILL`) on a running bash line, `/shells`
+(a picker of the running bash calls with their elapsed time, ticking each
+second while open; Enter selects the call's line in the transcript,
+`[^K] kill` kills it), and the status bar's `{shells}` count (Enter on it opens
+`/shells`).
 
 The tool *bodies* are stateless functions in `worker.py` (stdlib-only). The
 `Harness` owns all state and passes a `cwd` in. The only stateful adapter is
