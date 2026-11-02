@@ -568,26 +568,61 @@ class Message:
         )
         self._apply_thought_colors()
         self._apply_bullet()
+        self._apply_highlight()
+
+    def _kind(self) -> Optional[str]:
+        """The ``<type>`` of this message's ``ui.<type>_*`` settings, or None
+        (system lines, compaction)."""
+        t = self.type
+        if isinstance(t, msg_types.UserMsg):
+            return "user"
+        if isinstance(t, msg_types.ThinkingMsg):
+            return "thought"
+        if isinstance(t, msg_types.AssistantMsg):
+            return "answer"
+        if isinstance(t, (msg_types.ToolCallMsg, msg_types.ToolOutputMsg)):
+            return "tool"
+        if isinstance(t, (msg_types.QuestionMsg, msg_types.AskPermissionMsg)):
+            return "ask"
+        return None
+
+    def _apply_highlight(self) -> None:
+        """``ui.<type>_highlight`` draws the message on the theme's
+        ``USER_HIGHLIGHT`` (user) or ``ASSISTANT_HIGHLIGHT`` (the rest)
+        background, none when the theme has none; ``ui.user_highlight_pad``
+        adds a lit blank row above and below a user message.
+        ``ui.code_highlight`` draws only the code rows of fenced blocks on
+        ``ASSISTANT_HIGHLIGHT``."""
+        kind = self._kind()
+        color = theme.USER_HIGHLIGHT if kind == "user" else theme.ASSISTANT_HIGHLIGHT
+        on = (kind is not None and color is not None
+              and getattr(settings.config, f"ui_{kind}_highlight", False))
+        bg = color if on else theme.get_bg()
+        self.box.bg = bg
+        if hasattr(self.component, "bg"):
+            self.component.bg = bg
+        if kind == "user":
+            pad_y = 1 if on and settings.config.ui_user_highlight_pad else 0
+            if pad_y != self.box.content_pad_y:
+                self.box.content_pad_y = pad_y
+                self.layout_revision += 1      # the panel's cached height is stale
+        if hasattr(self.component, "code_bg"):
+            code = theme.ASSISTANT_HIGHLIGHT
+            lit = settings.config.ui_code_highlight and code is not None
+            self.component.code_bg = code if lit else None
+            if self.component.set_code_pad(lit and settings.config.ui_code_highlight_pad):
+                self.layout_revision += 1      # the panel's cached height is stale
 
     def _apply_bullet(self) -> None:
         """Unfocused, a bar type shows ``ui.bullet`` on its first row, or
         nothing with ``ui.<type>_bullet`` off; the bar is for focus. Other
         types (system lines, compaction) keep their gutter."""
-        t = self.type
-        if isinstance(t, msg_types.UserMsg):
-            on = settings.config.ui_user_bullet
-        elif isinstance(t, msg_types.ThinkingMsg):
-            on = settings.config.ui_thought_bullet
-        elif isinstance(t, msg_types.AssistantMsg):
-            on = settings.config.ui_answer_bullet
-        elif isinstance(t, (msg_types.ToolCallMsg, msg_types.ToolOutputMsg)):
-            on = settings.config.ui_tool_bullet
-        elif isinstance(t, (msg_types.QuestionMsg, msg_types.AskPermissionMsg)):
-            on = settings.config.ui_ask_bullet
-        else:
+        kind = self._kind()
+        if kind is None:
             self.box.bullet = None
             self.box.wall = ""
             return
+        on = getattr(settings.config, f"ui_{kind}_bullet")
         self.box.bullet = settings.config.ui_bullet if on else ""
         wall = settings.config.ui_wall_char
         self.box.wall = wall if on and wall.strip() else ""
@@ -698,6 +733,7 @@ class Message:
             self.component.fg = content_color if content_color is not None else theme.DEFAULT
         if hasattr(self.component, "bg"):
             self.component.bg = theme.get_bg()
+        self._apply_highlight()
         # Markdown element colors are resolved when the text is parsed, so the
         # styled spans keep the previous palette until the source is re-parsed.
         if hasattr(self.component, "refresh_theme"):
@@ -712,7 +748,6 @@ class Message:
             gutter_color = getattr(theme, gutter_color, frame_color)
 
         self.box.fg = frame_color
-        self.box.bg = theme.get_bg()
         self.box.gutter_color = gutter_color
         self._apply_thought_colors()
         self._apply_bullet()

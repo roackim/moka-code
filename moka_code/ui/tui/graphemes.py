@@ -40,60 +40,57 @@ def _is_extend(ch: str) -> bool:
     return False
 
 
-def split_clusters(text: str) -> list[str]:
-    """Split ``text`` into grapheme clusters.
+def cluster_end(text: str, i: int) -> int:
+    """Index just past the grapheme cluster that starts at ``text[i]``.
 
     Unknown scripts fall back to per-code-point boundaries, which is safe (a
     cluster is never split) though not always minimal.
     """
-    if not text:
-        return []
+    n = len(text)
+    ch = text[i]
+    i += 1
 
+    # Regional indicators pair up (flags): consume one partner if present.
+    if _in(ord(ch), _REGIONAL_INDICATORS):
+        if i < n and _in(ord(text[i]), _REGIONAL_INDICATORS):
+            i += 1
+        return i
+
+    # CRLF is a single cluster.
+    if ch == "\r" and i < n and text[i] == "\n":
+        return i + 1
+
+    # Hangul jamo: leading consonant + vowel + optional trailing consonant.
+    if _in(ord(ch), _HANGUL_L):
+        while i < n and _in(ord(text[i]), _HANGUL_V):
+            i += 1
+        while i < n and _in(ord(text[i]), _HANGUL_T):
+            i += 1
+        return i
+
+    # Generic: consume trailing extends / ZWJ sequences.
+    while i < n:
+        nxt = text[i]
+        if _is_extend(nxt):
+            i += 1
+            continue
+        if nxt == _ZWJ:
+            i += 1
+            if i < n:
+                i += 1  # the joined base; further extends handled next pass
+            continue
+        break
+    return i
+
+
+def split_clusters(text: str) -> list[str]:
+    """Split ``text`` into grapheme clusters (see ``cluster_end``)."""
     clusters: list[str] = []
     i = 0
-    n = len(text)
-    while i < n:
-        start = i
-        ch = text[i]
-        i += 1
-
-        # Regional indicators pair up (flags): consume one partner if present.
-        if _in(ord(ch), _REGIONAL_INDICATORS):
-            if i < n and _in(ord(text[i]), _REGIONAL_INDICATORS):
-                i += 1
-            clusters.append(text[start:i])
-            continue
-
-        # CRLF is a single cluster.
-        if ch == "\r" and i < n and text[i] == "\n":
-            i += 1
-            clusters.append(text[start:i])
-            continue
-
-        # Hangul jamo: leading consonant + vowel + optional trailing consonant.
-        if _in(ord(ch), _HANGUL_L):
-            while i < n and _in(ord(text[i]), _HANGUL_V):
-                i += 1
-            while i < n and _in(ord(text[i]), _HANGUL_T):
-                i += 1
-            clusters.append(text[start:i])
-            continue
-
-        # Generic: consume trailing extends / ZWJ sequences.
-        while i < n:
-            nxt = text[i]
-            if _is_extend(nxt):
-                i += 1
-                continue
-            if nxt == _ZWJ:
-                i += 1
-                if i < n:
-                    i += 1  # the joined base; further extends handled next pass
-                continue
-            break
-
-        clusters.append(text[start:i])
-
+    while i < len(text):
+        end = cluster_end(text, i)
+        clusters.append(text[i:end])
+        i = end
     return clusters
 
 

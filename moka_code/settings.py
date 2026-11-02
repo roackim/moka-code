@@ -259,12 +259,21 @@ DEFAULT_UI_TOML = f"""\
 # bullet = "•"                          # the unfocused marker
 # wall_char = " "                       # muted line below the bullet ("" or " " = none)
 # focus_wall_char = "┃"                 # focused: every row, in the focus color
-# code_prefix = "│  "                   # muted, before every row of a code block ("" = none)
+# code_prefix = "┃  "                   # muted, before every row of a code block ("" = none)
 # user_bullet = true                    # your messages
 # answer_bullet = true                  # answers
 # thought_bullet = false                # thoughts
 # tool_bullet = false                   # tool lines and their output
 # ask_bullet = true                     # questions and permission prompts
+## A highlighted message is drawn on the theme's USER_HIGHLIGHT (yours) or
+## ASSISTANT_HIGHLIGHT (the rest) background (none when the theme leaves it "").
+# user_highlight = true                 # your messages
+# user_highlight_pad = true             # a highlighted blank row above and below them
+# answer_highlight = false              # answers
+# thought_highlight = false             # thoughts
+# tool_highlight = false                # tool lines and their output
+# code_highlight = true                 # code block rows (not their indent or blank rows)
+# code_highlight_pad = true             # a highlighted empty code row above and below them
 # group_thoughts_and_calls = false      # no blank line between thoughts and tool lines
 # group_reasoning_and_answers = false   # no blank line between them and the answer after
 # show_banner = true                    # moka art in an empty transcript
@@ -394,6 +403,9 @@ THEME_FILE_HELP = f"""\
 ##
 ## Missing entries inherit from the built-in of the same name (or terminal);
 ## USER_TEXT and ASSISTANT_TEXT (message text) default to this file's DEFAULT.
+## USER_HIGHLIGHT (your messages) and ASSISTANT_HIGHLIGHT (answers, thoughts,
+## tools, code) are the backgrounds of the messages whose ui.toml *_highlight
+## is true; "" highlights nothing.
 """
 
 DEFAULT_CONFIG_TEMPLATES = {
@@ -418,12 +430,19 @@ _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
     "bullet": ("ui_bullet", "str", "•"),
     "wall_char": ("ui_wall_char", "str", " "),
     "focus_wall_char": ("ui_focus_wall_char", "str", "┃"),
-    "code_prefix": ("ui_code_prefix", "str", "│  "),
+    "code_prefix": ("ui_code_prefix", "str", "┃  "),
     "user_bullet": ("ui_user_bullet", "bool", True),
     "answer_bullet": ("ui_answer_bullet", "bool", True),
     "thought_bullet": ("ui_thought_bullet", "bool", False),
     "tool_bullet": ("ui_tool_bullet", "bool", False),
     "ask_bullet": ("ui_ask_bullet", "bool", True),
+    "user_highlight": ("ui_user_highlight", "bool", True),
+    "user_highlight_pad": ("ui_user_highlight_pad", "bool", True),
+    "answer_highlight": ("ui_answer_highlight", "bool", False),
+    "thought_highlight": ("ui_thought_highlight", "bool", False),
+    "tool_highlight": ("ui_tool_highlight", "bool", False),
+    "code_highlight": ("ui_code_highlight", "bool", True),
+    "code_highlight_pad": ("ui_code_highlight_pad", "bool", True),
     "group_thoughts_and_calls": ("ui_group_thoughts_and_calls", "bool", False),
     "group_reasoning_and_answers": ("ui_group_reasoning_and_answers", "bool", False),
     "show_banner": ("ui_show_banner", "bool", True),
@@ -940,7 +959,11 @@ _THEME_PALETTE = {
     "BACKGROUND", "DEFAULT", "MUTED", "ERROR", "WARNING", "SUCCESS",
     "PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED", "USER_TEXT", "ASSISTANT_TEXT",
     "HEADING", "EMPHASIS", "CODE", "KEYWORD", "FUNCTION", "STRING", "NUMBER", "TYPE",
+    "USER_HIGHLIGHT", "ASSISTANT_HIGHLIGHT",
 }
+
+#: Palette keys that may be ``""`` (no color).
+_THEME_OPTIONAL = {"USER_HIGHLIGHT", "ASSISTANT_HIGHLIGHT"}
 
 
 def _coerce_theme_color(value: Any) -> Optional[str]:
@@ -1445,7 +1468,7 @@ def _load_themes_dir(directory: Path, config: Config, errors: list[str]) -> None
             if palette_key not in _THEME_PALETTE:
                 errors.append(f"{where}: unknown color '{key}'")
                 continue
-            error = _coerce_theme_color(value)
+            error = None if value == "" and palette_key in _THEME_OPTIONAL else _coerce_theme_color(value)
             if error:
                 errors.append(f"{where}: {key} {error}")
                 continue

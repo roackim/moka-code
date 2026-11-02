@@ -105,6 +105,11 @@ class _theme:
     # Message text; a theme that leaves them out uses its DEFAULT.
     USER_TEXT: Optional[RGB] = None
     ASSISTANT_TEXT: Optional[RGB] = None
+    # Backgrounds of the message types whose ``ui.<type>_highlight`` is on:
+    # the user's messages, and the rest (answers, thoughts, tools, code).
+    # None (``""`` in a theme file) highlights nothing.
+    USER_HIGHLIGHT: Optional[RGB] = None
+    ASSISTANT_HIGHLIGHT: Optional[RGB] = None
 
     def __post_init__(self):
         for field in _TEXT_FIELDS:
@@ -176,6 +181,7 @@ moka = _palette(
     FOCUSED="#F7CA88", HEADING="#E39A6E", EMPHASIS="#F0D3A0", CODE="#B4C08F",
     KEYWORD="#E0876A", FUNCTION="#E8C07A", STRING="#B4C08F", NUMBER="#C9A3C0", TYPE="#9FC2A8",
     USER_TEXT="#F7CA88", ASSISTANT_TEXT="#DCC4A8",
+    USER_HIGHLIGHT="#2A211D", ASSISTANT_HIGHLIGHT="#120E0C",
 )
 
 nord = _palette(
@@ -186,6 +192,7 @@ nord = _palette(
     FOCUSED="#EBCB8B", HEADING="#88C0D0", EMPHASIS="#F7E09B", CODE="#8FBCBB",
     KEYWORD="#81A1C1", FUNCTION="#88C0D0", STRING="#A3BE8C", NUMBER="#BE9BB8", TYPE="#8FBCBB",
     USER_TEXT="#BCE0EC", ASSISTANT_TEXT="#CBD1DC",
+    USER_HIGHLIGHT="#3B4252", ASSISTANT_HIGHLIGHT="#272C36",
 )
 
 dracula = _palette(
@@ -196,6 +203,7 @@ dracula = _palette(
     FOCUSED="#F0B57E", HEADING="#EE90C8", EMPHASIS="#F0B57E", CODE="#7DD39A",
     KEYWORD="#EE90C8", FUNCTION="#7DD39A", STRING="#E6C07B", NUMBER="#B49CF0", TYPE="#8FD8E8",
     USER_TEXT="#E0D6F6", ASSISTANT_TEXT="#DCDAD0",
+    USER_HIGHLIGHT="#343746", ASSISTANT_HIGHLIGHT="#21222C",
 )
 
 gruvbox = _palette(
@@ -206,6 +214,7 @@ gruvbox = _palette(
     FOCUSED="#FABD2F", HEADING="#FE8019", EMPHASIS="#FABD2F", CODE="#8EC07C",
     KEYWORD="#FC5D48", FUNCTION="#8EC07C", STRING="#B8BB26", NUMBER="#D3869B", TYPE="#FABD2F",
     USER_TEXT="#D3E2B4", ASSISTANT_TEXT="#D5C4A1",
+    USER_HIGHLIGHT="#3C3836", ASSISTANT_HIGHLIGHT="#1D2021",
 )
 
 tokyo_night = _palette(
@@ -216,6 +225,7 @@ tokyo_night = _palette(
     FOCUSED="#FF9E64", HEADING="#BB9AF7", EMPHASIS="#FF9E64", CODE="#7DCFFF",
     KEYWORD="#BB9AF7", FUNCTION="#7AA2F7", STRING="#9ECE6A", NUMBER="#FF9E64", TYPE="#2AC3DE",
     USER_TEXT="#C8F2EA", ASSISTANT_TEXT="#A9B1D6",
+    USER_HIGHLIGHT="#24283B", ASSISTANT_HIGHLIGHT="#16161E",
 )
 
 
@@ -276,7 +286,7 @@ def _theme_from_palette(name: str, palette: dict) -> "_theme":
     base = BUILTIN_THEMES.get(name, terminal).copy()
     base.name = name
     for key, spec in palette.items():
-        setattr(base, key.upper(), _color_from_spec(spec))
+        setattr(base, key.upper(), None if spec == "" else _color_from_spec(spec))
     given = {key.upper() for key in palette}
     for field in _TEXT_FIELDS:
         if field not in given:
@@ -315,12 +325,14 @@ PALETTE_FIELDS = (
     "BACKGROUND", "DEFAULT", "MUTED", "ERROR", "WARNING",
     "SUCCESS", "PERMISSION", "TOOL", "USER", "ASSISTANT", "FOCUSED",
     "HEADING", "EMPHASIS", "CODE", "KEYWORD", "FUNCTION", "STRING",
-    "NUMBER", "TYPE", "USER_TEXT", "ASSISTANT_TEXT",
+    "NUMBER", "TYPE", "USER_TEXT", "ASSISTANT_TEXT", "USER_HIGHLIGHT", "ASSISTANT_HIGHLIGHT",
 )
 
 
 def _color_to_toml(color) -> str:
-    """Render one palette color as a theme file value."""
+    """Render one palette color as a theme file value (``""``: none)."""
+    if color is None:
+        return '""'
     if hasattr(color, "r"):
         return f'"#{color.r:02X}{color.g:02X}{color.b:02X}"'
     return f"{{ ansi = {color.fg}, bg = {color.bg} }}"

@@ -145,15 +145,17 @@ class MessageView(Box):
         bulleted = self.bullet is not None and not self.focused
         if bulleted:
             gutter = "" if self.bullet_continued else self.bullet
+        # The bullet sits on the first content row (below a padded blank row).
+        top = self.content_pad_y if bulleted else 0
         if gutter and self.width > 0:
             if self.full_height_gutter and not bulleted:
                 rows = range(start, self.height)
             else:
-                rows = (0,) if start == 0 else ()
+                rows = (top,) if start <= top < self.height else ()
             for row in rows:
                 self.subbuffer.set(0, row, gutter, fg=fg, bg=bg)
         if bulleted and self.wall and self.width > 0:
-            first = 0 if self.bullet_continued else 1
+            first = 0 if self.bullet_continued else top + 1
             for row in range(max(start, first), self.height):
                 self.subbuffer.set(0, row, self.wall, fg=theme.MUTED, bg=bg)
 

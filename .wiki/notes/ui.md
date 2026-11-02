@@ -798,6 +798,23 @@ Thought colors: `ui.thought_color` colors the folded line and its bar,
 default; palette name or `#rrggbb`, resolved by `colors.resolve_color`;
 `Message._apply_thought_colors` re-applies them on fold, theme switch and reload).
 
+Highlight: `ui.user_highlight` (default `true`), `answer_highlight`,
+`thought_highlight`, `tool_highlight` (default `false`) draw the message (box
+and text) on the theme's `USER_HIGHLIGHT` (user) or `ASSISTANT_HIGHLIGHT` (the
+rest) background; nothing when the theme has none (`Message._apply_highlight`,
+re-applied on theme switch and reload). `user_highlight_pad` (default `true`)
+adds a lit blank row above and below a highlighted user message
+(`MessageView.content_pad_y`; the bullet stays on the first text row).
+`code_highlight` (default `true`) draws the rows of fenced code blocks on
+`ASSISTANT_HIGHLIGHT`, from the last 2 cells (`MarkdownComponent.code_bg_pad`) of the code
+indent (`code_prefix`) to the right edge; the rest of the indent, the bullet
+column and the blank rows around a split block keep the
+message's background (`MarkdownComponent.code_bg`; streaming answers too).
+`code_highlight_pad` (default `true`) adds an empty code row at each fence,
+inside the block and so on the band (`BlockParser.code_pad`, set by
+`MarkdownComponent.set_code_pad`, which re-parses); only while the block is
+highlighted.
+
 Bullets: `ui.user_bullet`, `answer_bullet`, `thought_bullet`, `tool_bullet`
 (calls and output), `ask_bullet` (questions and permissions); by default
 user, answer and ask are `true`, thought and tool `false`. Focus is drawn by the panel (below). Unfocused, a message of

@@ -90,3 +90,18 @@ def test_code_prefix_is_configurable_and_muted(monkeypatch):
 
     monkeypatch.setattr(settings.config, "ui_code_prefix", "")
     assert [line for line in _rendered_lines("```\nx = 1\n```") if line] == ["x = 1"]
+
+
+def test_emoji_with_a_variation_selector_keeps_the_space_after_it():
+    """2026-11-02: ``⚠️`` is U+26A0 + U+FE0F; parsed one code point at a time it
+    was measured 1 cell wide while the terminal draws 2, covering the space
+    after it. Plain text is now taken a grapheme cluster at a time."""
+    for text in ("### ⚠️ Remember", "plain ⚠️ Remember", "👨‍👩‍👧 fam"):
+        comp = MarkdownComponent(text)
+        comp.set_layout(0, 0, 30, 1)
+        buf = Buffer(30, 1)
+        comp.render(buf)
+        row = buf.cells[0]
+        emoji = next(i for i, cell in enumerate(row) if ord(cell.char[:1] or " ") > 0x2000)
+        assert row[emoji + 1].is_wide_char_continuation
+        assert row[emoji + 2].char == " "

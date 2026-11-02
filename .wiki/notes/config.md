@@ -170,11 +170,16 @@ into the `markdown_styles` / `syntax_highlight_styles` / `servers` tables, and
 ## Themes
 
 A theme is a palette file (`themes/<name>.toml`, top-level keys) mapping the
-twenty-one `colors.PALETTE_FIELDS` (`BACKGROUND`, `DEFAULT`, `MUTED`, `ERROR`,
+twenty-three `colors.PALETTE_FIELDS` (`BACKGROUND`, `DEFAULT`, `MUTED`, `ERROR`,
 `WARNING`, `SUCCESS`, `PERMISSION`, `TOOL`, `USER`, `ASSISTANT`, `FOCUSED`,
 `HEADING`, `EMPHASIS`, `CODE`, `KEYWORD`, `FUNCTION`, `STRING`, `NUMBER`, `TYPE`,
-`USER_TEXT`, `ASSISTANT_TEXT`) to either a
+`USER_TEXT`, `ASSISTANT_TEXT`, `USER_HIGHLIGHT`, `ASSISTANT_HIGHLIGHT`) to either a
 `"#RRGGBB"` hex string or an ANSI table (`{ ansi = 90 }`, `{ ansi = 39, bg = 49 }`).
+`USER_HIGHLIGHT` / `ASSISTANT_HIGHLIGHT` may also be `""` (none): the
+backgrounds of the messages whose `ui.<type>_highlight` is on, the user's and
+the rest (answers, thoughts, tools, code). `terminal` has none; the RGB
+built-ins use a raised shade of their background for the user and a sunken
+one for the rest.
 Missing entries inherit the built-in base of the same name (or `terminal`),
 except `USER_TEXT` / `ASSISTANT_TEXT` (user and answer message text), which
 default to the theme's own `DEFAULT` (built-ins too).

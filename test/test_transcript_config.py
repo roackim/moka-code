@@ -148,3 +148,125 @@ def test_focus_draws_the_thick_wall_on_every_row(monkeypatch):
     column = [row[0].char for row in buf.cells]
     assert "*" not in column and column.count("#") == 1
     assert buf.cells[column.index("#")][0].fg is theme.FOCUSED
+
+
+def test_highlight_paints_the_enabled_types_on_the_theme_highlight(monkeypatch):
+    """2026-11-02: ``ui.<type>_highlight`` draws a message on the theme's
+    USER_HIGHLIGHT (user) or ASSISTANT_HIGHLIGHT (the rest); user messages
+    only by default."""
+    from moka_code.ui.tui.colors import RGB
+
+    monkeypatch.setattr(theme, "USER_HIGHLIGHT", RGB("#102030"))
+    monkeypatch.setattr(theme, "ASSISTANT_HIGHLIGHT", RGB("#405060"))
+    user, answer = Message("q", msg_type=UserMsg()), Message("a", msg_type=AssistantMsg())
+    assert user.box.bg is theme.USER_HIGHLIGHT and user.component.bg is theme.USER_HIGHLIGHT
+    assert answer.box.bg is theme.get_bg()
+
+    monkeypatch.setattr(settings.config, "ui_answer_highlight", True)
+    answer.refresh_theme()
+    assert answer.box.bg is theme.ASSISTANT_HIGHLIGHT
+
+
+def test_user_highlight_pad_lights_a_row_above_and_below(monkeypatch):
+    """2026-11-02: ``ui.user_highlight_pad`` adds a lit blank row above and
+    below a highlighted user message; the bullet stays on its text row."""
+    from moka_code.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.colors import RGB
+
+    monkeypatch.setattr(theme, "USER_HIGHLIGHT", RGB("#102030"))
+    monkeypatch.setattr(settings.config, "ui_bullet", "*")
+    user = Message("q", msg_type=UserMsg())
+    box = user.get_component()
+    assert box.get_preferred_height(8) == 3
+    box.set_layout(0, 0, 8, 3)
+    buf = Buffer(8, 3)
+    box.render(buf)
+    assert all(cell.bg == (0x10, 0x20, 0x30) for row in buf.cells for cell in row)
+    assert [row[0].char for row in buf.cells] == [" ", "*", " "]
+
+    monkeypatch.setattr(settings.config, "ui_user_highlight_pad", False)
+    user.refresh_theme()
+    assert box.get_preferred_height(8) == 1
+
+
+def test_no_highlight_without_a_theme_highlight(monkeypatch):
+    monkeypatch.setattr(theme, "USER_HIGHLIGHT", None)
+    user = Message("q", msg_type=UserMsg())
+    assert user.box.bg is theme.get_bg()
+    assert user.box.content_pad_y == 0                       # no pad around nothing
+
+
+def test_theme_file_highlight_may_be_empty(tmp_path):
+    from moka_code.ui.tui import colors
+
+    (tmp_path / "x.toml").write_text('USER_HIGHLIGHT = ""\nASSISTANT_HIGHLIGHT = ""\n')
+    config = settings.Config.__new__(settings.Config)
+    config.themes, errors = {}, []
+    settings._load_themes_dir(tmp_path, config, errors)
+
+    assert errors == []
+    loaded = colors._theme_from_palette("moka", config.themes["x"])
+    assert loaded.USER_HIGHLIGHT is None and loaded.ASSISTANT_HIGHLIGHT is None
+    assert colors._color_to_toml(None) == '""'
+
+
+def test_code_highlight_paints_code_rows_but_not_their_indent_or_blank_rows(monkeypatch):
+    """2026-11-02: ``ui.code_highlight`` draws a split code block's rows on
+    ASSISTANT_HIGHLIGHT after the code indent; the indent, the bullet column
+    and the blank rows around it are not."""
+    from moka_code.ui.chat_history_panel import ChatHistoryPanel
+    from moka_code.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.colors import RGB
+    from moka_code.ui.tui.components.markdown import code_indent_width
+
+    monkeypatch.setattr(theme, "ASSISTANT_HIGHLIGHT", RGB("#102030"))
+    monkeypatch.setattr(settings.config, "ui_code_highlight", True)
+    monkeypatch.setattr(settings.config, "ui_code_highlight_pad", False)
+    panel = ChatHistoryPanel()
+    msg = panel.add_message("Intro:\n```python\nx = 1\n```\nDone.", msg_type=AssistantMsg())
+    msg.finalize()
+    panel.split_answer(msg)
+    code = panel.messages[1].get_component()
+    width = 20
+    height = code.get_preferred_height(width)
+    code.set_layout(0, 0, width, height)
+    buf = Buffer(width, height)
+    code.render(buf)
+
+    lit = (0x10, 0x20, 0x30)
+    rows = [[cell.bg == lit for cell in row] for row in buf.cells]
+    text = panel.messages[1].component
+    pad = text.code_bg_pad                                   # the indent's last cells lead in
+    start, end = text.x + code_indent_width() - pad, text.x + text.width
+    assert start > 0                                         # the bullet column and indent stay plain
+    assert rows[0] == rows[-1] == [False] * width            # blank rows around the block
+    assert rows[1] == [False] * start + [True] * (end - start) + [False] * (width - end)
+
+
+def test_code_highlight_pad_lights_an_empty_code_row_at_each_end(monkeypatch):
+    """2026-11-02: ``ui.code_highlight_pad`` adds an empty code row above and
+    below a highlighted block, inside the band (after the code indent)."""
+    from moka_code.ui.chat_history_panel import ChatHistoryPanel
+    from moka_code.ui.tui.buffer import Buffer
+    from moka_code.ui.tui.colors import RGB
+
+    monkeypatch.setattr(theme, "ASSISTANT_HIGHLIGHT", RGB("#102030"))
+    monkeypatch.setattr(settings.config, "ui_code_highlight", True)
+    msg = ChatHistoryPanel().add_message("```python\nx = 1\n```", msg_type=AssistantMsg())
+    msg.finalize()
+    box = msg.get_component()
+    width = 20
+    height = box.get_preferred_height(width)
+    box.set_layout(0, 0, width, height)
+    buf = Buffer(width, height)
+    box.render(buf)
+
+    lit = (0x10, 0x20, 0x30)
+    text = msg.component
+    texts = ["".join(c.char for c in row).strip() for row in buf.cells]
+    assert len(texts) == 3 and "x = 1" in texts[1]
+    assert all(row[text.x + text.width - 1].bg == lit for row in buf.cells)   # all in the band
+
+    monkeypatch.setattr(settings.config, "ui_code_highlight_pad", False)
+    msg.refresh_theme()
+    assert box.get_preferred_height(width) == 1

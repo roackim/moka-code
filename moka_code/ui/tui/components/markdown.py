@@ -14,7 +14,7 @@ from wcwidth import wcswidth
 
 from moka_code import settings
 from moka_code.ui.tui.colors import RGB, theme
-from moka_code.ui.tui.graphemes import split_clusters
+from moka_code.ui.tui.graphemes import cluster_end, split_clusters
 from moka_code.ui.tui.syntax_highlight import scan
 from moka_code.ui.tui.buffer import Buffer
 from moka_code.ui.tui.components.base import Component
@@ -213,6 +213,9 @@ def _split_lines(text: str) -> List[str]:
 class BlockParser:
     """Parse markdown text into a list of Block objects (one per line)."""
 
+    #: An empty code line at each fence, inside the block (``ui.code_highlight_pad``).
+    code_pad = False
+
     def parse(self, text: str) -> List[Block]:
         return self.parse_with_lines(text)[0]
 
@@ -254,6 +257,8 @@ class BlockParser:
                 stripped = line.strip()
                 if stripped.startswith(code_fence.rstrip()):
                     in_code_block = False
+                    if self.code_pad:
+                        emit(CodeBlockLine(text="", lang=_current_code_lang), i)
                     i += 1
                     continue
                 # Preserve raw line (including leading whitespace) for code blocks
@@ -271,6 +276,8 @@ class BlockParser:
                 _current_code_lang = lang
                 code_state = ""
                 in_code_block = True
+                if self.code_pad:
+                    emit(CodeBlockLine(text="", lang=lang), i)
                 i += 1
                 continue
 
@@ -578,9 +585,11 @@ class InlineParser:
                     i += consumed
                     continue
 
-            # Plain character
-            segments.append(StyledSegment(text[i]))
-            i += 1
+            # Plain character: a whole grapheme cluster, so an emoji and its
+            # variation selector (⚠️) stay one segment and are measured as one.
+            end = cluster_end(text, i)
+            segments.append(StyledSegment(text[i:end]))
+            i = end
 
         return segments
 
@@ -886,6 +895,11 @@ class MarkdownComponent(Component):
         super().__init__(id)
         self.fg = fg
         self.bg = bg
+        # Background of fenced code rows, after the code indent to the right
+        # edge (``ui.code_highlight``); None draws them like the rest.
+        self.code_bg = None
+        # Cells at the end of the code indent drawn on ``code_bg`` too.
+        self.code_bg_pad = 2
         self._md = Markdown()
         self._raw_text = text
         self._parsed_lines: List[List[StyledSegment]] = []
@@ -928,6 +942,17 @@ class MarkdownComponent(Component):
         self._do_parse_and_wrap(self._raw_text)
         self._dirty_from_line = None
         self.mark_changed()
+
+    def set_code_pad(self, on: bool) -> bool:
+        """An empty code row above and below each fenced block (on its
+        ``code_bg`` band); re-parses when it changes. True when it changed
+        (the row count did)."""
+        parser = self._md._block_parser
+        if parser.code_pad == on:
+            return False
+        parser.code_pad = on
+        self.refresh_theme()
+        return True
 
     def refresh_theme(self) -> None:
         """Re-resolve markdown colors from the active theme.
@@ -1258,11 +1283,23 @@ class MarkdownComponent(Component):
 
             # Start each line with left padding
             curr_x = self.left_pad
+            # A fenced code row starts with its indent segment (wrapped rows too).
+            code_bg = self.code_bg if line and line[0].indent else None
             for seg in line:
                 if curr_x >= self.width:
                     break
                 seg_fg = seg.fg if seg.fg is not None else ((default_fg.r, default_fg.g, default_fg.b) if isinstance(default_fg, RGB) else None)
                 seg_bg = seg.bg if seg.bg is not None else ((default_bg.r, default_bg.g, default_bg.b) if default_bg and isinstance(default_bg, RGB) else None)
+                if code_bg is not None and seg.indent and self.code_bg_pad > 0:
+                    # The indent's last ``code_bg_pad`` cells lead into the band.
+                    cut = max(0, len(seg.text) - self.code_bg_pad)
+                    for part, part_bg in ((seg.text[:cut], seg_bg), (seg.text[cut:], code_bg)):
+                        buffer.write_str(self.x + curr_x, self.y + y, part, fg=seg_fg, bg=part_bg,
+                                         max_width=self.width - curr_x)
+                        curr_x += wcswidth(part)
+                    continue
+                if code_bg is not None and not seg.indent and seg.bg is None:
+                    seg_bg = code_bg
                 buffer.write_str(
                     self.x + curr_x,
                     self.y + y,
@@ -1276,3 +1313,6 @@ class MarkdownComponent(Component):
                     italic=seg.italic,
                 )
                 curr_x += seg.display_width
+            if code_bg is not None and curr_x < self.width:
+                buffer.write_str(self.x + curr_x, self.y + y, " " * (self.width - curr_x),
+                                 bg=code_bg, max_width=self.width - curr_x)
