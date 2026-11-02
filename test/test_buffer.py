@@ -439,3 +439,16 @@ class TestEmojiClusterWriting:
         assert buf.cells[0][0].char == "\U0001F3C6"
         assert buf.cells[0][1].is_wide_char_continuation
         assert buf.cells[0][2].char == "x"
+
+
+def test_render_blanks_a_wide_characters_second_column_before_drawing_it():
+    """2026-11-02: nothing was ever written to a wide character's continuation
+    column, so a stale letter left there by an earlier frame showed through
+    ``⚠️`` ("### ⚠️d Note"). The column is blanked, the glyph drawn over it,
+    and the next cell positioned explicitly."""
+    buf = Buffer(12, 1)
+    buf.write_str(0, 0, "### ⚠️ Note")
+
+    out = buf.render()
+
+    assert "\x1b[1;6H \x1b[1;5H⚠️\x1b[1;7H Note" in out

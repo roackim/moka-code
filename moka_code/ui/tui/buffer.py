@@ -228,9 +228,8 @@ class Buffer:
             for x in range(self.width):
                 cell: RGB = self.cells[y][x]
                 
-                # Skip continuation cells (they're covered by the wide char before them)
+                # Skip continuation cells (blanked and covered by the wide char before them)
                 if cell.is_wide_char_continuation:
-                    terminal_col += 1  # Still counts as a cell position
                     continue
                 
                 # If there's a gap between our current terminal column and where we should be,
@@ -298,13 +297,24 @@ class Buffer:
                         res.append("\033[23m")
                         curr_state["italic"] = False
 
+                # A wide character (its continuation cells follow it): blank
+                # those columns first, then draw it over them. Nothing is ever
+                # written to a continuation cell otherwise, so whatever the
+                # terminal held there would survive under the glyph (a stale
+                # letter showing through an emoji).
+                span = 1
+                while x + span < self.width and self.cells[y][x + span].is_wide_char_continuation:
+                    span += 1
+                if span > 1:
+                    res.append(ANSI.move_to(y + 1, x + 2) + " " * (span - 1)
+                               + ANSI.move_to(y + 1, x + 1))
                 res.append(cell.char)
-                
-                # Check if next cell is marked as continuation (meaning this char is wide)
-                if x + 1 < self.width and self.cells[y][x + 1].is_wide_char_continuation:
-                    terminal_col += 2  # Wide character occupies 2 columns
+                if span > 1:
+                    # Where the terminal leaves the cursor after the glyph is
+                    # its own call: the next cell always positions explicitly.
+                    terminal_col = -1
                 else:
-                    terminal_col += 1  # Normal character occupies 1 column
+                    terminal_col += 1
             
             # Emit a real newline after every row EXCEPT the last. This lets
             # terminal-native copy preserve line breaks between rows. The last
