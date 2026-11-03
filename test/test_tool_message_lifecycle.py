@@ -15,7 +15,7 @@ from moka_code.ui.chat_message import (
     _parse_tool_args,
     _tool_summary,
 )
-from moka_code.ui.tui.msg_types import AskPermissionMsg, ToolCallMsg
+from moka_code.ui.tui.msg_types import ToolCallMsg
 from moka_code.ui.tui.colors import theme
 from moka_code.ui.tui.layout_utils import strip_ansi
 
@@ -126,11 +126,6 @@ def test_denied_line():
     assert _lines(msg)[0].endswith("denied")
 
 
-def test_permission_ask_names_its_keys():
-    msg = _tool(msg_type=AskPermissionMsg())
-    assert _lines(msg)[0].endswith("approve? a/x")
-
-
 def test_panel_tick_refreshes_live_labels_at_a_steady_cadence(clock):
     from moka_code.ui.chat_history_panel import ChatHistoryPanel
     from moka_code.ui.tui.events import TickEvent
@@ -177,12 +172,12 @@ def test_bash_tool_schema_name_is_bash():
 
 
 def test_tool_lines_use_a_muted_bar():
-    """Tool lines get a muted ``▌``; an ask keeps its permission color."""
-    from moka_code.ui.tui.msg_types import AskPermissionMsg, AssistantMsg
+    """Tool lines get a muted ``▌``; one waiting for approval, the permission
+    color."""
+    from moka_code.ui.tui.msg_types import AssistantMsg
     from moka_code.ui.tui.colors import theme
 
-    ask = Message("", msg_type=AskPermissionMsg(), max_width=40)
-    ask.tool_name = "bash"
+    ask = _tool(status="asking")
     assert ask.box.gutter == "▌"
     assert ask.box.gutter_color == theme.PERMISSION
 
@@ -373,36 +368,14 @@ def test_write_draft_grows_live_in_the_final_format():
     assert _lines(msg) == ["write a.py +2 lines"]
 
 
-def test_approving_turns_the_ask_into_a_running_tool_line():
-    from conftest import StubAgent
-    from moka_code.ui.app import chatTUI
-
-    agent = StubAgent()
-    responses = []
-    agent.set_user_response = responses.append
-    ui = chatTUI(agent)
-    ask = ui.chat_history_panel.add_message("", msg_type=AskPermissionMsg())
-    ask.tool_name, ask.tool_args = "bash", '{"command": "make"}'
-    ask.rebuild_tool_display()
-    ui.active_tool_messages["t1"] = ask
-
-    ui.handle_allow_action(ask)
-
-    running = ui.active_tool_messages["t1"]
-    assert responses == ["approve"]
-    assert isinstance(running.type, ToolCallMsg)
-    assert running in ui.chat_history_panel.messages and ask not in ui.chat_history_panel.messages
-    assert running.tool_state() == "running"
-    assert "approve?" not in strip_ansi(running.get_formatted())
-
-
-def test_focusing_a_permission_prompt_reveals_what_it_changes():
+def test_a_call_waiting_for_approval_shows_what_it_changes():
+    """2026-11-03: unfolded while asking (it used to need focus); folded once
+    it runs."""
     args = {"path": "a.py", "search": "a", "replace": "b"}
-    ask = _tool(msg_type=AskPermissionMsg(), name="edit", args=args)
-    assert len(_lines(ask)) == 1
-    ask.set_focused(True)
+    ask = _tool(status="asking", name="edit", args=args)
     assert _lines(ask)[1:] == ["- a", "+ b"]
-    ask.set_focused(False)
+    ask.set_tool_status("running")
+    ask.rebuild_tool_display()
     assert len(_lines(ask)) == 1
 
 

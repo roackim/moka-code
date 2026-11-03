@@ -11,31 +11,6 @@ from moka_code.harness import events
 from conftest import StubAgent, make_chunk_stream
 
 
-class TestPermissionPendingSubmit:
-    def test_regular_message_blocked_while_permission_pending(self):
-        ui = chatTUI(StubAgent())
-        ui.pending_permission_prompt = "Allow running command: rm -rf /?"
-
-        ui.on_user_submit("thanks")
-
-        assert ui.message_queue.qsize() == 0
-        assert ui.command_queue.qsize() == 0
-        # The notice is routed to the activity surface, not the transcript.
-        assert ui.chat_history_panel.messages == []
-        assert any("Permission required for pending tool call" in line
-                   for line in ui.activity_panel.lines)
-
-    def test_command_allowed_while_permission_pending(self):
-        ui = chatTUI(StubAgent())
-        ui.pending_permission_prompt = "Allow reading file: secret.txt?"
-
-        ui.on_user_submit("/help")
-
-        assert ui.command_queue.qsize() == 1
-        assert ui.command_queue.get_nowait() == "/help"
-        assert ui.message_queue.qsize() == 0
-
-
 class TestCommandMenuNavigation:
     def test_up_arrow_stays_in_command_menu(self):
         ui = chatTUI(StubAgent())
@@ -79,69 +54,89 @@ class TestCommandWorker:
         assert dispatched == ["/help"]
 
 
-class TestPendingPermissionPromptClearing:
-    """Regression tests: pending_permission_prompt must be cleared by incoming events,
-    not only by explicit allow/deny key presses. Without the fix, auto-denied tool calls
-    left pending_permission_prompt set, blocking every subsequent user message."""
+class TestPermissionForm:
+    """2026-11-03: a call waiting for approval is asked in the ``ask`` form's
+    selector above the input (Allow / Deny); its tool line waits unfolded,
+    prefix in PERMISSION. The permission message type is gone."""
 
-    def test_auto_denied_event_clears_pending_prompt(self):
-        """Denied ToolResult (auto-deny path) must clear pending_permission_prompt."""
-        ui = chatTUI(StubAgent())
-        ui.pending_permission_prompt = "Allow running: sudo rm -rf /?"
+    @pytest.fixture(autouse=True)
+    def _no_smoothing(self, monkeypatch):
+        from moka_code import settings
 
-        denied = events.ToolResult(
-            id="call_1",
-            name="bash",
-            outcome="denied",
-            output="Auto-denied by security policy",
-        )
+        monkeypatch.setattr(settings.config, "ui_stream_smoothing", False)
 
-        # Patch agent.chat to yield the denied result then stop
-        ui.agent.chat = lambda _, attached=None, prompt=None: make_chunk_stream(denied)
-        asyncio.run(ui._process_generation("hello", ui.chat_history_panel.add_message("hello")))
+    @staticmethod
+    def _asking(responses):
+        """An app inside a generation stopped at a permission request."""
+        agent = StubAgent()
+        agent.set_user_response = responses.append
+        ui = chatTUI(agent)
 
-        assert ui.pending_permission_prompt is None, (
-            "pending_permission_prompt must be cleared after a denied ToolResult arrives"
-        )
+        async def chat(_, attached=None, prompt=None):
+            yield events.Start(message_id="a", role="assistant")
+            yield events.ToolCall(id="t1", name="bash", args='{"command": "make"}')
+            yield events.PermissionRequest(id="t1", name="bash", args='{"command": "make"}',
+                                           prompt="?", auto=False)
+            await asyncio.sleep(10)
 
-    def test_auto_approved_event_clears_pending_prompt(self):
-        """Auto PermissionRequest must clear pending_permission_prompt (covers auto-approve)."""
-        ui = chatTUI(StubAgent())
-        ui.pending_permission_prompt = "Allow reading: secrets.txt?"
+        ui.agent.chat = chat
+        return ui
 
-        approved = events.PermissionRequest(
-            id="call_2",
-            name="read",
-            args='{"path": "secrets.txt"}',
-            prompt="Allow reading: secrets.txt?",
-            auto=True,
-        )
+    def _run(self, ui, answer):
+        async def scenario():
+            task = asyncio.create_task(
+                ui._process_generation("go", ui.chat_history_panel.add_message("go")))
+            await asyncio.sleep(0.05)
+            line = ui.active_tool_messages["t1"]
+            seen = (ui.question_form.title, ui.question_menu.items, line.tool_state())
+            answer(ui)
+            state = line.tool_state()
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            return seen, state
 
-        ui.agent.chat = lambda _, attached=None, prompt=None: make_chunk_stream(approved)
-        asyncio.run(ui._process_generation("hello", ui.chat_history_panel.add_message("hello")))
+        return asyncio.run(scenario())
 
-        assert ui.pending_permission_prompt is None, (
-            "pending_permission_prompt must be cleared after an auto PermissionRequest arrives"
-        )
+    def test_allow_runs_the_call(self):
+        responses = []
+        ui = self._asking(responses)
+        seen, state = self._run(ui, lambda ui: ui.handle_global_input("\r"))
+        assert seen == ("permission", ["1. Allow", "2. Deny"], "asking")
+        assert responses == ["approve"] and state == "running"
+        assert not any(m.type.name == "question" for m in ui.chat_history_panel.messages)
 
-    def test_message_not_blocked_after_auto_denial(self):
-        """After auto-denial clears the flag, subsequent messages must not be blocked."""
-        ui = chatTUI(StubAgent())
-        ui.pending_permission_prompt = "Allow running: sudo rm -rf /?"
+    def test_deny_and_a_typed_reason(self):
+        responses = []
 
-        denied = events.ToolResult(
-            id="call_3",
-            name="bash",
-            outcome="denied",
-            output="Auto-denied by security policy",
-        )
+        def deny(ui):
+            ui.handle_global_input("\x1b[B")
+            ui.handle_global_input("\r")
 
-        ui.agent.chat = lambda _, attached=None, prompt=None: make_chunk_stream(denied)
-        asyncio.run(ui._process_generation("hello", ui.chat_history_panel.add_message("hello")))
+        self._run(self._asking(responses), deny)
 
-        # Now submit a follow-up message – it must NOT be blocked
-        ui.on_user_submit("what happened?")
+        def reason(ui):
+            ui.input_component.update("use make -j4")
+            ui.handle_global_input("\r")
 
-        assert ui.message_queue.qsize() == 1, (
-            "User message must be queued, not blocked, after pending_permission_prompt was cleared"
-        )
+        self._run(self._asking(responses), reason)
+        assert responses == ["deny", "use make -j4"]
+
+    def test_the_waiting_line_is_unfolded_in_the_permission_color(self):
+        from moka_code.ui.chat_message import Message
+        from moka_code.ui.tui.colors import theme
+        from moka_code.ui.tui.msg_types import ToolCallMsg
+
+        msg = Message("", msg_type=ToolCallMsg(), max_width=60)
+        msg.tool_name, msg.tool_args = "edit", '{"path": "a.py", "search": "a", "replace": "b"}'
+        msg.set_tool_status("asking")
+        msg.rebuild_tool_display()
+        assert msg.box.gutter_color == theme.PERMISSION
+        assert msg.base_text.startswith(f"{theme.PERMISSION}edit")   # the name too
+        assert len(msg.base_text.split("\n")) > 1          # the diff shows
+        msg.set_tool_status("running")
+        msg.rebuild_tool_display()
+        assert msg.box.gutter_color == theme.MUTED
+        assert len(msg.base_text.split("\n")) == 1

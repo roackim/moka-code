@@ -29,7 +29,7 @@ architecture overview.
 
 - **`chatTUI`** owns one conversation: `agent`, `chat_history_panel`,
   `message_queue`, `current_generation_task`, `active_tool_messages`,
-  `pending_permission_prompt`. `switch_role(role)` applies a role via
+  `question_form` (the open `ask` or permission form). `switch_role(role)` applies a role via
   `agent.set_role` and emits a de-duped role-change notice. Ordinary, edited,
   retried, and resumed messages share one enqueue path.
 - **Action surface**: a collapsible `ActionBar` above the input shows the

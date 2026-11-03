@@ -223,6 +223,75 @@ class TestHarnessReadPermissionFlow:
         assert events[2].output == "User denied"
         assert read_tool.called is False
 
+    @staticmethod
+    def _quit_while_asking(harness, quitting):
+        """Start a call that asks, stop the stream at the prompt."""
+        call = _read_call("call_q")
+        harness.history.append({"id": "a1", "role": "assistant", "content": None,
+                                "tool_calls": [call]})
+        harness.keep_pending = quitting
+
+        async def run():
+            stream = harness._execute_tool_calls([call])
+            async for event in stream:
+                if isinstance(event, harness_events.PermissionRequest):
+                    break
+            try:
+                raise GeneratorExit
+            except GeneratorExit:
+                harness._abort_tool_calls([call])
+
+        asyncio.run(run())
+
+    def test_quitting_at_a_prompt_leaves_the_call_for_resume(self, tmp_path):
+        """2026-11-03: a session saved while a call waited for approval asks
+        again when resumed; a /stop still cancels it."""
+        role = Role(name="r", tools={"read": "ask"})
+        harness = _build_harness_stub(tmp_path, StubReadTool("content"), role)
+        self._quit_while_asking(harness, quitting=True)
+        assert [c["id"] for c in harness.pending_tool_calls()] == ["call_q"]
+
+        stopped = _build_harness_stub(tmp_path, StubReadTool("content"), role)
+        self._quit_while_asking(stopped, quitting=False)
+        assert stopped.pending_tool_calls() == []
+
+    def test_resume_asks_again_then_carries_on(self, tmp_path):
+        role = Role(name="r", tools={"read": "ask"})
+        read_tool = StubReadTool("content")
+        harness = _build_harness_stub(tmp_path, read_tool, role)
+        self._quit_while_asking(harness, quitting=True)
+        harness.keep_pending = False
+        harness.set_user_response("approve")
+        looped = []
+
+        async def loop():
+            looped.append(True)
+            yield harness_events.Done()
+
+        harness._agent_loop = loop
+
+        async def collect():
+            return [event async for event in harness.resume()]
+
+        seen = asyncio.run(collect())
+        asking = [e for e in seen if isinstance(e, harness_events.PermissionRequest)]
+        assert asking and asking[0].auto is False
+        assert read_tool.called and looped and harness.pending_tool_calls() == []
+
+    def test_a_typed_reason_reaches_the_model(self, tmp_path):
+        """2026-11-03: text typed in the permission form denies with it."""
+        role = Role(name="r", tools={"read": "ask"})
+        read_tool = StubReadTool("content")
+        harness = _build_harness_stub(tmp_path, read_tool, role)
+        harness.set_user_response("read b.txt instead")
+
+        events, messages = run_harness_tool_call(harness, _read_call("call_3"))
+
+        assert events[2].outcome == "denied"
+        assert events[2].output == "User denied: read b.txt instead"
+        assert "read b.txt instead" in messages[-1]["content"]
+        assert read_tool.called is False
+
     def test_allow_executes_tool(self, tmp_path):
         role = Role(name="r", tools={"read": "yes"})
         read_tool = StubReadTool("stubbed content")

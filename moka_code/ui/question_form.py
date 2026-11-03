@@ -9,18 +9,22 @@ form's keys here (``handle_key``).
 One tab per question, plus a last ``Send`` tab when there are several; Enter on
 it answers every call (``Harness.answer_questions``) and the transcript gets
 one line per question. Esc first asks whether to dismiss them.
+
+A tool call waiting for approval is the same form with one question, Allow /
+Deny (``open_permission``): typed text denies it with that reason, dismissing
+denies it, and the tool line itself is the record.
 """
 
-from typing import Dict, List
+from typing import Callable, Dict, List, Optional
 
 from moka_code.harness import ask, events
 from moka_code.ui.tui.colors import theme
 from moka_code.ui.tui.components.menu import SelectionMenu
+from moka_code.ui.tui.layout_utils import strip_ansi
 
 _SEND = "Send"
-#: The input's placeholder while a form is open.
-PLACEHOLDER = "your own answer…"
 _KEEP, _DISMISS = "Keep answering", "Dismiss"
+_ALLOW, _DENY = "Allow", "Deny"
 # The only row of a question without options.
 _WRITE = "(type your answer below)"
 
@@ -49,6 +53,18 @@ def answer_from_result(text: str) -> tuple:
 
 class QuestionForm:
     """Tabs, highlights, picks and own text of one form (no drawing)."""
+
+    #: The selector's title for a lone question.
+    title = "question"
+    #: What the user's own text is (the input's placeholder, the hint).
+    own = "your own answer"
+    #: What Enter does with typed text.
+    keep = "keep your answer"
+    #: What dismissing tells the model.
+    dismiss_note = "The model is told you declined to answer."
+    #: ``on_close(outcome)`` in place of the transcript record and
+    #: ``answer_questions`` (a permission form).
+    on_close: Optional[Callable[[str], None]] = None
 
     def __init__(self, items: List[events.Question]):
         self.items = list(items)
@@ -155,7 +171,7 @@ class QuestionForm:
     def tab_strip(self) -> str:
         """The menu title: the tabs, the current one in brackets."""
         if self._tabs() == 1:
-            return "question"
+            return self.title
         names = [self.label(i) + (" ✓" if self.answered(i) else "")
                  for i in range(len(self.items))] + [_SEND]
         return " · ".join(f"[{name}]" if i == self.tab else name
@@ -170,7 +186,7 @@ class QuestionForm:
         if self.confirming:
             menu.title = "dismiss?"
             count = "this question" if len(self.items) == 1 else "these questions"
-            menu.header = f"Dismiss {count}? The model is told you declined to answer."
+            menu.header = f"Dismiss {count}? {self.dismiss_note}"
             menu.set_items([_KEEP, _DISMISS], descriptions={})
             menu.selected_index = self.confirm_index
             return
@@ -222,12 +238,12 @@ class QuestionForm:
             return f"{tabs}[ENTER] send all · [ESC] dismiss"
         question = self.items[self.tab]
         if typing:
-            return "[ENTER] keep your answer · [ESC] dismiss"
+            return f"[ENTER] {self.keep} · [ESC] dismiss"
         if not question.options:
-            return f"{tabs}type your answer · [ENTER] keep it · [ESC] dismiss"
+            return f"{tabs}type {self.own} · [ENTER] keep it · [ESC] dismiss"
         space = "[SPACE] toggle · " if question.multiple else ""
         return (f"{tabs}↑↓ option · [ENTER] pick · {space}"
-                "or type your own answer · [ESC] dismiss")
+                f"or type {self.own} · [ESC] dismiss")
 
 
 # -- the app side -------------------------------------------------------------
@@ -249,25 +265,51 @@ class FormMenu(SelectionMenu):
         super().render(buffer)
 
 
-def open_form(app, items: List[events.Question]) -> None:
-    """Show the form for ``items``; the input keeps the keys (and its cursor:
-    the menu is one of its own, typing still reaches it) and shows the
-    placeholder."""
-    form = QuestionForm(items)
+def open_form(app, items, form: Optional[QuestionForm] = None) -> None:
+    """Show the form for ``items`` (or ``form``); the input keeps the keys
+    (and its cursor: the menu is one of its own, typing still reaches it) and
+    shows the placeholder."""
+    form = form or QuestionForm(items)
     menu = FormMenu(app)
     menu.on_click = lambda: _click(app)
     app.input_component._own_menus.append(menu)
-    app.input_component.placeholder = PLACEHOLDER
+    app.input_component.placeholder = f"{form.own}…"
     app.question_form, app.question_menu = form, menu
     app.chat_history_panel.clear_focus()
     app._set_app_focus("input")
     _refresh(app)
 
 
+def open_permission(app, message) -> None:
+    """Ask whether the tool call on ``message`` (waiting, ``asking``) may run:
+    Allow runs it; Deny, typed text (the reason, sent to the model) or
+    dismissing deny it; a stopped turn answers nothing."""
+    header = strip_ansi(message.base_text).split("\n", 1)[0]
+    form = QuestionForm([events.Question(id="permission", question=f"{header} — allow?",
+                                         options=[_ALLOW, _DENY])])
+    form.title = "permission"
+    form.own = "a reason to deny"
+    form.keep = "deny with this reason"
+    form.dismiss_note = "The call is denied."
+
+    def answer(outcome: str) -> None:
+        if outcome == "stopped":
+            return
+        allowed = outcome == "sent" and form.picked[0] == [0] and not form.texts[0]
+        if allowed:
+            message.set_tool_status("running")
+            message.rebuild_tool_display()
+        app.agent.set_user_response("approve" if allowed else form.texts[0] or "deny")
+
+    form.on_close = answer
+    open_form(app, None, form)
+
+
 def close_form(app, outcome: str) -> None:
     """Close the form and add its folded record to the transcript; ``"sent"``
     answers the questions, ``"dismissed"`` answers them as dismissed,
-    ``"stopped"`` (the turn ended) answers nothing."""
+    ``"stopped"`` (the turn ended) answers nothing. A form with ``on_close``
+    (permission) hands it the outcome instead."""
     from moka_code.ui.tui.msg_types import QuestionMsg
 
     form, menu = app.question_form, app.question_menu
@@ -279,10 +321,13 @@ def close_form(app, outcome: str) -> None:
         app.input_component._own_menus.remove(menu)
     app.input_component.placeholder = ""
     app.input_box.mark_changed()
-    record = app.chat_history_panel.add_message(form.folded(outcome), msg_type=QuestionMsg())
-    record.set_line_spans(form.folded_lines(outcome))
-    if outcome != "stopped":
-        app.agent.answer_questions(form.answers() if outcome == "sent" else None)
+    if form.on_close is not None:
+        form.on_close(outcome)
+    else:
+        record = app.chat_history_panel.add_message(form.folded(outcome), msg_type=QuestionMsg())
+        record.set_line_spans(form.folded_lines(outcome))
+        if outcome != "stopped":
+            app.agent.answer_questions(form.answers() if outcome == "sent" else None)
     app._update_action_strip()
 
 

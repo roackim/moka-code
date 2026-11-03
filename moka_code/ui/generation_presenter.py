@@ -19,8 +19,6 @@ from moka_code.harness import ask, events
 from moka_code.ui import question_form
 from moka_code.ui.chat_message import Message, thought_worth_showing
 from moka_code.ui.tui.msg_types import (
-    AskPermissionMsg,
-    MsgType,
     AssistantMsg,
     SysMsg,
     SysMsgError,
@@ -36,7 +34,7 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
 
     ``attached``: image references sent with the user message.
     """
-    logger.info(f"Starting generation for user input: {user_input[:50]}...")
+    logger.info(f"Starting generation for user input: {(user_input or '(resumed turn)')[:50]}...")
 
     chat = app.chat_history_panel
     agent = app.agent
@@ -63,9 +61,6 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
     natural_done = False
     aborted_status = "cancelled"
     status_is_processing = False
-
-    def ensure_tool_message_type(msg: Message, target_type: MsgType) -> Message:
-        return chat.retype_tool_message(msg, target_type)
 
     def begin_text_message(msg: Message) -> None:
         if smoothing:
@@ -113,8 +108,7 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
             msg = app.active_tool_messages.get(tool_id)
             if msg is None:
                 continue
-            msg = ensure_tool_message_type(msg, ToolCallMsg())
-            if msg.tool_state() in ("drafting", "running"):
+            if msg.tool_state() in ("drafting", "asking", "running"):
                 msg.set_tool_status(status)
             msg.finalize()
             app.active_tool_messages.pop(tool_id, None)
@@ -133,8 +127,9 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
 
     # Process streaming events from Harness
     expansion = getattr(user_msg, "prompt", None)
-    stream = agent.chat(user_input, list(attached),
-                        prompt=expansion.meta if expansion is not None else None)
+    # No input: a resumed turn carries on (``chatTUI.resume_turn``).
+    stream = agent.resume() if user_input is None else agent.chat(
+        user_input, list(attached), prompt=expansion.meta if expansion is not None else None)
     try:
         async for event in stream:
             if isinstance(event, events.Start):
@@ -254,8 +249,6 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                     msg = chat.add_message("", msg_type=ToolCallMsg(), harness_message_ids=current_harness_ids)
                     app.active_tool_messages[tool_id] = msg
 
-                msg = ensure_tool_message_type(msg, ToolCallMsg())
-                app.active_tool_messages[tool_id] = msg
                 msg.tool_name = event.name or msg.tool_name
                 msg.tool_args = event.args
                 # Complete, awaiting its permission decision (no clock yet).
@@ -277,57 +270,22 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                     end_status_message()
 
                 msg = app.active_tool_messages.get(tool_id)
-
-                if event.auto:
-                    # Auto-decision: show status marker
-                    if not msg:
-                        msg = chat.add_message(
-                            "",  # Will be built by rebuild_tool_display
-                            msg_type=ToolCallMsg(),
-                            harness_message_ids=current_harness_ids,
-                        )
-                        app.active_tool_messages[tool_id] = msg
-
-                    msg = ensure_tool_message_type(msg, ToolCallMsg())
+                if not msg:
+                    msg = chat.add_message(
+                        "",  # Will be built by rebuild_tool_display
+                        msg_type=ToolCallMsg(),
+                        harness_message_ids=current_harness_ids,
+                    )
                     app.active_tool_messages[tool_id] = msg
-                    msg.tool_name = event.name
-                    msg.tool_args = event.args
-                    msg.tool_diff = event.diff or None
-                    msg.set_tool_status("running")
-                    msg.rebuild_tool_display()
-                    app.pending_permission_prompt = None
-                else:
-                    # Need user permission - show request
-                    if not msg:
-                        msg = chat.add_message(
-                            "",
-                            msg_type=AskPermissionMsg(),
-                            harness_message_ids=current_harness_ids,
-                        )
-                        app.active_tool_messages[tool_id] = msg
-
-                    msg = ensure_tool_message_type(msg, AskPermissionMsg())
-                    app.active_tool_messages[tool_id] = msg
-                    msg.tool_name = event.name
-                    msg.tool_args = event.args
-                    msg.tool_diff = event.diff or None
-                    msg.tool_status = None
-                    msg.rebuild_tool_display()
-
-                    # Auto-focus for user action
-                    try:
-                        msg_index = chat.messages.index(msg)
-                        chat.set_focused_message(msg_index)
-                    except ValueError:
-                        pass
-                    app._set_app_focus("history")
-
-                    # Force compositor render to show actions immediately
-                    if app.compositor:
-                        app.compositor.render()
-
-                    # Store prompt for handler
-                    app.pending_permission_prompt = event.prompt
+                msg.tool_name = event.name
+                msg.tool_args = event.args
+                msg.tool_diff = event.diff or None
+                # Decided by the role: it runs. Else the user decides in the
+                # form above the input; the line waits unfolded.
+                msg.set_tool_status("running" if event.auto else "asking")
+                msg.rebuild_tool_display()
+                if not event.auto:
+                    question_form.open_permission(app, msg)
 
                 current_msg = msg
                 current_msg_type = type(msg.type)
@@ -354,8 +312,6 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                 tool_id = event.id
                 msg = app.active_tool_messages.get(tool_id)
                 if msg:
-                    msg = ensure_tool_message_type(msg, ToolCallMsg())
-                    app.active_tool_messages[tool_id] = msg
                     msg.tool_name = event.name
                     # The outcome (denied / error reason / exit code) is on the
                     # collapsed line; the full output stays behind ``o``.
@@ -364,7 +320,6 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                         "completed", "denied", "cancelled") else "error")
                     msg.finalize()
                     del app.active_tool_messages[tool_id]
-                app.pending_permission_prompt = None
                 app.refresh_status_bar()            # {shells}
 
             elif isinstance(event, events.Usage):
@@ -447,8 +402,6 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
         # finish animating; otherwise finalize now.
         finalize_active_tools(aborted_status)
         chat.drop_live_compaction()         # stopped while summarizing: nothing changed
-        # A stopped permission prompt must not keep blocking user input.
-        app.pending_permission_prompt = None
         question_form.close_form(app, "stopped")    # an open form ends with its turn
         if not natural_done or not smoothing:
             end_status_message()

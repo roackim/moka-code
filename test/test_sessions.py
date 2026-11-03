@@ -146,6 +146,29 @@ def test_session_picker_resumes_into_the_same_file(tmp_path, monkeypatch):
     assert ui.session_path == saved          # continues that session's file
 
 
+def test_a_session_saved_at_a_permission_prompt_resumes_asking(tmp_path):
+    """2026-11-03: its unanswered call's restored line becomes the live one
+    and the turn is queued to carry on (``Harness.resume`` asks again)."""
+    from moka_code.harness.harness import Harness
+    from moka_code.ui.commands.conversation import load_conversation
+
+    call = {"id": "t1", "type": "function",
+            "function": {"name": "bash", "arguments": '{"command": "make"}'}}
+    saved = sessions.sessions_dir(str(tmp_path)) / "pending.json"
+    sessions.write(saved, "agent", [{"id": "1", "role": "user", "content": "build"},
+                                    {"id": "2", "role": "assistant", "content": None,
+                                     "tool_calls": [call]}])
+    ui = _ui(tmp_path)
+    ui.switch_role = lambda role: role
+    ui.agent.pending_tool_calls = lambda: Harness.pending_tool_calls(ui.agent)
+
+    assert load_conversation(ui, saved)
+
+    line = ui.active_tool_messages["t1"]
+    assert line.tool_name == "bash" and line in ui.chat_history_panel.messages
+    assert ui.message_queue.get_nowait() == (None, None, [])
+
+
 def test_rename_titles_the_session_and_empty_restores_the_question(tmp_path):
     """2026-11-02: a session's name is ``title`` in its file; empty removes it."""
     path = sessions.sessions_dir(str(tmp_path)) / "s.json"

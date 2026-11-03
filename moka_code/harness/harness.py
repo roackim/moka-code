@@ -71,7 +71,11 @@ class Harness:
         self.debug_stream = get_debug_stream()
         self.state = AgentState.IDLE
         self.history = []
-        
+        # A call waits for the user's approval; ``keep_pending`` (set by the
+        # UI when it quits) leaves such a call unanswered for ``resume``.
+        self._asking = False
+        self.keep_pending = False
+
         # Tools initialization with minimal toolset
         import os
         self.workspace = workspace_path or os.getcwd()
@@ -510,9 +514,14 @@ class Harness:
             running.task.cancel()
             self._running_tool = None
 
+        # Quitting while a call waits for approval leaves it, and the calls
+        # after it, unanswered: the saved session asks again when resumed
+        # (``resume``). A /stop cancels them.
+        keep = getattr(self, "_asking", False) and getattr(self, "keep_pending", False)
+        self._asking = False
         answered = {m.get("tool_call_id") for m in self.history if m.get("role") == "tool"}
         for tc in tool_calls_list:
-            if tc["id"] not in answered:
+            if tc["id"] not in answered and not keep:
                 self._add_message_to_history(
                     role="tool",
                     content="[CANCELLED] The user stopped the turn before this tool call finished.",
@@ -1134,7 +1143,9 @@ class Harness:
 
             # Emit permission request (auto or user-facing)
             if permission_decision == "ask":
-                # Need user input
+                # Need user input (asking from the request on: quitting at
+                # any point after it keeps the call for ``resume``)
+                self._asking = True
                 yield events.PermissionRequest(
                     id=tool_call_id,
                     name=tool_name,
@@ -1143,13 +1154,18 @@ class Harness:
                     auto=False,
                     diff=diff,
                 )
-                
+
                 # Wait for user response
                 user_response = await self._wait_for_user_input(prompt)
+                self._asking = False
                 approved = user_response.lower() in ["approve", "yes", "y", "allow"]
+                # Anything but a plain yes / no is the user's reason to deny.
+                reason = ("" if user_response.lower() in ["deny", "no", "n", ""]
+                          else user_response.strip())
             else:
                 # Auto-approve or auto-deny
                 approved = (permission_decision == "allow")
+                reason = ""
                 yield events.PermissionRequest(
                     id=tool_call_id,
                     name=tool_name,
@@ -1162,6 +1178,8 @@ class Harness:
             # STEP 2: Emit denial
             if not approved:
                 denial_reason = "User denied" if permission_decision == "ask" else "Auto-denied by security policy"
+                if reason:
+                    denial_reason += f": {reason}"
                 yield events.ToolResult(
                     id=tool_call_id,
                     name=tool_name,
@@ -1397,6 +1415,31 @@ class Harness:
         
         return status
 
+    def pending_tool_calls(self) -> List[Dict[str, Any]]:
+        """The last answer's tool calls that have no result yet: a session
+        saved while one waited for approval (``_abort_tool_calls``)."""
+        last = next((m for m in reversed(self.history) if m.get("role") == "assistant"), None)
+        if not last or not last.get("tool_calls"):
+            return []
+        answered = {m.get("tool_call_id") for m in self.history if m.get("role") == "tool"}
+        return [tc for tc in last["tool_calls"] if tc["id"] not in answered]
+
+    async def resume(self) -> AsyncGenerator[events.Event, None]:
+        """Carry on a resumed turn: run its unanswered calls (each asks for
+        approval again, as its role says), then the loop as after any tools."""
+        calls = self.pending_tool_calls()
+        if not calls:
+            yield events.Done()
+            return
+        try:
+            async for event in self._execute_tool_calls(calls):
+                yield event
+        except (asyncio.CancelledError, GeneratorExit):
+            self._abort_tool_calls(calls)
+            raise
+        async for event in self._agent_loop():
+            yield event
+
     async def chat(self, user_input: str,
                    attached: Optional[List[Dict[str, Any]]] = None,
                    prompt: Optional[Dict[str, Any]] = None) -> AsyncGenerator[events.Event, None]:
@@ -1411,8 +1454,6 @@ class Harness:
 
         Yields: events from ``moka_code.harness.events``.
         """
-        from moka_code import settings
-
         if self.sandbox_required():
             yield events.Error(
                 message=(
@@ -1435,6 +1476,14 @@ class Harness:
         
         # Emit user message start with its ID
         yield events.Start(message_id=self._last_user_message_id, role="user")
+
+        async for event in self._agent_loop():
+            yield event
+
+    async def _agent_loop(self) -> AsyncGenerator[events.Event, None]:
+        """LLM -> [Tool Calls -> Tool Execution -> LLM]* -> Final Answer, from
+        the history as it is (``chat`` has added the user message)."""
+        from moka_code import settings
 
         # Agent Loop (Handle Multi-step Tool Calls)
         while True:

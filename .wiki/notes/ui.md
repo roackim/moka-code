@@ -137,6 +137,15 @@ atomically) is shared by `/export`, `/import` and autosave
 - The title is `chatTUI.session_title` (read by `load_conversation`, cleared by
   `new_session`, kept by `/import`), written by `save_session` and `/export`.
 - `moka --resume` / `-r` queues `/session` at startup (`chatTUI(resume=True)`).
+- **A call waiting for approval survives quitting** (2026-11-03): on exit
+  (`stop_generation(quitting=True)` sets `Harness.keep_pending`),
+  `_abort_tool_calls` leaves that call and the turn's later ones without a
+  result (a `/stop` still cancels them). `load_conversation` (`/session`,
+  `/import`) sees them (`Harness.pending_tool_calls`) and calls
+  `chatTUI.resume_turn`: the restored tool lines become the live ones and a
+  generation with no input runs `Harness.resume`, which executes those calls
+  (each asks again as its role says, in the permission form) and carries on
+  the loop (`Harness._agent_loop`, shared with `chat`).
 
 ### Private mode (`/private`)
 
@@ -322,8 +331,8 @@ serving the queue). The presenter then `aclose()`s the harness stream so
 orphaned request cannot interleave with the next), answers every unanswered
 call of the turn with a `[CANCELLED]` tool message (keeping history a valid
 request), and clears stale permission answers (`PermissionGate.clear_pending`,
-so a late "allow" cannot approve the next prompt). The presenter also resets
-`pending_permission_prompt` so input is not left blocked.
+so a late "allow" cannot approve the next prompt). The presenter also closes
+an open permission or `ask` form (`question_form.close_form(app, "stopped")`).
 
 ## Shutdown
 
@@ -547,19 +556,21 @@ Every message displayed in the chat history has a `MsgType` that controls its ti
 | `SysMsgWarning` | "warning" | WARNING | (inherits COPY) |
 | `ToolCallMsg` | "tool" | TOOL | OUTPUT, COPY |
 | `ToolOutputMsg` | "output" | MUTED | OUTPUT, COPY |
-| `AskPermissionMsg` | "permission" | PERMISSION | ALLOW, DENY, OUTPUT, COPY |
 | `QuestionMsg` | "question" | PERMISSION | COPY |
 
-`clamped` types (`ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`) are
+`clamped` types (`ThinkingMsg`, `ToolCallMsg`) are
 *activity*: they stack with no gap; see the spacing rule below.
 
 ### Tool-call lines
 
-`ToolCallMsg` / `AskPermissionMsg` render compact (one line when unfocused):
+`ToolCallMsg` renders compact (one line when unfocused):
 `name target metric trailing`, single-spaced, with **no status glyph**. Only the
 name (TOOL, or ERROR when failed/denied) and the colored counts/state stand
-out; the target and the `▌` bar are MUTED (PERMISSION for an ask), so activity
-reads apart from prose. Long paths are shortened from
+out; the target and the `▌` bar are MUTED, so activity
+reads apart from prose. A call waiting for approval (`asking`) is unfolded
+(its body: the diff, the full command) and its prefix (bar, bullet or tree
+branch) and name are PERMISSION; the decision is taken in the permission form above the
+input (see *The `ask` form*). Long paths are shortened from
 the left (`…/commands/models.py`) so the metric stays visible. An expanded bash
 line shows just `bash` in the header and the full command wrapped below.
 
@@ -572,7 +583,6 @@ bash pytest -q running 12s        (elapsed time ticks; last output lines below)
 bash pytest -q exit 1
 edit a.py Search block not found  (error: name + reason red)
 edit a.py +2 lines −1 line denied
-edit a.py +2 lines −1 line approve? a/x   (AskPermissionMsg)
 ```
 
 - **Metric rule:** a sign means the file changed, a plain count means it did not.
@@ -580,7 +590,7 @@ edit a.py +2 lines −1 line approve? a/x   (AskPermissionMsg)
   colored whole — `+N lines` SUCCESS, `−N lines` ERROR; only nonzero sides show.
   (`_line_metric`, `_tool_target_metric`.)
 - **Trailing word only when it is news** (`Message._tool_trailing`):
-  `approve? a/x`, `running Ns` (after 1s), `denied`, `cancelled`, the first line
+  `running Ns` (after 1s), `denied`, `cancelled`, the first line
   of an error, or a non-zero bash `exit N` parsed from the worker's `[exit:N]`.
 - **State** (`Message.tool_state()`): `drafting` → (`asking`) → `running` →
   `completed` / `error` / `denied` / `cancelled`. `set_tool_status("running")`
@@ -597,7 +607,7 @@ edit a.py +2 lines −1 line approve? a/x   (AskPermissionMsg)
   finished call splits it into `command` + `output` segments (shared
   `ToolGroup`); while running it toggles the inline output, capped head 20 /
   tail 10, bash `[stdout]`/`[exit:N]` markers dropped. Focus changes rebuild
-  the line, so an auto-focused permission prompt shows the diff it asks about.
+  the line; an `asking` line shows its body unfocused.
 - **Copy:** an unsplit tool call copies only its raw command while the output is
   hidden; when output is shown inline it copies the terminal transcript
   (`bash cmd` then output). In a split group, the whole group copies both, the
@@ -616,11 +626,10 @@ counts the escaped newlines streamed so far: `+12 lines` → `+300 lines`); the
 complete `ToolCall` updates the same message. Partial JSON args are salvaged by
 `_parse_tool_args()`; a draft never full-parses (`full=False`), and
 parse/metric/body are cached by args identity. The harness throttles
-`ToolCallDraft` to one per 100 ms per call. Approving a permission
-(`handle_allow_action`) retypes the ask into a running `ToolCallMsg`
-(`ChatHistoryPanel.retype_tool_message`) and repoints `active_tool_messages`.
-If generation ends abnormally, `finalize_active_tools()` closes any line still
-drafting/running as `cancelled`/`error`.
+`ToolCallDraft` to one per 100 ms per call. A tool line is one `ToolCallMsg`
+from draft to result (the permission message type and its retyping were
+removed on 2026-11-03). If generation ends abnormally, `finalize_active_tools()`
+closes any line still drafting/asking/running as `cancelled`/`error`.
 
 Live labels are refreshed by the panel's `TickEvent` path every 250 ms
 (`_LIVE_TICK_INTERVAL`); `Message.tick()` redraws only when its label changes.
@@ -638,14 +647,12 @@ routed to the activity surface rather than the transcript (see below).
 |--------|-----|-------|
 | `COPY` | `c` | copy |
 | `OUTPUT` | `o` | output |
-| `ALLOW` | `a` | allow |
-| `DENY` | `x` | deny |
 
 ### Message Selection and the Mode Line
 Messages are gutter-threaded and do not render actions inline. Messages use a
 full-height `▌` prefix bar (`Box.full_height_gutter`) whose color encodes the
 type, from the theme: user `USER`, answers `ASSISTANT`, thinking/tool calls
-`MUTED` (thoughts: `ui.thought_*_color`), permission asks `PERMISSION`. User content is normal text color (the accent is only the bar).
+`MUTED` (thoughts: `ui.thought_*_color`), a tool call waiting for approval `PERMISSION`. User content is normal text color (the accent is only the bar).
 `ChatHistoryPanel` keeps a `focused_message_index`
 (the selected message); the selected message's prefix bar is replaced with a
 brighter `▌` marker (no extra column, nothing shifts, no leading margin).
@@ -712,8 +719,8 @@ body (`ChatScreen(..., action_bar=...)`), collapsed to zero rows and expanded to
 two (pad + content) when needed. The app (`_update_action_strip`) drives it in
 two modes:
 
-- **Message selected** — shows the message's actions (`[c] copy`, `[o] output`,
-  permission `[a]/[x]`) in the muted style, right-aligned as a group with the
+- **Message selected** — shows the message's actions (`[c] copy`, `[o] output`)
+  in the muted style, right-aligned as a group with the
   `↑↓ move · esc back` hint (`ActionBar.set_align_right`).
   Mouse clicks are dispatched by the app interceptor to
   `ActionBar.handle_input`; key dispatch goes through
@@ -809,7 +816,7 @@ Messages are separated by `ui_msg_v_margin` blank lines (default `1`; set it in
 `ui.toml`). Spacing rule (`chat_history_panel._gap_before`): every message gets
 the gap, except the segments of one split answer and two groupings, both off by
 default. `ui.group_thoughts_and_calls` drops it between adjacent activity
-lines (`MsgType.clamped`: `ThinkingMsg`, `ToolCallMsg`, `AskPermissionMsg`;
+lines (`MsgType.clamped`: `ThinkingMsg`, `ToolCallMsg`;
 thought↔tool, tool↔tool, thought↔thought). `ui.group_reasoning_and_answers`
 drops it between an activity line and the answer (`AssistantMsg`) right after
 it; an answer followed by activity keeps it. They replaced `thought_gap`,
@@ -825,9 +832,10 @@ tool lines and their output right (`Message._apply_indent` sets their
 `left_margin`, which the panel lays out after; re-applied on reload).
 
 Tree: `ui.tree_thoughts_and_calls` (default `true`) draws a run of activity
-(thoughts, tool lines, permission prompts) as `┌─` / `├─` / `└─` branches (`──`
-for a run of one) in place of their bullets and walls, muted, or in the focus
-color for the selected one (no focus wall). Their text moves one cell right
+(thoughts, tool lines) as `┌─` / `├─` / `└─` branches (`──`
+for a run of one) in place of their bullets and walls, muted, in the focus
+color for the selected one (no focus wall), in PERMISSION for a call waiting
+for approval. Their text moves one cell right
 (after `├─ `; `Message._apply_indent`). Rows below a branch carry `│` unless it
 is the last; with `group_thoughts_and_calls` off the blank row between branches
 does too. The segments of one expanded tool call are one branch
@@ -1196,6 +1204,15 @@ Styles are driven by `settings.config.markdown_styles` (see [config.md](./config
 Markdown tables (`| ... | ... |` with a `---` separator row) are detected by `BlockParser`, grouped into `TableLine` runs, and emitted by `Markdown.parse` as one `TableSegment` placeholder line (cells stripped of inline markers such as `` ` `` and `**`). `MarkdownComponent._wrap_all` renders it via `AsciiTable(..., total_width=<width>)` with the `squared` style, so tables are laid out for the actual width and again on resize: columns keep their natural width when the table fits; otherwise the widest shrink first (`_fit_widths`, floor 6 cells) and their cells word-wrap onto several lines, and rows are then separated by horizontal lines (`├───┼───┤`). No blank line is added before or after a table. Column alignment (`:--`/`--:`/`:-:`) is read from the separator row. Rendered lines use `code_block=True` so they are never re-wrapped. Cells measure/pad by display width (`layout_utils.display_width`, grapheme-aware). `Buffer`/`SubBuffer.write_str` iterate grapheme clusters (`buffer._text_tokens`) so emoji sequences (variation selectors, ZWJ, keycaps) occupy one cell with the correct width — the previous per-code-point walk split them and broke alignment. `Markdown._hard_break_line`/`_break_segments` are cluster-aware too, so wide emoji count as 2 when wrapping (otherwise a line was left unbroken and clipped at the right edge).
 
 ## The `ask` form (`question_form.py`)
+
+**Permission** (2026-11-03; it replaced the `AskPermissionMsg` line and its
+`[a]`/`[x]` actions): a `PermissionRequest` the user must decide opens the same
+form (`open_permission`) with one question, `<tool line header> — allow?`,
+rows `1. Allow` / `2. Deny`, titled `permission`. Typed text + Enter denies the
+call with that text as the reason (`Harness` puts `User denied: <text>` in the
+result the model reads); Esc asks *Dismiss* (= deny) as below; a stopped turn
+answers nothing. No `QuestionMsg` record: the tool line is the record
+(`QuestionForm.on_close`). The input's placeholder reads `a reason to deny…`.
 
 `events.Questions` (a run of adjacent `ask` calls, see
 [tools-and-permissions.md](./tools-and-permissions.md)) opens a `QuestionForm`

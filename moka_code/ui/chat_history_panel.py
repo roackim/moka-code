@@ -35,7 +35,7 @@ class ToolGroup:
 
 
 def _activity(msg: Message) -> bool:
-    """Thoughts, tool lines and permission prompts (``MsgType.clamped``)."""
+    """Thoughts and tool lines (``MsgType.clamped``)."""
     return getattr(msg.type, "clamped", False)
 
 
@@ -811,10 +811,13 @@ class ChatHistoryPanel(TextComponent):
             focused = focus_start <= i < focus_end
             if msg.in_tree():
                 # The tree over the first column (focused: in the focus color,
-                # in place of the focus wall).
+                # in place of the focus wall; a call waiting for approval: in
+                # the permission color).
                 first, down, gap_above = _tree_marks(self.messages, i)
                 x = self.x + msg.left_margin
-                fg = theme.FOCUSED if focused else theme.MUTED
+                asking = msg.is_tool_message() and msg.tool_state() == "asking"
+                fg = (theme.FOCUSED if focused
+                      else theme.PERMISSION if asking else theme.MUTED)
                 bg = child.bg
                 for row_y in range(max(child_y, viewport_top), min(child_y + child_h, viewport_bottom)):
                     glyph = first if row_y == child_y else down
@@ -1267,23 +1270,6 @@ class ChatHistoryPanel(TextComponent):
         except ValueError:
             # Message not found, ignore
             pass
-
-    def retype_tool_message(self, msg: Message, msg_type: MsgType) -> Message:
-        """Swap a tool line's type in place (e.g. permission ask → tool call).
-
-        The type fixes the gutter color and actions at construction, so the
-        line is rebuilt as a new message carrying the tool state over.
-        """
-        if isinstance(msg.type, type(msg_type)):
-            return msg
-        new = self.new_message("", msg_type=msg_type,
-                               harness_message_ids=msg.harness_message_ids)
-        for attr in ("tool_name", "tool_args", "tool_output", "tool_diff", "tool_status",
-                     "show_output", "live_output", "_run_started_at"):
-            setattr(new, attr, getattr(msg, attr))
-        self.replace_message(msg, new)
-        new.rebuild_tool_display()
-        return new
 
     def remove_message(self, msg: Message) -> None:
         """Remove ``msg`` if it is still in the transcript."""

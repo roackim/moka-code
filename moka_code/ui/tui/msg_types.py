@@ -20,8 +20,6 @@ class MsgAction(Enum):
     EXPAND = ("o", "expand")    # folded thought: unfold the reasoning
     COLLAPSE = ("o", "collapse")  # unfolded thought: fold it back
     KILL = ("k", "kill")        # running bash call: kill it, the turn goes on
-    ALLOW = ("a", "allow")
-    DENY = ("x", "deny")
     EDIT = ("e", "edit")        # user message: back to the input
     CANCEL = ("x", "cancel")    # queued message: dropped before it is sent
     
@@ -154,14 +152,3 @@ class QuestionMsg(MsgType):
     content_color = None
     actions = [MsgAction.COPY]
     gutter = "▌"
-
-
-class AskPermissionMsg(MsgType):
-    name = "permission"
-    title = "permission"
-    frame_color = "PERMISSION"
-    content_color = None
-    actions = [MsgAction.ALLOW, MsgAction.DENY, MsgAction.OUTPUT, MsgAction.COPY]
-    # Normal prefix bar, colored PERMISSION to mark the ask.
-    gutter = "▌"
-    clamped = True

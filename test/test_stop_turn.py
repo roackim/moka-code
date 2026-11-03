@@ -104,13 +104,13 @@ def test_presenter_unblocks_input_after_stop_during_permission(monkeypatch):
     async def scenario():
         task = asyncio.create_task(ui._process_generation("go", ui.chat_history_panel.add_message("go")))
         await asyncio.sleep(0.1)
-        assert ui.pending_permission_prompt is not None
+        assert ui.question_form is not None
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
 
     asyncio.run(scenario())
-    assert ui.pending_permission_prompt is None
+    assert ui.question_form is None
     assert all(not m.is_tool_message() or m.finalized for m in ui.chat_history_panel.messages)
 
 

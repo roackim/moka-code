@@ -25,7 +25,7 @@ All tests use pytest. Run with the pixi env:
 | `test_tool_cancel.py` | `tools.py` | `ShellTool`/`MinimalToolset` run/cancel/timeout |
 | `test_tool_message_lifecycle.py` | `tools.py`, `ui/chat_message.py` | Tool message states |
 | `test_tool_call_assembly.py` | `harness.py` | Streaming tool-call buffer assembly |
-| `test_ui_permission_submit.py` | `ui/app.py` | Input blocked/cleared during permission prompts |
+| `test_ui_permission_submit.py` | `ui/question_form.py` | The permission form (Allow / Deny / reason) and the waiting tool line |
 | `test_command_surface.py` | `ui/commands/` | Command registry shape, descriptions, model rows |
 | `test_command_import_graph.py` | `ui/commands/` | Domain modules import only `base`; no cycles |
 | `test_core_ui_boundary.py` | `harness/` | R9 guard: harness imports no UI |

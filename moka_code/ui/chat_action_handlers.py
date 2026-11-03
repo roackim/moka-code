@@ -15,7 +15,7 @@ class ChatActionHandlers:
         
         try:
             from moka_code.ui.chat_message import tool_terminal_text
-            from moka_code.ui.tui.msg_types import ToolCallMsg, AskPermissionMsg
+            from moka_code.ui.tui.msg_types import ToolCallMsg
 
             panel = self.chat_history_panel
             # A single (unsplit) tool call copies command + raw output like a
@@ -23,7 +23,7 @@ class ChatActionHandlers:
             # ``copy_text_for``: whole group = both, inside = one part.
             is_unsplit_tool = (
                 getattr(message, "group", None) is None
-                and isinstance(message.type, (ToolCallMsg, AskPermissionMsg))
+                and isinstance(message.type, ToolCallMsg)
                 and getattr(message, "tool_name", None)
             )
             if is_unsplit_tool:
@@ -78,69 +78,12 @@ class ChatActionHandlers:
         elif hasattr(self, "notify"):
             self.notify("Copied to clipboard")
 
-    def handle_allow_action(self, message):
-        """Handle allow action for tool permission requests."""
-        logger = logging.getLogger("tui")
-        logger.info("Allow action triggered")
-        
-        from moka_code.ui.tui.msg_types import AskPermissionMsg
-        from moka_code.ui.tui.colors import theme
-        
-        # Check if this is a permission request message
-        if isinstance(message.type, AskPermissionMsg):
-            # Send approval to harness
-            logger.info("Sending approve to harness")
-            self.agent.set_user_response("approve")
-            self.pending_permission_prompt = None
-
-            # The ask becomes the running tool line (no "approve?" left while
-            # it executes); keep the id mapping so its result lands on it.
-            from moka_code.ui.tui.msg_types import ToolCallMsg
-
-            running = self.chat_history_panel.retype_tool_message(message, ToolCallMsg())
-            running.set_tool_status("running")
-            running.rebuild_tool_display()
-            for tool_id, active in list(self.active_tool_messages.items()):
-                if active is message:
-                    self.active_tool_messages[tool_id] = running
-
-            # Focus input field
-            self._last_focus_id = "input"
-            self._update_focus_states()
-            logger.info("Permission granted, waiting for tool execution")
-        else:
-            logger.warning("Allow action called on non-permission message")
-    
-    def handle_deny_action(self, message):
-        """Handle deny action for tool permission requests."""
-        logger = logging.getLogger("tui")
-        logger.info("Deny action triggered")
-        
-        from moka_code.ui.tui.msg_types import AskPermissionMsg
-        from moka_code.ui.tui.colors import theme
-        
-        # Check if this is a permission request message
-        if isinstance(message.type, AskPermissionMsg):
-            # Send denial to harness
-            logger.info("Sending deny to harness")
-            self.agent.set_user_response("deny")
-            self.pending_permission_prompt = None
-            
-            # Focus input field
-            self._last_focus_id = "input"
-            self._update_focus_states()
-            
-            # Don't update the message - it will be replaced by ToolStart with DENIED status
-            logger.info("Permission denied, waiting for tool result")
-        else:
-            logger.warning("Deny action called on non-permission message")
-    
     def handle_output_action(self, message):
         """Handle output action for tool messages - toggle output visibility."""
         logger = logging.getLogger("tui")
         logger.info("Output toggle action triggered")
         
-        from moka_code.ui.tui.msg_types import ToolCallMsg, AskPermissionMsg
+        from moka_code.ui.tui.msg_types import ToolCallMsg
 
         panel = self.chat_history_panel
         # An expanded tool call is a two-segment group: ``o`` collapses it.
@@ -150,7 +93,7 @@ class ChatActionHandlers:
                 return
 
         # Check if this is a tool message
-        if isinstance(message.type, (ToolCallMsg, AskPermissionMsg)):
+        if isinstance(message.type, ToolCallMsg):
             # Finished calls expand into command/output segments; running
             # calls keep the old inline toggle.
             split = getattr(panel, "split_tool_output", None)

@@ -554,7 +554,7 @@ class Message:
         self.box = MessageView(
             self.component,
             parent_msg=self,
-            compact_when_unfocused=(isinstance(msg_type, (msg_types.ToolCallMsg, msg_types.AskPermissionMsg))),  # Tool calls and permission requests use compact headers
+            compact_when_unfocused=isinstance(msg_type, msg_types.ToolCallMsg),  # Tool calls use compact headers
             gutter=thread_gutter,
             gutter_color=thread_gutter_color,
             content_pad_left=left_pad + (1 if self.in_tree() else 0),   # see _apply_indent
@@ -562,8 +562,7 @@ class Message:
             # User/assistant/tool-call use a `▌` prefix bar that spans every row.
             gutter_full_height=isinstance(
                 msg_type,
-                (msg_types.UserMsg, msg_types.AssistantMsg,
-                 msg_types.ToolCallMsg, msg_types.AskPermissionMsg),
+                (msg_types.UserMsg, msg_types.AssistantMsg, msg_types.ToolCallMsg),
             ),
         )
         self._apply_thought_colors()
@@ -601,7 +600,7 @@ class Message:
             return "answer"
         if isinstance(t, (msg_types.ToolCallMsg, msg_types.ToolOutputMsg)):
             return "tool"
-        if isinstance(t, (msg_types.QuestionMsg, msg_types.AskPermissionMsg)):
+        if isinstance(t, msg_types.QuestionMsg):
             return "ask"
         return None
 
@@ -893,8 +892,8 @@ class Message:
                 self.box.mark_changed()
 
     def is_tool_message(self) -> bool:
-        """True for tool-call and permission-request messages."""
-        return isinstance(self.type, (msg_types.ToolCallMsg, msg_types.AskPermissionMsg))
+        """True for tool-call messages."""
+        return isinstance(self.type, msg_types.ToolCallMsg)
 
     def set_tool_status(self, status: str) -> None:
         """Move the tool lifecycle forward; ``running`` starts the clock."""
@@ -913,11 +912,10 @@ class Message:
         self.rebuild_tool_display()
 
     def tool_state(self) -> str:
-        """``drafting``/``asking``/``running`` or a terminal state."""
-        if isinstance(self.type, msg_types.AskPermissionMsg) and not self.finalized:
-            return "asking"
+        """``drafting``/``asking``/``running`` or a terminal state; ``asking``
+        while the permission form (``question_form.open_permission``) waits."""
         status = self.tool_status or ""
-        if status in ("drafting", "completed", "error", "denied", "cancelled"):
+        if status in ("drafting", "asking", "completed", "error", "denied", "cancelled"):
             return status
         return "running"
 
@@ -1129,8 +1127,8 @@ class Message:
         """Rebuild the tool message from its metadata.
 
         The header is ``name target metric trailing``: no status glyph; the
-        name color and a trailing word carry the state (``approve? a/x``,
-        ``running 12s``, an error reason). While the model is still writing
+        name color and a trailing word carry the state (``running 12s``, an
+        error reason). While the model is still writing
         the call the same line grows live. Focused messages add a readable
         body (edit diff, write head, full command) and, when toggled, the
         output; a running command shows its last output lines.
@@ -1159,6 +1157,7 @@ class Message:
         target, metric = self._tool_display_parts
 
         name_color = {
+            "asking": theme.PERMISSION,
             "running": theme.WARNING,
             "completed": theme.SUCCESS,
             "error": theme.ERROR,
@@ -1171,7 +1170,11 @@ class Message:
                 and _bash_exit_code(self.tool_output)):
             name_color = theme.ERROR
         name = self.tool_name
-        is_compact = self.box.compact_when_unfocused and not self.box.focused
+        # Waiting for approval: unfolded (the diff or command being asked
+        # about), its prefix in PERMISSION.
+        asking = state == "asking"
+        self.box.gutter_color = theme.PERMISSION if asking else theme.MUTED
+        is_compact = self.box.compact_when_unfocused and not self.box.focused and not asking
         # Expanded bash shows the whole command wrapped below, so the header
         # does not repeat a cut-off copy of it.
         wrap_body = self.tool_name == "bash" and not is_compact
@@ -1180,8 +1183,6 @@ class Message:
         trailing = self._tool_trailing()
         if state == "running":
             trailing_color = theme.WARNING
-        elif state == "asking":
-            trailing_color = theme.PERMISSION
         elif state == "cancelled":
             trailing_color = theme.WARNING
         elif (state == "completed" and self.tool_name == "bash"
@@ -1281,10 +1282,8 @@ class Message:
         return lines
 
     def _tool_trailing(self) -> str:
-        """Plain trailing word: only when it is news (asking, running, failed)."""
+        """Plain trailing word: only when it is news (running, failed)."""
         state = self.tool_state()
-        if state == "asking":
-            return "approve? a/x"
         if state == "running":
             if self._run_started_at is None:
                 return ""

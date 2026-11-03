@@ -143,6 +143,11 @@ def load_conversation(ui: ChatUIProtocol, path) -> bool:
     if role_warning:
         ui.chat_history_panel.add_message(
             role_warning, msg_type=SysMsgWarning(), title="conversation")
+    # Saved while a call waited for approval: ask again and carry on.
+    pending = getattr(ui.agent, "pending_tool_calls", None)
+    resume = getattr(ui, "resume_turn", None)
+    if callable(pending) and callable(resume) and pending():
+        resume()
     return True
 
 

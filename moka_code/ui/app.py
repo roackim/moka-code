@@ -204,8 +204,7 @@ class chatTUI(ChatActionHandlers):
         # Set by stop_generation so the worker survives a /stop cancel.
         self._stop_requested = False
         self.active_tool_messages = {}
-        self.pending_permission_prompt = None
-        # The open ``ask`` form and its selector (``question_form``).
+        # The open ``ask`` or permission form and its selector (``question_form``).
         self.question_form = None
         # ``prompt_text``: ``(on_done, the draft it replaced)`` while the input
         # takes one line for a command (e.g. a session's new name).
@@ -474,7 +473,7 @@ class chatTUI(ChatActionHandlers):
                     task.cancel()
                 await asyncio.gather(*pending, return_exceptions=True)
                 if shutdown_task in done:
-                    self.stop_generation()
+                    self.stop_generation(quitting=True)
                     return
                 user_input, user_msg, attached = get_task.result()
                 if getattr(user_msg, "cancelled", False):
@@ -497,7 +496,7 @@ class chatTUI(ChatActionHandlers):
                     if not self._stop_requested:
                         raise
             except asyncio.CancelledError:
-                self.stop_generation()
+                self.stop_generation(quitting=True)
                 return
             except Exception as error:
                 logger.error("Conversation generation failed: %s", error, exc_info=True)
@@ -533,13 +532,30 @@ class chatTUI(ChatActionHandlers):
             except Exception:
                 logger.error("Command failed", exc_info=True)
 
-    def stop_generation(self):
-        """Stop the current generation task if active."""
+    def stop_generation(self, quitting: bool = False):
+        """Stop the current generation task if active. ``quitting``: moka
+        exits, so a call waiting for approval stays unanswered in the saved
+        session and is asked again when it is resumed (``resume_turn``)."""
+        if quitting:
+            self.agent.keep_pending = True
         if self.current_generation_task and not self.current_generation_task.done():
             self._stop_requested = True
             self.current_generation_task.cancel()
             return True
         return False
+
+    def resume_turn(self) -> None:
+        """A loaded conversation ends in calls without a result (moka quit
+        while one waited for approval): their restored lines become the live
+        ones and the turn carries on (``Harness.resume``), asking again."""
+        for call in self.agent.pending_tool_calls():
+            line = next((m for m in reversed(self.chat_history_panel.messages)
+                         if m.is_tool_message() and call["id"] in (m.harness_message_ids or [])),
+                        None)
+            if line is not None:
+                self.active_tool_messages[call["id"]] = line
+        self._ensure_worker()
+        self.message_queue.put_nowait((None, None, []))
 
     def _ensure_worker(self) -> None:
         if self.worker_task is None or self.worker_task.done():
@@ -633,8 +649,6 @@ class chatTUI(ChatActionHandlers):
             MsgAction.EXPAND: self.handle_thought_action,
             MsgAction.COLLAPSE: self.handle_thought_action,
             MsgAction.KILL: self.handle_kill_action,
-            MsgAction.ALLOW: self.handle_allow_action,
-            MsgAction.DENY: self.handle_deny_action,
             MsgAction.EDIT: self.handle_edit_action,
             MsgAction.CANCEL: self.handle_cancel_queued_action,
         }
@@ -872,13 +886,6 @@ class chatTUI(ChatActionHandlers):
 
         if clean_text.startswith('/'):
             self.on_command_submit(unmention(clean_text))
-            return
-
-        if self.pending_permission_prompt:
-            self.chat_history_panel.add_message(
-                "Permission required for pending tool call. Use [a] allow or [x] deny first. Slash commands are still available.",
-                msg_type=SysMsg()
-            )
             return
 
         if getattr(self.agent, "sandbox_required", lambda: False)():
@@ -1286,7 +1293,7 @@ class chatTUI(ChatActionHandlers):
         async def shutdown_watcher():
             """Cancel an in-flight generation once Ctrl+C requests shutdown."""
             await self.shutdown_event.wait()
-            self.stop_generation()
+            self.stop_generation(quitting=True)
 
         # Run all tasks
         try:
