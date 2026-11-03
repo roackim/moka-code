@@ -448,6 +448,19 @@ class ChatHistoryPanel(TextComponent):
         if self.on_action:
             self.on_action(message, action)
 
+    def toggle_focused(self) -> bool:
+        """Run the focused message's ``o`` action (unfold a thought, a tool
+        call's output, a ``!prompt``, or fold it back); False when it has none."""
+        index = self.focused_message_index
+        if index is None or not 0 <= index < len(self.messages):
+            return False
+        message = self.messages[index]
+        fold = next((action for action in message.get_active_actions() if action.key == "o"), None)
+        if fold is None:
+            return False
+        self._dispatch_action(message, fold)
+        return True
+
     def _view_start(self) -> int:
         """The transcript row shown on the panel's first line."""
         _, _, total = self._row_index()
@@ -972,8 +985,8 @@ class ChatHistoryPanel(TextComponent):
                 return True
             if not event.pressed:
                 self.selection.end()
-                # A click (no drag) on the thought already focused folds or
-                # unfolds it, like ``o``; a drag still selects its text.
+                # A click (no drag) on a thought folds or unfolds it, like
+                # ``o``; a drag still selects its text.
                 thought, self._click_toggles = self._click_toggles, None
                 if thought is not None and not self.selection.has_selection:
                     fold = next((action for action in thought.get_active_actions()
@@ -992,17 +1005,19 @@ class ChatHistoryPanel(TextComponent):
                 if event.button == 0 and event.pressed and not event.drag:
                     # Focus the message under the pointer. On a split answer
                     # the first click selects it whole; a click on the
-                    # already-selected answer selects the segment.
+                    # already-selected answer selects the segment. A click
+                    # on a thought also folds or unfolds it, on release.
                     msg_index, _ = self._cached_hit_test(event.y)
                     self._click_toggles = None
                     if msg_index is not None:
                         start, end = self._group_range(msg_index)
                         focused = self.focused_message_index
                         already = focused is not None and start <= focused < end
-                        if focused == msg_index and isinstance(self.messages[msg_index].type,
-                                                               ThinkingMsg):
+                        clicked = self.messages[msg_index]
+                        if isinstance(clicked.type, ThinkingMsg):
+                            self._click_toggles = clicked
+                        if focused == msg_index and self._click_toggles is not None:
                             # Focusing it again would fold it: the release decides.
-                            self._click_toggles = self.messages[msg_index]
                             self.selection.clear()
                         else:
                             self.set_focused_message(msg_index, inside=already)

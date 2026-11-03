@@ -107,3 +107,27 @@ def test_action_bar_focus_uses_shared_style_without_inversion():
     bar.enabled = False
     assert bar.handle_input("x") is False
     assert activated == []
+
+
+def test_a_click_on_a_notice_cross_hides_it_until_it_comes_back():
+    """2026-11-03: each notice ends with ``✕``; a click on it hides that
+    notice; once it is no longer given it is forgotten, so it shows again."""
+    from moka_code.ui.tui.components.bars import NoticeBand
+
+    band = NoticeBand(max_lines=3)
+    band.set_notices([("server down", None), ("role changed", None)])
+    band.set_layout(0, 0, 30, band.get_preferred_height(30))
+    buffer = Buffer(30, 2)
+    band.render(buffer)
+    assert row_text(buffer).endswith(" ✕ ") and row_text(buffer).startswith(" server down")
+
+    assert band.handle_input(MouseEvent(2, 0, 0, True, False))      # the text: nothing
+    assert band.get_preferred_height(30) == 2
+    assert band.handle_input(MouseEvent(28, 0, 0, True, False))     # the ✕
+    assert [text for text, _ in band.notices] == ["role changed"]
+
+    band.set_notices([("server down", None), ("role changed", None)])
+    assert [text for text, _ in band.notices] == ["role changed"]   # still hidden
+    band.set_notices([("role changed", None)])                      # fixed
+    band.set_notices([("server down", None), ("role changed", None)])
+    assert [text for text, _ in band.notices] == ["server down", "role changed"]

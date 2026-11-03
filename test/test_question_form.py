@@ -222,3 +222,15 @@ def test_the_folded_record_colors_the_question_and_the_answer():
     msg = Message(logical[0][0], msg_type=QuestionMsg(), max_width=40)
     msg.set_line_spans(logical)
     assert msg.component.highlighter(logical[0][0])[-1] == (20, 29, theme.USER_TEXT)
+
+
+def test_a_resumed_record_keeps_a_long_own_answer_whole():
+    """2026-11-03: on resume / import an own answer of several lines was cut
+    to its first one (only lines starting ``The user wrote:`` were read)."""
+    from moka_code.harness import ask
+
+    own = "keep the old loader\nuntil the migration is done\n\nthen drop it"
+    _, text = ask.result(events.Answer(choices=["old"], text=own), dismissed=False)
+    assert question_form.answer_from_result(text) == (f"old · ✎ {own}", True)
+    _, text = ask.result(events.Answer(choices=["old"], text=""), dismissed=False)
+    assert question_form.answer_from_result(text) == ("old", True)

@@ -12,9 +12,10 @@ class RGB:
         self.b = b
         
         if type(r) == str:
-            # Parse from hex string
+            # Parse from hex string; an alpha byte (#rrggbbaa, as editors'
+            # color pickers write) is ignored.
             hex_str = r.lstrip('#')
-            if len(hex_str) == 6:
+            if len(hex_str) in (6, 8):
                 self.r = int(hex_str[0:2], 16)
                 self.g = int(hex_str[2:4], 16)
                 self.b = int(hex_str[4:6], 16)

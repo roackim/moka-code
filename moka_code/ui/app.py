@@ -1051,14 +1051,13 @@ class chatTUI(ChatActionHandlers):
                     and question_form.handle_key(self, key)):
                 return True
 
-            # On an empty input (or from history), Tab cycles roles and
-            # Shift+Tab sandboxes, through the commands so their busy checks
-            # and messages apply. With a draft (e.g. ``/model``) Tab does nothing.
-            idle = self._last_focus_id != "input" or not self.input_component.buffer.text
-            if key == '\t' and idle:
+            # Tab cycles roles and Shift+Tab sandboxes, through the commands so
+            # their busy checks and messages apply; the draft (an edit of a
+            # sent message too) stays. An open completion menu took Tab above.
+            if key == '\t':
                 self.on_command_submit(next_role_command(self))
                 return True
-            if key == '\x1b[Z' and idle:
+            if key == '\x1b[Z':
                 command = next_sandbox_command(self)
                 if command:
                     self.on_command_submit(command)
@@ -1086,6 +1085,12 @@ class chatTUI(ChatActionHandlers):
                         or panel.focused_message_index is not None):
                     return False        # ChatHistoryPanel handles this layer
                 self._set_app_focus("input")
+                return True
+
+            # Enter on a message that folds (thought, tool output, !prompt)
+            # toggles it, like ``o``.
+            if (key == '\r' and self._last_focus_id == "history"
+                    and self.chat_history_panel.toggle_focused()):
                 return True
 
             # Shortcuts to focus input: 'i' or Enter (when not already in input)
@@ -1136,6 +1141,9 @@ class chatTUI(ChatActionHandlers):
         
         # Handle mouse click focus changes
         if isinstance(event, MouseEvent):
+            # Clicks on the notice band (its ``✕`` hides a notice).
+            if self.notice_band.handle_input(event):
+                return True
             # Clicks on the action line dispatch actions.
             if self.action_bar.expanded and (
                 self.action_bar.x <= event.x < self.action_bar.x + self.action_bar.width

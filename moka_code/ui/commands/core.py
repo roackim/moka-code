@@ -15,7 +15,7 @@ import os
 from typing import List
 
 from moka_code.ui.tui.components.menu import sort_items
-from moka_code.ui.tui.msg_types import SysMsg, SysMsgError
+from moka_code.ui.tui.msg_types import SysMsg, SysMsgError, SysMsgWarning
 
 from .base import (
     ChatUIProtocol,
@@ -43,17 +43,24 @@ async def cmd_help(ui: ChatUIProtocol, args: List[str], commands):
 
 
 async def cmd_private(ui: ChatUIProtocol, args: List[str]):
-    """Stop saving this conversation; /clear ends the mode."""
+    """Stop saving this conversation and delete its session file; /clear ends
+    the mode."""
     if getattr(ui.agent, "private", False):
         ui.chat_history_panel.add_message(
             "Already private. /clear leaves private mode.", msg_type=SysMsg())
         return
     ui.agent.set_private(True)
-    text = "Private: nothing is saved or logged from now on. /clear leaves private mode."
+    text = "Private: nothing is saved or logged. /clear leaves private mode."
+    msg_type = SysMsg()
     saved = getattr(ui, "session_path", None)
     if saved is not None and saved.exists():
-        text += f" Earlier turns remain in {saved}."
-    ui.chat_history_panel.add_message(text, msg_type=SysMsg())
+        try:
+            saved.unlink()
+            text += " The session's saved file was deleted."
+        except OSError as exc:
+            text += f" Could not delete the session's file {saved}: {exc}"
+            msg_type = SysMsgWarning()
+    ui.chat_history_panel.add_message(text, msg_type=msg_type)
     if hasattr(ui, "refresh_status_bar"):
         ui.refresh_status_bar()
 

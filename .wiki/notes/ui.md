@@ -123,15 +123,17 @@ atomically) is shared by `/export`, `/import` and autosave
   it skips an empty history and keeps the `context.sessions` most recent
   (default 10; `0` = never saved) via `sessions.prune`. Image references are
   saved as references (`/export` embeds them).
-- `/session` opens the search picker (this project's sessions, newest first,
-  current one excluded; row = the session's `title`, else its first user
-  question, description = age · messages · model). Enter runs
+- `/session` opens the search picker (this project's sessions, newest first;
+  the current one, once saved, tagged `active`; row = the session's `title`,
+  else its first user question, description = age · messages · model). Enter runs
   `load_conversation` (shared with `/import`) and sets `session_path` to that
-  file, so a resumed session keeps writing to it. Refused while a response is
+  file, so a resumed session keeps writing to it; Enter on the active one does
+  nothing. Refused while a response is
   generating. Its action row: `[^R] rename` puts the title in the input box
   (`chatTUI.prompt_text`: Enter saves it with `sessions.rename`, empty removes
   it, Esc cancels; the draft comes back) and reopens the list; `[^D] delete`
-  deletes the file at once (no confirmation) and the list stays open.
+  deletes the file at once (no confirmation) and the list stays open; the
+  active session is never deleted (a flash says so).
 - The title is `chatTUI.session_title` (read by `load_conversation`, cleared by
   `new_session`, kept by `/import`), written by `save_session` and `/export`.
 - `moka --resume` / `-r` queues `/session` at startup (`chatTUI(resume=True)`).
@@ -144,8 +146,9 @@ muted (`DebugStream.muted`), and images go to a temp folder
 (`images.set_private`) deleted when the mode ends and at exit. The notice band
 shows `private · nothing is saved · /clear to leave` above any real notices.
 `/clear` is the only way out (it also clears the history, so private turns never
-reach disk). Entering mid-conversation leaves the earlier turns' session file
-as is and says where it is. `/export` stays available (explicit user action);
+reach disk). Entering mid-conversation deletes the earlier turns' session file
+(`session_path`; 2026-11-03, it used to stay), so nothing of the conversation
+is left on disk. `/export` stays available (explicit user action);
 provider-side retention is out of moka's hands.
 
 ## Conversation import/export
@@ -391,8 +394,10 @@ one described `active`); bare `/model` / `/effort` + Enter opens the picker.
 Completion menus sit above the whole
 input box (not the trigger's line), so a multiline draft stays visible.
 
-With an empty input (or from history), **Tab** cycles roles and **Shift+Tab** cycles the
-project's sandboxes then none; both queue the ordinary `/role` / `/sandbox`
+Unless a completion menu is open (Tab then accepts) or the `ask` form takes
+it, **Tab** cycles roles and **Shift+Tab** cycles the
+project's sandboxes then none, the draft kept (an edit of a sent message too;
+until 2026-11-03 only on an empty input); both queue the ordinary `/role` / `/sandbox`
 command (`next_role_command`, `next_sandbox_command`). Terminal focus
 reporting (`?1004`) is on: while the window is unfocused, the input / history
 drop their focus styling (`chatTUI.handle_global_input`).
@@ -720,7 +725,9 @@ two modes:
   change) refreshes it.
 
 The status bar stays visible below in both modes. `Esc`/`Enter`/`i` clear the
-message selection and collapse the line. `Esc` while the input is focused keeps
+message selection and collapse the line, except `Enter` on a message with an
+`o` action (thought, tool call output, `!prompt`): it runs that action
+(`ChatHistoryPanel.toggle_focused`) and the selection stays. `Esc` while the input is focused keeps
 the input focused; in history it peels one layer at a time (mouse selection →
 split segment → selected message), and `Esc` with nothing selected returns to
 the input.
@@ -750,6 +757,9 @@ Two places say what needs fixing, each line as `problem → fix`:
   foreground color + reverse); at most
   `ui.notice_lines` rows, the last then reads `+N more · /activity`. Each notice
   is logged to the activity overlay when it appears and when it is fixed.
+  Each line (not `+N more`) ends with ` ✕ `: a click on it hides that notice
+  (`NoticeBand.dismissed`, by text) until it is no longer given, so a problem
+  that is fixed and comes back shows again; the private line too.
 - **Setup notes** (`chatTUI.refresh_setup_notes`, drawn with the banner in an
   empty transcript): config and role file errors, no `$VISUAL`/`$EDITOR`, the
   one-time config-folder migration. Recomputed at startup and after every
@@ -872,7 +882,7 @@ frozen. There is no spinner: the label ticks (`Message._thinking_label`).
 - at the first content/tool boundary (`end_status_message()`): if the
   reasoning earns a line (`thought_worth_showing`: ≥ `ui.thought_min_tokens`,
   default 100, estimated at ~4 chars/token; `0` shows every non-empty thought)
-  it is finalized to `thought for Xs` (`o` on the focused thought unfolds the reasoning, `MsgAction.EXPAND` / `COLLAPSE` by state, and so does a click on it once focused — on release, when no drag selected text; leaving folds it); otherwise
+  it is finalized to `thought for Xs` (`o` on the focused thought unfolds the reasoning, `MsgAction.EXPAND` / `COLLAPSE` by state, and so do Enter and a click on it, the first included — on release, when no drag selected text; leaving folds it); otherwise
   the line was only a wait indicator and is **removed**
   (`ChatHistoryPanel.remove_message`). Short reasoning stays in history and
   exports; `/import` applies the same threshold. A tool loop with little
@@ -1233,4 +1243,5 @@ and its spans by theme color name; `Message.set_line_spans` maps them onto the
 wrapped rows (`wrapped_spans`), so they survive wrapping and a theme switch.
 On `/import` / resume, `ask` calls replay as the same record (adjacent calls in
 one; `answer_from_result` reads the answer back from the stored result, using
-`harness.ask`'s `PICKED` / `WROTE` / `DISMISSED` texts), not as tool lines.
+`harness.ask`'s `PICKED` / `WROTE` / `DISMISSED` texts; the `WROTE` text runs
+to the end, so an own answer of several lines stays whole), not as tool lines.

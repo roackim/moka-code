@@ -40,10 +40,11 @@ def answer_from_result(text: str) -> tuple:
     (``harness.ask.result``), as the live form would have folded it."""
     if text.startswith(ask.DISMISSED):
         return "dismissed", False
-    lines = text.splitlines()
-    picked = [line[len(ask.PICKED):] for line in lines if line.startswith(ask.PICKED)]
-    wrote = [f"✎ {line[len(ask.WROTE):]}" for line in lines if line.startswith(ask.WROTE)]
-    return " · ".join(picked + wrote) or "— no answer", True
+    # The own text comes last and may span lines: it runs to the end.
+    head, wrote_mark, wrote = text.partition(ask.WROTE)
+    picked = [line[len(ask.PICKED):] for line in head.splitlines() if line.startswith(ask.PICKED)]
+    own = [f"✎ {wrote}"] if wrote_mark else []
+    return " · ".join(picked + own) or "— no answer", True
 
 
 class QuestionForm:

@@ -973,12 +973,12 @@ _THEME_OPTIONAL = {"USER_HIGHLIGHT", "ASSISTANT_HIGHLIGHT"}
 def _coerce_theme_color(value: Any) -> Optional[str]:
     """Validate one palette value; return an error string or None.
 
-    Accepted: ``"#RRGGBB"``; an integer ANSI fg code; or a table
-    ``{ ansi = <fg>, bg = <bg> }``.
+    Accepted: ``"#RRGGBB"`` (``"#RRGGBBAA"``: the alpha is ignored); an
+    integer ANSI fg code; or a table ``{ ansi = <fg>, bg = <bg> }``.
     """
     if isinstance(value, str):
         hex_str = value.lstrip("#")
-        if len(hex_str) != 6 or any(c not in "0123456789abcdefABCDEF" for c in hex_str):
+        if len(hex_str) not in (6, 8) or any(c not in "0123456789abcdefABCDEF" for c in hex_str):
             return "must be a '#RRGGBB' hex string, an ANSI code, or a table"
         return None
     if isinstance(value, bool):
@@ -1007,7 +1007,7 @@ def _coerce(kind: str, value: Any) -> tuple[Any, Optional[str]]:
     if kind == "str":
         return (value, None) if isinstance(value, str) else (None, "must be a string")
     if kind == "color":
-        if isinstance(value, str) and (value in _COLOR_NAMES or re.fullmatch(r"#[0-9a-fA-F]{6}", value)):
+        if isinstance(value, str) and (value in _COLOR_NAMES or re.fullmatch(r"#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?", value)):
             return value, None
         return None, f"must be a palette name ({', '.join(sorted(_COLOR_NAMES))}) or #rrggbb"
     if kind == "bool":

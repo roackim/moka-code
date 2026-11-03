@@ -175,6 +175,9 @@ twenty-three `colors.PALETTE_FIELDS` (`BACKGROUND`, `DEFAULT`, `MUTED`, `ERROR`,
 `HEADING`, `EMPHASIS`, `CODE`, `KEYWORD`, `FUNCTION`, `STRING`, `NUMBER`, `TYPE`,
 `USER_TEXT`, `ASSISTANT_TEXT`, `USER_HIGHLIGHT`, `ASSISTANT_HIGHLIGHT`) to either a
 `"#RRGGBB"` hex string or an ANSI table (`{ ansi = 90 }`, `{ ansi = 39, bg = 49 }`).
+Every hex color in moka (themes, `ui.toml` colour keys, role `color`, style
+tables) also takes `#RRGGBBAA`, as editors' color pickers write it; the alpha
+is ignored (`colors.RGB`).
 `USER_HIGHLIGHT` / `ASSISTANT_HIGHLIGHT` may also be `""` (none): the
 backgrounds of the messages whose `ui.<type>_highlight` is on, the user's and
 the rest (answers, thoughts, tools, code). `terminal` has none; the RGB

@@ -314,6 +314,41 @@ def test_cancelling_an_edit_restores_the_draft_and_cuts_nothing(monkeypatch):
     asyncio.run(scenario())
 
 
+def test_tab_and_shift_tab_switch_with_a_draft_and_during_an_edit(monkeypatch):
+    """2026-11-03: Tab (role) and Shift+Tab (sandbox) used to work only on an
+    empty input; the draft, and an edit of a sent message, stay."""
+    from moka_code.harness.harness import Harness
+
+    async def scenario():
+        ui = _ui(monkeypatch, None)
+        ui.agent.history = []
+        ui.agent.truncate_history = lambda i: Harness.truncate_history(ui.agent, i)
+        ui.agent.chat = _history_chat(ui)
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        ui.on_user_submit("one")
+        await asyncio.sleep(0.1)
+        submitted = []
+        ui.on_command_submit = submitted.append
+        ui.flash_hint = lambda text: None
+        ui._set_app_focus("input")
+
+        ui.input_component.buffer.text = "a draft"
+        ui.handle_global_input("\t")
+        ui.handle_global_input("\x1b[Z")
+        assert submitted[0].startswith("/role select")
+        assert ui.input_component.buffer.text == "a draft"
+
+        first = next(m for m in ui.chat_history_panel.messages if m.base_text == "one")
+        ui.handle_edit_action(first)
+        ui._set_app_focus("input")
+        ui.handle_global_input("\t")
+        assert len(submitted) == 2 and submitted[1].startswith("/role select")
+        assert ui._editing is not None and ui.input_component.buffer.text == "one"
+        ui.worker_task.cancel()
+
+    asyncio.run(scenario())
+
+
 def test_editing_is_refused_while_a_response_is_generating(monkeypatch):
     async def chat(text, attached=None, prompt=None):
         yield events.Start(message_id="u0", role="user")

@@ -155,15 +155,13 @@ def _ago(timestamp: float) -> str:
 
 
 def _session_rows(ui: ChatUIProtocol):
-    """This project's sessions but the current one: ``(by row, descriptions)``,
-    newest first (``list_sessions``' order)."""
+    """This project's sessions: ``(by row, descriptions, footers)``, newest
+    first (``list_sessions``' order); the current one is tagged ``active``."""
     from moka_code.harness import sessions
 
     current = getattr(ui, "session_path", None)
-    by_item, descriptions = {}, {}
+    by_item, descriptions, footers = {}, {}, {}
     for session in sessions.list_sessions(getattr(ui.agent, "workspace", ".")):
-        if session.path == current:
-            continue
         item = session.title[:70]
         while item in by_item:  # the picker needs distinct rows
             item += " "
@@ -172,7 +170,9 @@ def _session_rows(ui: ChatUIProtocol):
         if session.model:
             details.append(session.model)
         descriptions[item] = " · ".join(details)
-    return by_item, descriptions
+        if session.path == current:
+            footers[item] = "active"
+    return by_item, descriptions, footers
 
 
 async def conversation_session(ui: ChatUIProtocol, args: List[str]):
@@ -184,7 +184,7 @@ async def conversation_session(ui: ChatUIProtocol, args: List[str]):
         ui.chat_history_panel.add_message(
             "A response is in progress — stop it first (/stop).", msg_type=SysMsgWarning())
         return
-    by_item, descriptions = _session_rows(ui)
+    by_item, descriptions, footers = _session_rows(ui)
     if not by_item:
         workspace = getattr(ui.agent, "workspace", ".")
         ui.chat_history_panel.add_message(
@@ -215,22 +215,27 @@ async def conversation_session(ui: ChatUIProtocol, args: List[str]):
         session = by_item.get(item)
         if session is None:
             return
+        if session.path == getattr(ui, "session_path", None):
+            ui.flash_hint("the active session is not deleted")
+            return
         try:
             session.path.unlink()
         except OSError as exc:
             ui.flash_hint(f"not deleted: {exc}")
             return
-        rows, details = _session_rows(ui)
+        rows, details, tags = _session_rows(ui)
         by_item.clear()
         by_item.update(rows)
         if not by_item:
             modal.close()
-            ui.flash_hint("no other session left")
+            ui.flash_hint("no session left")
             return
-        modal.refresh(list(by_item), descriptions=details)
+        modal.refresh(list(by_item), descriptions=details, footers=tags)
 
     def _accept(item):
         session = by_item.get(item)
+        if session is not None and session.path == getattr(ui, "session_path", None):
+            return      # already the conversation on screen
         if session is not None and load_conversation(ui, session.path):
             # Resuming continues that session's file (no duplicate).
             ui.session_path = session.path
@@ -238,7 +243,7 @@ async def conversation_session(ui: ChatUIProtocol, args: List[str]):
                 f"Resumed session: {session.title[:70]}", msg_type=SysMsg(), title="session")
 
     modal = pick(ui, "Sessions", list(by_item), _accept, descriptions=descriptions,
-                 ordered=True, actions=[("^R", "rename", _rename), ("^D", "delete", _delete)])
+                 footers=footers, ordered=True, actions=[("^R", "rename", _rename), ("^D", "delete", _delete)])
 
 
 def _add_answer(ui: ChatUIProtocol, text: str, ids) -> None:

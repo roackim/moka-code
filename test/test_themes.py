@@ -545,3 +545,14 @@ def test_code_colors_follow_the_theme():
             settings.config.syntax_highlight_styles = saved
     finally:
         colors.set_theme(original)
+
+
+def test_an_alpha_byte_in_a_hex_color_is_ignored():
+    """2026-11-03: editors' color pickers (VS Code) write ``#rrggbbaa``; the
+    alpha is dropped instead of failing the theme, setting or role."""
+    rgb = colors.RGB("#11223380")
+    assert (rgb.r, rgb.g, rgb.b) == (0x11, 0x22, 0x33)
+    assert settings._coerce_theme_color("#112233ff") is None
+    assert settings._coerce("color", "#112233ff") == ("#112233ff", None)
+    assert settings._coerce_theme_color("#1122334") is not None
+    assert settings._coerce("color", "#1122334")[1] is not None

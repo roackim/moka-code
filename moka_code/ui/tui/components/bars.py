@@ -396,33 +396,61 @@ class NoticeBand(Component):
     ``set_notices`` takes ``(text, color)`` pairs; the band is as tall as the
     notices, up to ``max_lines`` (the last line then says how many are hidden
     and where they are). No notices: zero rows.
+
+    Each notice ends with a ``✕``: a click on it hides that notice until it
+    is no longer given (fixed), so it shows again if it comes back.
     """
+
+    DISMISS = " ✕ "
 
     def __init__(self, max_lines: int = 2, more: str = "+{n} more", id: Optional[str] = None):
         super().__init__(id)
         self.notices: list[tuple[str, Any]] = []
+        self.dismissed: set[str] = set()
+        self._given: list[tuple[str, Any]] = []
         self.max_lines = max_lines
         self.more = more
 
     def set_notices(self, notices: Sequence[tuple[str, Any]]):
-        notices = list(notices)
+        self._given = list(notices)
+        self.dismissed &= {text for text, _color in self._given}
+        notices = [notice for notice in self._given if notice[0] not in self.dismissed]
         if notices != self.notices:
             self.notices = notices
             self.mark_changed()
+            self.mark_layout_changed()
 
-    def _lines(self) -> list[tuple[str, Any]]:
+    def _lines(self) -> list[tuple[str, Any, bool]]:
+        """``(text, color, dismissible)`` per row."""
         limit = max(1, self.max_lines)
         if len(self.notices) <= limit:
-            return self.notices
-        shown = self.notices[:limit - 1]
+            return [(text, color, True) for text, color in self.notices]
+        shown = [(text, color, True) for text, color in self.notices[:limit - 1]]
         hidden = len(self.notices) - len(shown)
-        return shown + [(self.more.format(n=hidden), self.notices[limit - 1][1])]
+        return shown + [(self.more.format(n=hidden), self.notices[limit - 1][1], False)]
 
     def get_preferred_height(self, width: int) -> int:
         return len(self._lines())
 
     def render(self, buffer: Buffer):
-        for row, (text, color) in enumerate(self._lines()[:self.height]):
+        mark = len(self.DISMISS)
+        for row, (text, color, dismissible) in enumerate(self._lines()[:self.height]):
             line = f" {text}".ljust(self.width)
+            if dismissible and self.width > mark:
+                line = line[:self.width - mark] + self.DISMISS
             buffer.write_str(self.x, self.y + row, line, fg=color, reverse=True,
                              max_width=self.width)
+
+    def handle_input(self, event: Any) -> bool:
+        """A click on a notice's ``✕`` hides it; any click on the band stops there."""
+        if not (isinstance(event, MouseEvent) and event.pressed and not event.drag
+                and self.x <= event.x < self.x + self.width
+                and self.y <= event.y < self.y + self.height):
+            return False
+        lines = self._lines()
+        row = event.y - self.y
+        if (event.button == 0 and row < len(lines) and lines[row][2]
+                and event.x >= self.x + self.width - len(self.DISMISS)):
+            self.dismissed.add(lines[row][0])
+            self.set_notices(self._given)
+        return True

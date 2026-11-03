@@ -178,11 +178,31 @@ def test_a_resumed_session_keeps_its_name_when_saved(tmp_path, monkeypatch):
 
 def _picker(ui):
     shown = {}
-    ui.show_search_modal = lambda title, items, descriptions=None, on_accept=None, actions=(), **k: \
-        shown.update(items=items, actions={key: act for key, _label, act in actions}) or \
+    ui.show_search_modal = lambda title, items, descriptions=None, footers=None, on_accept=None, actions=(), **k: \
+        shown.update(items=items, footers=footers, accept=on_accept,
+                     actions={key: act for key, _label, act in actions}) or \
         SimpleNamespace(close=lambda: shown.update(closed=True),
-                        refresh=lambda items, descriptions=None: shown.update(items=items))
+                        refresh=lambda items, descriptions=None, footers=None: shown.update(items=items))
     return shown
+
+
+def test_session_picker_lists_the_active_session_and_keeps_it(tmp_path, monkeypatch):
+    """2026-11-03: the current session used to be left out of the list; it is
+    listed, tagged ``active``; Enter on it does nothing, Ctrl+D does not
+    delete it."""
+    from moka_code.ui.commands.conversation import conversation_session
+
+    monkeypatch.setattr(settings.config, "context_sessions", 10)
+    ui = _ui(tmp_path, _history("current"))
+    ui.save_session()
+    ui.flash_hint = lambda text: None
+    shown = _picker(ui)
+    asyncio.run(conversation_session(ui, []))
+
+    assert shown["items"] == ["current"] and shown["footers"] == {"current": "active"}
+    shown["actions"]["^D"]("current")
+    shown["accept"]("current")
+    assert ui.session_path.exists() and ui.agent.history == _history("current")
 
 
 def test_session_picker_deletes_at_once(tmp_path):
@@ -302,6 +322,20 @@ def test_private_mode_saves_nothing_and_clear_leaves_it(tmp_path, monkeypatch):
     ui.save_session()
     assert not ui.agent.private and not ui.agent.debug_stream.muted
     assert len(sessions.list_sessions(str(tmp_path))) == 1
+
+
+def test_going_private_mid_conversation_deletes_its_session_file(tmp_path, monkeypatch):
+    """2026-11-03: the earlier turns' file used to stay on disk."""
+    from moka_code.ui.commands.core import cmd_private
+
+    monkeypatch.setattr(settings.config, "context_sessions", 10)
+    ui = _private_ui(tmp_path)
+    ui.save_session()
+    assert ui.session_path.exists()
+
+    asyncio.run(cmd_private(ui, []))
+    assert not ui.session_path.exists()
+    assert sessions.list_sessions(str(tmp_path)) == []
 
 
 def test_private_images_live_in_a_temp_folder_removed_on_leaving():
