@@ -112,6 +112,16 @@ class CompactionMsg(MsgType):
     gutter = "─"
 
 
+class EditRuleMsg(MsgType):
+    """The red rule above a sent message being edited: sending discards it and
+    everything below. Shown only while editing; never in the history."""
+    name = "editing"
+    title = "editing"
+    frame_color = "ERROR"
+    content_color = "ERROR"
+    gutter = "─"
+
+
 class ToolCallMsg(MsgType):
     name = "tool"
     title = "tool"

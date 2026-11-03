@@ -231,9 +231,10 @@ class ChatActionHandlers:
         self._fill_input(*draft)
 
     def handle_edit_sent_action(self, message):
-        """Cut the conversation back to just before this user message and put
-        it in the input. Sending it again continues from there; the messages
-        after it are gone (the session file keeps them until the next save).
+        """Edit a sent user message: its text goes to the input and a red rule
+        above it says sending discards it and everything below. Nothing is cut
+        until the edit is sent (``commit_edit``); Esc removes the rule and
+        brings the draft back (``cancel_edit``).
 
         A message that a compaction summarized takes that compaction with it
         (the summary covers what is cut), so the full history up to it is sent
@@ -248,23 +249,64 @@ class ChatActionHandlers:
         estimate = getattr(self.agent, "uncompacted_estimate", None)
         tokens = estimate(entry["id"]) if callable(estimate) else None
         if tokens is None:
-            self._cut_back(message, entry)
+            self._begin_edit(message, entry)
             return
         drop, cancel = "Drop compaction and edit", "Cancel"
         show = getattr(self, "show_search_modal", None)
         modal = show(f"This message was compacted: editing it drops the summary "
                      f"(~{tokens // 1000}k tokens sent again)", [drop, cancel],
-                     on_accept=lambda choice: choice == drop and self._cut_back(message, entry),
+                     on_accept=lambda choice: choice == drop and self._begin_edit(message, entry),
                      ordered=True) if callable(show) else None
         if modal is None:
             self.flash_hint("this message was compacted; editing it needs the confirmation picker")
 
-    def _cut_back(self, message, entry) -> None:
-        """``handle_edit_sent_action``'s cut: history and transcript from
-        ``entry``/``message`` on go, the text returns to the input. A compaction
-        still in effect keeps its line, after what is left."""
+    def _begin_edit(self, message, entry) -> None:
+        """Enter the editing state: the message's text in the input (the draft
+        there is kept for ``cancel_edit``), the red rule above it."""
+        if getattr(self, "_editing", None) is not None:
+            self.cancel_edit()
+        draft = (self.input_component.buffer.text, dict(getattr(self, "_pasted_images", {}) or {}))
+        rule = self.chat_history_panel.add_edit_rule(message)
+        self._editing = (message, entry, draft, rule)
+        self.chat_history_panel.clear_focus()
         text, attached = getattr(message, "draft", None) or (
             entry.get("content") or "", list(entry.get("images") or ()))
+        self._pasted_images = {}
+        self._fill_input(text, attached)
+        # Focusing the input scrolls to the bottom; the rule stays in view.
+        if rule is not None:
+            self.chat_history_panel.scroll_to_top_of(rule)
+        self._update_action_strip()
+
+    def cancel_edit(self) -> None:
+        """Leave the editing state: nothing is cut, the rule goes, the draft
+        comes back."""
+        if getattr(self, "_editing", None) is None:
+            return
+        _, _, (text, pasted), rule = self._editing
+        self._editing = None
+        self.chat_history_panel.remove_message(rule)
+        self.chat_history_panel.auto_scroll = True      # back to following the end
+        self._pasted_images = pasted
+        self.input_component.update(text)
+        self.input_component.buffer.cursor_pos = len(text)
+        self._update_action_strip()
+
+    def commit_edit(self) -> None:
+        """Sending the edit: cut the history and transcript back to before the
+        edited message (the send that follows continues from there)."""
+        editing, self._editing = getattr(self, "_editing", None), None
+        if editing is None:
+            return
+        message, entry, _, rule = editing
+        self.chat_history_panel.remove_message(rule)
+        if message in self.chat_history_panel.messages:
+            self._cut_back(message, entry)
+
+    def _cut_back(self, message, entry) -> None:
+        """``commit_edit``'s cut: history and transcript from ``entry``/
+        ``message`` on go. A compaction still in effect keeps its line, after
+        what is left."""
         panel = self.chat_history_panel
         lines = panel.compaction_lines()
         self.agent.truncate_history(entry["id"])
@@ -274,4 +316,3 @@ class ChatActionHandlers:
             marker_id = (line.harness_message_ids or [None])[0]
             if line not in panel.messages and marker_id in kept:
                 panel.add_compaction(self.agent.history, marker_id)
-        self._fill_input(text, attached)

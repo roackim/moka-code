@@ -1177,6 +1177,41 @@ class ChatHistoryPanel(TextComponent):
             self._notify_selection_changed()
             self._request_repaint()
 
+    def scroll_to_top_of(self, msg: Message) -> None:
+        """Hold the view with ``msg`` on its top row (as far as the end of the
+        transcript allows); auto-scroll is off until something turns it back
+        on (focusing the input does)."""
+        if msg not in self.messages:
+            return
+        starts, _, total = self._row_index()
+        max_scroll = max(0, total - self.height)
+        start = min(starts[self.messages.index(msg)], max_scroll)
+        self.auto_scroll = start >= max_scroll
+        self.anchored_start_y = None if self.auto_scroll else start
+        self.scroll_offset = max_scroll - start
+        self._request_repaint()
+
+    def add_edit_rule(self, before: Message) -> Optional[Message]:
+        """The red rule above ``before``, a sent message being edited: sending
+        discards it and everything below. Display only; None when ``before``
+        is gone."""
+        from moka_code.ui.tui.msg_types import EditRuleMsg
+
+        if before not in self.messages:
+            return None
+        rule = self.new_message("", msg_type=EditRuleMsg())
+        rule.fold_label = "editing message, sending will discard everything below"
+        rule.set_collapsed(True)
+        rule.finalize()
+        index = self.messages.index(before)
+        self.messages.insert(index, rule)
+        rule.get_component().parent = self
+        if self.focused_message_index is not None and self.focused_message_index >= index:
+            self.focused_message_index += 1
+        self._message_height_cache.clear()
+        self._request_repaint()
+        return rule
+
     def truncate_from(self, msg: Message) -> None:
         """Remove ``msg`` and every message after it."""
         try:

@@ -111,6 +111,8 @@ def test_editing_a_kept_message_keeps_the_compaction_and_its_line(monkeypatch):
     ui.show_search_modal = lambda *a, **k: asked.append(a)
 
     ui.handle_edit_action(two)
+    assert two in ui.chat_history_panel.messages     # nothing cut before the send
+    ui.commit_edit()
 
     assert not asked                                # nothing summarized is lost
     assert [e["id"] for e in ui.agent.history] == ["u1", "a1", "m1"]
@@ -132,8 +134,10 @@ def test_editing_a_summarized_message_asks_then_drops_the_compaction(monkeypatch
     assert len(ui.agent.history) == 6 and "LINE" in _shown(ui)
 
     asked["on_accept"](asked["items"][0])
-    assert ui.agent.history == [] and _shown(ui) == []
     assert ui.input_component.buffer.text == "one"
+    assert len(ui.agent.history) == 6                # cut only when the edit is sent
+    ui.commit_edit()
+    assert ui.agent.history == [] and _shown(ui) == []
 
 
 def test_the_edit_cost_is_the_history_sent_again(tmp_path):

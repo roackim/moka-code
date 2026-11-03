@@ -210,6 +210,9 @@ class chatTUI(ChatActionHandlers):
         # ``prompt_text``: ``(on_done, the draft it replaced)`` while the input
         # takes one line for a command (e.g. a session's new name).
         self._text_prompt = None
+        # A sent message being edited: ``(message, history entry, draft, rule)``
+        # (``_begin_edit``); None otherwise.
+        self._editing = None
         self.question_menu = None
         self._active_user_msg = None
         # Images pasted into the input draft, by their ``[image #N]`` number.
@@ -715,6 +718,8 @@ class chatTUI(ChatActionHandlers):
             self.action_bar.set_prefix("")
             self.action_bar.set_hint(
                 "[ENTER] save · [ESC] cancel" if self._text_prompt is not None
+                else "[ENTER] send (changes not undone) · [ESC] cancel"
+                if self._editing is not None
                 else self.question_form.hint(bool(self.input_component.buffer.text.strip()))
                 if self.question_form is not None
                 else "[/] command  [@] file  [!] prompt  [↑↓] move")
@@ -906,6 +911,8 @@ class chatTUI(ChatActionHandlers):
             if attached is None:
                 return False
             self._pasted_images = {}
+            # Sending an edit is when what follows the edited message goes.
+            self.commit_edit()
 
             # Create user message and queue it
             user_msg = self.chat_history_panel.add_user_message(
@@ -1032,6 +1039,11 @@ class chatTUI(ChatActionHandlers):
             if (self._text_prompt is not None and self._last_focus_id == "input"
                     and key in ('\r', '\n', '\x1b')):
                 self._end_text_prompt(submit=key != '\x1b')
+                return True
+
+            # Esc from the input leaves an edit of a sent message: nothing cut.
+            if key == '\x1b' and self._editing is not None and self._last_focus_id == "input":
+                self.cancel_edit()
                 return True
 
             # An open ``ask`` form takes its keys from the input.

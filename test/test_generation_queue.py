@@ -266,10 +266,13 @@ def test_editing_a_sent_user_message_cuts_the_conversation_back(monkeypatch):
 
         ui.handle_edit_action(second)
 
+        # 2026-11-03: nothing is cut yet; a red rule above it until the send.
         assert ui.input_component.buffer.text == "two"          # replaces the draft
-        assert [e["content"] for e in ui.agent.history] == ["one", "answer to one"]
-        assert _texts(ui) == ["one", "answer to one"]
-        ui.on_user_submit("two, reworded")                      # continues from there
+        assert len(ui.agent.history) == 4 and "two" in _texts(ui)
+        rule = ui._editing[3]
+        assert ui.chat_history_panel.messages.index(rule) == \
+            ui.chat_history_panel.messages.index(second) - 1
+        ui.on_user_submit("two, reworded")                      # cuts, then continues
         await asyncio.sleep(0.1)
         ui.worker_task.cancel()
         return ui
@@ -278,6 +281,37 @@ def test_editing_a_sent_user_message_cuts_the_conversation_back(monkeypatch):
     assert [e["content"] for e in ui.agent.history] == [
         "one", "answer to one", "two, reworded", "answer to two, reworded"]
     assert "two" not in _texts(ui)
+    assert not any(m.type.name == "editing" for m in ui.chat_history_panel.messages)
+
+
+def test_cancelling_an_edit_restores_the_draft_and_cuts_nothing(monkeypatch):
+    """2026-11-03: Esc from the input leaves an edit: the conversation is
+    untouched, nothing stays muted, the draft comes back."""
+    from moka_code.harness.harness import Harness
+
+    async def scenario():
+        ui = _ui(monkeypatch, None)
+        ui.agent.history = []
+        ui.agent.truncate_history = lambda i: Harness.truncate_history(ui.agent, i)
+        ui.agent.chat = _history_chat(ui)
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        for text in ("one", "two"):
+            ui.on_user_submit(text)
+            await asyncio.sleep(0.1)
+        second = next(m for m in ui.chat_history_panel.messages if m.base_text == "two")
+        ui.input_component.buffer.text = "a draft"
+        ui.handle_edit_action(second)
+        ui._set_app_focus("input")
+
+        ui.handle_global_input("\x1b")
+
+        assert ui._editing is None
+        assert not any(m.type.name == "editing" for m in ui.chat_history_panel.messages)
+        assert ui.input_component.buffer.text == "a draft"
+        assert len(ui.agent.history) == 4 and "two" in _texts(ui)
+        ui.worker_task.cancel()
+
+    asyncio.run(scenario())
 
 
 def test_editing_is_refused_while_a_response_is_generating(monkeypatch):

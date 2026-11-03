@@ -339,3 +339,51 @@ def test_segments_of_one_tool_call_are_one_branch():
             Message("out", msg_type=ToolCallMsg())]
     msgs[1].group = msgs[2].group = group
     assert [_tree_marks(msgs, i)[0] for i in range(3)] == ["┌─", "└─", " "]
+
+
+def test_an_edit_rule_is_a_red_line_above_the_edited_message():
+    """2026-11-03: while a sent message is edited, a red rule above it says
+    sending discards it and everything below."""
+    from moka_code.ui.chat_history_panel import ChatHistoryPanel
+    from moka_code.ui.tui.buffer import Buffer
+
+    panel = ChatHistoryPanel()
+    panel.add_message("kept", msg_type=UserMsg())
+    edited = panel.add_message("edited", msg_type=UserMsg())
+    rule = panel.add_edit_rule(edited)
+    assert panel.messages.index(rule) == panel.messages.index(edited) - 1
+    panel.set_layout(0, 0, 70, 10)
+    buf = Buffer(70, 10)
+    panel.render(buf)
+
+    rows = ["".join(c.char for c in r).rstrip() for r in buf.cells]
+    line = next(r for r in rows if "editing message" in r)
+    assert line.startswith("── editing message, sending will discard everything below ─")
+    assert line.endswith("─")
+    assert rows.index(line) < next(i for i, r in enumerate(rows) if "edited" in r)
+    error = (theme.ERROR.r, theme.ERROR.g, theme.ERROR.b) if hasattr(theme.ERROR, "r") else theme.ERROR
+    row = buf.cells[rows.index(line)]
+    assert {c.fg for c in row if c.char.strip()} == {error}
+
+
+def test_the_view_holds_the_edit_rule_on_its_top_row():
+    """2026-11-03: focusing the input (as editing does) scrolls to the end,
+    past the rule; ``scroll_to_top_of`` holds the rule at the top instead."""
+    from moka_code.ui.chat_history_panel import ChatHistoryPanel
+    from moka_code.ui.tui.buffer import Buffer
+
+    panel = ChatHistoryPanel()
+    edited = None
+    for n in range(12):
+        msg = panel.add_message(f"message {n}", msg_type=UserMsg())
+        edited = msg if n == 3 else edited
+    rule = panel.add_edit_rule(edited)
+    panel.set_layout(0, 0, 70, 6)
+    panel.render(Buffer(70, 6))                      # at the end: the rule is far above
+
+    panel.scroll_to_top_of(rule)
+    buf = Buffer(70, 6)
+    panel.render(buf)
+
+    top = "".join(c.char for c in buf.cells[0])
+    assert "editing message" in top and not panel.auto_scroll

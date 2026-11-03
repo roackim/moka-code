@@ -685,11 +685,21 @@ when focused (a thought waits for `o`): it unfolds to what the model now sees, t
 then one line per kept turn, whose messages are above (`compaction.compaction_view`). On resume/import the
 marker is never drawn as an answer: its line comes after the marker's `until`
 entry, where it appeared live (`conversation._with_compaction_lines`).
-Editing a sent message (`handle_edit_sent_action`) that a compaction summarized
-asks *Drop compaction and edit* / *Cancel* with the cost
-(`uncompacted_estimate`: the full history up to it is sent again); without a
-picker nothing is cut. Editing a kept message keeps the compaction, and its line
-is added again after what is left (`_cut_back`).
+Editing a sent message (`handle_edit_sent_action`) cuts nothing at first
+(2026-11-03; it used to cut at once): its text goes to the input (the draft
+there is kept), and a red rule goes above it, `── editing message, sending will
+discard everything below ───` (`ChatHistoryPanel.add_edit_rule`, an
+`EditRuleMsg` drawn like the compaction rule; display only, never in the
+history). Focusing the input scrolls to the end, so the view is then held with
+the rule on its top row (`ChatHistoryPanel.scroll_to_top_of`); Esc goes back to
+following the end. The action line reads `[ENTER] send (changes not undone) · [ESC]
+cancel`. Sending (`on_user_submit` → `commit_edit`) removes the rule, cuts the
+history and transcript back to before the message, then sends; Esc from the
+input (`cancel_edit`) removes the rule and restores the draft. One that a compaction summarized first asks *Drop compaction and
+edit* / *Cancel* with the cost (`uncompacted_estimate`: the full history up to
+it is sent again); without a picker nothing happens. Editing a kept message
+keeps the compaction, and its line is added again after what is left
+(`_cut_back`).
 
 An **action line** sits above the input with a blank pad row above it
 (`ActionBar.set_top_pad`): an `ActionBar` mounted permanently in the workspace

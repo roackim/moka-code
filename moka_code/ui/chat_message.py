@@ -953,7 +953,7 @@ class Message:
         A live thinking line shows its ticking label plus the tail of the
         latest reasoning line; a finalized one reads ``thought for Xs``.
         """
-        if isinstance(self.type, msg_types.CompactionMsg):
+        if isinstance(self.type, (msg_types.CompactionMsg, msg_types.EditRuleMsg)):
             # A rule across the transcript, joined to the ``─`` gutter. While
             # the summary is written: the ticking label and its latest line.
             line = f"─ {self.fold_label or self._compacting_label()} "
