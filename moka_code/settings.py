@@ -274,7 +274,7 @@ DEFAULT_UI_TOML = f"""\
 # tool_highlight = false                # tool lines and their output
 # code_highlight = true                 # code block rows (not their indent or blank rows)
 # code_highlight_pad = true             # a highlighted empty code row above and below them
-# group_thoughts_and_calls = false      # no blank line between thoughts and tool lines
+# group_thoughts_and_calls = true       # no blank line between thoughts and tool lines
 # group_reasoning_and_answers = false   # no blank line between them and the answer after
 # indent_thoughts_and_calls = 0         # cells thoughts, tool lines and their output are indented
 # tree_thoughts_and_calls = true        # draw them as a tree (┌─ ├─ └─) instead of bullets
@@ -445,7 +445,7 @@ _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
     "tool_highlight": ("ui_tool_highlight", "bool", False),
     "code_highlight": ("ui_code_highlight", "bool", True),
     "code_highlight_pad": ("ui_code_highlight_pad", "bool", True),
-    "group_thoughts_and_calls": ("ui_group_thoughts_and_calls", "bool", False),
+    "group_thoughts_and_calls": ("ui_group_thoughts_and_calls", "bool", True),
     "group_reasoning_and_answers": ("ui_group_reasoning_and_answers", "bool", False),
     "indent_thoughts_and_calls": ("ui_indent_thoughts_and_calls", "int", 0),
     "tree_thoughts_and_calls": ("ui_tree_thoughts_and_calls", "bool", True),
