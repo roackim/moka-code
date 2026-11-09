@@ -131,3 +131,78 @@ def test_a_click_on_a_notice_cross_hides_it_until_it_comes_back():
     band.set_notices([("role changed", None)])                      # fixed
     band.set_notices([("server down", None), ("role changed", None)])
     assert [text for text, _ in band.notices] == ["server down", "role changed"]
+
+def test_action_bar_label_is_left_italic_and_hints_stay_right():
+    """The input's mode label sits at the left edge, muted and italic, while
+    the key hints stay right-aligned; clearing the label leaves no trace."""
+    bar = ActionBar()
+    bar.set_layout(0, 0, 50, 1)
+    bar.set_align_right(True)
+    bar.set_hint("[ENTER] save · [ESC] cancel")
+    bar.set_label("renaming session")
+    buffer = Buffer(50, 1)
+    bar.render(buffer)
+
+    rendered = row_text(buffer)
+    assert rendered.startswith(" renaming session")
+    assert rendered.rstrip().endswith("[ESC] cancel")
+    assert all(cell.italic for cell in buffer.cells[0][1:1 + len("renaming session")])
+
+    bar.set_label("")
+    bar.render(buffer)
+    assert "renaming session" not in row_text(buffer)
+    assert row_text(buffer).rstrip().endswith("[ESC] cancel")
+
+
+def test_action_bar_drops_its_label_when_the_hints_need_the_room():
+    """A narrow bar keeps the keys; the mode label yields instead of colliding."""
+    bar = ActionBar()
+    bar.set_layout(0, 0, 24, 1)
+    bar.set_align_right(True)
+    bar.set_hint("[ENTER] save · [ESC] cancel")
+    bar.set_label("renaming session")
+    buffer = Buffer(24, 1)
+    bar.render(buffer)
+
+    rendered = row_text(buffer)
+    assert "renaming session" not in rendered
+    assert "[ENTER] save" in rendered
+
+
+def test_action_bar_drops_its_label_whole_rather_than_chopping_it():
+    """A long hint can leave too little room: no partial mode name is drawn."""
+    bar = ActionBar()
+    bar.set_align_right(True)
+    bar.set_hint("[ENTER] send (changes not undone) · [ESC] cancel")
+    bar.set_label("editing message")
+
+    bar.set_layout(0, 0, 60, 1)
+    buffer = Buffer(60, 1)
+    bar.render(buffer)
+    rendered = row_text(buffer)
+    assert "editing message" not in rendered
+    assert "editing m " not in rendered
+    assert rendered.rstrip().endswith("[ESC] cancel")
+
+    bar.set_layout(0, 0, 80, 1)
+    buffer = Buffer(80, 1)
+    bar.render(buffer)
+    assert row_text(buffer).startswith(" editing message")
+
+
+def test_action_bar_label_resolves_its_color_provider_at_render():
+    """The label color can follow state (the input's focus/role color)."""
+    color = [(10, 20, 30)]
+    bar = ActionBar()
+    bar.set_layout(0, 0, 40, 1)
+    bar.set_align_right(True)
+    bar.set_hint("hint")
+    bar.set_label("Mode", color=lambda: color[0])
+    buffer = Buffer(40, 1)
+    bar.render(buffer)
+    assert buffer.cells[0][1].fg == (10, 20, 30)
+    assert buffer.cells[0][1].italic
+
+    color[0] = (90, 90, 90)
+    bar.render(buffer)
+    assert buffer.cells[0][1].fg == (90, 90, 90)

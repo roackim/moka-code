@@ -214,7 +214,8 @@ async def conversation_session(ui: ChatUIProtocol, args: List[str]):
                 return
             ui.on_command_submit("/session")   # back to the list, renamed
 
-        prompt("session name… (empty: its first question)", session.title, _done)
+        prompt("session name… (empty: its first question)", session.title, _done,
+               label="Renaming session")
 
     def _delete(item):
         session = by_item.get(item)

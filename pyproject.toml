@@ -1,6 +1,6 @@
 [project]
 name = "moka-code"
-version = "1.4.2"
+version = "1.4.3"
 description = "A terminal coding assistant for local and cloud models"
 readme = "README.md"
 license = {text = "Apache-2.0"}

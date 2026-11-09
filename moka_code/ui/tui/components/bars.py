@@ -269,6 +269,12 @@ class ActionBar(Component):
         self.focused = False
         self.hint = ""
         self.hint_color: Any = None     # None: muted
+        # Italic label hugging the left edge, opposite the right-aligned group
+        # (e.g. the input's current mode: "Renaming session"). ``label_color``
+        # is an RGB or a callable resolved at render, so it can follow the
+        # input's focus/role color; None falls back to muted.
+        self.label = ""
+        self.label_color: Any = None
         # Leading marker drawn before the actions (e.g. "▌ " for the selected
         # message) and the start of the action hit regions.
         self.prefix = ""
@@ -294,6 +300,15 @@ class ActionBar(Component):
         if (self.hint, self.hint_color) != (hint, color):
             self.hint = hint
             self.hint_color = color
+            self.mark_changed()
+
+    def set_label(self, label: str, color: Any = None):
+        """Italic text at the left edge, drawn opposite the right-aligned
+        action/hint group (e.g. the input's current mode). ``color`` is an RGB
+        or a provider resolved at render; None falls back to muted."""
+        if (self.label, self.label_color) != (label, color):
+            self.label = label
+            self.label_color = color
             self.mark_changed()
 
     def set_prefix(self, prefix: str):
@@ -368,10 +383,25 @@ class ActionBar(Component):
             segments.append(("hint", self.hint, None))
 
         total = sum(len(text) for _, text, _ in segments) + gap * max(0, len(segments) - 1)
-        x = self.x + self.style.padding
+        left = self.x + self.style.padding
+        right = self.x + self.width - self.style.padding
+        x = left
         if self.align_right:
-            x = max(self.x + self.style.padding,
-                    self.x + self.width - total - self.style.padding)
+            x = max(left, right - total)
+
+        # The mode label hugs the left edge, italic and muted. It yields to the
+        # group instead of pushing it: it is drawn whole or not at all (a
+        # chopped mode name reads worse than none), so the keys are never
+        # moved or clipped for it.
+        if self.label:
+            room = x - gap - left if self.align_right else right - left
+            if display_width(self.label) <= room:
+                color = (self.label_color() if callable(self.label_color)
+                         else self.label_color) or theme.MUTED
+                buffer.write_str(left, row, self.label, fg=color,
+                                 bg=self.style.bg, italic=True)
+                if not self.align_right:
+                    x = left + display_width(self.label) + gap
 
         action_fg = self.style.focused_fg if self.focused else self.style.fg
         for index, (kind, text, item) in enumerate(segments):

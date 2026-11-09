@@ -131,7 +131,8 @@ atomically) is shared by `/export`, `/import` and autosave
   nothing. Refused while a response is
   generating. Its action row: `[^R] rename` puts the title in the input box
   (`chatTUI.prompt_text`: Enter saves it with `sessions.rename`, empty removes
-  it, Esc cancels; the draft comes back) and reopens the list; `[^D] delete`
+  it, Esc cancels; the draft comes back; the action line's italic label reads
+  `Renaming session`) and reopens the list; `[^D] delete`
   deletes the file at once (no confirmation) and the list stays open; the
   active session is never deleted (a flash says so).
 - The title is `chatTUI.session_title` (read by `load_conversation`, cleared by
@@ -705,7 +706,8 @@ discard everything below ───` (`ChatHistoryPanel.add_edit_rule`, an
 history). Focusing the input scrolls to the end, so the view is then held with
 the rule on its top row (`ChatHistoryPanel.scroll_to_top_of`); Esc goes back to
 following the end. The action line reads `[ENTER] send (changes not undone) · [ESC]
-cancel`. Sending (`on_user_submit` → `commit_edit`) removes the rule, cuts the
+cancel`, and the action line's italic label reads `Editing message`. Sending
+(`on_user_submit` → `commit_edit`) removes the rule, cuts the
 history and transcript back to before the message, then sends; Esc from the
 input (`cancel_edit`) removes the rule and restores the draft. One that a compaction summarized first asks *Drop compaction and
 edit* / *Cancel* with the cost (`uncompacted_estimate`: the full history up to
@@ -730,6 +732,20 @@ two modes:
   `[/] command  [@] file  [!] prompt  [↑↓] move`. `@` works mid-text, so the line
   stays visible while typing. `InputComponent.on_change` (fired on every text
   change) refreshes it.
+
+**Input mode label.** The action line names the alternative mode the input
+serves, italic at its left edge, opposite the right-aligned key hints:
+`Editing message` while a sent message is being edited (`chatTUI._editing`),
+and the caller's label while `chatTUI.prompt_text` takes one line for a command
+(`Renaming session` from `/session`). The text comes from
+`chatTUI._input_mode_label()` via `ActionBar.set_label`; its color is the same
+`_input_box_fg` provider that colors the input's bars and prefix, so it follows
+the input's focus and role color and reads as a mode of that field. The
+input's border stays a clean rule. The label is drawn whole or not at all — on a bar
+too narrow for it and the hints, the hints win and the label is dropped, so
+neither is chopped. The normal composer has no label. `question` / `permission`
+forms are not labelled: their selector already names them, and they keep the
+input's placeholder as the typed-answer hint.
 
 The status bar stays visible below in both modes. `Esc`/`Enter`/`i` clear the
 message selection and collapse the line, except `Enter` on a message with an

@@ -206,8 +206,8 @@ class chatTUI(ChatActionHandlers):
         self.active_tool_messages = {}
         # The open ``ask`` or permission form and its selector (``question_form``).
         self.question_form = None
-        # ``prompt_text``: ``(on_done, the draft it replaced)`` while the input
-        # takes one line for a command (e.g. a session's new name).
+        # ``prompt_text``: ``(on_done, the draft it replaced, mode label)``
+        # while the input takes one line for a command (e.g. renaming a session).
         self._text_prompt = None
         # A sent message being edited: ``(message, history entry, draft, rule)``
         # (``_begin_edit``); None otherwise.
@@ -347,6 +347,21 @@ class chatTUI(ChatActionHandlers):
             return theme.PERMISSION
         role = getattr(self.agent, "role", None)
         return resolve_color(getattr(role, "color", ""), theme.USER)
+
+    def _input_mode_label(self) -> str:
+        """The alternative mode the input serves, or "".
+
+        One input component serves the composer, an edited sent message
+        (``_editing``) and a one-line command prompt (``_text_prompt``, e.g.
+        renaming a session). The label is drawn italic at the left of the
+        action line above the input, in the input's own color, opposite the
+        key hints.
+        """
+        if self._editing is not None:
+            return "Editing message"
+        if self._text_prompt is not None:
+            return self._text_prompt[2]
+        return ""
 
     def refresh_status_bar(self) -> None:
         """Refresh local status fields (see ``ui/status_presenter.py``)."""
@@ -743,6 +758,14 @@ class chatTUI(ChatActionHandlers):
             self.action_bar.set_focused(False)
             self.action_bar.set_expanded(False)
 
+        # The input's alternative mode sits on the same row, opposite the key
+        # hints, in the input's own color (the provider used by its bars), so
+        # it reads as a mode of that field. It belongs to the input only: a
+        # selected message or the status bar has its own context.
+        label = (self._input_mode_label()
+                 if message is None and self._last_focus_id == "input" else "")
+        self.action_bar.set_label(label, color=self._input_box_fg if label else None)
+
         if self._hint_flash_until:
             self.action_bar.set_hint(*self._hint_flash)
             self.action_bar.set_expanded(True)
@@ -795,20 +818,21 @@ class chatTUI(ChatActionHandlers):
         self.session_path = sessions.new_path(getattr(self.agent, "workspace", "."))
         self.session_title = None
 
-    def prompt_text(self, placeholder: str, initial: str, on_done) -> None:
+    def prompt_text(self, placeholder: str, initial: str, on_done, *,
+                    label: str) -> None:
         """Take one line from the input box: it shows ``initial``, Enter calls
         ``on_done(text)``, Esc cancels; the draft that was there comes back
-        either way."""
+        either way. ``label`` names the mode on the action line."""
         if self._text_prompt is not None:
             self._end_text_prompt(submit=False)
-        self._text_prompt = (on_done, self.input_component.buffer.text)
+        self._text_prompt = (on_done, self.input_component.buffer.text, label)
         self.input_component.placeholder = placeholder
         self.input_component.update(initial)
         self.chat_history_panel.clear_focus()
         self._set_app_focus("input")
 
     def _end_text_prompt(self, submit: bool) -> None:
-        on_done, draft = self._text_prompt
+        on_done, draft, _label = self._text_prompt
         self._text_prompt = None
         text = self.input_component.buffer.text
         self.input_component.placeholder = ""
