@@ -20,7 +20,11 @@ A minimal, opiniated, terminal ai harness made for local LLMs first.
 
 Small enough to stay out of the way. Flexible enough to make yours.
 
-New to moka? The [getting started guide](docs/getting-started.md) walks from
+## Getting Started
+
+New to moka ? 
+
+The [getting started guide](docs/getting-started.md) walks from
 install to your first file edit.
 
 ## Requirements
@@ -119,18 +123,7 @@ on first run with commented examples. `/config` opens a picker; hand edits are
 applied with `/reload`, while an editor opened by `/config` reloads when it
 closes.
 
-| Section | File | Contents |
-|---|---|---|
-| `servers` | `servers.toml` | Model servers and models |
-| `ui` | `ui.toml` | Transcript, layout, status bar, streaming, markdown and code styles |
-| `context` | `context.toml` | File picker, diffs, image size, session retention, compaction |
-| `debug` | `debug.toml` | Debug logging |
-
-Roles, themes, prompts, and sandboxes each have their own file. Prompts and
-sandboxes can be global or project-local. Manage them with `/role`, `/theme`,
-`/prompt`, and `/sandbox`.
-
-`state.toml` and `projects/` are written by moka. Leave them alone.
+`state.toml` and `projects/` are written by moka. Leave them alone. Rest is pretty self explanatory.
 
 ## Documentation
 
@@ -138,8 +131,7 @@ The [user guide](docs/README.md) covers setup, providers, permissions,
 configuration, sandboxes, and troubleshooting. Run `/help` inside moka for the
 full command list.
 
-If you want to contribute, see [CONTRIBUTING.md](CONTRIBUTING.md). Security
-reports should follow [SECURITY.md](SECURITY.md).
+If you want to contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
