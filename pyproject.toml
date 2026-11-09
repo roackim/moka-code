@@ -1,19 +1,38 @@
 [project]
 name = "moka-code"
 version = "1.4.2"
-description = "Local llm cli agent"
-requires-python = ">= 3.10"
+description = "A terminal coding assistant for local and cloud models"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">= 3.11"
 authors = [{name = "Joackim Orciere", email = "joackim.orciere@proton.me"}]
+keywords = ["ai", "coding-agent", "llm", "terminal", "tui"]
+classifiers = [
+    "Environment :: Console",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development",
+]
 dependencies = [
     "toml",
-    "httpx",  # Only HTTP client — the OpenAI/llama.cpp/Ollama/OpenRouter
-              # chat transport is implemented directly on httpx (no openai SDK).
-    
-    # Pinned dependencies for stability and avoiding supply-chain issues
-    # > Theses packages do not have dependencies of their own so we can safely pin them 
-    "pathspec == 1.0.4", # For .gitignore parsing
-    "wcwidth == 0.6.0",  # For accurate character width calculation in the terminal
+    "httpx",  # Only HTTP client: the OpenAI-compatible chat transport is
+              # implemented directly on httpx (no openai SDK).
+
+    # Pinned dependencies for stability and avoiding supply-chain issues.
+    # These packages have no dependencies of their own, so they are safe to pin.
+    "pathspec == 1.0.4",  # For .gitignore parsing
+    "wcwidth == 0.6.0",   # For accurate character width calculation in the terminal
 ]
+
+[project.urls]
+Homepage = "https://github.com/roackim/moka-code"
+Repository = "https://github.com/roackim/moka-code"
+Issues = "https://github.com/roackim/moka-code/issues"
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-xdist"]

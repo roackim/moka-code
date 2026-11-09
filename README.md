@@ -1,17 +1,31 @@
 # moka
 
-A terminal coding assistant for local and cloud models.
-
-moka runs in your project folder. The model can read and edit files and run
-shell commands, with every tool gated by a role you control and optionally
-isolated in a sandbox. It works with llama.cpp, OpenAI-compatible servers,
-OpenRouter, and DeepSeek. Configuration is plain TOML.
+A minimal, opiniated, terminal ai harness made for local LLMs first.
 
 ![moka](img/screenshot.png)
 
+## Why moka
+
+- **Local AI first:** Minimal system prompt. Five tools. Nothing more, the harness does not expect frontier models.
+- **Private:** Use local models, keep sessions and configuration on your
+  machine. Opt into a cloud provider if you want one.
+- **Sandboxing:** Start bubblewrap, podman, or docker
+  from one picker; roles still control which tools can run.
+- **Lightweight:** Four runtime dependencies, low CPU and memory use, and a
+  single-command install with no daemon to manage.
+- **Customizable:** Everything is plain TOML, in ~/.config/moka, and the bundled `!moka-config`
+  prompt lets moka configure itself.
+- **Linux-native:** Built for the terminal, not bolted onto an IDE.
+- **No command filtering** Command filtering cannot be done reliably. The boundary belongs to the sandbox.
+
+Small enough to stay out of the way. Flexible enough to make yours.
+
+New to moka? The [getting started guide](docs/getting-started.md) walks from
+install to your first file edit.
+
 ## Requirements
 
-- Linux, Python 3.10+
+- Linux, Python 3.11+
 - A model endpoint: llama.cpp, another OpenAI-compatible server, OpenRouter, or
   DeepSeek
 - An editor (`$VISUAL` or `$EDITOR`) for `/config`, `/diff`, and file editing
@@ -75,53 +89,12 @@ For DeepSeek, export `DEEPSEEK_API_KEY`:
 api_key = "$DEEPSEEK_API_KEY"
 ```
 
+`$NAME` reads the `NAME` environment variable when moka starts. You can put the
+key directly in the file instead, for example `api_key = "sk-..."`, but avoid
+committing it.
+
 An OpenAI-compatible server uses `type = "openai-compatible"` with a
 `base_url`. See the commented examples in `servers.toml` for the details.
-
-## Features
-
-- **Tools with permissions.** The model can read, write and edit files, run
-  shell commands, and ask you questions. Each tool is allowed, asks first, or is
-  disabled per role. Switch roles with `/role`; edit one with `/role edit`.
-- **Sandboxes.** Run tools inside podman, docker, or bubblewrap. Sandbox
-  definitions can be global or local to a project; the active sandbox is chosen
-  per project with `/sandbox`.
-- **Files and prompts.** Type `@` to reference a project file, paste an image
-  with Ctrl+V, or use `!name` to expand a reusable prompt from `prompts/`.
-- **Conversations.** Sessions are saved automatically per project. Resume one
-  with `/session` or `moka --resume` (`-r`). `/export` and `/import` move a
-  conversation as a single file, images included. `/private` deletes the current
-  session file and saves or logs nothing until `/clear`.
-- **Context management.** Long conversations compact automatically, and
-  `/compact` summarizes one by hand. The status bar shows context use and cost.
-- **Models and reasoning.** Pick a model with `/model` and a reasoning effort
-  with `/effort`. Reasoning is shown above answers and replayed to servers that
-  support it.
-- **Review and shell.** `/diff` shows uncommitted changes. `/terminal` opens a
-  shell in the project, and `/shells` manages commands running in the background.
-- **Themes.** Pick a built-in or custom theme with `/theme`, or edit the palette
-  with `/theme edit`.
-
-## Common commands
-
-| Command | What it does |
-|---|---|
-| `/config [section]` | Edit a settings file and reload it |
-| `/model`, `/effort` | Choose the model and reasoning effort |
-| `/role` | Switch roles or edit their permissions |
-| `/sandbox` | Create, start, stop, or edit sandboxes |
-| `/theme` | Pick or edit a color theme |
-| `/prompt` | Manage reusable `!prompt` files |
-| `/diff` | Review uncommitted changes |
-| `/session` | Resume, rename, or delete saved sessions |
-| `/export`, `/import` | Save or load a conversation as one JSON file |
-| `/compact` | Summarize the conversation to free context |
-| `/private` | Delete the session file and stop saving until `/clear` |
-| `/clear` | Clear the conversation and leave private mode |
-| `/reload` | Apply hand-edited config and role files |
-| `/edit` | Open a file in `$VISUAL` or `$EDITOR` |
-| `/terminal`, `/shells` | Open a host shell, or manage running commands |
-| `/help` | Full command reference |
 
 ## Shell integration
 
@@ -158,3 +131,16 @@ sandboxes can be global or project-local. Manage them with `/role`, `/theme`,
 `/prompt`, and `/sandbox`.
 
 `state.toml` and `projects/` are written by moka. Leave them alone.
+
+## Documentation
+
+The [user guide](docs/README.md) covers setup, providers, permissions,
+configuration, sandboxes, and troubleshooting. Run `/help` inside moka for the
+full command list.
+
+If you want to contribute, see [CONTRIBUTING.md](CONTRIBUTING.md). Security
+reports should follow [SECURITY.md](SECURITY.md).
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
