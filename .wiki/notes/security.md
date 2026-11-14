@@ -36,6 +36,13 @@ is `no` / `ask` / `yes`, and the user picks it explicitly — nothing is inferre
 See `plans/sandbox_worker.md` for the design (supersedes
 `plans/containerization.md`) and [sandbox.md](./sandbox.md) for the subsystem.
 
+## MCP servers
+
+MCP servers are host processes or remote endpoints, not tool bodies moka runs
+inside the sandbox. They are outside the isolation described below: the server
+is its own boundary. A role's `[mcps]` line is the approval gate, and only
+trusted servers should be configured. See [mcp.md](./mcp.md).
+
 ## Sandboxes
 
 Sandboxes are per project, declared in the user config and selected with

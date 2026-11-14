@@ -30,6 +30,9 @@ def build_prompt(tool_name: str, args: dict) -> str:
     elif tool_name == "bash":
         command = args.get("command", "unknown")
         return f"Allow running command: {command}?"
+    if "__" in tool_name:
+        server, _, tool = tool_name.partition("__")
+        return f"Allow MCP server '{server}' to run '{tool}'?"
     return f"Allow {tool_name}?"
 
 

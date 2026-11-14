@@ -73,6 +73,12 @@ def main():
         first = group.exceptions[0]
         if not isinstance(first, (KeyboardInterrupt, asyncio.CancelledError)):
             raise first from None
+    finally:
+        # MCP child processes are host processes; terminate them even when the
+        # event loop has already closed.
+        from moka_code import mcp
+
+        mcp.close_sync()
     return 0
 
 

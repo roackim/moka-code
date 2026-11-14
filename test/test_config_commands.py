@@ -323,7 +323,9 @@ def test_reload_applies_a_role_edited_by_hand(monkeypatch, tmp_path):
 
 def test_a_role_file_that_no_longer_loads_keeps_the_running_role(monkeypatch, tmp_path):
     ui, path = _role_ui(monkeypatch, tmp_path)
-    _editing(monkeypatch, path, "\nreplay_reasoning_depth = 3\n")
+    # A retired key at the root (before the [tools]/[mcps] tables).
+    _editing(monkeypatch, path, "",
+             ("preserve_thinking = true", "preserve_thinking = true\nreplay_reasoning_depth = 3"))
 
     asyncio.run(cmd_role(ui, ["edit", "agent"]))
 

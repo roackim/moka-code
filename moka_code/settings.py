@@ -174,6 +174,7 @@ CONFIG_FILES = {
     "context": "context.toml",
     "debug": "debug.toml",
     "servers": "servers.toml",
+    "mcp": "mcp.toml",
 }
 
 
@@ -390,6 +391,37 @@ DEFAULT_SERVERS_TOML = """\
 ## retry_delay = 2.0.
 """
 
+# The MCP servers template: one section per transport. Every example is
+# commented out; the user names their servers and uncomments a block.
+DEFAULT_MCP_TOML = f"""\
+## Moka MCP servers
+## Apply with /reload, or /config mcp (reloads when the editor exits).
+## A line starting with # is a setting to uncomment; ## is help.
+## One table per MCP server; the name is yours. A role sees a server's tools
+## only when that role's [mcps] table lists the server (no = disabled).
+## Tools are named <server>__<tool> so two servers never collide.
+
+{_rule("stdio")}
+
+## A local server launched as a subprocess, speaking JSON-RPC on
+## stdin/stdout. This is the common case (npx/uvx/server binaries).
+# [servers.filesystem]
+# type    = "stdio"          # implied when the table is named [servers.stdio]
+# command = "npx"
+# args    = ["-y", "@modelcontextprotocol/server-filesystem", "/home/me"]
+# env     = {{ API_TOKEN = "$MCP_TOKEN" }}   # $NAME reads the environment
+# tool_timeout = 60          # seconds one tools/call may take
+
+{_rule("Streamable HTTP")}
+
+## A remote server reached over Streamable HTTP.
+# [servers.remote]
+# type = "http"
+# url  = "https://mcp.example.com/mcp"
+# headers = {{ Authorization = "Bearer $TOKEN" }}   # $NAME reads the environment
+# tool_timeout = 60
+"""
+
 # Help heading a ``themes/<name>.toml`` file (written by ``/theme create`` and
 # ``/theme edit``, followed by the palette lines).
 THEME_FILE_HELP = f"""\
@@ -415,6 +447,7 @@ DEFAULT_CONFIG_TEMPLATES = {
     "context": DEFAULT_CONTEXT_TOML,
     "debug": DEFAULT_DEBUG_TOML,
     "servers": DEFAULT_SERVERS_TOML,
+    "mcp": DEFAULT_MCP_TOML,
 }
 
 
@@ -952,6 +985,15 @@ _SERVER_STR_KEYS = {"type", "base_url", "api_key"}
 _SERVER_INT_KEYS = {"retry_attempts"}
 _SERVER_FLOAT_KEYS = {"timeout", "retry_delay"}
 
+# MCP servers (``mcp.toml``): one table per server, connection only. A role's
+# ``[mcps]`` table decides whether its tools are available. Two transports:
+# ``stdio`` launches a subprocess, ``http`` talks Streamable HTTP.
+_MCP_TYPES = ("stdio", "http")
+_MCP_KEYS = {"type", "command", "args", "env", "url", "headers", "tool_timeout"}
+_MCP_STR_KEYS = {"type", "command", "url"}
+_MCP_LIST_KEYS = {"args"}
+_MCP_TABLE_KEYS = {"env", "headers"}
+
 # ``active_model`` (the model is per server, ``last_model``) and
 # ``model_catalog`` (discovery is live, in memory) are retired keys, accepted
 # and ignored so older state files load without errors; the next save drops them.
@@ -1094,6 +1136,9 @@ class Config:
         """Reset every runtime attribute to its built-in default."""
         # LLM servers (intent) and selection (state).
         self.servers: Dict[str, Dict[str, Any]] = {}
+        # MCP servers (intent): name -> validated ``[servers.<name>]`` table.
+        # A role's ``[mcps]`` table decides whether a server's tools are on.
+        self.mcp_servers: Dict[str, Dict[str, Any]] = {}
         # None until a first model is selected (auto-selected once one is
         # discovered, see ``commands.base.auto_select``).
         self.active_server: Optional[str] = None
@@ -1156,6 +1201,7 @@ class Config:
         _load_flat_file(self.section_file("debug"), _DEBUG_SPEC, self, self.load_errors,
                         retired=_RETIRED_DEBUG)
         _load_servers_file(self.section_file("servers"), self, self.load_errors)
+        _load_mcp_file(self.section_file("mcp"), self, self.load_errors)
         _load_themes_dir(self.themes_dir(), self, self.load_errors)
         _load_state_file(self._state_file(), self, self.load_errors)
         # ``theme`` left ui.toml for state: a value chosen there (and never
@@ -1453,6 +1499,90 @@ def _valid_routing(server: dict, name: str, where: str, errors: list[str]) -> bo
             errors.append(f"{where}.providers_by_model: '{model_id}' is not in models "
                           "(entry not used)")
     return True
+
+
+def _load_mcp_file(path: Path, config: Config, errors: list[str]) -> None:
+    """Load ``mcp.toml`` (one ``[servers.<name>]`` table per MCP server)."""
+    data = _read_toml(path, errors)
+    if data is None:
+        return
+    for section in data:
+        if section != "servers":
+            errors.append(f"{path.name}: unknown section [{section}]")
+    _load_mcp_servers(config, data, path.name, errors)
+
+
+def _load_mcp_servers(config: Config, data: dict, filename: str,
+                      errors: list[str]) -> None:
+    """Validate and store the MCP servers. Connection only: the role's
+    ``[mcps]`` table decides which of a server's tools, if any, the model sees."""
+    table = data.get("servers")
+    if table is None:
+        return
+    if not isinstance(table, dict):
+        errors.append(f"{filename}: [servers] must be a table")
+        return
+    for name, server in table.items():
+        where = f"{filename}: [servers.{name}]"
+        if not isinstance(server, dict):
+            errors.append(f"{where} must be a table")
+            continue
+        skip = False
+        # The transport selects the shape. Like servers.toml, a table named
+        # after a type implies it; nothing else is guessed.
+        if "type" not in server and name in _MCP_TYPES:
+            server = {**server, "type": name}
+        mcp_type = server.get("type")
+        if mcp_type is None:
+            errors.append(f"{where}.type is required unless the table is named after a "
+                          f"transport ({', '.join(_MCP_TYPES)}); server skipped")
+            skip = True
+        elif mcp_type not in _MCP_TYPES:
+            errors.append(f"{where}.type unknown MCP transport '{mcp_type}' "
+                          f"({', '.join(_MCP_TYPES)}); server skipped")
+            skip = True
+        for key in server:
+            if key not in _MCP_KEYS:
+                errors.append(f"{where} unknown key '{key}'")
+        for key in _MCP_STR_KEYS:
+            if key in server and not isinstance(server[key], str):
+                errors.append(f"{where}.{key} must be a string")
+                skip = True
+        for key in _MCP_LIST_KEYS:
+            if key in server and not _is_str_list(server[key]):
+                errors.append(f"{where}.{key} must be a list of strings")
+                skip = True
+        for key in _MCP_TABLE_KEYS:
+            value = server.get(key)
+            if key in server and not (
+                    isinstance(value, dict)
+                    and all(isinstance(k, str) and isinstance(v, str)
+                            for k, v in value.items())):
+                errors.append(f"{where}.{key} must map names to strings")
+                skip = True
+        if "tool_timeout" in server and (
+                isinstance(server["tool_timeout"], bool)
+                or not isinstance(server["tool_timeout"], (int, float))):
+            errors.append(f"{where}.tool_timeout must be a number of seconds")
+            skip = True
+        if mcp_type == "stdio":
+            if not server.get("command"):
+                errors.append(f"{where}.command is required for stdio servers; server skipped")
+                skip = True
+            if "url" in server:
+                errors.append(f"{where}.url is not used by stdio servers (use command/args)")
+            if "headers" in server:
+                errors.append(f"{where}.headers is not used by stdio servers")
+        elif mcp_type == "http":
+            if not server.get("url"):
+                errors.append(f"{where}.url is required for http servers; server skipped")
+                skip = True
+            for key in ("command", "args", "env"):
+                if key in server:
+                    errors.append(f"{where}.{key} is not used by http servers")
+        if skip:
+            continue
+        config.mcp_servers[name] = dict(server)
 
 
 def _load_themes_dir(directory: Path, config: Config, errors: list[str]) -> None:

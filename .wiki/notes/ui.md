@@ -957,7 +957,7 @@ The package lives in `moka_code/ui/commands/`:
 
 `help`, `clear`, `private`, `reload`, `config`, `edit`, `export`, `import`, `session`,
 `compact`, `exit`, `stop`, `shells`, `terminal`, `debug`, `activity`, `model`, `effort`, `role`,
-`sandbox`, `diff`, `prompt`, `theme`
+`sandbox`, `diff`, `prompt`, `mcp`, `theme`
 
 ### Sandbox (`/sandbox`)
 
@@ -980,6 +980,14 @@ Verb-first command tree (`COMMANDS["sandbox"].subcommands`):
 `SCOPE` and `BASE` use `sandbox_type_completions`, `sandbox_scope_completions`
 and `sandbox_base_completions`. All positional completion comes from the tree,
 not from a hand-rolled `get_completions`.
+
+### MCP (`/mcp`)
+
+A viewer (`commands/mcp.py`): `/mcp` lists each configured server with transport,
+connection state, tool count and the active role's `[mcps]` setting;
+`/mcp <server>` lists that server's tools. `SERVER` completes from
+`mcp.configured_names()`. The file is edited with `/config mcp`. See
+[mcp.md](./mcp.md).
 
 ### Diff review (`/diff`)
 

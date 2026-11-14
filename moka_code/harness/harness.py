@@ -293,7 +293,12 @@ class Harness:
         return bool(getattr(self.role, "require_sandbox", False)) and not self.sandboxed()
 
     def _rebuild_tools(self) -> None:
-        """Build the tool map for the active role and cache its schemas."""
+        """Build the tool map for the active role and cache its schemas.
+
+        Built-ins come from the static registry, bound to the active transport
+        (in-process or sandbox). MCP tools come from the connected servers the
+        role's ``[mcps]`` table enables, each bound to its server's transport.
+        """
         enabled = self.role.enabled_tool_names()
         self.tools_map = {
             name: tool
@@ -302,10 +307,25 @@ class Harness:
             ).items()
             if name in enabled
         }
+        from moka_code import mcp
+
+        self.tools_map.update(mcp.registered_tools(self.role.enabled_mcp_servers()))
         self.tool_schemas = (
             [tool.get_schema() for tool in self.tools_map.values()]
             if self.tools_map else None
         )
+
+    async def ensure_mcp(self) -> None:
+        """Connect/reconnect the configured MCP servers, then rebuild the tool
+        map so their tools join the next request. Failures are recorded per
+        server (``mcp.status()``) and never block the turn."""
+        from moka_code import mcp
+
+        await mcp.ensure_ready()
+        # A partially-built Harness (tests use ``__new__``) has no role or
+        # transport to rebuild against; in the app both always exist.
+        if getattr(self, "role", None) is not None and getattr(self, "transport", None) is not None:
+            self._rebuild_tools()
 
     def _role_notice(self, previous_name: str) -> str:
         """What the model is told when the role changes: the role's own prompt
@@ -1427,6 +1447,7 @@ class Harness:
     async def resume(self) -> AsyncGenerator[events.Event, None]:
         """Carry on a resumed turn: run its unanswered calls (each asks for
         approval again, as its role says), then the loop as after any tools."""
+        await self.ensure_mcp()
         calls = self.pending_tool_calls()
         if not calls:
             yield events.Done()
@@ -1467,6 +1488,11 @@ class Harness:
             yield events.Error(message="No model selected. Pick one with /model.")
             yield events.Done()
             return
+
+        # MCP servers are connected lazily (first turn, or after /reload) so a
+        # slow or broken one never delays startup. Their tools then join the
+        # tool map; a failure is a per-server notice, not a blocked turn.
+        await self.ensure_mcp()
 
         # The user message joins history; every request is built from it.
         extra = {"images": list(attached)} if attached else {}

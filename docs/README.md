@@ -8,6 +8,7 @@ overview; these pages go into more detail.
 | [Getting started](getting-started.md) | You are installing moka and want a first working setup |
 | [Models and providers](models.md) | You need to connect llama.cpp, OpenRouter, DeepSeek, or another server |
 | [Permissions and roles](permissions.md) | You want to control what the model can read, write, and run |
+| [MCP servers](mcp.md) | You want the model to use tools from an MCP server |
 | [Configuration](configuration.md) | You need to find, edit, or reload a setting |
 | [Sandboxes](sandboxes.md) | You want tools to run inside podman, docker, or bubblewrap |
 | [Troubleshooting](troubleshooting.md) | Something does not connect, list models, or start |

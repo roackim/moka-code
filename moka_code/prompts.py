@@ -43,8 +43,8 @@ SEEDED = {"moka-config": """\
 
 Help me configure moka, the terminal chat app you are running in. If I wrote
 what I need below, start there. Otherwise, before reading or changing anything,
-ask me what I want to configure (a sandbox, a prompt, a role, a server, a
-setting or a theme) and what I want it to do.
+ask me what I want to configure (a sandbox, an MCP server, a prompt, a role, a
+server, a setting or a theme) and what I want it to do.
 
 ## Where the configuration lives
 
@@ -55,14 +55,18 @@ setting or a theme) and what I want it to do.
 - `servers.toml`: one `[servers.<name>]` table per server, with a commented
   example per provider. `api_key = "$NAME"` reads the environment variable NAME;
   anything else is the key itself. Prefer `"$NAME"` to pasting a key.
-- `roles/<name>.toml`: a role (description, prompt, color, tools no/ask/yes,
-  technical settings), commented in place.
+- `mcp.toml`: one `[servers.<name>]` table per MCP server. `type = "stdio"`
+  launches a local `command`/`args` (with optional `env`); `type = "http"`
+  reaches a `url` (with optional `headers`). `$NAME` reads the environment.
+- `roles/<name>.toml`: a role (description, prompt, color, technical settings),
+  commented in place. `[tools]` sets the built-in tools no/ask/yes; `[mcps]`
+  sets each MCP server's tools no/ask/yes (unset = no).
 - `themes/<name>.toml`: a color palette, explained in its header.
 - `state.toml` and `projects/*/project.toml` are written by moka: never edit them.
 
 These files explain themselves: read the file and follow its comments. When a
-settings or servers file is missing, ask me to run `/config <section>` (ui,
-context, debug, servers): it writes the commented template.
+settings, servers or MCP file is missing, ask me to run `/config <section>` (ui,
+context, debug, servers, mcp): it writes the commented template.
 
 ## Sandboxes
 
@@ -91,6 +95,45 @@ context, debug, servers): it writes the commented template.
 - Inside a sandbox the config folder is out of reach: if you cannot read it, say
   so and ask me to run `/sandbox stop`.
 
+## MCP servers
+
+- `mcp.toml` in the config folder: one `[servers.<name>]` table per MCP server.
+  The name is yours and is also the prefix of its tools (`<server>__<tool>`).
+- A local server, launched as a subprocess:
+
+  ```toml
+  [servers.filesystem]
+  type    = "stdio"
+  command = "npx"
+  args    = ["-y", "@modelcontextprotocol/server-filesystem", "/home/me"]
+  # env   = { API_TOKEN = "$MCP_TOKEN" }
+  # tool_timeout = 60
+  ```
+
+- A remote server, reached over Streamable HTTP:
+
+  ```toml
+  [servers.remote]
+  type = "http"
+  url  = "https://mcp.example.com/mcp"
+  # headers = { Authorization = "Bearer $TOKEN" }
+  ```
+
+- `type` is `stdio` or `http`; a table named after one may omit it. The allowed
+  keys are exactly: stdio `type`, `command`, `args`, `env`, `tool_timeout`; http
+  `type`, `url`, `headers`, `tool_timeout`. Never invent a key. `$NAME` (or
+  `${NAME}`) reads the environment; prefer it to pasting secrets. `tool_timeout`
+  is seconds for one tool call (default 60).
+- A server's tools stay hidden until a role enables it. In `roles/<name>.toml`,
+  the `[mcps]` table has one line per server, using `no` / `ask` / `yes` (unset
+  = no); that one value covers every tool of the server. Edit the role with
+  `/role edit`, or change the file.
+- `mcp.toml` is structured and never rewritten by moka. If it is missing, ask me
+  to run `/config mcp` and then edit the template it writes.
+- After an edit I run `/reload`. `/mcp` lists servers, their state and tool
+  count; `/mcp <server>` lists that server's tools. A server that fails to start
+  shows as unavailable there with the reason.
+
 ## Prompts
 
 - One prompt per file, `<name>.md` (letters, digits, `_` and `-`). Global:
@@ -111,8 +154,8 @@ context, debug, servers): it writes the commented template.
 - Ask before overwriting or deleting a file.
 - Show what you changed.
 - moka's slash commands are mine to run, not yours: end with the one that
-  applies the change (`/reload` for settings, servers, roles and themes; the
-  `/sandbox` ones above).
+  applies the change (`/reload` for settings, servers, mcp, roles and themes;
+  the `/sandbox` ones above).
 """}
 
 

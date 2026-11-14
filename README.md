@@ -15,6 +15,8 @@ A minimal, opiniated, terminal ai harness made for local LLMs first.
   single-command install with no daemon to manage.
 - **Customizable:** Everything is plain TOML, in ~/.config/moka, and the bundled `!moka-config`
   prompt lets moka configure itself.
+- **Extensible:** Connect MCP servers (stdio or Streamable HTTP) and let a role
+  use their tools, without growing the built-in five. See [MCP servers](docs/mcp.md).
 - **Linux-native:** Built for the terminal, not bolted onto an IDE.
 - **No command filtering** Command filtering cannot be done reliably. The boundary belongs to the sandbox.
 

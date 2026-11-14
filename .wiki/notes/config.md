@@ -19,7 +19,8 @@ activity panel. Nothing else reads the old location.
 | `ui.toml` | theme, padding, fps; then `[markdown_styles.*]` / `[syntax_highlight.*]` | flat keys, then tables |
 | `context.toml` | context building | flat keys |
 | `debug.toml` | debug logging | flat keys |
-| `servers.toml` | one `[servers.<name>]` table per server | tables |
+| `servers.toml` | one `[servers.<name>]` table per model server | tables |
+| `mcp.toml` | one `[servers.<name>]` table per MCP server | tables |
 | `themes/<name>.toml` | one palette per file; file name is the theme name | palette keys |
 | `roles/<name>.toml` | one role per file; file name is the role name | role body |
 | `sandboxes/<name>.toml` | one global sandbox per file; file name is the sandbox name | sandbox body |

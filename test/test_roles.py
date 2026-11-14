@@ -18,6 +18,12 @@ from moka_code.harness.roles import (
 import moka_code.harness.roles as roles_module
 
 
+def _add_root_scalar(template: str, line: str) -> str:
+    """Insert a top-level key before the first table (TOML tables come last)."""
+    index = template.index("[")
+    return template[:index] + line.rstrip("\n") + "\n\n" + template[index:]
+
+
 def test_agent_role_enables_everything():
     role = agent_role()
 
@@ -173,15 +179,13 @@ def test_a_new_tool_is_listed_disabled_in_existing_role_files(tmp_path, monkeypa
 
     ensure_roles_dir()
 
-    assert path.read_text(encoding="utf-8") == (
-        'description = "mine"\n'
-        'read  = "yes"\n'
-        'write = "ask"\n'
-        'edit  = "ask"\n'
-        'bash  = "yes"\n'
-        'ask   = "no"\n'
-        '\n# tool_timeout = 30\n'
-    )
+    text = path.read_text(encoding="utf-8")
+    assert 'description = "mine"' in text
+    assert "# tool_timeout = 30" in text
+    assert "[tools]" in text and "[mcps]" in text
+    assert text.index('description = "mine"') < text.index("[tools]")
+    assert 'read  = "yes"' in text
+    assert 'ask   = "no"' in text
     assert load_role("mine").permission_for("ask") == "no"
     migrated = path.read_text(encoding="utf-8")
     ensure_roles_dir()
@@ -243,22 +247,22 @@ def test_tool_timeout(tmp_path, monkeypatch):
     (tmp_path / "roles" / "t.toml").write_text(template, encoding="utf-8")
     assert load_role("t").tool_timeout == 300
 
-    (tmp_path / "roles" / "t.toml").write_text(template + "tool_timeout = 900\n", encoding="utf-8")
+    (tmp_path / "roles" / "t.toml").write_text(_add_root_scalar(template, "tool_timeout = 900"), encoding="utf-8")
     loaded = load_role("t")
     assert loaded.tool_timeout == 900 and "tool_timeout" not in loaded.tools
     assert validate_roles() == []
-    (tmp_path / "roles" / "t.toml").write_text(template + "tool_timeout = 2.5\n", encoding="utf-8")
+    (tmp_path / "roles" / "t.toml").write_text(_add_root_scalar(template, "tool_timeout = 2.5"), encoding="utf-8")
     assert load_role("t").tool_timeout == 2.5
 
     for no_limit in ("0", "-1"):                  # 0 or less: no limit
         (tmp_path / "roles" / "t.toml").write_text(
-            template + f"tool_timeout = {no_limit}\n", encoding="utf-8")
+            _add_root_scalar(template, f"tool_timeout = {no_limit}"), encoding="utf-8")
         assert load_role("t").tool_timeout == int(no_limit)
     assert "0 or -1 = no limit" in template
 
     for bad in ("true", '"long"', "[1]"):
         (tmp_path / "roles" / "t.toml").write_text(
-            template + f"tool_timeout = {bad}\n", encoding="utf-8")
+            _add_root_scalar(template, f"tool_timeout = {bad}"), encoding="utf-8")
         with pytest.raises(ValueError, match="tool_timeout"):
             load_role("t")
 
@@ -288,7 +292,7 @@ def test_preserve_thinking(tmp_path, monkeypatch):
             load_role("t")
 
     (tmp_path / "roles" / "t.toml").write_text(
-        template + "replay_reasoning_depth = 0\n", encoding="utf-8")
+        _add_root_scalar(template, "replay_reasoning_depth = 0"), encoding="utf-8")
     with pytest.raises(ValueError, match="replay_reasoning_depth is replaced by preserve_thinking"):
         load_role("t")
 
@@ -304,11 +308,13 @@ def test_role_template_layout_and_uncommentable_settings():
 
     assert template.startswith("## Moka role: agent\n")
     assert template.index("## ── Role ") < template.index("description = ")
+    assert template.index("## ── Technical settings ") < template.index("[tools]")
     assert template.index("## ── Tools ") < template.index('read = "yes"')
     assert 'read = "yes"\nbash = "ask"\n' in template
-    assert template.index("## ── Technical settings ") > template.index('bash = "ask"')
+    assert template.index("## ── MCP servers ") > template.index("[tools]")
     assert [l for l in template.splitlines() if l.startswith("# ")] == [
-        '# color = "USER"', "# require_sandbox = true", "# tool_timeout = 300"]
+        '# color = "USER"', "# require_sandbox = true", "# tool_timeout = 300",
+        '# github = "ask"']
     uncommented = re.sub(r"^# ", "", template, flags=re.M)
     loaded = toml.loads(uncommented)
     assert loaded["require_sandbox"] is True and loaded["preserve_thinking"] is True

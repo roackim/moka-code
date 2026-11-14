@@ -58,6 +58,7 @@ from .sandbox import (
     sandbox_start,
 )
 from .diff import changed_descriptions, changed_files, diff_command, live_description
+from .mcp import COMMAND as MCP_COMMAND
 from .prompts import PROMPT_SUBCOMMANDS, prompt_command
 from .themes import theme_command
 
@@ -186,6 +187,7 @@ COMMANDS: Dict[str, Command] = {
                                           descriptions=changed_descriptions, ordered=True)]),
     "prompt":       Command("prompt", "Edit a !prompt file (opens a picker), or create, path, remove",
                             handler=prompt_command, subcommands=PROMPT_SUBCOMMANDS),
+    "mcp":          MCP_COMMAND,
     "theme":        theme_command(reload_and_apply),
 }
 

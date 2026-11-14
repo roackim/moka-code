@@ -39,7 +39,8 @@ Roles live in:
 A role file contains:
 
 - `description` and `prompt`
-- one line per tool, set to `no`, `ask`, or `yes`
+- a `[tools]` table: one line per built-in tool, set to `no`, `ask`, or `yes`
+- a `[mcps]` table: one line per MCP server, with the same values (unset = `no`)
 - optional `require_sandbox`, `preserve_thinking`, `tool_timeout`, and `color`
 
 The meaning of each tool value is:
@@ -53,12 +54,20 @@ The meaning of each tool value is:
 For example:
 
 ```toml
+[tools]
 read  = "yes"
 write = "ask"
 edit  = "ask"
 bash  = "ask"
 ask   = "yes"
+
+[mcps]
+filesystem = "ask"   # every tool from this MCP server asks first
+github     = "no"
 ```
+
+MCP tools are named `<server>__<tool>`; the server's one `[mcps]` line covers
+all of them. See [MCP servers](mcp.md).
 
 ## Managing roles
 

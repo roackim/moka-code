@@ -27,6 +27,7 @@ Use `/config` to open a picker, or pass a section name directly:
 
 ```text
 /config servers
+/config mcp
 /config ui
 /config context
 /config debug
@@ -45,6 +46,7 @@ moka never applies config changes in the background.
 | Section | File | What it controls |
 |---|---|---|
 | `servers` | `servers.toml` | Model servers, models, API keys, provider routing |
+| `mcp` | `mcp.toml` | MCP servers (stdio and Streamable HTTP) |
 | `ui` | `ui.toml` | Transcript, layout, status bar, streaming, markdown and code styles |
 | `context` | `context.toml` | `@` file picker, diffs, image size, session retention, compaction |
 | `debug` | `debug.toml` | Debug logging |

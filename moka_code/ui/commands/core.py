@@ -147,6 +147,11 @@ def reload_and_apply(ui: ChatUIProtocol, title: str | None = None) -> None:
     errors += _reapply_role(ui)
     errors += _reapply_sandbox(ui)
     reapply_endpoint(ui)
+    # MCP tools are re-discovered from the edited mcp.toml; the refresh is
+    # async, so it runs in the background and the next turn rebuilds the tools.
+    from moka_code import mcp
+
+    mcp.request_refresh()
     _report_reload(ui, errors, title)
 
 

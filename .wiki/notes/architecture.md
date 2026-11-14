@@ -71,7 +71,7 @@ User types → InputComponent
 ## Config
 
 `~/.config/moka/` — single-concern files (`ui.toml`, `context.toml`,
-`debug.toml`, `servers.toml`), one role per
+`debug.toml`, `servers.toml`, `mcp.toml`), one role per
 file at `roles/<name>.toml`, one theme per file at `themes/<name>.toml`, sandboxes one per file (`sandboxes/<name>.toml` global, `projects/<dir>_<hash>/sandboxes/` local),
 and a disposable `state.toml`; global config loaded by `settings.py`, project
 files by `projects.py`. See [notes/config.md](./config.md).
@@ -93,6 +93,7 @@ files by `projects.py`. See [notes/config.md](./config.md).
 moka_code/
   worker.py              ← Stdlib-only tool bodies (read/write/edit/bash) + patch parser + JSONL worker protocol
   sandbox.py             ← Launcher + SandboxProcess/SandboxTransport (container/bwrap argv, preflight, build)
+  mcp.py                 ← MCP clients (stdio / Streamable HTTP), discovery, McpTransport, manager
   projects.py            ← Sandbox registry: one file per sandbox, global + local (~/.config/moka/sandboxes, projects/<dir>_<hash>/)
   main.py                ← Async launcher
   harness/

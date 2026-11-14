@@ -24,6 +24,12 @@ Five tools, declared in `tools.py` (schemas); the first four have bodies in `wor
 | `bash` | Run a shell command in the workspace |
 | `ask` | Ask the user a question (answered by the harness, never by a transport) |
 
+**MCP tools.** Configured MCP servers add tools at runtime as
+`<server>__<tool>`; they are ordinary `RegisteredTool`s bound to that server's
+`McpTransport`, so the registry/permission/execution path is unchanged. A role
+enables a server's whole tool set with one `[mcps]` line (see
+[mcp.md](./mcp.md)). MCP servers run on the host, outside the sandbox.
+
 `ask` (`harness/ask.py`) takes `question`, `options` (up to 6 suggested answers;
 the user may write their own), `multiple` and a short `label`. It needs no
 approval (a role's `ask` and `yes` both enable it; `no` hides it). In the tool
@@ -147,10 +153,12 @@ async queue the UI uses to deliver the user's answer on the `ask` path.
 ### Role files
 
 One file per role at `<config>/roles/<name>.toml`. The file name is the role
-name; the body is `description` / `prompt` plus one `<tool> = "no" | "ask" |
-"yes"` entry per registered tool. The file lists every available tool so the
-user can comment/uncomment or edit values — the "all options visible" style of
-`servers.toml`.
+name; the body is `description` / `prompt` / technical scalars, then a
+`[tools]` table with one `<tool> = "no" | "ask" | "yes"` entry per built-in
+tool and a `[mcps]` table with one line per configured MCP server (unset = no).
+The file lists every available built-in tool so the user can comment/uncomment
+or edit values — the "all options visible" style of `servers.toml`. Old flat
+role files are migrated on startup.
 
 Built-in roles (`agent`, `chat`) are seeded as files on first run (an empty
 roles folder) by `ensure_roles_dir()`. A role is its file: there is no code

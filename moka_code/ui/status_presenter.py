@@ -145,6 +145,11 @@ def notices(agent) -> list[tuple[str, str]]:
     if callable(stale) and stale():
         warnings.append(f"sandbox {sandbox_name}: its image is older than its dockerfile "
                         f"→ /sandbox build {sandbox_name}")
+    from moka_code import mcp
+    for record in mcp.status():
+        if record.get("error"):
+            warnings.append(f"MCP server {record['name']} unavailable: "
+                            f"{record['error']} → /config mcp")
     return [("error", text) for text in errors] + [("warning", text) for text in warnings]
 
 

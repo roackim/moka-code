@@ -176,6 +176,8 @@ def test_the_config_prompt_names_every_sandbox_type_key_and_config_file():
         assert f"`{name}`" in text, name
     for filename in settings.CONFIG_FILES.values():
         assert f"`{filename}`" in text, filename
+    for key in settings._MCP_KEYS:
+        assert f"`{key}`" in text, key
 
 
 def test_ensure_prompt_file_creates_a_starter_once_in_the_scope(workspace):
