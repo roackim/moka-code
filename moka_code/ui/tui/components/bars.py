@@ -481,19 +481,32 @@ class NoticeBand(Component):
         return len(self._lines())
 
     @staticmethod
-    def fit(text: str, width: int) -> str:
+    def _prefix(text: str, room: int) -> tuple[str, bool]:
+        """The longest start of ``text`` within ``room`` columns, and whether
+        that is all of it. Measures at most ``room`` columns, so a huge line (a
+        server's whole error body) costs no more than a short one: this runs on
+        every frame."""
+        used = 0
+        for index, char in enumerate(text):
+            used += max(0, display_width(char))
+            if used > room:
+                return text[:index], False
+        return text, True
+
+    @classmethod
+    def fit(cls, text: str, width: int) -> str:
         """``text`` in ``width`` columns. Too long, a ``problem → fix`` line
         shortens the problem (``…``) and keeps the fix whole: it is what to do."""
-        if display_width(text) <= width:
-            return text
+        whole, fits = cls._prefix(text, width)
+        if fits:
+            return whole
         head, sep, fix = text.rpartition(" → ")
         tail = sep + fix
-        room = width - display_width(tail) - 1
-        if not sep or room < 12:
+        tail_fits = sep and cls._prefix(tail, width)[1]
+        room = width - display_width(tail) - 1 if tail_fits else -1
+        if room < 12:
             head, tail, room = text, "", width - 1
-        while head and display_width(head) > room:
-            head = head[:-1]
-        return head.rstrip() + "…" + tail
+        return cls._prefix(head, room)[0].rstrip() + "…" + tail
 
     def render(self, buffer: Buffer):
         mark = len(self.DISMISS)
