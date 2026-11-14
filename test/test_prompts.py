@@ -141,16 +141,25 @@ def test_expand_reports_what_is_wrong(workspace, text, message):
         prompts.expand(text, workspace)
 
 
-def test_the_config_prompt_is_seeded_per_file_and_never_overwritten(workspace):
-    """2026-10-29: ``!moka-config`` ships as a global file, written whenever it is
-    missing (a prompts folder that already exists gets it too); an existing file
-    is the user's."""
+def test_the_config_prompt_is_seeded_and_kept_in_sync(workspace):
+    """``!moka-config`` ships as a global file. It is written when missing and
+    rewritten when its content no longer matches the bundled text, so an
+    upgrade never leaves an outdated config guide behind. User-created prompts
+    are never touched."""
     _write(_glob(workspace), "hello", "Hi")
     [path] = prompts.seed_global_prompts()
     assert path == _glob(workspace) / "moka-config.md"
-    path.write_text("mine")
-    assert prompts.seed_global_prompts() == []
-    assert path.read_text() == "mine"
+    assert path.read_text() == prompts.SEEDED["moka-config"]
+    assert prompts.seed_global_prompts() == []          # already current
+
+    path.write_text("an old bundled seed", encoding="utf-8")
+    assert prompts.seed_global_prompts() == [path]      # updated automatically
+    assert path.read_text() == prompts.SEEDED["moka-config"]
+
+    _write(_glob(workspace), "mine", "my own prompt")
+    prompts.seed_global_prompts()
+    assert (_glob(workspace) / "mine.md").read_text() == "my own prompt"
+
     path.unlink()
     assert prompts.seed_global_prompts() == [path]
 

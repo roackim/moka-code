@@ -37,7 +37,7 @@ _STARTER = """\
 Review {moka:file}, focusing on {moka:focus}.
 """
 
-#: The global prompts written when missing (``seed_global_prompts``).
+#: The bundled global prompts, kept in sync by ``seed_global_prompts``.
 SEEDED = {"moka-config": """\
 # Configure moka: sandboxes, prompts, roles, servers, settings
 
@@ -344,18 +344,28 @@ def expand(text: str, workspace: str | Path,
 # --- creating -------------------------------------------------------------------
 
 def seed_global_prompts() -> list[Path]:
-    """Write each ``SEEDED`` prompt missing from the global folder; an existing
-    file is the user's and is never touched. Returns the paths written."""
+    """Keep each bundled ``SEEDED`` prompt in sync with its code text.
+
+    A missing file is written; a file whose content differs from the bundled
+    text (an older seed) is rewritten, so ``!moka-config`` never goes stale
+    after an upgrade. Local prompts and user-created prompt names are never
+    touched. Returns the paths written or updated.
+    """
     directory = settings.get_config_dir() / PROMPTS_DIRNAME
-    written = []
+    changed = []
     for name, text in SEEDED.items():
         path = directory / f"{name}.md"
         if path.exists():
-            continue
+            try:
+                current = path.read_text(encoding="utf-8")
+            except OSError:
+                current = None
+            if current == text:
+                continue
         directory.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
-        written.append(path)
-    return written
+        changed.append(path)
+    return changed
 
 
 def ensure_prompt_file(name: str, scope: str, workspace: str | Path) -> Path:
