@@ -169,11 +169,38 @@ def _refresh_notices(app) -> None:
         if (level, text) not in current:
             app.activity(f"{stamp} fixed: {text}")
     app._notices = current
+    draw_band(app)
+
+
+_LEVEL_COLORS = {"error": "ERROR", "warning": "WARNING", "success": "SUCCESS"}
+
+
+def draw_band(app) -> None:
+    """Put on the band, top down: private mode, running jobs, posted messages
+    (newest first), then the live problems last computed (``app._notices``).
+    Cheap (no state is read): the tick calls it while a job runs."""
+    from moka_code.ui.tui.components.bars import Notice
+
+    band = getattr(app, "notice_band", None)
+    if band is None:
+        return
     band.max_lines = settings.config.ui_notice_lines
-    lines = [(text, theme.ERROR if level == "error" else theme.WARNING)
-             for level, text in current]
+    lines = []
     if getattr(app.agent, "private", False):
-        lines.insert(0, ("private · nothing is saved · /clear to leave", theme.USER))
+        lines.append(Notice("private · nothing is saved · /clear to leave", theme.USER))
+    feed = getattr(app, "notice_feed", None)
+    if feed is not None:
+        now = time.monotonic()
+        feed.expire(now)
+        lines += [Notice(job.line(now), theme.FOCUSED, dismissible=False) for job in feed.jobs]
+        for entry in feed.posted:
+            lines.append(Notice(
+                entry.line, getattr(theme, _LEVEL_COLORS.get(entry.level, "WARNING")),
+                on_click=lambda entry=entry: app.show_popup(entry.level, entry.text),
+                on_dismiss=lambda entry=entry: feed.dismiss(entry)))
+    lines += [Notice(text, theme.ERROR if level == "error" else theme.WARNING,
+                     on_click=lambda level=level, text=text: app.show_popup(level, text))
+              for level, text in getattr(app, "_notices", [])]
     band.set_notices(lines)
 
 

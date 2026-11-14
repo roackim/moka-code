@@ -52,10 +52,13 @@ def test_sandbox_tree_completes_subcommands_then_nested_args(monkeypatch, tmp_pa
     comp.update("/sandbox ", len("/sandbox "))
     assert set(comp.menu.items) == {
         "edit", "path", "create", "remove", "copy", "build", "start", "restart",
-        "stop", "terminal", "init"}
+        "stop", "terminal"}
 
-    comp.update("/sandbox init ", len("/sandbox init "))
+    comp.update("/sandbox edit ", len("/sandbox edit "))
     assert set(comp.menu.items) == {"dev", "tight"}
+
+    comp.update("/sandbox edit dev ", len("/sandbox edit dev "))
+    assert comp.menu.items == ["runcfg", "image"]
 
     comp.update("/sandbox start ", len("/sandbox start "))
     assert set(comp.menu.items) == {"dev", "tight"}

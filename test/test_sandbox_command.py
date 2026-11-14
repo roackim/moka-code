@@ -93,6 +93,15 @@ def _run(ui, args):
     asyncio.run(_sandbox_cmd().execute(ui, args))
 
 
+def _run_background(ui, args):
+    """Run a command and the background tasks it starts (a build) to the end."""
+    async def scenario():
+        await _sandbox_cmd().execute(ui, args)
+        await asyncio.gather(*[t for t in asyncio.all_tasks() if t is not asyncio.current_task()])
+
+    asyncio.run(scenario())
+
+
 # --- tree + completion -----------------------------------------------------
 
 def test_sandbox_is_a_command_tree():
@@ -101,7 +110,7 @@ def test_sandbox_is_a_command_tree():
     assert cmd.has_subcommands()
     assert set(cmd.get_completions(0)) == {
         "edit", "path", "create", "remove", "copy", "build", "start", "restart",
-        "stop", "terminal", "init"}
+        "stop", "terminal"}
 
 
 def test_start_completes_sandbox_ids_and_descriptions(monkeypatch, tmp_path):
@@ -117,15 +126,14 @@ def test_start_completes_sandbox_ids_and_descriptions(monkeypatch, tmp_path):
     assert start.get_descriptions(0)["tight"] == "local · bubblewrap"
 
 
-def test_init_completes_names_then_bases(monkeypatch, tmp_path):
+def test_edit_and_path_complete_names_then_the_file(monkeypatch, tmp_path):
     _workdir(tmp_path, monkeypatch)
     cmd = _sandbox_cmd()
 
-    init, offset = cmd.resolve_command(["init"])
-
-    assert offset == 1
-    assert init.get_completions(0) == ["dev", "tight"]
-    assert init.get_completions(1) == ["python", "debian", "ubuntu"]
+    for verb in ("edit", "path"):
+        sub, _ = cmd.resolve_command([verb])
+        assert sub.get_completions(0) == ["dev", "tight"]
+        assert sub.get_completions(1) == ["runcfg", "image"]
 
 
 def test_create_and_copy_complete_scopes_and_types(monkeypatch, tmp_path):
@@ -149,7 +157,7 @@ def test_subcommand_descriptions_exposed():
 
     assert set(descriptions) == {
         "edit", "path", "create", "remove", "copy", "build", "start", "restart",
-        "stop", "terminal", "init"}
+        "stop", "terminal"}
     assert "sandbox" in descriptions["start"].lower() or descriptions["start"]
 
 
@@ -197,14 +205,80 @@ def test_unknown_subcommand_lists_options(tmp_path):
 
 def test_edit_opens_project_file(tmp_path, monkeypatch):
     called = []
-    async def _open(ui, name=None):
-        called.append(name)
+    async def _open(ui, name=None, which="runcfg"):
+        called.append((name, which))
 
     monkeypatch.setattr("moka_code.ui.commands.sandbox.open_project_sandbox", _open)
     ui = _UI(tmp_path)
     _run(ui, ["edit"])
     _run(ui, ["edit", "dev"])
-    assert called == [None, "dev"]
+    _run(ui, ["edit", "dev", "image"])
+    _run(ui, ["edit", "dev", "runcfg"])
+    _run(ui, ["edit", "dev", "nope"])
+    assert called == [(None, "runcfg"), ("dev", "runcfg"), ("dev", "image"), ("dev", "runcfg")]
+    assert "Usage: /sandbox edit [name] [runcfg|image]" in ui.chat_history_panel.messages[-1]
+
+
+def _editor(monkeypatch):
+    opened = []
+
+    async def _open(ui, path):
+        opened.append(path)
+
+    monkeypatch.setattr("moka_code.ui.external_editor.open_editor", _open)
+    monkeypatch.setattr("moka_code.ui.external_editor.resolve_editor", lambda: "vi")
+    return opened
+
+
+def test_edit_image_writes_the_starter_once_and_opens_it(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    opened = _editor(monkeypatch)
+    ui = _UI(workspace)
+    build = projects.scope_dir("local", workspace) / "Containerfile"   # its dockerfile key
+
+    _run(ui, ["edit", "dev", "image"])
+    assert opened == [build]
+    assert build.read_text().startswith("# Builds the image of sandbox dev")
+    assert "Wrote a starter Containerfile" in ui.chat_history_panel.messages[-1]
+
+    build.write_text("FROM mine\n")
+    _run(ui, ["edit", "dev", "image"])
+    assert build.read_text() == "FROM mine\n"          # never overwritten
+    assert ui.agent.specs == []                         # nothing re-applied or built
+
+
+def test_edit_image_without_a_dockerfile_key_says_to_add_it(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    directory = projects.scope_dir("local", workspace)
+    (directory / "bare.toml").write_text('type = "docker"\nimage = "img"\n', encoding="utf-8")
+    opened = _editor(monkeypatch)
+    ui = _UI(workspace)
+
+    _run(ui, ["edit", "bare", "image"])
+
+    assert opened == [directory / "bare.Dockerfile"]
+    assert 'add dockerfile = "bare.Dockerfile"' in ui.chat_history_panel.messages[-1]
+
+
+def test_edit_image_of_bubblewrap_is_refused(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    opened = _editor(monkeypatch)
+    ui = _UI(workspace)
+
+    _run(ui, ["edit", "tight", "image"])
+
+    assert opened == []
+    assert "no image to edit" in ui.chat_history_panel.messages[-1]
+
+
+def test_path_image_prints_the_build_file(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    ui = _UI(workspace)
+
+    _run(ui, ["path", "dev", "image"])
+    assert str(projects.scope_dir("local", workspace) / "Containerfile") in ui.chat_history_panel.messages[-1]
+    _run(ui, ["path", "tight", "image"])
+    assert "has no image" in ui.chat_history_panel.messages[-1]
 
 
 def test_path_prints_the_active_sandbox_file(monkeypatch, tmp_path):
@@ -335,7 +409,7 @@ def test_build_runs_without_activating(monkeypatch, tmp_path):
 
     monkeypatch.setattr(sandbox, "run_build", fake_build)
     ui = _UI(workspace)
-    _run(ui, ["build", "dev"])
+    _run_background(ui, ["build", "dev"])
 
     assert calls and calls[0][0] == "podman"
     directory = projects.scope_dir("local", workspace)
@@ -351,12 +425,47 @@ def test_build_failure_reports(monkeypatch, tmp_path):
     monkeypatch.setattr(sandbox, "runtime_available", lambda spec: True)
 
     async def failing(command, cwd=None, on_output=None):
+        on_output("STEP 3/5: RUN dotnet restore")
+        on_output("error NU1301: Unable to load the service index")
+        on_output("Error: building at STEP 3/5: exit status 1")
+        on_output("")
         return 2
 
     monkeypatch.setattr(sandbox, "run_build", failing)
     ui = _UI(workspace)
-    _run(ui, ["build", "dev"])
-    assert "build failed" in ui.chat_history_panel.messages[-1].lower()
+    _run_background(ui, ["build", "dev"])
+    text = ui.chat_history_panel.messages[-1]
+    head = text.splitlines()[0]
+    # The band line names the sandbox, the exit, the likely reason and the fix;
+    # the end of the log is behind the click.
+    assert head == ("build dev failed (exit 2): error NU1301: Unable to load the service index "
+                    "→ /sandbox edit dev image")
+    assert "Error: building at STEP 3/5" in text        # the full tail, behind the click
+
+
+def test_build_runs_as_a_job_and_says_when_it_is_done(monkeypatch, tmp_path):
+    workspace = _workdir(tmp_path, monkeypatch)
+    monkeypatch.setattr(sandbox, "runtime_available", lambda spec: True)
+    from moka_code.ui.notice_feed import NoticeFeed
+
+    seen = []
+
+    async def fake_build(command, cwd=None, on_output=None):
+        on_output("STEP 1/2: FROM python")
+        seen.append([job.line(0) for job in ui.notice_feed.jobs])
+        return 0
+
+    monkeypatch.setattr(sandbox, "run_build", fake_build)
+    ui = _UI(workspace)
+    ui.notice_feed = NoticeFeed()
+    ui.start_job = ui.notice_feed.start
+    ui.end_job = ui.notice_feed.finish
+    _run_background(ui, ["build", "dev"])
+
+    assert len(seen[0]) == 1 and "building dev" in seen[0][0]
+    assert seen[0][0].endswith("STEP 1/2: FROM python")
+    assert ui.notice_feed.jobs == []
+    assert ui.chat_history_panel.messages[-1].startswith("built dev in 0s (image img)")
 
 
 def test_build_requires_id(monkeypatch, tmp_path):
@@ -364,55 +473,6 @@ def test_build_requires_id(monkeypatch, tmp_path):
     ui = _UI(workspace)
     _run(ui, ["build"])
     assert "Usage: /sandbox build" in ui.chat_history_panel.messages[-1]
-
-
-# --- init / quit -----------------------------------------------------------
-
-def test_init_writes_a_containerfile_next_to_the_sandbox(monkeypatch, tmp_path):
-    workspace = _workdir(tmp_path, monkeypatch)
-    ui = _UI(workspace)
-    _run(ui, ["init", "dev", "debian"])
-    path = projects.scope_dir("local", workspace) / "dev.Containerfile"
-    text = path.read_text()
-    assert "FROM debian:stable-slim" in text
-    assert "install -y --no-install-recommends python3" in text
-    assert "WORKDIR /workspace" in text
-    assert "Wrote dev.Containerfile" in ui.chat_history_panel.messages[-1]
-    assert not (workspace / "Containerfile").exists()
-
-
-def test_init_docker_writes_dockerfile(monkeypatch, tmp_path):
-    workspace = _workdir(tmp_path, monkeypatch)
-    projects.create_sandbox(workspace, "local", "docker", "dk")
-    ui = _UI(workspace)
-    _run(ui, ["init", "dk"])
-    path = projects.scope_dir("local", workspace) / "dk.Dockerfile"
-    assert path.read_text().startswith("# Built by moka")
-    assert "FROM python:3.12-slim" in path.read_text()
-
-
-def test_init_rejects_bubblewrap(monkeypatch, tmp_path):
-    workspace = _workdir(tmp_path, monkeypatch)
-    ui = _UI(workspace)
-    _run(ui, ["init", "tight"])
-    assert "needs a podman or docker sandbox" in ui.chat_history_panel.messages[-1]
-
-
-def test_init_unknown_sandbox(monkeypatch, tmp_path):
-    workspace = _workdir(tmp_path, monkeypatch)
-    ui = _UI(workspace)
-    _run(ui, ["init", "ghost"])
-    assert "Unknown sandbox 'ghost'" in ui.chat_history_panel.messages[-1]
-
-
-def test_init_refuses_overwrite(monkeypatch, tmp_path):
-    workspace = _workdir(tmp_path, monkeypatch)
-    existing = projects.scope_dir("local", workspace) / "dev.Containerfile"
-    existing.write_text("FROM x\n")
-    ui = _UI(workspace)
-    _run(ui, ["init", "dev"])
-    assert "already exists" in ui.chat_history_panel.messages[-1]
-    assert existing.read_text() == "FROM x\n"
 
 
 # --- create / remove / copy ------------------------------------------------

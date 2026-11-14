@@ -1,5 +1,5 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Sequence
 
 from moka_code.ui.tui.buffer import Buffer
@@ -417,70 +417,112 @@ class ActionBar(Component):
             x = end
 
 
+@dataclass(frozen=True)
+class Notice:
+    """One notice-band line. ``on_click``: a click on its text (e.g. open the
+    full message); ``on_dismiss``: its ``✕`` (else it is hidden until no longer
+    given); ``dismissible`` False: no ``✕`` (a running job)."""
+    text: str
+    color: Any
+    on_click: Optional[Callable[[], None]] = field(default=None, compare=False)
+    on_dismiss: Optional[Callable[[], None]] = field(default=None, compare=False)
+    dismissible: bool = True
+
+
 class NoticeBand(Component):
     """Lines on a solid color, one per notice, above everything else.
 
     Solid color is drawn as the color in the foreground, reversed: the text
     then takes the terminal's own background, whatever the theme.
 
-    ``set_notices`` takes ``(text, color)`` pairs; the band is as tall as the
-    notices, up to ``max_lines`` (the last line then says how many are hidden
-    and where they are). No notices: zero rows.
+    ``set_notices`` takes ``Notice``s (or ``(text, color)`` pairs); the band is
+    as tall as the notices, up to ``max_lines`` (the last line then says how
+    many are hidden; a click on it calls ``on_more``). No notices: zero rows.
 
-    Each notice ends with a ``✕``: a click on it hides that notice until it
-    is no longer given (fixed), so it shows again if it comes back.
+    A dismissible notice ends with a ``✕``: a click on it calls its
+    ``on_dismiss``, or hides it until it is no longer given (fixed), so it shows
+    again if it comes back. A click on its text calls its ``on_click``.
     """
 
     DISMISS = " ✕ "
 
     def __init__(self, max_lines: int = 2, more: str = "+{n} more", id: Optional[str] = None):
         super().__init__(id)
-        self.notices: list[tuple[str, Any]] = []
+        self.notices: list[Notice] = []
         self.dismissed: set[str] = set()
-        self._given: list[tuple[str, Any]] = []
+        self._given: list[Notice] = []
         self.max_lines = max_lines
         self.more = more
+        self.on_more: Optional[Callable[[], None]] = None
 
-    def set_notices(self, notices: Sequence[tuple[str, Any]]):
-        self._given = list(notices)
-        self.dismissed &= {text for text, _color in self._given}
-        notices = [notice for notice in self._given if notice[0] not in self.dismissed]
-        if notices != self.notices:
-            self.notices = notices
+    def set_notices(self, notices: Sequence[Any]):
+        self._given = [n if isinstance(n, Notice) else Notice(*n) for n in notices]
+        self.dismissed &= {notice.text for notice in self._given}
+        notices = [notice for notice in self._given if notice.text not in self.dismissed]
+        changed = notices != self.notices
+        self.notices = notices          # always: the callbacks may be new
+        if changed:
             self.mark_changed()
             self.mark_layout_changed()
 
-    def _lines(self) -> list[tuple[str, Any, bool]]:
-        """``(text, color, dismissible)`` per row."""
+    def _lines(self) -> list[Notice]:
+        """One ``Notice`` per row; a ``+N more`` row is a non-dismissible one
+        without callbacks."""
         limit = max(1, self.max_lines)
         if len(self.notices) <= limit:
-            return [(text, color, True) for text, color in self.notices]
-        shown = [(text, color, True) for text, color in self.notices[:limit - 1]]
+            return list(self.notices)
+        shown = self.notices[:limit - 1]
         hidden = len(self.notices) - len(shown)
-        return shown + [(self.more.format(n=hidden), self.notices[limit - 1][1], False)]
+        more = Notice(self.more.format(n=hidden), self.notices[limit - 1].color,
+                      on_click=self.on_more, dismissible=False)
+        return shown + [more]
 
     def get_preferred_height(self, width: int) -> int:
         return len(self._lines())
 
+    @staticmethod
+    def fit(text: str, width: int) -> str:
+        """``text`` in ``width`` columns. Too long, a ``problem → fix`` line
+        shortens the problem (``…``) and keeps the fix whole: it is what to do."""
+        if display_width(text) <= width:
+            return text
+        head, sep, fix = text.rpartition(" → ")
+        tail = sep + fix
+        room = width - display_width(tail) - 1
+        if not sep or room < 12:
+            head, tail, room = text, "", width - 1
+        while head and display_width(head) > room:
+            head = head[:-1]
+        return head.rstrip() + "…" + tail
+
     def render(self, buffer: Buffer):
         mark = len(self.DISMISS)
-        for row, (text, color, dismissible) in enumerate(self._lines()[:self.height]):
-            line = f" {text}".ljust(self.width)
-            if dismissible and self.width > mark:
-                line = line[:self.width - mark] + self.DISMISS
-            buffer.write_str(self.x, self.y + row, line, fg=color, reverse=True,
+        for row, notice in enumerate(self._lines()[:self.height]):
+            room = self.width - 1 - (mark if notice.dismissible and self.width > mark else 0)
+            line = f" {self.fit(notice.text, max(1, room))}"
+            line += " " * max(0, self.width - display_width(line))
+            if notice.dismissible and self.width > mark:
+                line = line[:len(line) - mark] + self.DISMISS
+            buffer.write_str(self.x, self.y + row, line, fg=notice.color, reverse=True,
                              max_width=self.width)
 
     def handle_input(self, event: Any) -> bool:
-        """A click on a notice's ``✕`` hides it; any click on the band stops there."""
+        """A click on a notice's ``✕`` dismisses it, on its text runs its
+        ``on_click``; any click on the band stops there."""
         if not (isinstance(event, MouseEvent) and event.pressed and not event.drag
                 and self.x <= event.x < self.x + self.width
                 and self.y <= event.y < self.y + self.height):
             return False
         lines = self._lines()
         row = event.y - self.y
-        if (event.button == 0 and row < len(lines) and lines[row][2]
-                and event.x >= self.x + self.width - len(self.DISMISS)):
-            self.dismissed.add(lines[row][0])
+        if event.button != 0 or row >= len(lines):
+            return True
+        notice = lines[row]
+        if notice.dismissible and event.x >= self.x + self.width - len(self.DISMISS):
+            self.dismissed.add(notice.text)
+            if notice.on_dismiss is not None:
+                notice.on_dismiss()
             self.set_notices(self._given)
+        elif notice.on_click is not None:
+            notice.on_click()
         return True

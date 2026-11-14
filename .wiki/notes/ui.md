@@ -507,6 +507,20 @@ When typing a `/command`, the input component shows grey hints for upcoming para
 
 The TUI supports full mouse interaction via ANSI SGR mode (`?1006h`).
 
+### Following the end (`ChatHistoryPanel.auto_scroll`)
+The transcript follows its end exactly when the view is at the bottom
+(`_hold_view` derives it from the position): scrolling up stops following,
+reaching the bottom again (wheel, Ctrl+PgDn, showing the last message) or sending
+a message starts it again. Focus changes never touch it. A transcript that fits
+the view always follows.
+
+While the view is off the end and content arrived after it left, a pill on the
+panel's bottom row reads `↓ N new · [^PgDn] end` (N messages added) or
+`↓ new output · [^PgDn] end` (the last one grew), in `FOCUSED`, reversed
+(`_new_below`, `_render_pill`). A click on it goes to the end; the app handles
+that click before any focus change, so typing in the input is not interrupted
+(`click_pill`).
+
 ### Text Selection (`ui/message_selection.py`)
 Terminal-style selection over **rendered cells**. State is two points
 `(transcript row, panel column)`: `anchor` (press) and `head` (pointer).
@@ -674,6 +688,8 @@ them). Navigation has two levels:
 - **PgUp/PgDn** jump to the previous/next user message
   (`ChatHistoryPanel.move_focus_to_user`); PgUp from the input starts at the
   last one, PgDn past the last one returns to the input;
+- **Ctrl+PgUp/Ctrl+PgDn** scroll to the transcript's start/end, from any focus
+  (`scroll_to_start`/`scroll_to_end`; focus does not move);
 - **→** enters a split answer (`inside_group`): the selected segment gets `▐` (the others keep the thick wall, in `MUTED`), the
   action line reads `code 2/5` with `↑↓ part · ← back`; ↑/↓ move between
   segments and stop at the edges; `c` copies the segment (`copy_text_for`: code
@@ -761,13 +777,21 @@ the input.
 
 Non-conversation output (shell commands/results, command status, errors, role
 changes, generation-stopped notices) must not live in the transcript.
-`ChatHistoryPanel.add_message` routes `SysMsg`/`SysMsgError`/`SysMsgWarning` to
-`activity_sink` when set; the app's sink appends to the **activity overlay**
-(a `DebugPopup` overlay toggled by `/activity`) and flashes its first
-line, colored by level, on the hint row above the input (`chatTUI.notify` →
-`flash_hint`, auto-expiring; the status bar keeps its fields). The returned
-message is detached (not appended). Explicit `ui.activity(text)` writes to the
-overlay only.
+`ChatHistoryPanel.add_message` routes `SysMsg`/`SysMsgError`/`SysMsgWarning`/
+`SysMsgSuccess` to `activity_sink` when set; the app's sink (`chatTUI._on_activity`)
+always appends to the **activity overlay** (a `DebugPopup` overlay toggled by
+`/activity`), then:
+
+- an error, warning or success is **posted on the notice band**
+  (`NoticeFeed.post`, below): an error or warning stays until its `✕`, a success
+  goes after `SUCCESS_SECONDS` (6 s);
+- anything else, and a reply starting with `Usage:` (a mistyped command: you are
+  looking at the input anyway), flashes its first line, colored by level, on the
+  hint row above the input (`chatTUI.notify` → `flash_hint`, auto-expiring; the
+  status bar keeps its fields).
+
+The returned message is detached (not appended). Explicit `ui.activity(text)`
+writes to the overlay only.
 
 ### Notice Band and Setup Notes
 
@@ -780,11 +804,30 @@ Two places say what needs fixing, each line as `problem → fix`:
   `status_presenter.notices(agent)` recomputes it on every status refresh, so
   a line disappears once fixed. Error/warning solid color (see Buffer:
   foreground color + reverse); at most
-  `ui.notice_lines` rows, the last then reads `+N more · /activity`. Each notice
-  is logged to the activity overlay when it appears and when it is fixed.
-  Each line (not `+N more`) ends with ` ✕ `: a click on it hides that notice
-  (`NoticeBand.dismissed`, by text) until it is no longer given, so a problem
-  that is fixed and comes back shows again; the private line too.
+  `ui.notice_lines` rows, the last then reads `+N more · /activity` (a click on
+  it opens `/activity`). Each notice is logged to the activity overlay when it
+  appears and when it is fixed.
+  Each line (not `+N more`, not a job) ends with ` ✕ `: a click on it hides that
+  notice (`NoticeBand.dismissed`, by text) until it is no longer given, so a
+  problem that is fixed and comes back shows again; the private line too. A
+  click on a line's text opens it whole (`show_popup`). A line too long for the
+  width keeps its `→ fix` and shortens the problem with `…` (`NoticeBand.fit`).
+  Lines are `Notice`s (`text`, `color`, `on_click`, `on_dismiss`, `dismissible`).
+
+  Top down, the band shows (`status_presenter.draw_band`): the private line,
+  **jobs**, **posted messages** (newest first), then the live problems last
+  computed (`app._notices`). Both come from `chatTUI.notice_feed`
+  (`ui/notice_feed.py`):
+  - a **job** is work running in the background (`chatTUI.start_job(label)` /
+    `end_job`): `⠋ building godot · 1m12s · <its latest output line>` in
+    `FOCUSED`, no `✕`. `/sandbox build` (and *Build now*) run as one, as a task, so
+    other commands keep working; the same sandbox is not built twice at once.
+  - a **posted message** shows its first line (`· more` when it has more; the
+    click shows all of it). The same text posted again moves to the top. Its `✕`
+    removes it from the feed.
+
+  While the feed changes by itself (a job's clock, a success's end), the tick
+  redraws the band ~10×/s (`draw_band` reads no state).
 - **Setup notes** (`chatTUI.refresh_setup_notes`, drawn with the banner in an
   empty transcript): config and role file errors, no `$VISUAL`/`$EDITOR`, the
   one-time config-folder migration. Recomputed at startup and after every
@@ -966,21 +1009,21 @@ The package lives in `moka_code/ui/commands/`:
 Verb-first command tree (`COMMANDS["sandbox"].subcommands`):
 
 - `/sandbox` → start picker (subcommand help when none exists).
-- `/sandbox edit [name]` / `path [name]` → open / print a sandbox's file.
+- `/sandbox edit [name] [runcfg|image]` / `path [name] [runcfg|image]` → open /
+  print a sandbox's `.toml` (`runcfg`, the default) or its image's build file
+  (`image`: podman/docker only; `edit` writes the starter when it is missing).
 - `/sandbox create <name> <type> [scope]`, `copy <name> <scope> <new_name>`,
   `remove <name>` (asks to confirm) → manage sandbox files.
 - `/sandbox start [name]` → activate; no name opens a picker (name, type or
   description, the active one tagged); missing image offers *Build now* / *Cancel*.
 - `/sandbox build <name>` → build the image (streams to activity; no activate).
 - `/sandbox restart` → restart the active sandbox from its current image.
-- `/sandbox init <name> [base]` → write a starter `Containerfile` /
-  `Dockerfile` next to the sandbox.
 - `/sandbox stop` → deactivate.
 - `/sandbox terminal` → shell inside the active sandbox (`open_shell`).
 
 `NAME` params use `sandbox_id_completions` + `sandbox_id_descriptions`; `TYPE`,
-`SCOPE` and `BASE` use `sandbox_type_completions`, `sandbox_scope_completions`
-and `sandbox_base_completions`. All positional completion comes from the tree,
+`SCOPE` and `FILE` use `sandbox_type_completions`, `sandbox_scope_completions`
+and `sandbox_file_completions` (+ `sandbox_file_descriptions`). All positional completion comes from the tree,
 not from a hand-rolled `get_completions`.
 
 ### MCP (`/mcp`)

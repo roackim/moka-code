@@ -242,9 +242,11 @@ def show_subcommands(ui: ChatUIProtocol, command: "Command", args: List[str]) ->
     ui.show_popup(command.name, "Subcommands:\n" + "\n".join(lines), content_padding=0)
 
 
-async def open_project_sandbox(ui: ChatUIProtocol, name: Optional[str] = None) -> None:
-    """Open one sandbox's file (a picker when ``name`` is None) and re-apply the
-    active sandbox.
+async def open_project_sandbox(ui: ChatUIProtocol, name: Optional[str] = None,
+                               which: str = "runcfg") -> None:
+    """Open one sandbox's file (a picker when ``name`` is None): ``runcfg`` its
+    ``.toml``, then re-apply the active sandbox; ``image`` its build file
+    (``open_sandbox_image``).
 
     Behind ``/sandbox edit`` and ``/sandbox create``.
     """
@@ -285,8 +287,13 @@ async def open_project_sandbox(ui: ChatUIProtocol, name: Optional[str] = None) -
 
     entry = project.sandboxes.get(name)
     if entry is None or entry.file is None:
+        from moka_code.ui.commands.sandbox import _unknown
+
         ui.chat_history_panel.add_message(
-            f"Unknown sandbox '{name}'.", msg_type=SysMsgError(), title="config")
+            _unknown(project, name), msg_type=SysMsgError(), title="config")
+        return
+    if which == "image":
+        await open_sandbox_image(ui, entry)
         return
     await open_editor(ui, entry.file)
 
@@ -296,15 +303,48 @@ async def open_project_sandbox(ui: ChatUIProtocol, name: Optional[str] = None) -
         agent.set_sandbox(projects.active_spec(project), project.active)
 
     if errors:
-        ui.chat_history_panel.add_message(
-            "Sandbox config reloaded with errors:\n" + "\n".join(errors),
-            msg_type=SysMsgError(), title="config")
+        # One notice per error, each naming the file to fix (not reloaded).
+        for error in errors:
+            ui.chat_history_panel.add_message(
+                f"sandbox not reloaded: {error} → /sandbox edit {name}",
+                msg_type=SysMsgError(), title="config")
     else:
         ui.chat_history_panel.add_message(
             f"Sandbox config reloaded (active: {project.active or 'none'}).",
             msg_type=SysMsg(), title="config")
     if hasattr(ui, "refresh_status_bar"):
         ui.refresh_status_bar()
+
+
+async def open_sandbox_image(ui: ChatUIProtocol, entry) -> None:
+    """Open a container sandbox's build file (``/sandbox edit <name> image``),
+    writing the starter first when it does not exist. Nothing is rebuilt: the
+    notice band says the image is older than it once it is saved."""
+    from moka_code import projects
+    from moka_code.ui.external_editor import open_editor
+    from moka_code.ui.tui.msg_types import SysMsg, SysMsgError, SysMsgWarning
+
+    path = entry.build_file()
+    if path is None:
+        ui.chat_history_panel.add_message(
+            f"Sandbox '{entry.name}' is {entry.type}: it has no image to edit.",
+            msg_type=SysMsgError(), title="sandbox")
+        return
+    try:
+        written = projects.write_containerfile(path, entry.name)
+    except OSError as exc:
+        ui.chat_history_panel.add_message(
+            f"Could not write {path}: {exc}", msg_type=SysMsgError(), title="sandbox")
+        return
+    if written:
+        ui.chat_history_panel.add_message(
+            f"Wrote a starter {path.name}: {path}", msg_type=SysMsg(), title="sandbox")
+    await open_editor(ui, path)
+    if not entry.dockerfile:
+        ui.chat_history_panel.add_message(
+            f"Sandbox '{entry.name}' has no dockerfile key, so /sandbox build ignores "
+            f'{path.name} → add dockerfile = "{path.name}" (/sandbox edit {entry.name})',
+            msg_type=SysMsgWarning(), title="sandbox")
 
 
 def activate_endpoint(ui: ChatUIProtocol, endpoint) -> None:

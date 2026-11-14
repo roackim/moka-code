@@ -274,6 +274,20 @@ class Harness:
             return
         self._add_message_to_history("system", content)
 
+    def _error_text(self, error: Exception) -> str:
+        """What a failed turn says. A sandbox transport failure (the worker died,
+        hung, or the image talked over it) names the sandbox and the fix; its
+        stderr, if any, is already in the error."""
+        from moka_code.sandbox import SandboxError
+
+        if not isinstance(error, SandboxError):
+            return str(error)
+        name = getattr(self, "sandbox_name", None) or getattr(self, "_sandbox_runtime", "sandbox")
+        text = str(error)
+        if text.startswith("unexpected output from worker"):
+            text += " (the image prints on stdout before moka's worker: check its ENTRYPOINT)"
+        return f"sandbox {name} failed: {text} → /sandbox restart"
+
     def sandboxed(self) -> bool:
         """True when tools execute in a sandbox (container/bubblewrap)."""
         return bool(getattr(self.transport, "is_sandbox", False))
@@ -1609,7 +1623,7 @@ class Harness:
             except Exception as e:
                 logger.error("Generation failed: %s", e, exc_info=True)
                 self.state = AgentState.IDLE
-                yield events.Error(message=str(e))
+                yield events.Error(message=self._error_text(e))
                 return
             
         self.state = AgentState.IDLE

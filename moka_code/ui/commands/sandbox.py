@@ -60,11 +60,17 @@ def sandbox_type_completions() -> List[str]:
     return list(projects.SANDBOX_TYPES)
 
 
-def sandbox_base_completions() -> List[str]:
-    """Starter base images for ``init``."""
-    from moka_code import sandbox
+#: The files ``edit``/``path`` open: how the sandbox runs, how its image is built.
+SANDBOX_FILES = ("runcfg", "image")
 
-    return list(sandbox.CONTAINERFILE_BASES)
+
+def sandbox_file_completions() -> List[str]:
+    return list(SANDBOX_FILES)
+
+
+def sandbox_file_descriptions() -> Dict[str, str]:
+    return {"runcfg": "its .toml: how it runs",
+            "image": "its Containerfile: how its image is built (podman/docker)"}
 
 
 # --- shared helpers --------------------------------------------------------
@@ -123,39 +129,109 @@ def _list_sandboxes(ui: ChatUIProtocol, project) -> None:
     ui.show_popup("sandboxes", "\n".join(lines), content_padding=0)
 
 
+#: Build output kept for the failure message (its full log is in /activity).
+_BUILD_TAIL = 40
+
+
+#: The runtimes' closing summary of a failed build (podman, docker BuildKit):
+#: it only says that a step failed, the line before it says why.
+_BUILD_SUMMARIES = ("error: building at step", "error: failed to solve")
+
+
+def _failure_line(lines) -> str:
+    """The build output line that most likely says why it failed: the last one
+    mentioning an error that is not the runtime's closing summary, else that
+    summary, else the last non-empty line (a heuristic: runtimes and tools word
+    their errors differently)."""
+    lines = [line.strip() for line in lines if line.strip()]
+    errors = [line for line in lines if "error" in line.lower()]
+    causes = [line for line in errors if not line.lower().startswith(_BUILD_SUMMARIES)]
+    return (causes or errors or lines or ["no output"])[-1]
+
+
+def _runtime_missing(name: str, runtime: str) -> str:
+    return f"{runtime} not found on PATH → install it, or /sandbox edit {name}"
+
+
+def _unknown(project, name: str) -> str:
+    have = ", ".join(sorted(project.sandboxes)) or "none"
+    return f"Unknown sandbox '{name}' (have: {have}) → /sandbox create {name} <type>"
+
+
 async def _do_build(ui: ChatUIProtocol, project, workspace: str, sandbox_id: str) -> bool:
-    """Build a sandbox's image; return True on success. Never activates."""
+    """Build a sandbox's image; return True on success. Never activates.
+
+    Shows a job line on the notice band while it runs (spinner, clock, latest
+    output line); the output streams to /activity. A failure posts the line
+    that says why, with the end of the log behind a click."""
+    import time
+    from collections import deque
+
     from moka_code import sandbox
+    from moka_code.ui.notice_feed import elapsed
+    from moka_code.ui.tui.msg_types import SysMsgSuccess
 
     entry = project.sandboxes.get(sandbox_id)
     if entry is None:
         ui.chat_history_panel.add_message(
-            f"Unknown sandbox '{sandbox_id}'.", msg_type=SysMsgError(), title="sandbox")
+            _unknown(project, sandbox_id), msg_type=SysMsgError(), title="sandbox")
         return False
 
     spec = entry.to_spec()
     command = sandbox.build_command(spec, workspace)
     if command is None:
+        what = ("it is bubblewrap: no image" if spec.runtime not in sandbox.CONTAINER_RUNTIMES
+                else "set image and dockerfile in /sandbox edit " + sandbox_id)
         ui.chat_history_panel.add_message(
-            f"Sandbox '{sandbox_id}' has no image/dockerfile to build.",
+            f"sandbox {sandbox_id} has nothing to build → {what}",
             msg_type=SysMsgError(), title="sandbox")
         return False
     if not sandbox.runtime_available(spec):
         ui.chat_history_panel.add_message(
-            f"Runtime '{spec.runtime}' not found on PATH.",
-            msg_type=SysMsgError(), title="sandbox")
+            _runtime_missing(sandbox_id, spec.runtime), msg_type=SysMsgError(), title="sandbox")
         return False
 
-    _activity(ui, f"Building image: {' '.join(command)}")
-    code = await sandbox.run_build(
-        command, cwd=workspace, on_output=lambda line: _activity(ui, line))
-    if code != 0:
+    feed = getattr(ui, "notice_feed", None)
+    label = f"building {sandbox_id}"
+    if feed is not None and feed.running(label):
         ui.chat_history_panel.add_message(
-            f"Image build failed (exit {code}).", msg_type=SysMsgError(), title="sandbox")
+            f"sandbox {sandbox_id} is already building (see the band, or /activity)",
+            msg_type=SysMsgWarning(), title="sandbox")
+        return False
+    start_job = getattr(ui, "start_job", None)
+    job = start_job(label) if callable(start_job) else None
+    tail: deque = deque(maxlen=_BUILD_TAIL)
+
+    def _output(line: str) -> None:
+        _activity(ui, line)
+        tail.append(line)
+        if job is not None and line.strip():
+            job.last = line.strip()
+
+    _activity(ui, f"Building image: {' '.join(command)}")
+    started = time.monotonic()
+    try:
+        code = await sandbox.run_build(command, cwd=workspace, on_output=_output)
+    except OSError as exc:
+        code, tail = None, deque([str(exc)])
+    finally:
+        if job is not None:
+            ui.end_job(job)
+    if code != 0:
+        status = f"exit {code}" if code is not None else "did not start"
+        # The fix is the file; once it is saved, the band's stale-image notice
+        # says to /sandbox build.
+        text = (f"build {sandbox_id} failed ({status}): {_failure_line(tail)} "
+                f"→ /sandbox edit {sandbox_id} image")
+        if tail:
+            text += (f"\n\nLast {len(tail)} lines of the build (all of it is in /activity):\n"
+                     + "\n".join(tail))
+        ui.chat_history_panel.add_message(text, msg_type=SysMsgError(), title="sandbox")
         return False
 
     ui.chat_history_panel.add_message(
-        f"Built image '{spec.image}'.", msg_type=SysMsg(), title="sandbox")
+        f"built {sandbox_id} in {elapsed(time.monotonic() - started)} (image {spec.image})",
+        msg_type=SysMsgSuccess(), title="sandbox")
     agent = getattr(ui, "agent", None)
     track = getattr(agent, "track_sandbox", None)
     if callable(track) and getattr(agent, "sandbox_name", None) == sandbox_id:
@@ -232,15 +308,35 @@ async def sandbox_help(ui: ChatUIProtocol, args: List[str], command) -> None:
     ui.show_popup("sandbox", "Subcommands:\n" + "\n".join(lines), content_padding=0)
 
 
+def _which_file(ui: ChatUIProtocol, args: List[str], verb: str) -> Optional[str]:
+    """The ``runcfg``/``image`` word after the name (``runcfg`` when absent);
+    None (reported) when it is something else."""
+    which = args[1].lower() if len(args) > 1 else "runcfg"
+    if len(args) > 2 or which not in SANDBOX_FILES:
+        ui.chat_history_panel.add_message(
+            f"Usage: /sandbox {verb} [name] [{'|'.join(SANDBOX_FILES)}]",
+            msg_type=SysMsgError(), title="sandbox")
+        return None
+    return which
+
+
 async def sandbox_edit(ui: ChatUIProtocol, args: List[str]) -> None:
-    await open_project_sandbox(ui, args[0] if args else None)
+    """``/sandbox edit [name] [runcfg|image]``: the sandbox's ``.toml`` (how it
+    runs) or its Containerfile (how its image is built)."""
+    which = _which_file(ui, args, "edit")
+    if which is not None:
+        await open_project_sandbox(ui, args[0] if args else None, which)
 
 
 async def sandbox_path(ui: ChatUIProtocol, args: List[str]) -> None:
-    """Print (and copy) a sandbox's file path, so it can be edited outside the
-    TUI while the session keeps running. Defaults to the active sandbox."""
+    """Print (and copy) a sandbox's file path (``runcfg``, or ``image``: its
+    build file), so it can be edited outside the TUI while the session keeps
+    running. Defaults to the active sandbox."""
     from moka_code import projects
 
+    which = _which_file(ui, args, "path")
+    if which is None:
+        return
     workspace = _workspace(ui)
     errors: list[str] = []
     project = projects.load_project(workspace, errors)
@@ -249,17 +345,24 @@ async def sandbox_path(ui: ChatUIProtocol, args: List[str]) -> None:
     name = args[0] if args else project.active
     if not name:
         ui.chat_history_panel.add_message(
-            "No active sandbox. Usage: /sandbox path [name].",
+            "No active sandbox. Usage: /sandbox path [name] [runcfg|image].",
             msg_type=SysMsgError(), title="sandbox")
         return
     entry = project.sandboxes.get(name)
     if entry is None or entry.file is None:
-        available = ", ".join(sorted(project.sandboxes)) or "(none)"
         ui.chat_history_panel.add_message(
-            f"Unknown sandbox '{name}'. Available: {available}",
-            msg_type=SysMsgError(), title="sandbox")
+            _unknown(project, name), msg_type=SysMsgError(), title="sandbox")
         return
 
+    if which == "image":
+        path = entry.build_file()
+        if path is None:
+            ui.chat_history_panel.add_message(
+                f"Sandbox '{name}' is {entry.type}: it has no image.",
+                msg_type=SysMsgError(), title="sandbox")
+            return
+        show_path(ui, "sandbox", f"Sandbox '{name}' image build file", path)
+        return
     show_path(ui, "sandbox", f"Sandbox '{name}' file ({entry.scope})", entry.file)
 
 
@@ -277,10 +380,8 @@ async def sandbox_remove(ui: ChatUIProtocol, args: List[str]) -> None:
     name = args[0]
     entry = project.sandboxes.get(name)
     if entry is None or entry.file is None:
-        available = ", ".join(sorted(project.sandboxes)) or "(none)"
         ui.chat_history_panel.add_message(
-            f"Unknown sandbox '{name}'. Available: {available}",
-            msg_type=SysMsgError(), title="sandbox")
+            _unknown(project, name), msg_type=SysMsgError(), title="sandbox")
         return
 
     def _remove() -> None:
@@ -298,16 +399,18 @@ async def sandbox_remove(ui: ChatUIProtocol, args: List[str]) -> None:
 
 
 def _report_errors(ui: ChatUIProtocol, errors: List[str]) -> None:
-    if errors:
+    """One notice per sandbox file error (a single message would show only its
+    first line on the band)."""
+    for error in errors:
         ui.chat_history_panel.add_message(
-            "Sandbox config errors:\n" + "\n".join(errors),
-            msg_type=SysMsgError(), title="sandbox")
+            f"{error} → /sandbox edit", msg_type=SysMsgError(), title="sandbox")
 
 
 async def sandbox_create(ui: ChatUIProtocol, args: List[str]) -> None:
     """``/sandbox create <name> <type> [global|local]``: write a starter sandbox
-    file (global by default) and open it."""
-    from moka_code import projects
+    file (global by default), and for a container its starter Containerfile
+    next to it, then open the sandbox file."""
+    from moka_code import projects, sandbox
 
     if not 2 <= len(args) <= 3:
         ui.chat_history_panel.add_message(
@@ -328,8 +431,11 @@ async def sandbox_create(ui: ChatUIProtocol, args: List[str]) -> None:
     except ValueError as exc:
         ui.chat_history_panel.add_message(str(exc), msg_type=SysMsgError(), title="sandbox")
         return
-    ui.chat_history_panel.add_message(
-        f"Created {scope} sandbox '{path.stem}': {path}", msg_type=SysMsg(), title="sandbox")
+    text = f"Created {scope} sandbox '{path.stem}': {path}"
+    if stype in sandbox.CONTAINER_RUNTIMES:
+        text += (f"\nIts image builds from {projects.default_containerfile(stype, path.stem)} "
+                 f"→ /sandbox edit {path.stem} image, then /sandbox build {path.stem}")
+    ui.chat_history_panel.add_message(text, msg_type=SysMsg(), title="sandbox")
     await open_project_sandbox(ui, path.stem)
 
 
@@ -388,7 +494,7 @@ async def sandbox_restart(ui: ChatUIProtocol, args: List[str]) -> None:
     spec = entry.to_spec()
     if not sandbox.runtime_available(spec):
         ui.chat_history_panel.add_message(
-            f"Runtime '{spec.runtime}' not found on PATH; nothing restarted.",
+            _runtime_missing(name, spec.runtime) + " (nothing restarted)",
             msg_type=SysMsgError(), title="sandbox")
         return
     if not sandbox.image_present(spec):
@@ -429,10 +535,7 @@ async def sandbox_start(ui: ChatUIProtocol, args: List[str]) -> None:
     workspace = _workspace(ui)
     errors: list[str] = []
     project = projects.load_project(workspace, errors)
-    if errors:
-        ui.chat_history_panel.add_message(
-            "Sandbox config errors:\n" + "\n".join(errors),
-            msg_type=SysMsgError(), title="sandbox")
+    _report_errors(ui, errors)
 
     if not args:
         if not project.sandboxes:
@@ -448,17 +551,14 @@ async def sandbox_start(ui: ChatUIProtocol, args: List[str]) -> None:
     sandbox_id = args[0]
     entry = project.sandboxes.get(sandbox_id)
     if entry is None:
-        available = ", ".join(sorted(project.sandboxes)) or "(none)"
         ui.chat_history_panel.add_message(
-            f"Unknown sandbox '{sandbox_id}'. Available: {available}",
-            msg_type=SysMsgError(), title="sandbox")
+            _unknown(project, sandbox_id), msg_type=SysMsgError(), title="sandbox")
         return
 
     spec = entry.to_spec()
     if not sandbox.runtime_available(spec):
         ui.chat_history_panel.add_message(
-            f"Runtime '{spec.runtime}' not found on PATH. Install it first.",
-            msg_type=SysMsgError(), title="sandbox")
+            _runtime_missing(sandbox_id, spec.runtime), msg_type=SysMsgError(), title="sandbox")
         return
     if not sandbox.image_present(spec):
         _offer_build(ui, project, workspace, sandbox_id, entry, spec)
@@ -473,74 +573,24 @@ async def sandbox_build(ui: ChatUIProtocol, args: List[str]) -> None:
     workspace = _workspace(ui)
     errors: list[str] = []
     project = projects.load_project(workspace, errors)
-    if errors:
-        ui.chat_history_panel.add_message(
-            "Sandbox config errors:\n" + "\n".join(errors),
-            msg_type=SysMsgError(), title="sandbox")
+    _report_errors(ui, errors)
     if not args:
         ui.chat_history_panel.add_message(
             "Usage: /sandbox build <id>", msg_type=SysMsgError(), title="sandbox")
         return
-    await _do_build(ui, project, workspace, args[0])
-
-
-async def sandbox_init(ui: ChatUIProtocol, args: List[str]) -> None:
-    from moka_code import projects, sandbox
-
-    if not args:
-        ui.chat_history_panel.add_message(
-            "Usage: /sandbox init <name> [base]", msg_type=SysMsgError(), title="sandbox")
-        return
-    errors: list[str] = []
-    project = projects.load_project(_workspace(ui), errors)
-    _report_errors(ui, errors)
-    name = args[0]
-    entry = project.sandboxes.get(name)
-    if entry is None:
-        ui.chat_history_panel.add_message(
-            f"Unknown sandbox '{name}'.", msg_type=SysMsgError(), title="sandbox")
-        return
-    if entry.type not in sandbox.CONTAINER_RUNTIMES:
-        ui.chat_history_panel.add_message(
-            f"/sandbox init needs a {' or '.join(sandbox.CONTAINER_RUNTIMES)} sandbox "
-            "(bubblewrap needs no image).",
-            msg_type=SysMsgError(), title="sandbox")
-        return
-
-    base = args[1] if len(args) > 1 else sandbox.CONTAINERFILE_BASES[0]
-    path = entry.file.parent / f"{name}.{sandbox.containerfile_name(entry.type)}"
-    if path.exists():
-        ui.chat_history_panel.add_message(
-            f"{path.name} already exists — edit it or remove it first.",
-            msg_type=SysMsgWarning(), title="sandbox")
-        return
-
-    path.write_text(sandbox.containerfile_starter(base), encoding="utf-8")
-
-    message = (
-        f"Wrote {path.name} (FROM {sandbox.resolve_base(base)}).\n"
-        f"Path: {path}\n"
-        f'Set `dockerfile = "{path.name}"` and `image` in /sandbox edit {name}, '
-        f"then /sandbox build {name}."
-    )
-    try:
-        from moka_code.ui.clipboard import copy_to_clipboard
-
-        method = copy_to_clipboard(str(path))
-        if method:
-            message += f"\n(copied path via {method})"
-    except Exception:  # pragma: no cover - clipboard is best effort
-        pass
-
-    ui.chat_history_panel.add_message(message, msg_type=SysMsg(), title="sandbox")
+    # In the background: other commands keep working while it builds (the
+    # band shows it running).
+    asyncio.ensure_future(_do_build(ui, project, workspace, args[0]))
 
 
 __all__ = [
+    "SANDBOX_FILES",
     "sandbox_id_completions",
     "sandbox_id_descriptions",
     "sandbox_scope_completions",
     "sandbox_type_completions",
-    "sandbox_base_completions",
+    "sandbox_file_completions",
+    "sandbox_file_descriptions",
     "describe_sandbox",
     "sandbox_help",
     "sandbox_edit",
@@ -551,7 +601,6 @@ __all__ = [
     "sandbox_start",
     "sandbox_restart",
     "sandbox_build",
-    "sandbox_init",
     "sandbox_stop",
     "sandbox_terminal",
 ]

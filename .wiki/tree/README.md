@@ -70,8 +70,8 @@ Host-side sandbox launcher and JSONL client (no `ui/` imports, no policy).
 - Preflight/build: `runtime_available()`, `image_present()`,
   `build_command()`, `run_build()` (streams output), `containerfile_name()`
   (`Containerfile` for podman / `Dockerfile` for docker) and
-  `containerfile_starter()` (a ready-to-edit file; deps as hints; installs
-  `python3` for non-`python:*` bases). moka never builds implicitly —
+  `containerfile_starter(name)` (a ready-to-edit file on `python:3.12-slim`;
+  other bases and deps as commented hints). moka never builds implicitly —
   `/sandbox start` offers, `/sandbox build` is explicit.
 - Containers run the worker as `python3 /opt/worker.py` (portable across
   `python:*` and distro bases that install `python3`; bubblewrap uses

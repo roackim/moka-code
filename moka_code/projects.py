@@ -69,12 +69,12 @@ type = "bubblewrap"
 """
 
 _CONTAINER_TEMPLATE = """\
-## Sandbox: {type} container. The image is built only by /sandbox build.
+## Sandbox: {type} container. The image is built only by /sandbox build {name}.
 type = "{type}"
+image       = "moka-{name}"     # image to run (and to build)
+dockerfile  = "{name}.{file}"   # what `image` is built from, next to this file
+                                # (/sandbox edit {name} image)
 """ + _COMMON_KEYS + """\
-# image       = "moka-{name}"  # image to run (and to build)
-# dockerfile  = "{name}.{file}"  # build `image` from this file, kept next to this
-#                              # one (/sandbox init {name} writes it)
 # run_args    = [              # extra runtime flags, appended verbatim
 {run_args}# ]
 """
@@ -111,6 +111,14 @@ class SandboxEntry:
     run_args: list[str] = field(default_factory=list)
     instructions: Optional[str] = None
     file: Optional[Path] = None
+
+    def build_file(self) -> Optional[Path]:
+        """Its image's build file: its ``dockerfile`` (relative to the sandbox's
+        own file), else where ``/sandbox create`` would have put it. None for a
+        sandbox without an image (bubblewrap)."""
+        if self.type not in _RUN_ARG_HINTS or self.file is None:
+            return None
+        return self.file.parent / (self.dockerfile or default_containerfile(self.type, self.name))
 
     def to_spec(self) -> ContainerSpec:
         dockerfile = self.dockerfile
@@ -358,14 +366,37 @@ def sandbox_template(stype: str, name: str) -> str:
 
 
 def create_sandbox(workspace: str | Path, scope: str, stype: str, name: str) -> Path:
-    """Write a new sandbox file of ``stype`` in ``scope``; return its path."""
+    """Write a new sandbox file of ``stype`` in ``scope``; return its path.
+
+    A container sandbox also gets its build file next to it (the starter's
+    ``dockerfile``), unless one is already there."""
     directory = scope_dir(scope, workspace)
     name = _check_new_name(workspace, name)
     text = sandbox_template(stype, name)
     path = directory / f"{name}.toml"
     directory.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+    if stype in _RUN_ARG_HINTS:
+        write_containerfile(directory / default_containerfile(stype, name), name)
     return path
+
+
+def default_containerfile(stype: str, name: str) -> str:
+    """The build file's name a new container sandbox points at."""
+    from moka_code.sandbox import containerfile_name
+
+    return f"{name}.{containerfile_name(stype)}"
+
+
+def write_containerfile(path: Path, name: str) -> bool:
+    """Write the starter build file at ``path`` unless it exists; True when written."""
+    from moka_code.sandbox import containerfile_starter
+
+    if path.exists():
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(containerfile_starter(name), encoding="utf-8")
+    return True
 
 
 def copy_sandbox(workspace: str | Path, source: str, scope: str, name: str) -> Path:

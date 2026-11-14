@@ -414,40 +414,15 @@ def test_build_command_none_without_dockerfile_or_image(tmp_path):
     assert build_command(ContainerSpec("none"), tmp_path) is None
 
 
-def test_containerfile_starter_has_base_and_workdir():
-    text = containerfile_starter("debian")
+def test_containerfile_starter_builds_on_python_with_other_bases_commented():
+    text = containerfile_starter("dev")
+    active = [line for line in text.splitlines() if line and not line.startswith("#")]
 
-    assert "FROM debian" in text
-    assert "WORKDIR /workspace" in text
-
-
-def test_starter_bases_are_friendly_names():
-    from moka_code.sandbox import CONTAINERFILE_BASES
-
-    assert CONTAINERFILE_BASES == ("python", "debian", "ubuntu")
-
-
-def test_resolve_base_maps_friendly_names_to_slim_images():
-    from moka_code.sandbox import resolve_base
-
-    assert resolve_base("python") == "python:3.12-slim"
-    assert resolve_base("debian") == "debian:stable-slim"
-    assert resolve_base("ubuntu") == "ubuntu"
-    assert resolve_base("custom:tag") == "custom:tag"  # raw passthrough
-
-
-def test_starter_installs_python3_for_debian_base():
-    text = containerfile_starter("debian")
-
-    assert "FROM debian:stable-slim" in text
-    assert "install -y --no-install-recommends python3" in text
-
-
-def test_starter_does_not_install_python3_for_python_base():
-    text = containerfile_starter("python")
-
-    assert "FROM python:3.12-slim" in text
-    assert "install -y --no-install-recommends python3" not in text
+    # python:3.12-slim ships python3 (the worker's interpreter): no install.
+    assert active == ["FROM python:3.12-slim", "WORKDIR /workspace"]
+    assert "# FROM debian:stable-slim" in text and "# FROM ubuntu" in text
+    assert "install -y --no-install-recommends python3" in text   # for those bases
+    assert "/sandbox build dev" in text and "/sandbox edit dev image" in text
 
 
 def test_containerfile_name_is_conventional():

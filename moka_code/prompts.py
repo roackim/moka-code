@@ -87,8 +87,9 @@ context, debug, servers, mcp): it writes the commented template.
   `instructions` (told to the model while the sandbox is active). No other key.
 - For a new sandbox, ask me to run `/sandbox create <name> <type> [global|local]`:
   it writes a commented starter for that type, which you then edit. For a
-  container, `/sandbox init <name> [python|debian|ubuntu]` writes a Containerfile
-  next to it, which you can edit too.
+  container it also writes the starter `<name>.Containerfile` (`.Dockerfile` for
+  docker) next to it, already named by `dockerfile`; `/sandbox path <name> image`
+  prints where it is, and you can edit it too.
 - moka never builds an image by itself: after a change, I run
   `/sandbox build <name>`, then `/sandbox start <name>` (`/sandbox restart` when
   it is already active).

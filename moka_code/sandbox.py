@@ -37,18 +37,6 @@ _BASH_SLACK = 10.0
 
 CONTAINER_RUNTIMES = ("podman", "docker")
 HOST_RUNTIMES = ("bubblewrap",)
-#: Friendly base names offered by ``/sandbox init``.
-CONTAINERFILE_BASES = ("python", "debian", "ubuntu")
-
-#: Friendly base name -> image tag. ``debian`` is the slim variant (bare
-#: ``debian`` is the full image and has no ``debian:slim``); ``ubuntu`` has no
-#: slim variant at all. Unknown names pass through as raw image tags.
-_BASE_IMAGES = {
-    "python": DEFAULT_IMAGE,
-    "debian": "debian:stable-slim",
-    "ubuntu": "ubuntu",
-}
-
 #: Conventional build-file name per container runtime.
 CONTAINERFILE_NAMES = {"podman": "Containerfile", "docker": "Dockerfile"}
 
@@ -330,37 +318,30 @@ def containerfile_name(runtime: str) -> str:
     return CONTAINERFILE_NAMES.get(runtime, "Containerfile")
 
 
-def resolve_base(base: str = "python") -> str:
-    """Map a friendly base name to its image tag (unknown names pass through)."""
-    return _BASE_IMAGES.get(base, base)
+def containerfile_starter(name: str) -> str:
+    """The build file ``/sandbox create`` writes next to a container sandbox
+    (real directives, deps left as hints).
 
-
-def containerfile_starter(base: str = "python") -> str:
-    """A ready-to-edit build file (real directives, deps left as hints).
-
-    The image must provide ``python3`` (moka runs its stdlib-only ``worker.py``
-    with it). ``python`` already does; for ``debian``/``ubuntu`` the starter
-    installs it. Edit the file freely.
+    The image must provide ``python3``: moka runs its stdlib-only ``worker.py``
+    with it. The default base ships it; the other bases need the install line.
     """
-    image = resolve_base(base)
-    lines = ["# Built by moka (/sandbox init).", f"FROM {image}", ""]
-    if image.lower().startswith("python"):
-        lines += ["# This base already ships python3 (used to run moka's worker).", ""]
-    else:
-        lines += [
-            "# moka runs its worker with `python3`, which this base lacks:",
-            "RUN apt-get update && apt-get install -y --no-install-recommends python3 \\",
-            "    && rm -rf /var/lib/apt/lists/*",
-            "",
-        ]
-    lines += [
-        "# Install the project's toolchain here, for example:",
-        "# RUN apt-get update && apt-get install -y --no-install-recommends git make",
-        "# RUN pip install --no-cache-dir -r requirements.txt",
-        "",
-        "WORKDIR /workspace",
-    ]
-    return "\n".join(lines) + "\n"
+    return f"""\
+# Builds the image of sandbox {name}: /sandbox build {name} (moka never builds by itself).
+# Edit it with /sandbox edit {name} image.
+FROM {DEFAULT_IMAGE}
+# Other bases: they lack python3 (moka runs its worker with it), so also
+# uncomment the install below.
+# FROM debian:stable-slim
+# FROM ubuntu
+# RUN apt-get update && apt-get install -y --no-install-recommends python3 \\
+#     && rm -rf /var/lib/apt/lists/*
+
+# Install the project's toolchain here, for example:
+# RUN apt-get update && apt-get install -y --no-install-recommends git make
+# RUN pip install --no-cache-dir -r requirements.txt
+
+WORKDIR /workspace
+"""
 
 
 class SandboxProcess:
@@ -641,7 +622,6 @@ __all__ = [
     "DEFAULT_REQUEST_TIMEOUT",
     "CONTAINER_RUNTIMES",
     "HOST_RUNTIMES",
-    "CONTAINERFILE_BASES",
     "CONTAINERFILE_NAMES",
     "SandboxError",
     "SandboxTimeoutError",
@@ -655,7 +635,6 @@ __all__ = [
     "run_build",
     "containerfile_name",
     "containerfile_starter",
-    "resolve_base",
     "SandboxProcess",
     "SandboxTransport",
 ]

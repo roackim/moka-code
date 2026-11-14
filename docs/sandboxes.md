@@ -37,18 +37,20 @@ Check the status bar: `{sandbox}` should show the active sandbox. Run
 
 ## Container sandbox
 
-For podman or docker, create a sandbox and give it an image or a Dockerfile.
+For podman or docker, create a sandbox, edit its image's build file, build it.
 
 ```text
 /sandbox create dev docker
-/sandbox init dev python
+/sandbox edit dev image
 /sandbox build dev
 /sandbox start dev
 ```
 
-The `init` step writes a starter Containerfile/Dockerfile next to the sandbox
-file. The image must provide `python3`, because moka runs its tool worker inside
-the container.
+`create` writes two files: `dev.toml` (how the sandbox runs; `/sandbox edit dev`)
+and a starter `dev.Dockerfile` (`dev.Containerfile` for podman) next to it, which
+its `image` is built from (`/sandbox edit dev image`). The image must provide
+`python3`, because moka runs its tool worker inside the container: the starter's
+`python:3.12-slim` base has it; the other bases it lists need the install line.
 
 Choose the runtime you want:
 
@@ -67,9 +69,9 @@ Choose the runtime you want:
 | `/sandbox restart` | Restart the active sandbox from its current image |
 | `/sandbox terminal` | Open a shell inside the active sandbox |
 | `/sandbox build <name>` | Build the sandbox image from its Dockerfile |
-| `/sandbox edit [name]` | Edit a sandbox's file |
-| `/sandbox create <name> <type> [global\|local]` | Create a new definition |
-| `/sandbox path <name>` | Print the sandbox file's path |
+| `/sandbox edit [name] [runcfg\|image]` | Edit a sandbox's `.toml` (`runcfg`, the default) or its image's Containerfile/Dockerfile (`image`) |
+| `/sandbox create <name> <type> [global\|local]` | Create a new definition (and, for podman/docker, its starter Containerfile/Dockerfile) |
+| `/sandbox path [name] [runcfg\|image]` | Print one of those files' path |
 | `/sandbox remove <name>` | Delete a sandbox definition |
 
 ## Settings

@@ -61,7 +61,7 @@ time).
     transport failures propagate;
   - preflight/build: `runtime_available()`, `image_present()`,
     `build_command()`, `run_build()`, `containerfile_name()`,
-    `containerfile_starter()`, `resolve_base()`.
+    `containerfile_starter(name)`.
 - `harness/harness.py` builds the transport (`_build_transport`), swaps it live
   (`set_sandbox`), exposes `sandboxed()` / `sandbox_required()`, gates `chat()`
   when a role requires a sandbox, and yields interim `ToolOutput` events.
@@ -84,10 +84,16 @@ tmpfs), a fixed `PATH`, and `TERM`/`LANG`/`LC_ALL` (if set on the host) are
 passed, so host API keys and venv paths do not leak in. `run_args` are appended
 **last** (just before the command), so they override moka's defaults.
 
+**Transport failures.** A worker that dies, hangs or writes something other than
+the protocol ends the turn with `sandbox <name> failed: <the worker's error, with
+its stderr> → /sandbox restart` (`Harness._error_text`; junk output adds that the
+image printed before the worker, check its ENTRYPOINT), posted on the notice band.
+
 **Interpreter requirements.** The image must provide `python3` (worker.py needs
 only the stdlib). Containers call `python3` (present on `python:*` and after the
-distro `python3` package); `/sandbox init` emits an uncommented
-`apt-get … install python3` for `debian`/`ubuntu`. bubblewrap prefers the
+distro `python3` package); the starter Containerfile builds on `python:3.12-slim`
+and lists `debian`/`ubuntu` bases with their `apt-get … install python3` line,
+commented. bubblewrap prefers the
 system `/usr/bin/python3` (already inside the bind) over `sys.executable`, which
 for a pipx/pixi/venv run lives outside the bound dirs; if it must use an
 out-of-tree interpreter it binds that prefix. Worker stderr is surfaced in the
@@ -147,6 +153,11 @@ two scopes:
   `active_spec()` → `ContainerSpec`; `set_active()` writes `project.toml`;
   `create_sandbox()` / `copy_sandbox()` write new files (a copy is a plain file copy,
   so comments survive, and a relative Containerfile beside the source comes along).
+  A container starter sets `image = "moka-<name>"` and `dockerfile =
+  "<name>.Containerfile"` (`.Dockerfile` for docker), and `create_sandbox()` writes
+  that starter build file beside it (`write_containerfile`, never over an existing
+  one). `SandboxEntry.build_file()` is where a container's build file is: its
+  `dockerfile`, else that default name.
 - A relative `dockerfile` resolves **next to the sandbox file**, and the build
   context is the Containerfile's folder (not the workspace).
 
@@ -195,15 +206,14 @@ completion come from the framework (see [ui.md](./ui.md)):
 | Subcommand | Behavior |
 |---|---|
 | `/sandbox` | opens the `start` picker when a sandbox exists (like `/model`, `/role`); otherwise, and for an unknown subcommand, lists the subcommands |
-| `/sandbox edit [name]` | open that sandbox's file; no name opens a picker |
-| `/sandbox path [name]` | print (and copy) that sandbox's file path (defaults to the active one), to edit it outside the TUI |
-| `/sandbox create <name> <type> [global\|local]` | create a file from a type-specific starter (global by default), then open it |
+| `/sandbox edit [name] [runcfg\|image]` | open that sandbox's `.toml` (`runcfg`, the default: how it runs) or its image's build file (`image`: how it is built; podman/docker only; the starter is written first when missing, and a missing `dockerfile` key is reported). No name opens a picker. Editing the build file applies nothing: the band's stale-image notice says to `/sandbox build` |
+| `/sandbox path [name] [runcfg\|image]` | print (and copy) one of those files' path (defaults to the active sandbox), to edit it outside the TUI |
+| `/sandbox create <name> <type> [global\|local]` | create a file from a type-specific starter (global by default), plus the starter Containerfile/Dockerfile for podman/docker, then open the `.toml` |
 | `/sandbox remove <name>` | *Remove* / *Cancel* picker, then unlink the file (stops it first when active; a dockerfile next to it stays) |
 | `/sandbox copy <name> <global\|local> <new-name>` | copy a sandbox into the other (or same) scope |
 | `/sandbox start [name]` | activate; no name opens a picker (tagged `global`/`local`); missing image offers *Build now* / *Cancel* |
 | `/sandbox restart` | re-read the active sandbox's file and start a fresh container from its **current** image (never rebuilds: that is `build`). Checked like `start` first (a missing runtime/image leaves the running one alone); the old worker gets `shutdown` and is waited for (its `--rm` container exits), then the new one starts on the next tool call |
-| `/sandbox build <name>` | build the image (streams to activity; does not activate) |
-| `/sandbox init <name> [base]` | write `<name>.Containerfile`/`.Dockerfile` next to the sandbox's file (bases: `python`→`python:3.12-slim`, `debian`→`debian:stable-slim`, `ubuntu`) |
+| `/sandbox build <name>` | build the image in the background (a job line on the notice band: spinner, clock, latest output; the output streams to activity; does not activate). A failure posts `build <name> failed (exit N): <cause> → /sandbox edit <name> image`, the cause being the last output line mentioning an error that is not the runtime's closing summary (`_failure_line`, a heuristic), with the last 40 lines behind a click; a success posts `built <name> in 2m03s (image …)` for a few seconds |
 | `/sandbox stop` | deactivate (back to in-process) |
 | `/sandbox terminal` | shell inside the active sandbox (same mounts/network/limits as the tools); `exit` returns |
 

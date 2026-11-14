@@ -29,7 +29,8 @@ from moka_code.ui.commands import (
 )
 from moka_code.ui.generation_presenter import process_generation
 from moka_code.ui.stream_revealer import StreamRevealer
-from moka_code.ui.status_presenter import refresh_status_bar
+from moka_code.ui.notice_feed import NoticeFeed
+from moka_code.ui.status_presenter import draw_band, refresh_status_bar
 from moka_code.ui import question_form
 from moka_code.ui.tui.focus import FocusScope
 from moka_code.ui.tui.navigation import ModalHost
@@ -177,7 +178,12 @@ class chatTUI(ChatActionHandlers):
         # Top band: what needs fixing right now (``status_presenter.notices``).
         self.notice_band = NoticeBand(max_lines=settings.config.ui_notice_lines,
                                       more="+{n} more · /activity")
+        self.notice_band.on_more = self.toggle_activity
         self._notices = []
+        # Posted errors/warnings/successes and running jobs (``ui/notice_feed.py``),
+        # drawn on the band above the live problems.
+        self.notice_feed = NoticeFeed()
+        self._band_drawn_at = 0.0
         # Bottom mode line: shows the selected message's actions while a message
         # is selected, otherwise the status bar is mounted there.
         self.action_bar = ActionBar(
@@ -645,9 +651,33 @@ class chatTUI(ChatActionHandlers):
         self.flash_hint(first_line, duration, color)
 
     def _on_activity(self, text: str, level: str = "info"):
-        """Sink for routed SysMsg-family notices: activity + a hint-row flash."""
+        """Sink for routed SysMsg-family notices: always the activity overlay;
+        errors, warnings and successes then go on the notice band (an error or
+        warning until its ``✕``, a success for a few seconds); the rest, and a
+        ``Usage:`` reply to a mistyped command, flash on the hint row."""
         self.activity(text, level)
-        self.notify(text, level)
+        if level in ("error", "warning", "success") and not str(text).startswith("Usage:"):
+            self.notice_feed.post(level, text)
+            self.redraw_band()
+        else:
+            self.notify(text, level)
+
+    def redraw_band(self) -> None:
+        draw_band(self)
+        self._band_drawn_at = time.monotonic()
+        if self.compositor:
+            self.compositor.request_render()
+
+    def start_job(self, label: str):
+        """A background job's band line (spinner, clock, ``job.last``) until
+        ``end_job``."""
+        job = self.notice_feed.start(label)
+        self.redraw_band()
+        return job
+
+    def end_job(self, job) -> None:
+        self.notice_feed.finish(job)
+        self.redraw_band()
 
     def flash_hint(self, text: str, duration: float = 1.5, color=None):
         """Temporarily replace the mode-line hint (e.g. "copied ✓"); the row
@@ -966,13 +996,6 @@ class chatTUI(ChatActionHandlers):
             self._last_focus_id = "input"
 
         self._focus_scope.manager.focus(_FOCUS_IDS.index(self._last_focus_id))
-        
-        is_input_focused = (self._last_focus_id == "input")
-        
-        # Auto-scroll to bottom when input field is focused
-        if is_input_focused:
-            self.chat_history_panel.auto_scroll = True
-            self.chat_history_panel.scroll_offset = 0
 
     def _set_input_focus(self, focused: bool):
         self.input_component.set_focused(focused)
@@ -1043,6 +1066,9 @@ class chatTUI(ChatActionHandlers):
             if self._hint_flash_until and time.monotonic() >= self._hint_flash_until:
                 self._hint_flash_until = 0.0
                 self._update_action_strip()
+            # A job's spinner and clock, a success's end: redraw the band ~10x/s.
+            if self.notice_feed.live() and time.monotonic() - self._band_drawn_at >= 0.1:
+                self.redraw_band()
             return False
 
         # Handle keyboard navigation between input and history
@@ -1096,7 +1122,7 @@ class chatTUI(ChatActionHandlers):
                 if command:
                     self.on_command_submit(command)
                 else:
-                    self.flash_hint("no sandbox defined (/sandbox init)")
+                    self.flash_hint("no sandbox defined (/sandbox create)")
                 return True
 
             # ESC while a response is generating is /stop.
@@ -1159,6 +1185,11 @@ class chatTUI(ChatActionHandlers):
                 # Otherwise: if in input, let DOWN work normally for cursor movement
                 # If in history (not at bottom), let it navigate messages normally
 
+            elif key in ('\x1b[5;5~', '\x1b[6;5~'):  # Ctrl+PgUp/PgDn: start/end, any focus
+                panel = self.chat_history_panel
+                (panel.scroll_to_start if key == '\x1b[5;5~' else panel.scroll_to_end)()
+                return True
+
             elif key == '\x1b[5~':  # PgUp: from the input, the last user message
                 if self._last_focus_id == "input":
                     if self.chat_history_panel.move_focus_to_user(-1):
@@ -1177,6 +1208,9 @@ class chatTUI(ChatActionHandlers):
         if isinstance(event, MouseEvent):
             # Clicks on the notice band (its ``✕`` hides a notice).
             if self.notice_band.handle_input(event):
+                return True
+            # The transcript's new-content pill (focus stays where it is).
+            if self.chat_history_panel.click_pill(event):
                 return True
             # Clicks on the action line dispatch actions.
             if self.action_bar.expanded and (

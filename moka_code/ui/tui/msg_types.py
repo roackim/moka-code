@@ -87,6 +87,15 @@ class SysMsgWarning(SysMsg):
     content_color = "WARNING"
     gutter = "!"
 
+class SysMsgSuccess(SysMsg):
+    """Something that finished well and is worth seeing (an image built): a
+    notice-band line for a few seconds."""
+    name = "success"
+    title = "success"
+    frame_color = "SUCCESS"
+    content_color = "SUCCESS"
+    gutter = "✓"
+
 class ThinkingMsg(AssistantMsg):
     name = "thinking"
     title = "thinking"

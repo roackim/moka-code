@@ -39,14 +39,14 @@ from .models import (
 )
 from .roles import role_command
 from .sandbox import (
-    sandbox_base_completions,
     sandbox_build,
     sandbox_create,
     sandbox_edit,
+    sandbox_file_completions,
+    sandbox_file_descriptions,
     sandbox_help,
     sandbox_id_completions,
     sandbox_id_descriptions,
-    sandbox_init,
     sandbox_path,
     sandbox_remove,
     sandbox_restart,
@@ -117,17 +117,23 @@ COMMANDS: Dict[str, Command] = {
                         handler=_sandbox_help,
                         subcommands={
                             "edit": Command(
-                                "sandbox edit", "Edit a sandbox's file (picker when no name given)",
+                                "sandbox edit", "Edit a sandbox's .toml, or its image's Containerfile (picker when no name given)",
                                 handler=sandbox_edit,
                                 params=[Param("NAME", required=False,
                                               completions=sandbox_id_completions,
-                                              descriptions=sandbox_id_descriptions)]),
+                                              descriptions=sandbox_id_descriptions),
+                                        Param("FILE", required=False,
+                                              completions=sandbox_file_completions,
+                                              descriptions=sandbox_file_descriptions, ordered=True)]),
                             "path": Command(
-                                "sandbox path", "Print (and copy) a sandbox's file path",
+                                "sandbox path", "Print (and copy) a sandbox's .toml or Containerfile path",
                                 handler=sandbox_path,
                                 params=[Param("NAME", required=False,
                                               completions=sandbox_id_completions,
-                                              descriptions=sandbox_id_descriptions)]),
+                                              descriptions=sandbox_id_descriptions),
+                                        Param("FILE", required=False,
+                                              completions=sandbox_file_completions,
+                                              descriptions=sandbox_file_descriptions, ordered=True)]),
                             "create": Command(
                                 "sandbox create", "Create a sandbox file from a starter",
                                 handler=sandbox_create,
@@ -166,14 +172,6 @@ COMMANDS: Dict[str, Command] = {
                             "restart": Command(
                                 "sandbox restart", "Restart the active sandbox from its current image (no rebuild)",
                                 handler=sandbox_restart),
-                            "init": Command(
-                                "sandbox init", "Write a starter Containerfile / Dockerfile next to a sandbox",
-                                handler=sandbox_init,
-                                params=[Param("NAME", required=True,
-                                              completions=sandbox_id_completions,
-                                              descriptions=sandbox_id_descriptions),
-                                        Param("BASE", required=False,
-                                              completions=sandbox_base_completions)]),
                             "stop": Command(
                                 "sandbox stop", "Deactivate and run tools in-process",
                                 handler=sandbox_stop),

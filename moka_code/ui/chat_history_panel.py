@@ -109,7 +109,12 @@ class ChatHistoryPanel(TextComponent):
         self.left_pad = settings.config.ui_msg_h_padding
         self.right_pad = settings.config.ui_msg_h_padding
         self.scroll_offset = 0   # How many rows to scroll up from the bottom
-        self.auto_scroll = True
+        # What the view held at the end when it left it, ``(last message, its
+        # rows)`` (filled at the next render), for the new-content pill; None
+        # while following. Set through ``auto_scroll``.
+        self._left_end = None
+        self._pill_rect: Optional[tuple[int, int, int]] = None   # (x, y, width)
+        self._auto_scroll = True
         self.anchored_start_y: Optional[int] = None  # Absolute Y position when scrolled up (for stability)
         self.focused_message_index: Optional[int] = None  # Index of the currently focused message
         # True while one segment of a split answer is selected (``→``);
@@ -238,10 +243,6 @@ class ChatHistoryPanel(TextComponent):
                     and not isinstance(current.type, ThinkingMsg)
                     and (current.base_text or "").strip()):
                 current.set_collapsed(False)
-            # Disable auto-scroll when focusing a message, UNLESS it's the last message
-            # (we want to follow the last message's content as it updates)
-            if end < len(self.messages):
-                self.auto_scroll = False
         self._request_repaint()
         self._notify_selection_changed()
 
@@ -689,51 +690,76 @@ class ChatHistoryPanel(TextComponent):
         if msg_start >= start_y and msg_end <= end_y:
             return  # Already visible
         
+        fits = msg_height <= self.height
         if prefer_top:
-            # Scrolling up - prioritize showing the top
-            if msg_start < start_y:
-                # Message top is above visible area, scroll up to show it
+            # Scrolling up: the top first (the whole message when it fits).
+            if msg_start < start_y or not fits:
                 new_start_y = msg_start
-                self.anchored_start_y = new_start_y
-                self.scroll_offset = max_scroll - new_start_y
-                self.scroll_offset = max(0, min(max_scroll, self.scroll_offset))
-            elif msg_end > end_y:
-                # Message bottom is below visible area
-                # Try to show the whole message, but prioritize the top
-                if msg_height <= self.height:
-                    # Message fits in view, show it all
-                    new_start_y = msg_end - self.height
-                else:
-                    # Message is taller than view, show from the top
-                    new_start_y = msg_start
-                self.anchored_start_y = new_start_y
-                self.scroll_offset = max_scroll - new_start_y
-                self.scroll_offset = max(0, min(max_scroll, self.scroll_offset))
+            else:
+                new_start_y = msg_end - self.height
         else:
-            # Scrolling down - prioritize showing the bottom
-            if msg_end > end_y:
-                # Message bottom is below visible area, scroll down to show it
-                new_end_y = msg_end
-                new_start_y = new_end_y - self.height
-                self.anchored_start_y = new_start_y
-                self.scroll_offset = max_scroll - new_start_y
-                self.scroll_offset = max(0, min(max_scroll, self.scroll_offset))
-            elif msg_start < start_y:
-                # Message top is above visible area
-                # Try to show the whole message, but prioritize the bottom
-                if msg_height <= self.height:
-                    # Message fits in view, show it all
-                    new_end_y = msg_start + self.height
-                    new_start_y = new_end_y - self.height
-                else:
-                    # Message is taller than view, show from the bottom
-                    new_end_y = msg_end
-                    new_start_y = new_end_y - self.height
-                self.anchored_start_y = new_start_y
-                self.scroll_offset = max_scroll - new_start_y
-                self.scroll_offset = max(0, min(max_scroll, self.scroll_offset))
-        
-        self.auto_scroll = False
+            # Scrolling down: the bottom first (the whole message when it fits).
+            if msg_end > end_y or not fits:
+                new_start_y = msg_end - self.height
+            else:
+                new_start_y = msg_start
+        self._hold_view(new_start_y, max_scroll)
+
+    @property
+    def auto_scroll(self) -> bool:
+        """Whether the view follows the end. It does exactly when it is at the
+        bottom: leaving it stops following, reaching it (or sending) starts again;
+        focus changes never touch it."""
+        return self._auto_scroll
+
+    @auto_scroll.setter
+    def auto_scroll(self, on: bool) -> None:
+        if on:
+            self._left_end = None
+        elif self._left_end is None:
+            self._left_end = ()     # taken at the next render (``_new_below``)
+        self._auto_scroll = on
+
+    def _hold_view(self, start: int, max_scroll: int) -> None:
+        """Show the transcript from virtual row ``start``; at the bottom, follow
+        the end."""
+        start = max(0, min(max_scroll, start))
+        self.auto_scroll = start >= max_scroll
+        self.anchored_start_y = None if self.auto_scroll else start
+        self.scroll_offset = max_scroll - start
+        self._request_repaint()
+
+    def scroll_to_start(self) -> None:
+        """Ctrl+PgUp: the top of the transcript."""
+        _, _, total = self._row_index()
+        self._hold_view(0, max(0, total - self.height))
+
+    def scroll_to_end(self) -> None:
+        """Ctrl+PgDn (or a click on the new-content pill): the end, following it."""
+        _, _, total = self._row_index()
+        self._hold_view(total, max(0, total - self.height))
+
+    def _new_below(self, starts, ends) -> Optional[str]:
+        """The pill's text while the view is off the end and something came
+        after it left: how many messages, else that the last one grew."""
+        if self._auto_scroll or self._left_end is None or not self.messages:
+            return None
+        last = self.messages[-1]
+        if self._left_end == ():
+            self._left_end = (last, ends[-1] - starts[-1])
+            return None
+        marked, rows = self._left_end
+        try:
+            index = len(self.messages) - 1 - self.messages[::-1].index(marked)
+        except ValueError:      # that message went: count from what is last now
+            self._left_end = (last, ends[-1] - starts[-1])
+            return None
+        added = len(self.messages) - 1 - index
+        if added:
+            return f"↓ {added} new"
+        if ends[index] - starts[index] > rows:
+            return "↓ new output"
+        return None
 
     def render(self, buffer: Buffer):
         """Custom render to handle scrolling/clipping of messages."""
@@ -849,10 +875,38 @@ class ChatHistoryPanel(TextComponent):
 
 
         self.selection.render(buffer, start_y)
+        self._render_pill(buffer, starts, ends)
 
         # Clear clipping region
         if hasattr(buffer, 'clear_clip'):
             buffer.clear_clip()
+
+    def _render_pill(self, buffer: Buffer, starts, ends) -> None:
+        """``↓ 3 new · [^PgDn] end`` on the bottom row, right-aligned, while
+        content arrived below the view; a click on it goes to the end."""
+        from moka_code.ui.tui.layout_utils import display_width
+
+        self._pill_rect = None
+        text = self._new_below(starts, ends)
+        if text is None or self.height <= 0:
+            return
+        pill = f" {text} · [^PgDn] end "
+        width = display_width(pill)
+        if width + 1 > self.width:
+            return
+        x, y = self.x + self.width - width - 1, self.y + self.height - 1
+        buffer.write_str(x, y, pill, fg=theme.FOCUSED, reverse=True, max_width=width)
+        self._pill_rect = (x, y, width)
+
+    def click_pill(self, event) -> bool:
+        """A left click on the new-content pill goes to the end (wherever the
+        focus is: typing in the input is not interrupted)."""
+        rect = self._pill_rect
+        if (rect is None or event.button != 0 or not event.pressed or event.drag
+                or event.y != rect[1] or not rect[0] <= event.x < rect[0] + rect[2]):
+            return False
+        self.scroll_to_end()
+        return True
 
     def _render_banner(self, buffer: Buffer) -> None:
         """The moka art and the setup notes, centered in the empty transcript
@@ -1039,13 +1093,10 @@ class ChatHistoryPanel(TextComponent):
                     else:
                         current_start_y = self.anchored_start_y
                     
-                    # Scroll up by the coalesced delta (configurable lines per notch)
+                    # Scroll up by the coalesced delta (configurable lines per notch);
+                    # a transcript that fits the view stays at the end, following.
                     step = settings.config.ui_scroll_lines_per_notch * event.scroll_delta
-                    new_start_y = max(0, current_start_y - step)
-                    self.anchored_start_y = new_start_y
-                    self.scroll_offset = max_scroll - new_start_y
-                    self.auto_scroll = False # Scrolling up disables auto-scroll
-                    self._request_repaint()
+                    self._hold_view(current_start_y - step, max_scroll)
                     return True
                     
                 elif event.button == 65: # Scroll Down
@@ -1058,17 +1109,9 @@ class ChatHistoryPanel(TextComponent):
                     else:
                         current_start_y = self.anchored_start_y
                     
-                    # Scroll down by the coalesced delta (configurable lines per notch)
+                    # Scroll down by the coalesced delta; the bottom follows again.
                     step = settings.config.ui_scroll_lines_per_notch * event.scroll_delta
-                    new_start_y = min(max_scroll, current_start_y + step)
-                    self.anchored_start_y = new_start_y
-                    self.scroll_offset = max_scroll - new_start_y
-                    
-                    # If we reached the bottom, enable auto-scroll
-                    if self.scroll_offset == 0:
-                        self.auto_scroll = True
-                        self.anchored_start_y = None
-                    self._request_repaint()
+                    self._hold_view(current_start_y + step, max_scroll)
                     return True
                     
         return False
@@ -1190,11 +1233,7 @@ class ChatHistoryPanel(TextComponent):
             return
         starts, _, total = self._row_index()
         max_scroll = max(0, total - self.height)
-        start = min(starts[self.messages.index(msg)], max_scroll)
-        self.auto_scroll = start >= max_scroll
-        self.anchored_start_y = None if self.auto_scroll else start
-        self.scroll_offset = max_scroll - start
-        self._request_repaint()
+        self._hold_view(starts[self.messages.index(msg)], max_scroll)
 
     def add_edit_rule(self, before: Message) -> Optional[Message]:
         """The red rule above ``before``, a sent message being edited: sending
@@ -1377,6 +1416,8 @@ class ChatHistoryPanel(TextComponent):
                 level = "error"
             elif isinstance(msg_type, msg_types.SysMsgWarning):
                 level = "warning"
+            elif isinstance(msg_type, msg_types.SysMsgSuccess):
+                level = "success"
             else:
                 level = "info"
             self.activity_sink(message, level)

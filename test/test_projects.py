@@ -192,10 +192,39 @@ def test_every_starter_template_loads_cleanly(config_dir, workspace, stype):
     assert project.sandboxes["starter"].type == stype
 
 
-def test_container_starter_names_its_containerfile(config_dir, workspace):
+def test_container_starter_names_its_image_and_containerfile(config_dir, workspace):
     text = projects.sandbox_template("podman", "dev")
-    assert '# dockerfile  = "dev.Containerfile"' in text
-    assert 'dev.Dockerfile' in projects.sandbox_template("docker", "dev")
+    assert '\nimage       = "moka-dev"' in text
+    assert '\ndockerfile  = "dev.Containerfile"' in text
+    assert '\ndockerfile  = "dev.Dockerfile"' in projects.sandbox_template("docker", "dev")
+
+
+def test_create_container_writes_its_containerfile_beside_it(config_dir, workspace):
+    path = projects.create_sandbox(workspace, "global", "podman", "dev")
+
+    build = path.parent / "dev.Containerfile"
+    assert build.read_text().startswith("# Builds the image of sandbox dev")
+    entry = projects.load_project(workspace).sandboxes["dev"]
+    assert entry.build_file() == build
+    assert entry.to_spec().dockerfile == str(build)
+
+
+def test_create_keeps_an_existing_containerfile(config_dir, workspace):
+    directory = projects.scope_dir("global", workspace)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "dev.Dockerfile").write_text("FROM mine\n")
+
+    projects.create_sandbox(workspace, "global", "docker", "dev")
+
+    assert (directory / "dev.Dockerfile").read_text() == "FROM mine\n"
+
+
+def test_bubblewrap_has_no_build_file(config_dir, workspace):
+    projects.create_sandbox(workspace, "global", "bubblewrap", "bw")
+    entry = projects.load_project(workspace).sandboxes["bw"]
+
+    assert entry.build_file() is None
+    assert not list(projects.scope_dir("global", workspace).glob("bw.*file"))
 
 
 def test_instructions_load_and_reach_the_spec(config_dir, workspace):

@@ -124,13 +124,58 @@ def test_a_click_on_a_notice_cross_hides_it_until_it_comes_back():
     assert band.handle_input(MouseEvent(2, 0, 0, True, False))      # the text: nothing
     assert band.get_preferred_height(30) == 2
     assert band.handle_input(MouseEvent(28, 0, 0, True, False))     # the ✕
-    assert [text for text, _ in band.notices] == ["role changed"]
+    assert [n.text for n in band.notices] == ["role changed"]
 
     band.set_notices([("server down", None), ("role changed", None)])
-    assert [text for text, _ in band.notices] == ["role changed"]   # still hidden
-    band.set_notices([("role changed", None)])                      # fixed
+    assert [n.text for n in band.notices] == ["role changed"]   # still hidden
+    band.set_notices([("role changed", None)])                  # fixed
     band.set_notices([("server down", None), ("role changed", None)])
-    assert [text for text, _ in band.notices] == ["server down", "role changed"]
+    assert [n.text for n in band.notices] == ["server down", "role changed"]
+
+
+def test_notice_text_click_and_dismiss_callbacks_and_jobs_have_no_cross():
+    from moka_code.ui.tui.components.bars import Notice, NoticeBand
+
+    calls = []
+    band = NoticeBand(max_lines=3)
+    band.set_notices([
+        Notice("building dev · 3s", None, dismissible=False),
+        Notice("build dev failed", None, on_click=lambda: calls.append("open"),
+               on_dismiss=lambda: calls.append("gone")),
+    ])
+    band.set_layout(0, 0, 30, band.get_preferred_height(30))
+    buffer = Buffer(30, 2)
+    band.render(buffer)
+    assert not row_text(buffer).endswith(" ✕ ")                    # a job: no ✕
+    assert band.handle_input(MouseEvent(28, 0, 0, True, False))     # nothing to dismiss
+    assert len(band.notices) == 2
+
+    band.handle_input(MouseEvent(2, 1, 0, True, False))             # its text
+    band.handle_input(MouseEvent(28, 1, 0, True, False))            # its ✕
+    assert calls == ["open", "gone"]
+    assert [n.text for n in band.notices] == ["building dev · 3s"]
+
+
+def test_a_long_notice_keeps_its_fix_and_shortens_the_problem():
+    from moka_code.ui.tui.components.bars import NoticeBand
+
+    text = "build dev failed (exit 1): error NU1301: Unable to load the service index → /sandbox edit dev image"
+    fitted = NoticeBand.fit(text, 60)
+    assert fitted.endswith("… → /sandbox edit dev image") and 55 <= len(fitted) <= 60
+    assert NoticeBand.fit("short → fix", 60) == "short → fix"
+    assert NoticeBand.fit("no arrow here at all, just a long line", 20) == "no arrow here at al…"
+
+
+def test_the_more_row_calls_on_more():
+    from moka_code.ui.tui.components.bars import NoticeBand
+
+    opened = []
+    band = NoticeBand(max_lines=2, more="+{n} more")
+    band.on_more = lambda: opened.append(True)
+    band.set_notices([("a", None), ("b", None), ("c", None)])
+    band.set_layout(0, 0, 30, band.get_preferred_height(30))
+    band.handle_input(MouseEvent(2, 1, 0, True, False))
+    assert opened == [True]
 
 def test_action_bar_label_is_left_italic_and_hints_stay_right():
     """The input's mode label sits at the left edge, muted and italic, while
