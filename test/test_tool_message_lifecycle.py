@@ -89,6 +89,9 @@ def test_non_bash_completion_has_no_exit_word():
 
 
 def test_tool_name_color_tracks_state():
+    drafting = _tool(status="drafting")
+    assert drafting.get_formatted().startswith(f"{theme.WARNING}bash")
+
     running = _tool(status="running")
     assert running.get_formatted().startswith(f"{theme.WARNING}bash")
 
@@ -357,15 +360,22 @@ def test_running_command_shows_its_last_output_lines():
     assert len(_lines(msg)) == 1
 
 
-def test_write_draft_grows_live_in_the_final_format():
+@pytest.mark.parametrize(("raw", "expected"), [
+    # path first: target and live count are both salvageable
+    ('{"path": "a.py", "content": "one\\ntwo\\nthr', "write a.py +2 lines"),
+    # content first: the incomplete content hides the trailing path, but the
+    # line count must still advance while the content streams
+    ('{"content": "one\\ntwo\\nthr', "write +2 lines"),
+])
+def test_write_draft_grows_live_in_the_final_format(raw, expected):
     """A streaming write is the tool line itself, counting lines so far."""
     msg = Message("", msg_type=ToolCallMsg(), max_width=80)
     msg.tool_name = "write"
-    msg.tool_args = '{"path": "a.py", "content": "one\\ntwo\\nthr'
+    msg.tool_args = raw
     msg.set_tool_status("drafting")
     msg.rebuild_tool_display()
 
-    assert _lines(msg) == ["write a.py +2 lines"]
+    assert _lines(msg) == [expected]
 
 
 def test_a_call_waiting_for_approval_shows_what_it_changes():

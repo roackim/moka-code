@@ -566,7 +566,8 @@ Every message displayed in the chat history has a `MsgType` that controls its ti
 
 `ToolCallMsg` renders compact (one line when unfocused):
 `name target metric trailing`, single-spaced, with **no status glyph**. Only the
-name (TOOL, or ERROR when failed/denied) and the colored counts/state stand
+name (WARNING while drafting/running, PERMISSION while asking, SUCCESS when
+completed, ERROR when failed/denied) and the colored counts/state stand
 out; the target and the `▌` bar are MUTED, so activity
 reads apart from prose. A call waiting for approval (`asking`) is unfolded
 (its body: the diff, the full command) and its prefix (bar, bullet or tree
@@ -623,8 +624,9 @@ edit a.py +2 lines −1 line denied
 
 **Drafting is the tool line itself.** A `ToolCallDraft` event opens a
 `ToolCallMsg` in `drafting` state that grows in the final format (a `write`
-counts the escaped newlines streamed so far: `+12 lines` → `+300 lines`); the
-complete `ToolCall` updates the same message. Partial JSON args are salvaged by
+counts the escaped newlines streamed so far: `+12 lines` → `+300 lines`, even
+when the trailing `path` is not yet salvageable); the complete `ToolCall`
+updates the same message. Partial JSON args are salvaged by
 `_parse_tool_args()`; a draft never full-parses (`full=False`), and
 parse/metric/body are cached by args identity. The harness throttles
 `ToolCallDraft` to one per 100 ms per call. A tool line is one `ToolCallMsg`

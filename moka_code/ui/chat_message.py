@@ -151,7 +151,10 @@ def _tool_target_metric(name: str, args: dict, *, raw: Optional[str],
         content = args.get("content")
         if isinstance(content, str):
             added = _count_lines(content)
-        elif drafting and target and raw:
+        elif drafting and raw:
+            # Count escaped newlines without requiring the path to be
+            # salvageable first: models may stream ``content`` before
+            # ``path``, and a partial content value is never salvaged.
             added = raw.count(r"\n")
         else:
             added = 0
@@ -1157,6 +1160,7 @@ class Message:
         target, metric = self._tool_display_parts
 
         name_color = {
+            "drafting": theme.WARNING,
             "asking": theme.PERMISSION,
             "running": theme.WARNING,
             "completed": theme.SUCCESS,
