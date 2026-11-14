@@ -242,7 +242,13 @@ async def conversation_session(ui: ChatUIProtocol, args: List[str]):
         session = by_item.get(item)
         if session is not None and session.path == getattr(ui, "session_path", None):
             return      # already the conversation on screen
-        if session is not None and load_conversation(ui, session.path):
+        if session is None:
+            return
+        # What changed since the last reply (a /compact, notices) is kept.
+        save = getattr(ui, "save_session", None)
+        if callable(save):
+            save()      # never in private mode
+        if load_conversation(ui, session.path):
             # Resuming continues that session's file (no duplicate).
             ui.session_path = session.path
             ui.chat_history_panel.add_message(

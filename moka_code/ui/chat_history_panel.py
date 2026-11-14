@@ -108,7 +108,6 @@ class ChatHistoryPanel(TextComponent):
         self.max_width = max_width
         self.left_pad = settings.config.ui_msg_h_padding
         self.right_pad = settings.config.ui_msg_h_padding
-        self.max_messages = 150  # Maximum number of messages to keep
         self.scroll_offset = 0   # How many rows to scroll up from the bottom
         self.auto_scroll = True
         self.anchored_start_y: Optional[int] = None  # Absolute Y position when scrolled up (for stability)
@@ -1142,18 +1141,6 @@ class ChatHistoryPanel(TextComponent):
                 self.focused_message_index += 1
             new_message.get_component().parent = self
             self._message_height_cache.clear()
-        
-        # Keep only last max_messages
-        if len(self.messages) > self.max_messages:
-            dropped = len(self.messages) - self.max_messages
-            self.messages = self.messages[-self.max_messages:]
-            self._message_height_cache.clear()
-            # Adjust the focused-message index so it stays valid after the
-            # oldest messages are dropped from the front.
-            if self.focused_message_index is not None:
-                self.focused_message_index = max(0, self.focused_message_index - dropped)
-                if self.focused_message_index >= len(self.messages):
-                    self.focused_message_index = None
 
         self._request_repaint()
         

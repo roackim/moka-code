@@ -848,8 +848,11 @@ class chatTUI(ChatActionHandlers):
         from moka_code.harness import sessions
 
         keep = settings.config.context_sessions
-        history = getattr(self.agent, "history", None)
-        if (keep <= 0 or not history or self.session_path is None
+        history = getattr(self.agent, "history", None) or []
+        # Notices alone (a sandbox or role at startup) are no conversation:
+        # saving them would push a real session out of the ``keep`` most recent.
+        if (keep <= 0 or self.session_path is None
+                or not any(e.get("role") in ("user", "assistant") for e in history)
                 or getattr(self.agent, "private", False)):
             return
         workspace = getattr(self.agent, "workspace", ".")
