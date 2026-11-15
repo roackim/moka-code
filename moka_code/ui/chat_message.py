@@ -541,6 +541,9 @@ class Message:
 
         # Steering / queue state
         self.is_queued: bool = False   # UserMsg waiting while generation is active
+        self.steering: bool = False    # queued, and steered into the running turn
+        # Columns kept free on the right for the queue tag (``set_queued``).
+        self.tag_reserve: int = 0
         
         # Action click flash feedback (set by ChatHistoryPanel, read by Box)
         self._flash_action_key: Optional[str] = None
@@ -691,7 +694,8 @@ class Message:
         if isinstance(self.type, msg_types.ThinkingMsg) and (self.base_text or "").strip():
             fold = [MsgAction.EXPAND if self.collapsed else MsgAction.COLLAPSE]
         if self.is_queued:
-            return [MsgAction.EDIT, MsgAction.CANCEL, *fold, MsgAction.COPY]
+            steer = [] if self.steering else [MsgAction.STEER]
+            return [*steer, MsgAction.EDIT, MsgAction.CANCEL, *fold, MsgAction.COPY]
         if isinstance(self.type, msg_types.UserMsg) and self.harness_message_ids:
             return [MsgAction.EDIT, *fold, MsgAction.COPY]
         kill = ([MsgAction.KILL] if self.is_tool_message() and self.tool_name == "bash"
@@ -700,20 +704,25 @@ class Message:
 
     def set_queued(self, position: Optional[int]) -> None:
         """Mark this user message as waiting in the queue (``position`` 1 is next),
-        or, with ``None``, as picked up: dashed muted gutter and a numbered title
-        while it waits."""
+        or, with ``None``, as picked up. While it waits: muted text, a dashed
+        muted gutter and a muted tag on the right of its first line
+        (``queued #N``, or ``steering`` once steered)."""
         self.is_queued = position is not None
-        if self.is_queued:
-            self.set_title(f"queued #{position}")
-            self.box.gutter = "╎"
-            self.box.gutter_color = theme.MUTED
-            self.set_frame_color(theme.MUTED)
-        else:
-            self.set_title(self.type.title)
-            self.box.gutter = getattr(self.type, "gutter", "▸")
-            self.box.gutter_color = getattr(self.type, "gutter_color", None) or getattr(
-                theme, self.type.frame_color, theme.DEFAULT)
-            self.set_frame_color(getattr(theme, self.type.frame_color, theme.DEFAULT))
+        if not self.is_queued:
+            self.steering = False
+        tag = ("steering" if self.steering else f"queued #{position}") if self.is_queued else ""
+        self.set_title(tag or self.type.title)
+        self.box.gutter = "╎" if self.is_queued else getattr(self.type, "gutter", "▸")
+        self.box.tag = tag
+        # The tag gets its own columns (a gap, the tag, a gap) so text never
+        # runs under it.
+        reserve = len(tag) + 2 if tag else 0
+        if reserve != self.tag_reserve:
+            delta, self.tag_reserve = reserve - self.tag_reserve, reserve
+            self.box.content_pad_right = self.right_pad + reserve
+            if self.max_width:
+                self.reformat(max(1, self.max_width - delta))
+        self.refresh_theme()                # muted while queued, type colors after
 
     def inline_action_items(self):
         """Actions the Box should render inline, or [] when opted out.

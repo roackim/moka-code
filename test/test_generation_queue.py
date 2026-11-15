@@ -226,7 +226,8 @@ def test_a_queued_message_offers_edit_and_cancel_only_while_waiting(monkeypatch)
     from moka_code.ui.tui.msg_types import MsgAction
 
     async def body(ui, queued):
-        assert [a.label for a in queued[0].get_active_actions()] == ["edit", "cancel", "copy"]
+        assert [a.label for a in queued[0].get_active_actions()] == [
+            "steer", "edit", "cancel", "copy"]
 
     ui, _ = _queue_two(monkeypatch, body)
     sent = next(m for m in ui.chat_history_panel.messages if m.base_text == "second")
@@ -370,3 +371,72 @@ def test_editing_is_refused_while_a_response_is_generating(monkeypatch):
         ui.worker_task.cancel()
 
     asyncio.run(scenario())
+
+
+def _steer_ui(monkeypatch, drain_after_gate):
+    """``first`` waits on a gate; then, like the harness between two steps,
+    it lets steered messages join (``drain_after_gate``) or ends first."""
+    started, steers, gate = [], [], {}
+
+    async def chat(text, attached=None, prompt=None):
+        started.append(text)
+        yield events.Start(message_id=text, role="assistant")
+        yield events.Token(text=f"answer to {text}")
+        if text == "first":
+            gate["go"] = asyncio.Event()
+            await gate["go"].wait()
+            while drain_after_gate and steers:
+                sent, key = steers.pop(0)
+                yield events.Steered(key=key, message_id=f"id-{sent}")
+            yield events.Start(message_id="first-2", role="assistant")
+            yield events.Token(text="first, continued")
+        steers.clear()
+        yield events.Done()
+
+    ui = _ui(monkeypatch, chat)
+    ui.agent.steer = lambda text, key, attached=None, prompt=None: steers.append((text, key))
+    ui.agent.unsteer = lambda key: None
+    return ui, started, steers, gate
+
+
+def test_steer_joins_the_running_turn_at_its_next_step(monkeypatch):
+    async def scenario():
+        ui, started, steers, gate = _steer_ui(monkeypatch, drain_after_gate=True)
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        ui.on_user_submit("first")
+        await asyncio.sleep(0.05)
+        ui.on_user_submit("second")
+        ui.on_user_submit("third")
+        second, third = [m for m in ui.chat_history_panel.messages if m.is_queued]
+        ui.handle_steer_action(third)
+        assert steers == [("third", third)]
+        assert third.title == "steering" and second.title == "queued #2"
+        assert third.box.tag == "steering" and third.box.content_pad_right == third.right_pad + 10
+        gate["go"].set()
+        await asyncio.sleep(0.2)
+        ui.worker_task.cancel()
+        return ui, started, third
+
+    ui, started, third = asyncio.run(scenario())
+    assert started == ["first", "second"]          # third went in the first turn
+    assert not third.is_queued and third.harness_message_ids == ["id-third"]
+    assert third.box.tag == "" and third.box.content_pad_right == third.right_pad
+    texts = _texts(ui)
+    assert texts.index("answer to first") < texts.index("third") < texts.index("first, continued")
+
+
+def test_a_steer_the_turn_did_not_take_is_sent_next(monkeypatch):
+    async def scenario():
+        ui, started, _, gate = _steer_ui(monkeypatch, drain_after_gate=False)
+        ui.worker_task = asyncio.create_task(ui.agent_worker())
+        ui.on_user_submit("first")
+        await asyncio.sleep(0.05)
+        ui.on_user_submit("second")
+        ui.on_user_submit("third")
+        ui.handle_steer_action([m for m in ui.chat_history_panel.messages if m.is_queued][1])
+        gate["go"].set()
+        await asyncio.sleep(0.3)
+        ui.worker_task.cancel()
+        return started
+
+    assert asyncio.run(scenario()) == ["first", "third", "second"]

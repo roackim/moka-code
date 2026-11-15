@@ -411,7 +411,8 @@ class chatTUI(ChatActionHandlers):
             panel.left_pad = panel.right_pad = pad
             for message in panel.messages:
                 message.left_pad = message.right_pad = pad
-                message.box.content_pad_left = message.box.content_pad_right = pad
+                message.box.content_pad_left = pad
+                message.box.content_pad_right = pad + message.tag_reserve
             if panel.width > 0:
                 panel.on_width_change(panel.width)   # rewraps every message
         if self.compositor is not None:
@@ -605,6 +606,7 @@ class chatTUI(ChatActionHandlers):
 
     def _enqueue_message(self, text: str, message: Message, attached=()) -> None:
         """Queue a message (with its image references) and apply queued presentation."""
+        message.queued_input = (text, list(attached))     # what [s] steer sends
         if self.is_generating() and message is not self._active_user_msg:
             message.set_queued(1)
             self._renumber_queued()
@@ -613,8 +615,10 @@ class chatTUI(ChatActionHandlers):
         self.message_queue.put_nowait((text, message, list(attached)))
 
     def _renumber_queued(self) -> None:
-        """Number the waiting messages in the order they will be sent."""
+        """Number the waiting messages in the order they will be sent (steered
+        ones first)."""
         waiting = [m for m in self.chat_history_panel.messages if getattr(m, "is_queued", False)]
+        waiting.sort(key=lambda m: not m.steering)
         for position, message in enumerate(waiting, start=1):
             message.set_queued(position)
 
@@ -699,6 +703,7 @@ class chatTUI(ChatActionHandlers):
             MsgAction.KILL: self.handle_kill_action,
             MsgAction.EDIT: self.handle_edit_action,
             MsgAction.CANCEL: self.handle_cancel_queued_action,
+            MsgAction.STEER: self.handle_steer_action,
         }
         handler = handlers.get(action)
         if handler:

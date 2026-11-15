@@ -11,7 +11,8 @@ class MsgAction(Enum):
     content (delete/edit) are intentionally not message actions; when needed
     they belong to explicit commands. The exceptions are the user's own message
     (EDIT): a queued one is not in the conversation yet, and a sent one is cut
-    back, with everything after it, to be edited and sent again; and a running
+    back, with everything after it, to be edited and sent again; a queued one
+    can also be steered into the running turn (STEER); and a running
     bash call (KILL): it is killed, the model gets a cancelled result.
     """
     COPY = ("c", "copy")
@@ -22,6 +23,7 @@ class MsgAction(Enum):
     KILL = ("k", "kill")        # running bash call: kill it, the turn goes on
     EDIT = ("e", "edit")        # user message: back to the input
     CANCEL = ("x", "cancel")    # queued message: dropped before it is sent
+    STEER = ("s", "steer")      # queued message: joins the running turn at its next step
     
     def __init__(self, key: str, label: str):
         self.key = key

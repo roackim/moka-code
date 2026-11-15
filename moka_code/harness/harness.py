@@ -115,6 +115,8 @@ class Harness:
         self._running_tool = None
         # Set while questions wait for ``answer_questions``.
         self._answers: Optional[asyncio.Future] = None
+        # User messages steered into the running turn (``steer``).
+        self._steers: List[tuple] = []
         # USD spent on this conversation, when the provider reports costs
         # (None until one does, so local servers show nothing).
         self.conversation_cost: Optional[float] = None
@@ -1520,13 +1522,40 @@ class Harness:
         async for event in self._agent_loop():
             yield event
 
+    def steer(self, text: str, key: Any, attached: Optional[List[Dict[str, Any]]] = None,
+              prompt: Optional[Dict[str, Any]] = None) -> None:
+        """Have ``text`` join the running turn before its next request (once
+        the running tools are done), as a user message: ``events.Steered``
+        with ``key`` says when. A turn that ends first drops it; the caller
+        then sends it as the next turn."""
+        self._steers.append((text, key, list(attached or []), prompt))
+
+    def unsteer(self, key: Any) -> None:
+        """Drop a steered message that has not joined yet (unqueued)."""
+        self._steers = [steer for steer in self._steers if steer[1] is not key]
+
     async def _agent_loop(self) -> AsyncGenerator[events.Event, None]:
         """LLM -> [Tool Calls -> Tool Execution -> LLM]* -> Final Answer, from
         the history as it is (``chat`` has added the user message)."""
+        try:
+            async for event in self._agent_steps():
+                yield event
+        finally:
+            self._steers.clear()        # not taken: the caller sends them next
+
+    async def _agent_steps(self) -> AsyncGenerator[events.Event, None]:
         from moka_code import settings
 
         # Agent Loop (Handle Multi-step Tool Calls)
         while True:
+            # Steered messages join here, between two requests.
+            while self._steers:
+                text, key, attached, prompt = self._steers.pop(0)
+                extra = {"images": attached} if attached else {}
+                if prompt:
+                    extra["prompt"] = prompt
+                message_id = self._add_message_to_history("user", text, **extra)
+                yield events.Steered(key=key, message_id=message_id)
             # A running turn that has filled the window pauses here, between two
             # requests, to compact; it then carries on from the summary.
             async for notice in self._auto_compact(settings.config.context_compact_stop_at, running=True):

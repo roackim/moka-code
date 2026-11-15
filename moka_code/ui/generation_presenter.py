@@ -132,6 +132,9 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
         user_input, list(attached), prompt=expansion.meta if expansion is not None else None)
     try:
         async for event in stream:
+            if isinstance(event, events.Steered):
+                app.on_steered(event.key, event.message_id)
+                continue
             if isinstance(event, events.Start):
                 current_harness_ids = [event.message_id]
                 logger.debug(f"Start: {event.role} with ID {event.message_id}")

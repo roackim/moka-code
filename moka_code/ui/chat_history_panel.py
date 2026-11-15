@@ -606,7 +606,7 @@ class ChatHistoryPanel(TextComponent):
         # The Box owns the gutter/padding; this is just the wrap width.
         for message in self.messages:
             msg_inner_width = Box.thread_content_width(
-                new_width, message.left_pad, message.right_pad)
+                new_width, message.left_pad, message.right_pad + message.tag_reserve)
             if msg_inner_width < 1:
                 msg_inner_width = 1
             message.reformat(msg_inner_width)
@@ -1296,6 +1296,19 @@ class ChatHistoryPanel(TextComponent):
         except ValueError:
             # Message not found, ignore
             pass
+
+    def move_message(self, msg: Message, index: int) -> None:
+        """Move ``msg`` to ``index`` (of the list without it); the focus stays
+        on the message it was on."""
+        focused = None
+        if self.focused_message_index is not None and 0 <= self.focused_message_index < len(self.messages):
+            focused = self.messages[self.focused_message_index]
+        self.messages.remove(msg)
+        self.messages.insert(index, msg)
+        if focused is not None:
+            self.focused_message_index = self.messages.index(focused)
+        self._message_height_cache.clear()
+        self._request_repaint()
 
     def remove_message(self, msg: Message) -> None:
         """Remove ``msg`` if it is still in the transcript."""

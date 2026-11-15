@@ -5,7 +5,7 @@ single union — no parallel chunk/status types.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 
 @dataclass
@@ -13,6 +13,14 @@ class Start:
     """A new message begins. ``role`` is ``"user"`` or ``"assistant"``."""
     message_id: str
     role: str
+
+
+@dataclass
+class Steered:
+    """A user message steered into the running turn (``Harness.steer``)
+    joined it as ``message_id``; ``key`` is what the caller passed."""
+    key: Any
+    message_id: str
 
 
 @dataclass
@@ -185,7 +193,7 @@ class Done:
 
 
 Event = Union[
-    Start, Token, Reasoning, ToolCallDraft, ToolCall, PermissionRequest,
+    Start, Steered, Token, Reasoning, ToolCallDraft, ToolCall, PermissionRequest,
     Questions, ToolStarted, ToolOutput, ToolResult, Usage, Error, Notice,
     CompactionStarted, CompactionText, Compacted, CompactionFailed, Done
 ]

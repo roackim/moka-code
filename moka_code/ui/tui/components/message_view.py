@@ -49,6 +49,9 @@ class MessageView(Box):
         self.content_pad_right = max(0, content_pad_right)
         # Blank rows above and below the content (a code block's separation).
         self.content_pad_y = 0
+        # Muted tag right of the first line (a queued message's place); its
+        # columns are kept in ``content_pad_right`` (``Message.set_queued``).
+        self.tag = ""
 
     # -- layout --------------------------------------------------------
 
@@ -176,6 +179,15 @@ class MessageView(Box):
         if incremental:
             temp_buffer.set_clip(self.x, self.y + start, self.width, self.height - start)
         self.child.render(temp_buffer)
+
+        # The tag sits in its reserved columns: the last ``len(tag) + 2`` of
+        # the right padding, one gap on each side.
+        tag = self.tag
+        row = self.content_pad_y
+        if tag and start <= row < self.height:
+            x = self.width - self.content_pad_right + 1
+            self.subbuffer.write_str(max(1, x), row, tag, fg=theme.MUTED, bg=bg,
+                                     max_width=max(0, self.width - max(1, x)))
 
         # Actions on a dedicated row below the content when focused. This row
         # is part of the box height (see get_preferred_height), so it pushes

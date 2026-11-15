@@ -136,12 +136,56 @@ class ChatActionHandlers:
         False when it was already picked up."""
         if not getattr(message, "is_queued", False):
             return False
+        if message.steering:
+            self.agent.unsteer(message)
         message.cancelled = True
         message.set_queued(None)
         self.chat_history_panel.remove_message(message)
         self._renumber_queued()
         self._update_action_strip()
         return True
+
+    def handle_steer_action(self, message):
+        """``s`` on a queued message: it joins the running turn before its
+        next request, once the running tools are done (``Harness.steer``).
+        It goes first in the queue, so a turn that ends before that step sends
+        it next."""
+        if not getattr(message, "is_queued", False) or message.steering \
+                or not self.is_generating():
+            return
+        text, attached = message.queued_input
+        prompt = message.prompt.meta if message.prompt is not None else None
+        self.agent.steer(text, message, attached, prompt)
+        message.steering = True
+        waiting = []
+        while not self.message_queue.empty():
+            waiting.append(self.message_queue.get_nowait())
+        waiting.sort(key=lambda item: not getattr(item[1], "steering", False))  # stable
+        for item in waiting:
+            self.message_queue.put_nowait(item)
+        self._move_before_queued(message)
+        self._renumber_queued()
+        self._update_action_strip()
+        self.flash_hint("steering: joins the turn at its next step")
+
+    def _move_before_queued(self, message) -> None:
+        """Move ``message`` above the queued messages that are not steered
+        (the transcript shows the send order)."""
+        panel = self.chat_history_panel
+        others = [m for m in panel.messages if m is not message]
+        index = next((i for i, m in enumerate(others)
+                      if getattr(m, "is_queued", False) and not m.steering), len(others))
+        panel.move_message(message, index)
+
+    def on_steered(self, message, message_id: str) -> None:
+        """A steered message joined the running turn: it is sent (the worker
+        skips its queue entry) and sits where the turn took it."""
+        message.cancelled = True
+        message.harness_message_ids = [message_id]
+        message.set_queued(None)
+        self._move_before_queued(message)
+        self._renumber_queued()
+        self._update_action_strip()
 
     def handle_cancel_queued_action(self, message):
         """Drop a queued message before it is sent."""

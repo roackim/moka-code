@@ -313,13 +313,22 @@ state directly; there is no `ConversationRuntime`, `TabView`, or `TabBar`.
 **One generation at a time.** A single `agent_worker` serves `message_queue`:
 `run()` records it in `worker_task`, so `_ensure_worker()` never starts a
 second one (two workers on one queue used to run generations concurrently). A
-message sent while the model answers is queued (`Message.set_queued(n)`: dashed
-muted gutter, title `queued #n`, numbered in send order) and **stays last**:
+message sent while the model answers is queued (`Message.set_queued(n)`: muted
+text, dashed muted gutter, and a muted `queued #n` tag right of the first line,
+numbered in send order; its columns are reserved in `tag_reserve`, so text never
+runs under it) and **stays last**:
 `ChatHistoryPanel.new_message(append=True)` inserts new lines above trailing
 queued messages, so the running generation's tool lines and text never land below
-a queued question. A selected queued message offers `[e]` edit (unqueue, text and
-images back in the input, replacing any draft) and `[x]` cancel; the worker skips
-an unqueued entry (`message.cancelled`).
+a queued question. A selected queued message offers `[s]` steer, `[e]` edit
+(unqueue, text and images back in the input, replacing any draft) and `[x]`
+cancel; the worker skips an unqueued entry (`message.cancelled`).
+`[s]` steer (`handle_steer_action`) hands the message to `Harness.steer`: it
+joins the running turn as a user message at the top of the next loop step (after
+the running tools, before the next request), signalled by `events.Steered`
+(`on_steered` links it and moves it above the other queued messages). Until then
+it is tagged `steering` and goes first in the queue, so a turn that ends before
+that step (its final answer was already streaming) sends it next; `_agent_loop`
+drops untaken steers when the turn ends, and `[e]`/`[x]` call `Harness.unsteer`.
 A *sent* user message also offers `[e]` (not while a response is generating):
 `Harness.truncate_history(id)` drops it and everything after it, the panel drops the
 same messages (`truncate_from`), and its text and images go back in the input,
