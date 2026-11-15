@@ -1327,6 +1327,7 @@ class chatTUI(ChatActionHandlers):
             self.status_bar,
             self.action_bar,
             self.notice_band,
+            reserved_rows=lambda: question_form.reserved_rows(self),
         )
         self.root = chat_screen.root  # Store root for global handler
         # Read fps at construction time (not import time) so config changes apply.

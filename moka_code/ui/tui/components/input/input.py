@@ -275,27 +275,16 @@ class InputComponent(Component):
             self.buffer.text, trigger_pos
         )
 
-        visible_count = min(len(menu.items), menu.max_height - 2)
-        menu_height = visible_count + 2
-
         # Horizontally at the trigger; vertically above the whole input box
         # (not the trigger's line), so a multiline input is never covered.
         trigger_x = self.x + trigger_col - 2
         trigger_y = self.y
         compositor = getattr(self, "compositor_ref", None)
-        screen_width = getattr(compositor, "width", self.x + self.width)
         screen_height = getattr(compositor, "height", self.y + self.height)
-
-        if getattr(menu, "fill_width", False):
-            # File picker: span the full screen width (simpler, shows long paths).
-            menu_x = 0
-            menu_width = screen_width
-        else:
-            menu_width = min(max(self.width, 20), screen_width)
-            menu_x = max(0, min(trigger_x, screen_width - menu_width))
-        header_rows = getattr(menu, "header_rows", None)
-        if header_rows is not None:
-            menu_height += header_rows(menu_width)
+        menu_width = self._menu_width(menu)
+        menu_height = self.menu_rows(menu)
+        menu_x = 0 if getattr(menu, "fill_width", False) else max(
+            0, min(trigger_x, self._screen_width() - menu_width))
 
         space_above = max(0, trigger_y)
         space_below = max(0, screen_height - trigger_y - 1)
@@ -307,6 +296,26 @@ class InputComponent(Component):
             menu_height = min(menu_height, space_below)
         
         menu.set_layout(menu_x, menu_y, menu_width, menu_height)
+
+    def _screen_width(self) -> int:
+        return getattr(getattr(self, "compositor_ref", None), "width", self.x + self.width)
+
+    def _menu_width(self, menu) -> int:
+        """A menu's width: the whole screen (``fill_width``, e.g. the file
+        picker, shows long paths), else the input's."""
+        screen_width = self._screen_width()
+        if getattr(menu, "fill_width", False):
+            return screen_width
+        return min(max(self.width, 20), screen_width)
+
+    def menu_rows(self, menu) -> int:
+        """The rows ``menu`` takes when nothing clips it: its frame, its
+        header and the options it shows."""
+        rows = min(len(menu.items), menu.max_height - 2) + 2
+        header_rows = getattr(menu, "header_rows", None)
+        if header_rows is not None:
+            rows += header_rows(self._menu_width(menu))
+        return rows
 
     def place_menu_above_input(self, menu) -> None:
         """Anchor a floating menu directly above the input box.

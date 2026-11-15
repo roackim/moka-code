@@ -331,6 +331,18 @@ def close_form(app, outcome: str) -> None:
     app._update_action_strip()
 
 
+def reserved_rows(app) -> int:
+    """The history rows the open form would cover (``ChatScreen``'s reserved
+    rows): its height, less the rows already between the history and the
+    input line (the action line, the input box's top edge). 0 when closed."""
+    menu = app.question_menu
+    if app.question_form is None or menu is None:
+        return 0
+    input_line, box = app.input_component, app.input_box
+    between = (input_line.y - box.y) + app.action_bar.get_preferred_height(box.width)
+    return max(0, input_line.menu_rows(menu) - between)
+
+
 def input_changed(app) -> None:
     """The input's text changed (``InputComponent.on_change``): typing takes
     the highlight off the options."""

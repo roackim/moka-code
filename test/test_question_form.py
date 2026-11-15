@@ -248,3 +248,32 @@ def test_a_resumed_record_keeps_a_long_own_answer_whole():
     assert question_form.answer_from_result(text) == (f"old · ✎ {own}", True)
     _, text = ask.result(events.Answer(choices=["old"], text=""), dismissed=False)
     assert question_form.answer_from_result(text) == ("old", True)
+
+
+def test_the_open_form_shrinks_the_history_instead_of_covering_it():
+    """2026-11-15: the form was drawn over the end of the transcript, and
+    scrolling could not bring those rows out from under it (the question
+    referred to a table row hidden there)."""
+    ui = chatTUI(Stub())
+    screen = ChatScreen(ui.chat_history_panel, ui.input_box, ui._focus_scope,
+                        ui.status_bar, ui.action_bar,
+                        reserved_rows=lambda: question_form.reserved_rows(ui))
+    history = ui.chat_history_panel
+
+    def frame():
+        screen.root.set_layout(0, 0, 60, 40)
+        screen.root.layout()
+        if ui.question_menu is not None:
+            ui.question_menu.render(Buffer(60, 40))
+
+    question_form.open_form(ui, [DB, TESTS, NAME])
+    frame()
+    frame()
+    reserved = question_form.reserved_rows(ui)
+    assert reserved > 0
+    assert history.y + history.height == ui.question_menu.y
+    open_height = history.height
+    question_form.close_form(ui, "dismissed")
+    frame()
+    assert question_form.reserved_rows(ui) == 0
+    assert history.height == open_height + reserved
