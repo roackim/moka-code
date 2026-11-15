@@ -224,6 +224,20 @@ def test_the_folded_record_colors_the_question_and_the_answer():
     assert msg.component.highlighter(logical[0][0])[-1] == (20, 29, theme.USER_TEXT)
 
 
+def test_a_blank_line_in_an_answer_keeps_the_rows_after_it_colored():
+    """2026-11-15: a blank line in an own answer ended its line there, so
+    the rest of it and every question below lost their colors."""
+    from moka_code.ui.chat_message import wrapped_spans
+    from moka_code.ui.question_form import record_line
+
+    first = record_line("Which database?", "✎ postgres\n\nbecause we run it", True)
+    second = record_line("Port?", "5432", True)
+    rows = wrapped_spans([first, second],
+                         "Which database? → ✎ postgres\n\nbecause we run it\nPort? → 5432")
+    assert rows["because we run it"] == [(0, 17, "USER_TEXT")]
+    assert rows["Port? → 5432"] == second[1]
+
+
 def test_a_resumed_record_keeps_a_long_own_answer_whole():
     """2026-11-03: on resume / import an own answer of several lines was cut
     to its first one (only lines starting ``The user wrote:`` were read)."""

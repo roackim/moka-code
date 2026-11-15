@@ -78,32 +78,29 @@ class ChatActionHandlers:
         elif hasattr(self, "notify"):
             self.notify("Copied to clipboard")
 
-    def handle_output_action(self, message):
-        """Handle output action for tool messages - toggle output visibility."""
-        logger = logging.getLogger("tui")
-        logger.info("Output toggle action triggered")
-        
-        from moka_code.ui.tui.msg_types import ToolCallMsg
+    def handle_fold_action(self, message):
+        """``o`` expand / collapse: a tool line or a thought."""
+        from moka_code.ui.tui.msg_types import ToolCallMsg, ToolOutputMsg
 
-        panel = self.chat_history_panel
-        # An expanded tool call is a two-segment group: ``o`` collapses it.
-        if getattr(message, "group", None) is not None:
-            collapse = getattr(panel, "collapse_tool_group", None)
-            if callable(collapse) and collapse(message):
-                return
-
-        # Check if this is a tool message
-        if isinstance(message.type, ToolCallMsg):
-            # Finished calls expand into command/output segments; running
-            # calls keep the old inline toggle.
-            split = getattr(panel, "split_tool_output", None)
-            if callable(split) and split(message):
-                return
-            message.show_output = not message.show_output
-            message.rebuild_tool_display()
-            logger.info(f"Tool output {'shown' if message.show_output else 'hidden'}")
+        if isinstance(message.type, (ToolCallMsg, ToolOutputMsg)):
+            self.handle_tool_fold_action(message)
         else:
-            logger.warning("Output action called on non-tool message")
+            self.handle_thought_action(message)
+
+    def handle_tool_fold_action(self, message):
+        """``o`` on a tool line: expand it into its body (full command, diff)
+        and its output, or fold it back to one line. Focus alone never
+        expands it. A finished call with output splits into a command and an
+        output segment (each selectable and copied apart); any other call
+        unfolds in place (a running one keeps its live output tail)."""
+        panel = self.chat_history_panel
+        if getattr(message, "group", None) is not None:
+            panel.collapse_tool_group(message)
+        elif not panel.split_tool_output(message):
+            message.box.compact = not message.box.compact
+            message.show_output = not message.box.compact
+            message.rebuild_tool_display()
+        self._update_action_strip()
 
 
     def handle_prompt_action(self, message):

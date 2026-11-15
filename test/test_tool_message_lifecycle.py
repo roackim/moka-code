@@ -39,15 +39,15 @@ def clock(monkeypatch):
 
 
 def _tool(msg_type=None, status=None, finalized=False, name="bash",
-          args=None, output=None, width=60, focused=False):
+          args=None, output=None, width=60, expanded=False):
     msg = Message("", msg_type=msg_type or ToolCallMsg(), max_width=width)
     msg.tool_name = name
     msg.tool_args = json.dumps(args if args is not None else {"command": "ls"})
     msg.tool_output = output
     if status is not None:
         msg.set_tool_status(status)
-    if focused:
-        msg.set_focused(True)
+    if expanded:
+        msg.box.compact = False
     if finalized:
         msg.finalize()
     msg.rebuild_tool_display()
@@ -150,18 +150,27 @@ def test_panel_tick_refreshes_live_labels_at_a_steady_cadence(clock):
 
 
 def test_tool_message_exposes_only_non_destructive_actions():
-    """Tool messages expose output/copy; state-changing actions are commands.
+    """Tool messages expose expand/copy; state-changing actions are commands.
     The one exception (2026-10-29): ``k`` kills a running bash call."""
     from moka_code.ui.tui.msg_types import MsgAction
 
     running = _tool(status="approved | executing", finalized=False)
-    assert running.get_active_actions() == [MsgAction.KILL, MsgAction.OUTPUT, MsgAction.COPY]
+    assert running.get_active_actions() == [MsgAction.KILL, MsgAction.EXPAND, MsgAction.COPY]
 
     for message in (_tool(status="approved | executing", name="read"),
                     _tool(status="completed", finalized=True)):
-        actions = message.get_active_actions()
-        assert MsgAction.OUTPUT in actions and MsgAction.COPY in actions
-        assert all(a in (MsgAction.OUTPUT, MsgAction.COPY) for a in actions)
+        assert message.get_active_actions() == [MsgAction.EXPAND, MsgAction.COPY]
+    expanded = _tool(status="completed", finalized=True, expanded=True)
+    assert expanded.get_active_actions() == [MsgAction.COLLAPSE, MsgAction.COPY]
+
+
+def test_focusing_a_tool_line_does_not_expand_it():
+    """2026-11-15: focus unfolded the command/diff; only [o] expand does."""
+    msg = _tool(args={"command": "cd x\nmake"}, status="completed",
+                finalized=True, output="[stdout]\nbuilt\n[exit:0]")
+    msg.set_focused(True)
+    msg.rebuild_tool_display()
+    assert len(_lines(msg)) == 1
 
 
 def test_bash_tool_schema_name_is_bash():
@@ -286,11 +295,11 @@ def test_long_path_is_shortened_from_the_left_keeping_the_metric():
     assert len(header) <= 50
 
 
-def test_focused_edit_shows_a_diff_keeping_indentation():
+def test_expanded_edit_shows_a_diff_keeping_indentation():
     args = {"path": "a.py", "search": "def a():\n    return 1\n",
             "replace": "def a():\n    x = 2\n    return x\n"}
     msg = _tool(name="edit", args=args, status="completed", finalized=True,
-                output="ok", focused=True)
+                output="ok", expanded=True)
     body = _lines(msg)[1:]
     assert body == ["  def a():", "-     return 1", "+     x = 2", "+     return x"]
 
@@ -298,7 +307,7 @@ def test_focused_edit_shows_a_diff_keeping_indentation():
 def test_expanded_diff_lines_are_colored_whole():
     args = {"path": "a.py", "search": "keep\nold", "replace": "keep\nnew"}
     msg = _tool(name="edit", args=args, status="completed", finalized=True,
-                output="ok", focused=True)
+                output="ok", expanded=True)
     body = msg.get_formatted().splitlines()[1:]
     assert body[1] == f"{theme.ERROR}- old{theme.reset()}"
     assert body[2] == f"{theme.SUCCESS}+ new{theme.reset()}"
@@ -306,22 +315,22 @@ def test_expanded_diff_lines_are_colored_whole():
     assert body[0] == f"{theme.MUTED}  {theme.reset()}keep"
 
 
-def test_focused_write_shows_a_capped_head():
+def test_expanded_write_shows_a_capped_head():
     content = "".join(f"line {i}\n" for i in range(30))
     msg = _tool(name="write", args={"path": "a.py", "content": content},
-                status="completed", finalized=True, output="ok", focused=True)
+                status="completed", finalized=True, output="ok", expanded=True)
     body = _lines(msg)[1:]
     assert body[0] == "+ line 0"
     assert body[-1] == "… +10 more lines"
     assert len(body) == 21
 
 
-def test_focused_bash_shows_the_full_command_wrapped_not_repeated():
+def test_expanded_bash_shows_the_full_command_wrapped_not_repeated():
     msg = _tool(args={"command": "cd x\nmake test"}, status="completed",
-                finalized=True, output="[exit:0]", focused=True)
+                finalized=True, output="[exit:0]", expanded=True)
     assert _lines(msg) == ["bash cd x", "  make test exit 0"]
     long = _tool(args={"command": "echo " + "a" * 30}, status="completed",
-                 finalized=True, output="[exit:0]", focused=True, width=20)
+                 finalized=True, output="[exit:0]", expanded=True, width=20)
     assert _lines(long) == [
         "bash echo aaaaaaaaaa",
         "  aaa",
@@ -338,7 +347,7 @@ def test_compact_line_has_no_body():
 
 def test_toggled_output_is_capped_head_and_tail():
     output = "[stdout]\n" + "".join(f"out {i}\n" for i in range(100)) + "[exit:0]"
-    msg = _tool(status="completed", finalized=True, output=output, focused=True)
+    msg = _tool(status="completed", finalized=True, output=output, expanded=True)
     msg.show_output = True
     msg.rebuild_tool_display()
     lines = _lines(msg)
@@ -402,6 +411,9 @@ class _CopyUI(ChatActionHandlers):
     def _copy_feedback(self, method=None):
         pass
 
+    def _update_action_strip(self):
+        pass
+
 
 def _finished_bash(command="ls", output="[stdout]\nfile1\n[exit:0]"):
     panel = ChatHistoryPanel(max_width=60)
@@ -418,7 +430,7 @@ def _finished_bash(command="ls", output="[stdout]\nfile1\n[exit:0]"):
 def test_output_action_splits_finished_tool_into_segments():
     panel, msg, ui = _finished_bash()
 
-    ui.handle_output_action(msg)
+    ui.handle_tool_fold_action(msg)
 
     assert len(panel.messages) == 2
     command, output = panel.messages
@@ -434,9 +446,9 @@ def test_output_action_splits_finished_tool_into_segments():
 
 def test_output_action_collapses_the_segments_again():
     panel, msg, ui = _finished_bash()
-    ui.handle_output_action(msg)
+    ui.handle_tool_fold_action(msg)
 
-    ui.handle_output_action(panel.messages[1])
+    ui.handle_tool_fold_action(panel.messages[1])
 
     assert len(panel.messages) == 1
     assert panel.messages[0].group is None
@@ -447,7 +459,7 @@ def test_output_action_does_not_split_a_running_tool():
     panel, msg, ui = _finished_bash()
     msg.set_tool_status("running")
 
-    ui.handle_output_action(msg)
+    ui.handle_tool_fold_action(msg)
 
     assert len(panel.messages) == 1
     assert msg.show_output is True
@@ -481,7 +493,7 @@ def test_copy_segments_copy_command_and_raw_output(monkeypatch):
     monkeypatch.setattr("moka_code.ui.chat_action_handlers.copy_to_clipboard",
                         lambda text: copied.append(text) or "xclip")
     panel, msg, ui = _finished_bash()
-    ui.handle_output_action(msg)
+    ui.handle_tool_fold_action(msg)
 
     panel.enter_group()
     ui.handle_copy_action(panel.messages[0])
@@ -498,7 +510,7 @@ def test_copy_segments_copy_command_and_raw_output(monkeypatch):
 
 def test_focusing_output_keeps_the_command_expanded():
     panel, msg, ui = _finished_bash(command="ls -la")
-    ui.handle_output_action(msg)
+    ui.handle_tool_fold_action(msg)
     panel.enter_group()
     panel.set_focused_message(1, inside=True)   # output segment
 
@@ -507,7 +519,7 @@ def test_focusing_output_keeps_the_command_expanded():
 
 def test_leaving_focus_collapses_the_output_again():
     panel, msg, ui = _finished_bash()
-    ui.handle_output_action(msg)
+    ui.handle_tool_fold_action(msg)
     panel.enter_group()
     panel.set_focused_message(1, inside=True)
 
@@ -515,12 +527,12 @@ def test_leaving_focus_collapses_the_output_again():
 
     assert len(panel.messages) == 1
     assert panel.messages[0].group is None
-    assert panel.messages[0].box.compact_when_unfocused is True
+    assert panel.messages[0].box.compact is True
 
 
 def test_left_arrow_back_to_whole_group_keeps_output_visible():
     panel, msg, ui = _finished_bash()
-    ui.handle_output_action(msg)
+    ui.handle_tool_fold_action(msg)
     panel.enter_group()
 
     panel.exit_group()

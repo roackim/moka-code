@@ -45,12 +45,13 @@ def test_diff_body_numbers_lines_and_separates_hunks():
     assert ("18 - ", "line18") in lines and ("18   ", "line19") in lines
 
 
-def test_focused_edit_line_shows_the_preview(monkeypatch):
+def test_expanded_edit_line_shows_the_preview(monkeypatch):
     msg = Message("", msg_type=ToolCallMsg())
     msg.tool_name = "edit"
     msg.tool_args = '{"path": "f.txt", "search": "line3\\n", "replace": "LINE3\\n"}'
     msg.tool_status = "completed"
     msg.tool_diff = edit_diff(FILE, FILE.replace("line3\n", "LINE3\n"), "f.txt", 1)
-    msg.set_focused(True)
+    msg.box.compact = False
+    msg.rebuild_tool_display()
     text = msg.formatted_text if hasattr(msg, "formatted_text") else ""
     assert "3 + " in text and "LINE3" in text and "line4" in text

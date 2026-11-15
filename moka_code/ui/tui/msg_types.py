@@ -16,10 +16,9 @@ class MsgAction(Enum):
     bash call (KILL): it is killed, the model gets a cancelled result.
     """
     COPY = ("c", "copy")
-    OUTPUT = ("o", "output")
     PROMPT = ("o", "prompt")    # ``!prompt`` message: fold/unfold the prompt
-    EXPAND = ("o", "expand")    # folded thought: unfold the reasoning
-    COLLAPSE = ("o", "collapse")  # unfolded thought: fold it back
+    EXPAND = ("o", "expand")    # folded thought or tool line: unfold it
+    COLLAPSE = ("o", "collapse")  # unfolded thought or tool line: fold it back
     KILL = ("k", "kill")        # running bash call: kill it, the turn goes on
     EDIT = ("e", "edit")        # user message: back to the input
     CANCEL = ("x", "cancel")    # queued message: dropped before it is sent
@@ -136,7 +135,7 @@ class ToolCallMsg(MsgType):
     title = "tool"
     frame_color = "TOOL"
     content_color = None
-    actions = [MsgAction.OUTPUT, MsgAction.COPY]
+    actions = [MsgAction.COPY]     # + expand/collapse (Message)
     # Normal message prefix, muted so tool activity reads apart from prose.
     gutter = "▌"
     gutter_color = "MUTED"
@@ -148,7 +147,7 @@ class ToolOutputMsg(MsgType):
     title = "output"
     frame_color = "MUTED"
     content_color = "MUTED"
-    actions = [MsgAction.OUTPUT, MsgAction.COPY]
+    actions = [MsgAction.COPY]     # + collapse (Message)
     # Same prefix bar as the tool call it belongs to.
     gutter = "▌"
     gutter_color = "MUTED"

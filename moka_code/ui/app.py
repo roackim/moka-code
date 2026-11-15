@@ -696,10 +696,9 @@ class chatTUI(ChatActionHandlers):
     def _handle_message_action(self, message, action: MsgAction):
         handlers = {
             MsgAction.COPY: self.handle_copy_action,
-            MsgAction.OUTPUT: self.handle_output_action,
             MsgAction.PROMPT: self.handle_prompt_action,
-            MsgAction.EXPAND: self.handle_thought_action,
-            MsgAction.COLLAPSE: self.handle_thought_action,
+            MsgAction.EXPAND: self.handle_fold_action,
+            MsgAction.COLLAPSE: self.handle_fold_action,
             MsgAction.KILL: self.handle_kill_action,
             MsgAction.EDIT: self.handle_edit_action,
             MsgAction.CANCEL: self.handle_cancel_queued_action,

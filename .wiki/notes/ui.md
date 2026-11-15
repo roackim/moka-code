@@ -587,7 +587,8 @@ Every message displayed in the chat history has a `MsgType` that controls its ti
 
 ### Tool-call lines
 
-`ToolCallMsg` renders compact (one line when unfocused):
+`ToolCallMsg` renders compact (one line until `[o] expand`, focused or not;
+`MessageView.compact`):
 `name target metric trailing`, single-spaced, with **no status glyph**. Only the
 name (WARNING while drafting/running, PERMISSION while asking, SUCCESS when
 completed, ERROR when failed/denied) and the colored counts/state stand
@@ -620,7 +621,7 @@ edit a.py +2 lines −1 line denied
 - **State** (`Message.tool_state()`): `drafting` → (`asking`) → `running` →
   `completed` / `error` / `denied` / `cancelled`. `set_tool_status("running")`
   starts the elapsed clock.
-- **Focused body** (`_tool_body`): edit → the file's own unified diff when the
+- **Expanded body** (`_tool_body`): edit → the file's own unified diff when the
   harness read it (`PermissionRequest.diff`, kept as `Message.tool_diff`, drawn by
   `_diff_body`: `42 + text` with the file's line number, the old one for a removed
   line, `…` between hunks, `context.diff_context` lines around the change), else
@@ -628,11 +629,13 @@ edit a.py +2 lines −1 line denied
   replace (`  `/`- `/`+ `); indentation kept, capped; `+`/`-` lines colored whole
   SUCCESS/ERROR; write → first 20 lines as `+ ` then
   `… +N more lines`; bash → the full command on the header's first line,
-  continuing indented when it wraps; other tools → `key: value`. `o` on a
-  finished call splits it into `command` + `output` segments (shared
-  `ToolGroup`); while running it toggles the inline output, capped head 20 /
-  tail 10, bash `[stdout]`/`[exit:N]` markers dropped. Focus changes rebuild
-  the line; an `asking` line shows its body unfocused.
+  continuing indented when it wraps; other tools → `key: value`. `[o]
+  expand` (`handle_tool_fold_action`, `MsgAction.EXPAND` / `COLLAPSE` by
+  state) on a finished call with output splits it into the expanded `command`
+  + `output` segments (shared `ToolGroup`); any other call (running, no
+  output) unfolds in place with its inline output, capped head 20 / tail 10,
+  bash `[stdout]`/`[exit:N]` markers dropped. `[o] collapse` folds it back.
+  Focus never expands a line; an `asking` line always shows its body.
 - **Copy:** an unsplit tool call copies only its raw command while the output is
   hidden; when output is shown inline it copies the terminal transcript
   (`bash cmd` then output). In a split group, the whole group copies both, the
@@ -748,7 +751,7 @@ body (`ChatScreen(..., action_bar=...)`), collapsed to zero rows and expanded to
 two (pad + content) when needed. The app (`_update_action_strip`) drives it in
 two modes:
 
-- **Message selected** — shows the message's actions (`[c] copy`, `[o] output`)
+- **Message selected** — shows the message's actions (`[c] copy`, `[o] expand`)
   in the muted style, right-aligned as a group with the
   `↑↓ move · esc back` hint (`ActionBar.set_align_right`).
   Mouse clicks are dispatched by the app interceptor to

@@ -364,7 +364,7 @@ class ChatHistoryPanel(TextComponent):
         msg.show_output = False
         msg.group, msg.segment_kind, msg.copy_text = group, "command", command
         # The command stays fully expanded while its output segment is focused.
-        msg.box.compact_when_unfocused = False
+        msg.box.compact = False
         msg.rebuild_tool_display()
 
         part = self.new_message(display, msg_type=ToolOutputMsg(),
@@ -403,7 +403,7 @@ class ChatHistoryPanel(TextComponent):
         command.segment_kind = None
         command.copy_text = None
         command.show_output = False
-        command.box.compact_when_unfocused = True
+        command.box.compact = True
         command.rebuild_tool_display()
         self.inside_group = False
         if focused is not None:

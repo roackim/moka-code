@@ -24,7 +24,7 @@ class MessageView(Box):
         gutter: str = "▸",
         gutter_color=None,
         gutter_full_height: bool = False,
-        compact_when_unfocused: bool = False,
+        compact: bool = False,
         content_pad_left: int = 0,
         content_pad_right: int = 0,
     ):
@@ -32,8 +32,9 @@ class MessageView(Box):
         # Message-backing state (Box stays message-agnostic).
         self.parent_msg = parent_msg
         self.thread_mode = True
-        # Drives compact tool/permission headers; text-side only (see Message).
-        self.compact_when_unfocused = compact_when_unfocused
+        # A tool line shows only its header until expanded ([o]); focus
+        # does not change it. Text-side only (see Message).
+        self.compact = compact
         self.gutter = gutter
         self.gutter_color = gutter_color
         self.full_height_gutter = gutter_full_height

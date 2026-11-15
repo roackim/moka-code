@@ -205,17 +205,21 @@ def reference_spans(line: str) -> list[tuple[int, int, Any]]:
 def wrapped_spans(logical: list, formatted: str) -> dict:
     """Spans per wrapped row of ``formatted``, from spans over its unwrapped
     lines: ``logical`` pairs each line with ``(start, end, color)`` spans. A
-    row starts where it is found in its line (wrapping only cuts at spaces)."""
+    row starts where it is found in its line (wrapping only cuts at spaces).
+    A line may itself hold newlines (a multi-line answer): its blank rows
+    are skipped, not taken as its end."""
     spans_of: dict = {}
     rows = iter(formatted.split("\n"))
     for text, spans in logical:
         pos = 0
-        while pos < len(text):
+        while text[pos:].strip():           # trailing blanks have no row
             row = next(rows, None)
             if row is None:
                 return spans_of
+            if not row:
+                continue                    # a blank line inside this one
             start = text.find(row, pos)
-            if not row or start < 0:
+            if start < 0:
                 break
             end = start + len(row)
             spans_of[row] = [(max(s, start) - start, min(e, end) - start, color)
@@ -316,7 +320,7 @@ def _diff_body(diff: str) -> list[tuple]:
 
 
 def _tool_body(name: str, args: dict, diff: Optional[str] = None) -> list[tuple]:
-    """Readable focused-view body: edit diff, write head, full bash command.
+    """Readable expanded-view body: edit diff, write head, full bash command.
 
     Lines are ``(color, prefix, text)`` triples so the caller clips the plain
     text to the width before coloring. An edit shows ``diff`` (the file's own
@@ -560,7 +564,7 @@ class Message:
         self.box = MessageView(
             self.component,
             parent_msg=self,
-            compact_when_unfocused=isinstance(msg_type, msg_types.ToolCallMsg),  # Tool calls use compact headers
+            compact=isinstance(msg_type, msg_types.ToolCallMsg),  # one line until expanded
             gutter=thread_gutter,
             gutter_color=thread_gutter_color,
             content_pad_left=left_pad + (1 if self.in_tree() else 0),   # see _apply_indent
@@ -687,12 +691,16 @@ class Message:
     def get_active_actions(self):
         """Get the list of active actions based on message state.
 
-        The exposed set is deliberately small (copy/output/permission); actions
+        The exposed set is deliberately small (copy/expand/permission); actions
         that alter or remove conversation state live behind commands.
         """
         fold = [MsgAction.PROMPT] if self.prompt is not None else []
         if isinstance(self.type, msg_types.ThinkingMsg) and (self.base_text or "").strip():
             fold = [MsgAction.EXPAND if self.collapsed else MsgAction.COLLAPSE]
+        if isinstance(self.type, (msg_types.ToolCallMsg, msg_types.ToolOutputMsg)):
+            # A tool line expands into its body and output (a split group).
+            expanded = self.group is not None or not self.box.compact
+            fold = [MsgAction.COLLAPSE if expanded else MsgAction.EXPAND]
         if self.is_queued:
             steer = [] if self.steering else [MsgAction.STEER]
             return [*steer, MsgAction.EDIT, MsgAction.CANCEL, *fold, MsgAction.COPY]
@@ -808,11 +816,6 @@ class Message:
         if changed:
             self.layout_revision += 1
         self.box.set_focused(focused)
-        # A tool line's body (diff, command, output) is built only when
-        # focused, so focus changes must rebuild it; otherwise an auto-focused
-        # permission prompt would show just its header.
-        if changed and self.is_tool_message():
-            self.rebuild_tool_display()
 
     def set_line_spans(self, logical: list) -> None:
         """Color parts of this plain message: ``logical`` pairs each line of
@@ -1141,9 +1144,10 @@ class Message:
         The header is ``name target metric trailing``: no status glyph; the
         name color and a trailing word carry the state (``running 12s``, an
         error reason). While the model is still writing
-        the call the same line grows live. Focused messages add a readable
-        body (edit diff, write head, full command) and, when toggled, the
-        output; a running command shows its last output lines.
+        the call the same line grows live. Expanded ([o], ``box.compact``
+        off) it adds a readable body (edit diff, write head, full command) and
+        the output; focus changes nothing. A running command shows its last
+        output lines.
         """
         if not self.tool_name:
             return
@@ -1187,7 +1191,7 @@ class Message:
         # about), its prefix in PERMISSION.
         asking = state == "asking"
         self.box.gutter_color = theme.PERMISSION if asking else theme.MUTED
-        is_compact = self.box.compact_when_unfocused and not self.box.focused and not asking
+        is_compact = self.box.compact and not asking
         # Expanded bash shows the whole command wrapped below, so the header
         # does not repeat a cut-off copy of it.
         wrap_body = self.tool_name == "bash" and not is_compact
