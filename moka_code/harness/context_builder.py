@@ -13,6 +13,23 @@ def get_ignore_spec(root):
     return pathspec.PathSpec.from_lines('gitwildmatch', [])
 
 
+def list_tree(root: str, sub: str) -> List[str]:
+    """Every entry of ``root/sub``, unbounded and unfiltered (``.git`` aside),
+    with its parent folders first; relative to ``root``, folders end with ``/``.
+    Empty when ``sub`` is not a folder."""
+    base = os.path.join(root, sub)
+    if not os.path.isdir(base):
+        return []
+    parts = sub.strip("/").split("/")
+    entries = ["/".join(parts[:i]) + "/" for i in range(1, len(parts) + 1)]
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames[:] = sorted(name for name in dirnames if name != ".git")
+        rel = os.path.relpath(dirpath, root)
+        entries += [f"{rel}/{name}/" for name in dirnames]
+        entries += [f"{rel}/{name}" for name in sorted(filenames)]
+    return entries
+
+
 def list_files_bounded(
     root: str,
     max_files: int = 500,

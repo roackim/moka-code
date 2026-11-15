@@ -406,6 +406,9 @@ Accepting a completion (Tab, or Enter before submit) adds a **space** (or steps
 over an existing one), so the next word's menu — subcommands, the next
 argument — opens right away (`_accept_completion`). The exception is a folder
 picked from the `@` menu: no space, the menu stays open to drill into it.
+The `@` list (`Harness.list_files_and_folders`) is the bounded walk plus the
+whole `.agents/skills/` tree (`context_builder.list_tree`), whatever the depth,
+file count, dotfile and `.gitignore` settings.
 
 `/model ` and `/effort ` show their choices inline (the same rows as their
 Enter pickers: `models.model_completions` / `effort_completions`, the current
@@ -491,6 +494,16 @@ edit; `/prompt edit [name]` opens one (never creates), `/prompt create <name>
 [global|local]` writes a starter (global by default), `/prompt path [name]` prints
 the file the name resolves to, `/prompt remove <name>` deletes it after *Remove* /
 *Cancel*.
+
+Skills are `!name` too (`prompts.list_skills`): every `SKILL.md` under the
+workspace's `.agents/skills/`, at any depth, named by its frontmatter `name`
+(else its folder) and described by its `description` (`prompts.split_frontmatter`;
+a folded value is joined into one line), shown `[skill]`. A prompt of the same
+name wins. A skill has no parameters: the call's arguments and the lines below
+are the user's text, and the call is kept as bare `!name`. What is sent is
+`Use the skill <name> (<path>; paths in it are relative to its folder):` then
+the file without its frontmatter. `/prompt edit` opens a skill's file;
+`/prompt remove` refuses (a skill is a folder).
 
 On startup (`main`) `prompts.seed_global_prompts()` writes each `prompts.SEEDED`
 file missing from `<config>/prompts/` (an existing one is never touched): `moka-config.md`, the

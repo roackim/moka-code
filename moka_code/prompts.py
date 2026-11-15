@@ -9,6 +9,12 @@ quoted phrase, and the last parameter takes the rest of the line. The call is
 the first line: what follows is the user's own text, sent after the prompt. The menu
 description is the first non-empty line; a ``#`` one is only that, never sent. Files are read when used: nothing is
 cached or watched.
+
+Skills are ``!name`` too: every ``SKILL.md`` under the workspace's
+``.agents/skills/`` (any depth), named by its frontmatter ``name`` (else its
+folder) and described by its ``description``. A prompt of the same name wins.
+A skill has no parameters: its call's arguments are the user's text. What is
+sent is a line naming the skill's file, then the file without its frontmatter.
 """
 
 from __future__ import annotations
@@ -23,6 +29,9 @@ from moka_code import settings
 PROMPTS_DIRNAME = "prompts"
 LOCAL_DIRNAME = ".moka"
 SCOPES = ("global", "local")
+SKILL = "skill"                                 # a skill's scope
+SKILLS_DIR = Path(".agents") / "skills"
+SKILL_FILE = "SKILL.md"
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 #: ``!name`` at the very start of the input (a leading space sends it literally).
@@ -204,8 +213,10 @@ def from_history(content: str, meta: Any) -> Optional[Expansion]:
 @dataclass(frozen=True)
 class Prompt:
     name: str
-    scope: str                      # "global" or "local"
+    scope: str                      # "global", "local" or "skill"
     path: Path
+    #: A skill's file relative to the workspace (named in what is sent).
+    shown_path: str = ""
 
     @property
     def text(self) -> str:
@@ -213,15 +224,21 @@ class Prompt:
 
     @property
     def body(self) -> str:
-        """The template sent: the text without its ``#`` description line."""
+        """The template sent: the text without its ``#`` description line; a
+        skill's without its frontmatter, after a line naming its file."""
+        if self.scope == SKILL:
+            return (f"Use the skill {self.name} ({self.shown_path}; paths in it are "
+                    f"relative to its folder):\n\n{split_frontmatter(self.text)[1]}")
         return body_of(self.text)
 
     @property
     def params(self) -> List[str]:
-        return params_of(self.body)
+        return [] if self.scope == SKILL else params_of(self.body)
 
     @property
     def description(self) -> str:
+        if self.scope == SKILL:
+            return split_frontmatter(self.text)[0].get("description", "")
         for line in self.text.splitlines():
             line = line.strip().lstrip("#").strip()
             if line:
@@ -250,9 +267,47 @@ def validate_name(name: str) -> str:
 
 # --- reading --------------------------------------------------------------------
 
-def list_prompts(workspace: str | Path) -> Dict[str, Prompt]:
-    """Every prompt by name, sorted; a local file replaces a global one."""
+def split_frontmatter(text: str) -> tuple[Dict[str, str], str]:
+    """A ``---`` frontmatter's top-level ``key: value`` fields (a folded or
+    indented value joined into one line) and the text after it."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, text
+    end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
+    if end is None:
+        return {}, text
+    fields: Dict[str, str] = {}
+    key = None
+    for line in lines[1:end]:
+        field = re.match(r"([A-Za-z_][\w-]*):\s*(.*)$", line)
+        if field and not line[:1].isspace():
+            key, value = field.group(1), field.group(2).strip()
+            fields[key] = "" if value in (">", "|", ">-", "|-") else value.strip("'\"")
+        elif key and line.strip():
+            fields[key] = f"{fields[key]} {line.strip()}".strip()
+    return fields, "\n".join(lines[end + 1:]).strip()
+
+
+def list_skills(workspace: str | Path) -> Dict[str, Prompt]:
+    """Every ``SKILL.md`` under the workspace's ``.agents/skills/``, by name."""
+    root = Path(workspace)
     found: Dict[str, Prompt] = {}
+    for path in sorted((root / SKILLS_DIR).rglob(SKILL_FILE)):
+        try:
+            name = split_frontmatter(path.read_text(encoding="utf-8"))[0].get("name")
+        except (OSError, UnicodeDecodeError):
+            continue
+        name = name or path.parent.name
+        if name.startswith(_HIDDEN_PREFIXES) or not _NAME_RE.match(name):
+            continue
+        found.setdefault(name, Prompt(name, SKILL, path, str(path.relative_to(root))))
+    return found
+
+
+def list_prompts(workspace: str | Path) -> Dict[str, Prompt]:
+    """Every prompt and skill by name, sorted; a local file replaces a global
+    one, and either replaces a skill."""
+    found: Dict[str, Prompt] = list_skills(workspace)
     for scope in SCOPES:
         directory = scope_dir(scope, workspace)
         if not directory.is_dir():
@@ -330,6 +385,11 @@ def expand(text: str, workspace: str | Path,
     if name not in prompts:
         available = ", ".join(f"!{n}" for n in prompts) or "none (see /prompt)"
         raise PromptError(f"Unknown prompt: !{name}. Available: {available}")
+    if prompts[name].scope == SKILL:
+        # No parameters: the call's arguments start the user's text.
+        own = "\n".join(part for part in (clean_args(line[call.end():]).strip(),
+                                          clean_args(rest).strip()) if part)
+        return Expansion(f"!{name}", prompts[name].body.strip(), own)
     template = prompts[name].body
     names = params_of(template)
     values = split_args(clean_args(line[call.end():]), len(names))

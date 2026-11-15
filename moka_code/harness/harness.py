@@ -35,6 +35,10 @@ logger = logging.getLogger(__name__)
 
 # Fields of a history entry that are sent to the model (see ``_to_api_message``).
 _API_FIELDS = ("role", "content", "tool_calls", "tool_call_id")
+#: The workspace root's project instructions file (the cross-agent standard).
+AGENTS_MD = "AGENTS.md"
+#: The workspace's skills folder (``<name>/SKILL.md``), always listed for ``@``.
+SKILLS_DIR = ".agents/skills"
 
 # Start of a role notice (``_role_notice``); older sessions hold ``[Role changed from …]``.
 _ROLE_NOTICE_PREFIX = "<system-reminder>\nRole "
@@ -65,6 +69,10 @@ class Harness:
     _last_finish_reason: Optional[str] = None
     # Private conversation: not saved, not logged, images kept in a temp folder.
     private = False
+    # The workspace's AGENTS.md, appended to the system prompt; read at start
+    # and on /reload only (``load_agents_md``), so the prompt stays cacheable.
+    agents_md = ""
+    agents_md_error: Optional[str] = None
 
     def __init__(self, workspace_path: str | None = None,
                  transport: Optional[ToolTransport] = None):
@@ -79,6 +87,7 @@ class Harness:
         # Tools initialization with minimal toolset
         import os
         self.workspace = workspace_path or os.getcwd()
+        self.load_agents_md()
 
         # The conversation's role lives in memory. It starts as the last role
         # used, else the user's ``agent`` file, else the first role file that
@@ -642,16 +651,20 @@ class Harness:
         trees (e.g. ``$HOME``). Not cached: the input walks it once per open
         menu, so files created since the last ``@`` show up.
         """
-        from moka_code.harness.context_builder import list_files_bounded
+        from moka_code.harness.context_builder import list_files_bounded, list_tree
         from moka_code import settings
 
-        return list_files_bounded(
+        entries = list_files_bounded(
             self.workspace,
             max_files=settings.config.context_max_files,
             max_depth=settings.config.context_max_depth,
             ignore_gitignore=settings.config.context_ignore_gitignore,
             ignore_dotfiles=settings.config.context_ignore_dotfiles,
         )
+        # Skills are always listed whole, whatever the bounds and filters.
+        seen = set(entries)
+        return entries + [entry for entry in list_tree(self.workspace, SKILLS_DIR)
+                          if entry not in seen]
 
     def _context_window(self) -> Optional[int]:
         return self.endpoint.context_window() if self.endpoint is not None else None
@@ -851,9 +864,26 @@ class Harness:
         """Check if the LLM server is reachable."""
         return self.endpoint is not None and await self.endpoint.check_connection()
 
+    def load_agents_md(self) -> None:
+        """Read the workspace root's ``AGENTS.md`` (at start and on /reload,
+        never per turn). Missing is fine; unreadable is ``agents_md_error``."""
+        self.agents_md, self.agents_md_error = "", None
+        path = Path(self.workspace) / AGENTS_MD
+        try:
+            self.agents_md = path.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            pass
+        except (OSError, UnicodeDecodeError) as exc:
+            self.agents_md_error = f"{AGENTS_MD} not read: {exc}"
+
     def _system_messages(self) -> List[Dict[str, Any]]:
-        """The system prompt comes solely from the active role's ``prompt``."""
-        prompt = (getattr(getattr(self, "role", None), "prompt", "") or "").strip()
+        """The system prompt: the active role's ``prompt``, then the
+        workspace's ``AGENTS.md`` (the project's own instructions)."""
+        parts = [(getattr(getattr(self, "role", None), "prompt", "") or "").strip()]
+        if self.agents_md:
+            parts.append(f"Project instructions, from {AGENTS_MD} in the workspace root:\n\n"
+                         f"{self.agents_md}")
+        prompt = "\n\n".join(part for part in parts if part)
         return [{"role": "system", "content": prompt}] if prompt else []
 
     def _request_messages(self) -> List[Dict[str, Any]]:

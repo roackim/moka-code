@@ -119,6 +119,10 @@ async def prompt_remove(ui: ChatUIProtocol, args: List[str]) -> None:
     prompt = _find(ui, args[0])
     if prompt is None:
         return
+    if prompt.scope == prompt_files.SKILL:
+        _error(ui, f"!{prompt.name} is a skill: its folder is "
+                   f"{prompt.path.parent} (remove it yourself)")
+        return
 
     def _remove() -> None:
         try:

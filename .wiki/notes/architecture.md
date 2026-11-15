@@ -47,7 +47,11 @@ per-project sandbox definitions. See [sandbox.md](./sandbox.md).
 ## Agent Loop (`harness.py`)
 
 The core reasoning loop:
-1. Build the message list (system prompt from the active role + history)
+1. Build the message list (system prompt from the active role, then the
+   workspace root's `AGENTS.md` + history). `AGENTS.md` is read at start and on
+   `/reload` only (`Harness.load_agents_md`), never per turn, so the prompt stays
+   cacheable; the empty-transcript banner notes it with its token estimate, and
+   an unreadable file is a banner/reload error
 2. Send to the active `Endpoint` (`endpoint.py`)
 3. Stream response events (`events.py`): `Token`/`Reasoning`/`Usage`, plus a live
    `ToolCallDraft` per tool call while its arguments stream. The complete

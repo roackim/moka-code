@@ -396,6 +396,13 @@ class chatTUI(ChatActionHandlers):
                   for error in projects.validate_sandboxes(workspace)]
         notes += [("warning", note) for note in projects.moved_project_notes(workspace)]
         notes += [("error", f"{problem} → /theme") for problem in theme_problems()]
+        agent = getattr(self, "agent", None)
+        if getattr(agent, "agents_md_error", None):
+            notes.append(("error", agent.agents_md_error))
+        elif getattr(agent, "agents_md", ""):
+            from moka_code.harness.compaction import estimate_tokens
+            tokens = estimate_tokens([{"role": "system", "content": agent.agents_md}])
+            notes.append(("info", f"AGENTS.md in the system prompt (~{tokens:,} tokens)"))
         if not resolve_editor():
             notes.append(("warning", "no $VISUAL or $EDITOR (config files open in it) → export EDITOR=…"))
         if self._migration_notice:

@@ -146,6 +146,11 @@ def reload_and_apply(ui: ChatUIProtocol, title: str | None = None) -> None:
         apply_layout()
     errors += _reapply_role(ui)
     errors += _reapply_sandbox(ui)
+    load_agents_md = getattr(getattr(ui, "agent", None), "load_agents_md", None)
+    if callable(load_agents_md):
+        load_agents_md()
+        error = ui.agent.agents_md_error
+        errors += [error] if error else []
     reapply_endpoint(ui)
     # MCP tools are re-discovered from the edited mcp.toml; the refresh is
     # async, so it runs in the background and the next turn rebuilds the tools.
