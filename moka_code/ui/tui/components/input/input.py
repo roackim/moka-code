@@ -555,7 +555,7 @@ class InputComponent(Component):
                 new_text = new_text[:new_cursor_pos] + ' ' + new_text[new_cursor_pos:]
             new_cursor_pos += 1
 
-        self.buffer.text = new_text
+        self.buffer.replace_text(new_text)      # a collapsed paste elsewhere stays
         self.buffer.cursor_pos = new_cursor_pos
         self._on_text_changed()
         return True
@@ -661,6 +661,11 @@ class InputComponent(Component):
         """Update the input field text programmatically."""
         self.buffer.text = text
         self.buffer.cursor_pos = len(text)
+        self._on_text_changed()
+
+    def restore(self, snapshot: tuple):
+        """Put back a ``buffer.snapshot()`` (collapsed pastes included)."""
+        self.buffer.restore(snapshot)
         self._on_text_changed()
 
     def clear(self):

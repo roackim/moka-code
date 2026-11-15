@@ -249,7 +249,7 @@ class ChatActionHandlers:
         there is kept for ``cancel_edit``), the red rule above it."""
         if getattr(self, "_editing", None) is not None:
             self.cancel_edit()
-        draft = (self.input_component.buffer.text, dict(getattr(self, "_pasted_images", {}) or {}))
+        draft = (self.input_component.buffer.snapshot(), dict(getattr(self, "_pasted_images", {}) or {}))
         rule = self.chat_history_panel.add_edit_rule(message)
         self._editing = (message, entry, draft, rule)
         self.chat_history_panel.clear_focus()
@@ -267,13 +267,12 @@ class ChatActionHandlers:
         comes back."""
         if getattr(self, "_editing", None) is None:
             return
-        _, _, (text, pasted), rule = self._editing
+        _, _, (snapshot, pasted), rule = self._editing
         self._editing = None
         self.chat_history_panel.remove_message(rule)
         self.chat_history_panel.auto_scroll = True      # back to following the end
         self._pasted_images = pasted
-        self.input_component.update(text)
-        self.input_component.buffer.cursor_pos = len(text)
+        self.input_component.restore(snapshot)
         self._update_action_strip()
 
     def commit_edit(self) -> None:

@@ -3,7 +3,7 @@
 A CLI chat app for self-hosted LLM agents with native tool calling support.
 """
 
-__version__ = "1.6.5"
+__version__ = "1.6.6"
 
 from moka_code import settings
 from moka_code.harness.harness import Harness, get_harness

@@ -869,7 +869,7 @@ class chatTUI(ChatActionHandlers):
         either way. ``label`` names the mode on the action line."""
         if self._text_prompt is not None:
             self._end_text_prompt(submit=False)
-        self._text_prompt = (on_done, self.input_component.buffer.text, label)
+        self._text_prompt = (on_done, self.input_component.buffer.snapshot(), label)
         self.input_component.placeholder = placeholder
         self.input_component.update(initial)
         self.chat_history_panel.clear_focus()
@@ -878,9 +878,9 @@ class chatTUI(ChatActionHandlers):
     def _end_text_prompt(self, submit: bool) -> None:
         on_done, draft, _label = self._text_prompt
         self._text_prompt = None
-        text = self.input_component.buffer.text
+        text = self.input_component.buffer.expanded_text()
         self.input_component.placeholder = ""
-        self.input_component.update(draft)
+        self.input_component.restore(draft)
         self._update_action_strip()
         if submit:
             on_done(text)

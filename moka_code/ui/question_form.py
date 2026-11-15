@@ -372,7 +372,7 @@ def _confirm(app) -> None:
 
 def _enter(app) -> None:
     form = app.question_form
-    result = form.enter(app.input_component.buffer.text)
+    result = form.enter(app.input_component.buffer.expanded_text())
     if result == "write":
         app.flash_hint("type your answer first")
         return

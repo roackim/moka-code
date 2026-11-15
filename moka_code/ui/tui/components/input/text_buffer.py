@@ -105,6 +105,45 @@ class TextBuffer:
         pieces.append(self._text[pos:])
         return "".join(pieces)
 
+    def replace_text(self, value: str) -> None:
+        """Set the text like ``text =``, but keep the tokens outside the part
+        that changed (a completion rewrites one word: a collapsed paste
+        elsewhere must still expand on submit)."""
+        old = self._text
+        limit = min(len(old), len(value))
+        prefix = 0
+        while prefix < limit and old[prefix] == value[prefix]:
+            prefix += 1
+        suffix = 0
+        while suffix < limit - prefix and old[-1 - suffix] == value[-1 - suffix]:
+            suffix += 1
+        old_end, delta = len(old) - suffix, len(value) - len(old)
+        kept = []
+        for token in self._tokens:
+            if token.end <= prefix:
+                kept.append(token)
+            elif token.start >= old_end:
+                kept.append(Token(token.start + delta, token.end + delta, token.kind, token.value))
+        self._text = value
+        self._tokens = kept
+        self._cursor_pos = min(self._cursor_pos, len(value))
+        changed = value[prefix:len(value) - suffix]
+        for match in _IMAGE_TOKEN_RE.finditer(changed):     # markers typed into the change
+            start = prefix + match.start()
+            self._tokens.append(Token(start, start + len(match.group(0)), "image", match.group(0)))
+        self._tokens.sort(key=lambda token: token.start)
+
+    def snapshot(self) -> tuple:
+        """Text, tokens and cursor, for ``restore`` (a draft set aside)."""
+        return (self._text, [Token(t.start, t.end, t.kind, t.value) for t in self._tokens],
+                self._cursor_pos)
+
+    def restore(self, snapshot: tuple) -> None:
+        text, tokens, cursor = snapshot
+        self._text = text
+        self._tokens = [Token(t.start, t.end, t.kind, t.value) for t in tokens]
+        self._cursor_pos = min(cursor, len(text))
+
     # -- editing --------------------------------------------------------
 
     def insert(self, text: str):
