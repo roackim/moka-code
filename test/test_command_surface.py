@@ -156,7 +156,7 @@ def test_a_background_refresh_keeps_the_highlighted_model_even_when_its_label_ch
     discovered = cached + [("beta", ModelInfo(id="qwen"))]
     monkeypatch.setattr(models, "_cached_pairs", lambda: cached)
 
-    async def _discover_all():
+    async def _discover_all(ui):
         return discovered
     monkeypatch.setattr(models, "_discover_all", _discover_all)
 

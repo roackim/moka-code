@@ -275,3 +275,41 @@ def test_openrouter_bare_id_matching_two_models_is_an_error(monkeypatch):
     """ISSUES P5: never a silent pick between ``a/flash`` and ``b/flash``."""
     with pytest.raises(RuntimeError, match="matches a/flash, b/flash → write the full id"):
         _openrouter_models(monkeypatch, ["flash"], ["a/flash", "b/flash"])
+
+
+def test_reprobe_recovers_a_server_started_after_moka(cfg, monkeypatch):
+    """A server down at startup leaves the live endpoint's failed probe; a
+    reprobe (``/model``, idle) that reaches it again clears it."""
+    import httpx
+    from moka_code.harness.endpoint import ModelInfo, get_endpoint
+    from moka_code.ui.commands.base import reprobe
+
+    monkeypatch.setattr(cfg.config, "server_errors", {}, raising=False)
+    monkeypatch.setattr(cfg.config, "stale_servers", set(), raising=False)
+    cfg.config.servers["a"] = {"type": "llamacpp", "base_url": "http://a/v1"}
+    cfg.config.model_selection["a"] = "m"
+    live = get_endpoint("a")
+    ui = SimpleNamespace(agent=SimpleNamespace(endpoint=live),
+                         chat_history_panel=SimpleNamespace(add_message=lambda *a, **k: None))
+
+    up = {"v": False}
+
+    async def listing(self):
+        if not up["v"]:
+            raise httpx.ConnectError("down")
+        return [ModelInfo(id="m")]
+
+    async def get_models(self):
+        if not up["v"]:
+            raise httpx.ConnectError("down")
+
+    monkeypatch.setattr(LlamaCpp, "list_models", listing)
+    monkeypatch.setattr(LlamaCpp, "_get_models", get_models)
+
+    asyncio.run(reprobe(ui))
+    asyncio.run(live.prewarm_connection())
+    assert live._connection_state == "error" and "a" in cfg.config.server_errors
+
+    up["v"] = True
+    asyncio.run(reprobe(ui))
+    assert live._connection_state == "ok" and cfg.config.server_errors == {}

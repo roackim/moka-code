@@ -2,7 +2,8 @@
 
 The unit of selection is a ``(server, model)`` pair. Discovery is live: the
 catalog is in memory only (``endpoint.refresh_catalog``), refreshed at startup,
-on reloads, and whenever ``/model`` or ``/effort`` runs.
+on reloads, whenever ``/model`` or ``/effort`` runs, and every minute while idle
+(``app.IDLE_PROBE_SECONDS``).
 """
 
 from __future__ import annotations
@@ -14,14 +15,12 @@ from typing import List, Optional, Tuple
 from moka_code import settings
 from moka_code.ui.tui.msg_types import SysMsg, SysMsgError
 
-from .base import ChatUIProtocol, activate_endpoint
+from .base import ChatUIProtocol, activate_endpoint, reprobe
 
-async def _discover_all() -> List[Tuple[str, "ModelInfo"]]:
-    """Rediscover every server; ``(server, model)`` pairs of the catalog
+async def _discover_all(ui: ChatUIProtocol) -> List[Tuple[str, "ModelInfo"]]:
+    """Reprobe every server; ``(server, model)`` pairs of the catalog
     (servers that did not answer keep their last discovery, marked stale)."""
-    from moka_code.harness.endpoint import refresh_catalog
-
-    await refresh_catalog()
+    await reprobe(ui)
     return _cached_pairs()
 
 
@@ -172,7 +171,7 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
         # Nothing discovered yet: wait for discovery (bounded per server) so
         # the first open is not empty.
         try:
-            pairs = await _discover_all()
+            pairs = await _discover_all(ui)
         except Exception:
             pairs = []
         if pairs:
@@ -184,7 +183,7 @@ async def _open_picker(ui: ChatUIProtocol) -> None:
 
     async def _refresh():
         try:
-            pairs = await _discover_all()
+            pairs = await _discover_all(ui)
         except Exception:
             return
         if getattr(modal, "is_visible", False):
@@ -237,7 +236,7 @@ async def model_use(ui: ChatUIProtocol, args: List[str]):
         servers = [server_hint]
     else:
         try:
-            pairs = await _discover_all()
+            pairs = await _discover_all(ui)
         except Exception:
             pairs = _cached_pairs()
         servers = [server for server, info in pairs if info.id == model]

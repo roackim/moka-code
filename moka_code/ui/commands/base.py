@@ -414,6 +414,25 @@ def auto_select(ui: ChatUIProtocol) -> None:
         msg_type=SysMsg(), title="model")
 
 
+async def reprobe(ui: ChatUIProtocol, names: Optional[List[str]] = None) -> None:
+    """Rediscover ``names`` (default: every server), recheck the live
+    endpoint once its server answers again (its failed probe would keep the
+    status red), keep or replace the selection, repaint.
+
+    Shared by ``/model``, the reloads and the idle probe, so a server started
+    after moka is picked up without a restart.
+    """
+    from moka_code.harness.endpoint import refresh_catalog
+
+    await refresh_catalog(names)
+    endpoint = getattr(getattr(ui, "agent", None), "endpoint", None)
+    if endpoint is not None and endpoint.name not in settings.config.server_errors:
+        await endpoint.prewarm_connection()     # no request when already ok
+    auto_select(ui)
+    if hasattr(ui, "refresh_status_bar"):
+        ui.refresh_status_bar()
+
+
 def reapply_endpoint(ui: ChatUIProtocol) -> None:
     """Apply a reloaded ``servers.toml``/state to the live endpoint, and
     rediscover every server's models in the background (every reload:
@@ -423,15 +442,9 @@ def reapply_endpoint(ui: ChatUIProtocol) -> None:
     changed, so an unrelated reload keeps the connection and usage display.
     """
     import asyncio
-    from moka_code.harness.endpoint import get_active_endpoint, refresh_catalog
+    from moka_code.harness.endpoint import get_active_endpoint
 
-    async def _refresh():
-        await refresh_catalog()
-        auto_select(ui)
-        if hasattr(ui, "refresh_status_bar"):
-            ui.refresh_status_bar()
-
-    asyncio.ensure_future(_refresh())
+    asyncio.ensure_future(reprobe(ui))
 
     agent = getattr(ui, "agent", None)
     if not hasattr(agent, "switch_server"):

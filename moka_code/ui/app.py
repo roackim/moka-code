@@ -54,6 +54,9 @@ STATUS_PICKERS = {"model": "/model", "effort": "/effort", "role": "/role select"
 #: Application focus targets, in ``_focus_targets`` order.
 _FOCUS_IDS = ("input", "history", "status")
 
+# While idle, the current server is reprobed this often (``idle_probe``).
+IDLE_PROBE_SECONDS = 60.0
+
 
 class _AppFocusTarget:
     """Adapter exposing an application focus target to the TUI focus API."""
@@ -1351,6 +1354,25 @@ class chatTUI(ChatActionHandlers):
             self.refresh_status_bar()
             logger.info(f"Server status online: {status['online']}")
 
+        async def idle_probe():
+            """Every minute with nothing pending on the LLM side, reprobe the
+            current server (every server when none is selected) so the status
+            follows a server that went down or came up."""
+            from moka_code.ui.commands.base import reprobe
+
+            while True:
+                try:
+                    await asyncio.wait_for(self.shutdown_event.wait(), IDLE_PROBE_SECONDS)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+                endpoint = getattr(self.agent, "endpoint", None)
+                if self.is_generating() or getattr(endpoint, "_in_flight", 0):
+                    continue
+                # Not awaited: a slow server must not hold the exit.
+                asyncio.ensure_future(
+                    reprobe(self, [endpoint.name] if endpoint is not None else None))
+
         async def shutdown_watcher():
             """Cancel an in-flight generation once Ctrl+C requests shutdown."""
             await self.shutdown_event.wait()
@@ -1375,6 +1397,7 @@ class chatTUI(ChatActionHandlers):
                 # two workers on one queue ran generations concurrently.
                 self.worker_task = tg.create_task(self.agent_worker())
                 tg.create_task(shutdown_watcher())
+                tg.create_task(idle_probe())
         except Exception:
             # On exception, cleanup without clearing screen to preserve traceback
             if self.compositor and self.compositor.terminal:
