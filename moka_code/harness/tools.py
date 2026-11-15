@@ -11,6 +11,7 @@ Provides 4 core tools:
 - edit: Replace an exact text block in a file
 - bash: Execute shell command in the workspace
 """
+import asyncio
 import inspect
 from dataclasses import dataclass
 from pathlib import Path
@@ -228,6 +229,10 @@ class ToolTransport(Protocol):
     def cancel_active(self, name: str) -> bool: ...
 
 
+#: Tools that only touch files: run in a thread (``InProcessTransport``).
+_FILE_TOOLS = frozenset({"read", "write", "edit"})
+
+
 class InProcessTransport:
     """Bare-mode transport: runs the registered handler against a toolset."""
 
@@ -241,6 +246,10 @@ class InProcessTransport:
         handler = definition.async_handler or definition.handler
         if on_output is not None and name == "bash":
             args = {**args, "on_output": on_output}
+        if name in _FILE_TOOLS:
+            # Plain file work, off the event loop: a big file must not freeze
+            # the UI while it is read, matched or written.
+            return await asyncio.to_thread(handler, self.toolset, **args)
         result = handler(self.toolset, **args)
         if inspect.isawaitable(result):
             result = await result

@@ -652,8 +652,7 @@ class chatTUI(ChatActionHandlers):
 
     def activity(self, text: str, level: str = "info"):
         """Append output to the activity surface (persistent, not a message)."""
-        for line in str(text).splitlines() or [""]:
-            self.activity_panel.log(line)
+        self.activity_panel.log_many(str(text).splitlines() or [""])
         if self.compositor:
             self.compositor.request_render()
 

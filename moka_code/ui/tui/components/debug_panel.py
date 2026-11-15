@@ -28,6 +28,18 @@ class DebugLogPanel(TextComponent):
         
     def log(self, message: str):
         """Add a message to the log (single line only, newlines escaped)."""
+        self.log_many([message])
+
+    def log_many(self, messages) -> None:
+        """Add several messages with one redraw of the panel's text (a burst
+        of command output must not re-join the whole log once per line)."""
+        recent = list(messages)[-self.max_lines:]      # older ones would scroll out
+        if not recent:
+            return
+        self.lines.extend(self._format(message) for message in recent)
+        self.update("\n".join(self.lines))
+
+    def _format(self, message: str) -> str:
         # Escape newlines to show as single line
         single_line = message.replace('\n', '\\n').replace('\r', '')
         
@@ -40,9 +52,7 @@ class DebugLogPanel(TextComponent):
             # Truncate and add ellipsis before right padding
             truncate_at = self.max_line_length - 3  # Leave room for "..."
             padded_line = (" " * self.left_pad) + single_line[:truncate_at] + "..." + (" " * self.right_pad)
-        
-        self.lines.append(padded_line)
-        self.update("\n".join(self.lines))
+        return padded_line
         
     def clear(self):
         """Clear the log."""

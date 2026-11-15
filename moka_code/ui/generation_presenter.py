@@ -304,8 +304,9 @@ async def process_generation(app, user_input, user_msg, attached=()) -> None:
                 if msg is not None:
                     msg.append_live_output(event.data)
                 text = event.data.rstrip("\n")
-                if text:
-                    app.activity(f"[{event.name}:{event.stream}] {text}")
+                if text:        # one event may carry many lines (merged output)
+                    tag = f"[{event.name}:{event.stream}]"
+                    app.activity("\n".join(f"{tag} {line}" for line in text.split("\n")))
 
             elif isinstance(event, events.ToolResult) and event.name == ask.NAME:
                 if event.outcome == "error":    # the model gets the error and may ask again

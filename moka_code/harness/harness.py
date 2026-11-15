@@ -64,6 +64,20 @@ class RunningTool:
         return time.monotonic() - self.started
 
 
+def _drain_output(first: tuple, queue: asyncio.Queue) -> List[tuple]:
+    """``first`` and every output piece already queued behind it, consecutive
+    pieces of one stream merged: a command printing fast (one piece per line)
+    becomes a few events, not one per line, each of which the UI redraws."""
+    merged = [list(first)]
+    while not queue.empty():
+        stream, data = queue.get_nowait()
+        if merged[-1][0] == stream:
+            merged[-1][1] += data
+        else:
+            merged.append([stream, data])
+    return [tuple(piece) for piece in merged]
+
+
 class Harness:
     # Why the last stream ended ("stop", "tool_calls", "length", ...).
     _last_finish_reason: Optional[str] = None
@@ -1302,20 +1316,19 @@ class Harness:
                 yield events.ToolStarted(id=tool_call_id, name=tool_name)
                 while not task.done():
                     try:
-                        stream, data = await asyncio.wait_for(
-                            stream_queue.get(), timeout=0.05
-                        )
+                        first = await asyncio.wait_for(stream_queue.get(), timeout=0.05)
                     except asyncio.TimeoutError:
                         continue
-                    yield events.ToolOutput(
-                        id=tool_call_id, name=tool_name, stream=stream, data=data,
-                    )
+                    for stream, data in _drain_output(first, stream_queue):
+                        yield events.ToolOutput(
+                            id=tool_call_id, name=tool_name, stream=stream, data=data,
+                        )
 
-                while not stream_queue.empty():
-                    stream, data = stream_queue.get_nowait()
-                    yield events.ToolOutput(
-                        id=tool_call_id, name=tool_name, stream=stream, data=data,
-                    )
+                if not stream_queue.empty():
+                    for stream, data in _drain_output(stream_queue.get_nowait(), stream_queue):
+                        yield events.ToolOutput(
+                            id=tool_call_id, name=tool_name, stream=stream, data=data,
+                        )
 
                 self._running_tool = None
                 if running.cancelled:
@@ -1410,10 +1423,15 @@ class Harness:
             return ""
         if not isinstance(before, str):
             return ""
-        after, message = apply_patch(before, patch)
-        if not message.startswith("[OK]"):
-            return ""
-        return edit_diff(before, after, path, settings.config.context_diff_context)
+
+        def _diff() -> str:
+            after, message = apply_patch(before, patch)
+            if not message.startswith("[OK]"):
+                return ""
+            return edit_diff(before, after, path, settings.config.context_diff_context)
+
+        # Matching and diffing a big file is real work: off the event loop.
+        return await asyncio.to_thread(_diff)
 
     def _take_tool_image(self, found: Dict[str, Any]) -> Tuple[str, Optional[Dict[str, Any]]]:
         """Turn an image returned by ``read`` into ``(tool result, reference)``.

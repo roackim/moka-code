@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import codecs
 import inspect
 import json
 import os
@@ -187,9 +188,10 @@ def apply_patch(file_content: str, patch: PatchBlock) -> Tuple[str, str]:
 
     def _line_offsets(text: str) -> list[int]:
         offsets = [0]
-        for i, ch in enumerate(text):
-            if ch == '\n':
-                offsets.append(i + 1)
+        index = text.find('\n')
+        while index != -1:
+            offsets.append(index + 1)
+            index = text.find('\n', index + 1)
         return offsets
 
     def _line_spans(
@@ -207,13 +209,14 @@ def apply_patch(file_content: str, patch: PatchBlock) -> Tuple[str, str]:
             return []
 
         normalized_search = [normalizer(line) for line in search_lines]
+        # Each line is normalized once, not once per window it falls in.
+        normalized = [normalizer(line) for line in content_lines]
+        first = normalized_search[0]
         offsets = _line_offsets(content)
         spans: list[tuple[int, int]] = []
 
         for i in range(0, len(content_lines) - n + 1):
-            window = content_lines[i:i + n]
-            normalized_window = [normalizer(line) for line in window]
-            if normalized_window == normalized_search:
+            if normalized[i] == first and normalized[i:i + n] == normalized_search:
                 start_idx = offsets[i]
                 end_line = i + n
                 end_idx = offsets[end_line] if end_line < len(offsets) else len(content)
@@ -221,18 +224,22 @@ def apply_patch(file_content: str, patch: PatchBlock) -> Tuple[str, str]:
         return spans
 
     def _norm_whitespace(line: str) -> str:
-        return re.sub(r'\s+', ' ', line).strip()
+        return " ".join(line.split())       # = re.sub(r'\s+', ' ', line).strip(), faster
 
     def _norm_indentation(line: str) -> str:
         return line.lstrip().rstrip()
 
-    modes: list[tuple[str, list[tuple[int, int]]]] = [
-        ("exact", _exact_positions(file_content, patch.search_text)),
-        ("whitespace-normalized", _line_spans(file_content, patch.search_text, _norm_whitespace)),
-        ("indentation-normalized", _line_spans(file_content, patch.search_text, _norm_indentation)),
+    # Tried in order, each only when the one before found nothing.
+    modes: list[tuple[str, Callable[[], list[tuple[int, int]]]]] = [
+        ("exact", lambda: _exact_positions(file_content, patch.search_text)),
+        ("whitespace-normalized",
+         lambda: _line_spans(file_content, patch.search_text, _norm_whitespace)),
+        ("indentation-normalized",
+         lambda: _line_spans(file_content, patch.search_text, _norm_indentation)),
     ]
 
-    for mode, spans in modes:
+    for mode, find in modes:
+        spans = find()
         if not spans:
             continue
 
@@ -554,11 +561,18 @@ async def bash(
                 on_output(stream, chunk)
 
         async def _pump(reader, stream: str) -> None:
+            # Chunks, not lines: a line has asyncio's 64 KiB cap (past it the
+            # pump died and the output was lost), and a fast command's lines
+            # one by one kept the loop busy. The decoder keeps a character
+            # split across two chunks whole.
+            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
             while True:
-                line = await reader.readline()
-                if not line:
+                chunk = await reader.read(1 << 16)
+                text = decoder.decode(chunk, final=not chunk)
+                if text:
+                    _sink(stream, text)
+                if not chunk:
                     break
-                _sink(stream, line.decode("utf-8", errors="replace"))
 
         pumps = [
             asyncio.create_task(_pump(proc.stdout, "stdout")),
