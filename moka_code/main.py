@@ -17,6 +17,14 @@ def main():
     Main entry point for moka.
     Wrapps the chatTUI in an async event loop and handles keyboard interrupts gracefully.
     """
+    from moka_code import __version__
+
+    parser = argparse.ArgumentParser(prog="moka", description="A terminal coding assistant.")
+    parser.add_argument("-r", "--resume", action="store_true",
+                        help="pick a saved session of this project to resume")
+    parser.add_argument("-V", "--version", action="version", version=f"moka {__version__}")
+    args = parser.parse_args()
+
     # A shell opened by moka's /terminal is marked; moka must not nest in it
     # (two TUIs would fight over one terminal). Refuse before touching it.
     outer = os.environ.get("MOKA_TERMINAL")
@@ -24,11 +32,6 @@ def main():
         print(f"moka is already running (pid {outer}): this shell was opened by its "
               "/terminal.\nType 'exit' to return to it.", file=sys.stderr)
         return 1
-
-    parser = argparse.ArgumentParser(prog="moka", description="A terminal coding assistant.")
-    parser.add_argument("-r", "--resume", action="store_true",
-                        help="pick a saved session of this project to resume")
-    args = parser.parse_args()
 
     # Initialize harness first
     print("Initializing moka...")
