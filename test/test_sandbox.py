@@ -519,3 +519,40 @@ def test_image_created_is_none_when_unknown(monkeypatch):
     _inspect(monkeypatch, '[{"Created": "2026-10-05T12:00:00Z"}]')
     assert image_created(ContainerSpec("podman", "img")) is None  # nothing to build
     assert image_created(ContainerSpec("bubblewrap")) is None
+
+
+def test_a_reply_far_over_64_kib_arrives(tmp_path):
+    """A read's whole reply is one JSONL line (an image in base64): asyncio's
+    64 KiB default line limit stalled the reader for ever."""
+    (tmp_path / "shot.png").write_bytes(b"\x89PNG\r\n\x1a\n" + bytes(1_000_000))
+    proc = SandboxProcess(_worker_command(), cwd=str(tmp_path), timeout=10)
+
+    async def scenario():
+        try:
+            reply = await proc.request("read", {"path": "shot.png", "max_image_bytes": 5 << 20})
+            assert len(reply["image"]["data"]) > 1_000_000
+        finally:
+            await proc.stop()
+
+    _run(scenario())
+
+
+def test_a_reply_over_the_pipe_limit_fails_fast(tmp_path, monkeypatch):
+    """Past the limit the request fails at once, and stopping the worker (its
+    unread output left in a paused pipe) does not hang."""
+    import time
+
+    import moka_code.sandbox as sandbox
+
+    monkeypatch.setattr(sandbox, "_PIPE_LIMIT", 1 << 16)
+    (tmp_path / "big.txt").write_text("x" * 500_000)
+    proc = SandboxProcess(_worker_command(), cwd=str(tmp_path), timeout=30)
+
+    async def scenario():
+        start = time.monotonic()
+        with pytest.raises(SandboxProcessError, match="reply over"):
+            await proc.request("read", {"path": "big.txt"})
+        assert time.monotonic() - start < 10
+        assert proc.running is False
+
+    _run(scenario())

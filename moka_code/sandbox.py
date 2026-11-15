@@ -34,6 +34,10 @@ DEFAULT_IMAGE = "python:3.12-slim"
 #: (the worker kills the command itself; this only catches a hung worker).
 DEFAULT_REQUEST_TIMEOUT = 120.0
 _BASH_SLACK = 10.0
+#: Longest line read from a worker or build pipe. asyncio's default (64 KiB)
+#: is far below one reply (a whole file, an image in base64, on one JSONL
+#: line); past it the reader stalls with the pipe paused. A cap, not a buffer.
+_PIPE_LIMIT = 256 * 1024 * 1024
 
 CONTAINER_RUNTIMES = ("podman", "docker")
 HOST_RUNTIMES = ("bubblewrap",)
@@ -302,6 +306,7 @@ async def run_build(
         cwd=str(cwd) if cwd is not None else None,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
+        limit=_PIPE_LIMIT,
     )
     assert proc.stdout is not None
     while True:
@@ -405,6 +410,7 @@ class SandboxProcess:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=_PIPE_LIMIT,
         )
         self.start_count += 1
         self._stderr_task = asyncio.create_task(self._drain_stderr())
@@ -462,6 +468,10 @@ class SandboxProcess:
             raise SandboxTimeoutError(f"worker timed out after {limit:g}s")
         except SandboxError:
             raise
+        except ValueError:      # a reply line over the pipe limit
+            await self.stop()
+            raise SandboxProcessError(
+                f"worker reply over {_PIPE_LIMIT >> 20} MB (read less at a time)")
         except Exception as e:  # pragma: no cover - defensive
             await self.stop()
             raise SandboxProcessError(str(e))
@@ -546,15 +556,37 @@ class SandboxProcess:
                     proc.stdin.close()
             except Exception:
                 pass
+            # ``wait`` also waits for the pipes to close: a paused reader with
+            # unread output (a reply cut off mid-line) would hold it for ever,
+            # so the leftover output is drained, and every wait is bounded.
+            drain = asyncio.create_task(_discard(proc.stdout))
             try:
                 await asyncio.wait_for(proc.wait(), timeout=5)
             except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    pass
+            drain.cancel()
 
         if self._stderr_task is not None:
             self._stderr_task.cancel()
             self._stderr_task = None
+
+
+async def _discard(stream: Optional[asyncio.StreamReader]) -> None:
+    """Read ``stream`` to its end, dropping what it holds."""
+    if stream is None:
+        return
+    try:
+        while await stream.read(1 << 16):
+            pass
+    except Exception:
+        pass
 
 
 class SandboxTransport:
