@@ -140,6 +140,9 @@ class ChatHistoryPanel(TextComponent):
         # ``(level, text)`` setup problems drawn with the banner (see
         # ``chatTUI.refresh_setup_notes``).
         self.setup_notes: list[tuple[str, str]] = []
+        # Bottom rows the action line can take back; the banner centers
+        # without them so focus does not move it.
+        self.banner_slack = 0
         self._message_height_cache: dict[tuple[int, int, int], int] = {}
 
         # Text selection (drag state, coordinate math, highlight overlay).
@@ -923,19 +926,22 @@ class ChatHistoryPanel(TextComponent):
                   mark.get(level, ('·', theme.MUTED))[1]) for level, text in self.setup_notes]
         art = banner_lines(self.width) if settings.config.ui_show_banner else []
         notes_width = max((display_width(text) for text, _ in notes), default=0)
+        # Laid out without the rows the action line can take, so opening it
+        # (focus) neither moves the banner nor swaps its layout.
+        height = max(1, self.height - self.banner_slack)
 
         # (art rows, note rows, whether the notes sit left of the art)
-        if not notes or len(art) + 1 + len(notes) <= self.height:
+        if not notes or len(art) + 1 + len(notes) <= height:
             art, beside = art, False
         else:
             cup = cup_lines() if settings.config.ui_show_banner else []
             cup_width = max((display_width(line) for line in cup), default=0)
-            if (cup and len(cup) <= self.height
+            if (cup and len(cup) <= height
                     and notes_width + 4 + cup_width <= self.width):
                 art, beside = cup, True
             else:
                 art, beside = [], False
-        if len(art) > self.height:
+        if len(art) > height:
             art = []
         art_width = max((display_width(line) for line in art), default=0)
 
@@ -946,7 +952,7 @@ class ChatHistoryPanel(TextComponent):
             block_width = max(art_width, min(notes_width, self.width))
             block_height = len(art) + (1 if art and notes else 0) + len(notes)
         left = self.x + max(0, (self.width - block_width) // 2)
-        top = self.y + max(0, (self.height - block_height) // 2)
+        top = self.y + max(0, (height - block_height) // 2)
         bg = theme.get_bg()
 
         art_x = left + block_width - art_width if beside else left + (block_width - art_width) // 2

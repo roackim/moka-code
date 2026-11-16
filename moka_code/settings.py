@@ -338,6 +338,10 @@ DEFAULT_CONTEXT_TOML = f"""\
 ## Apply with /reload, or /config context.
 ## A line starting with # is a setting to uncomment; ## is help.
 
+{_rule("Project instructions")}
+
+# agents_md = true                      # add the workspace root's AGENTS.md to the system prompt
+
 {_rule("@ file picker")}
 
 # max_files = 500                       # most entries the picker lists
@@ -508,6 +512,8 @@ _UI_SPEC: Dict[str, tuple[str, str, Any]] = {
 }
 
 _CONTEXT_SPEC: Dict[str, tuple[str, str, Any]] = {
+    # Project instructions
+    "agents_md": ("context_agents_md", "bool", True),
     # @ file picker
     "max_files": ("context_max_files", "int", 500),
     "max_depth": ("context_max_depth", "int", 4),

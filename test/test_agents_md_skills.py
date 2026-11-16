@@ -52,6 +52,14 @@ def test_agents_md_is_read_at_start_and_on_reload_only(workspace):
     assert "Be terse." in harness._system_messages()[0]["content"]
 
 
+def test_agents_md_off_leaves_it_out_of_the_prompt(workspace, monkeypatch):
+    (workspace / "AGENTS.md").write_text("Be terse.")
+    monkeypatch.setattr(settings.config, "context_agents_md", False)
+    harness = Harness(workspace_path=str(workspace))
+    assert harness.agents_md == "" and harness.agents_md_error is None
+    assert "Be terse." not in str(harness._system_messages())
+
+
 def test_an_unreadable_agents_md_is_an_error_not_silence(workspace):
     (workspace / "AGENTS.md").write_bytes(b"\xff\xfe\x00bad")
     harness = Harness(workspace_path=str(workspace))

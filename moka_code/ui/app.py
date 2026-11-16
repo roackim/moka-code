@@ -197,6 +197,7 @@ class chatTUI(ChatActionHandlers):
         self.action_bar.set_hint(self._mode_hint_default)
         self.action_bar.set_top_pad(True)
         self.action_bar.set_align_right(True)
+        self._sync_banner_slack()
         self._hint_flash_until = 0.0
         self._hint_flash = ("", None)
         self.refresh_setup_notes()
@@ -399,10 +400,6 @@ class chatTUI(ChatActionHandlers):
         agent = getattr(self, "agent", None)
         if getattr(agent, "agents_md_error", None):
             notes.append(("error", agent.agents_md_error))
-        elif getattr(agent, "agents_md", ""):
-            from moka_code.harness.compaction import estimate_tokens
-            tokens = estimate_tokens([{"role": "system", "content": agent.agents_md}])
-            notes.append(("info", f"AGENTS.md in the system prompt (~{tokens:,} tokens)"))
         if not resolve_editor():
             notes.append(("warning", "no $VISUAL or $EDITOR (config files open in it) → export EDITOR=…"))
         if self._migration_notice:
@@ -749,6 +746,13 @@ class chatTUI(ChatActionHandlers):
         if active != set(pasted):
             self._pasted_images = {n: image for n, image in pasted.items() if n in active}
 
+    def _sync_banner_slack(self) -> None:
+        """The banner centers as if the action line were open, so it stays
+        put when focus opens or closes it."""
+        expanded_height = 2 if self.action_bar.top_pad else 1
+        self.chat_history_panel.banner_slack = (
+            expanded_height - self.action_bar.get_preferred_height(0))
+
     def _update_action_strip(self):
         """Show/hide the action line (mounted right above the input).
 
@@ -812,6 +816,8 @@ class chatTUI(ChatActionHandlers):
         if self._hint_flash_until:
             self.action_bar.set_hint(*self._hint_flash)
             self.action_bar.set_expanded(True)
+
+        self._sync_banner_slack()
 
         if self.compositor:
             self.compositor._full_redraw = True

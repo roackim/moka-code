@@ -880,8 +880,13 @@ class Harness:
 
     def load_agents_md(self) -> None:
         """Read the workspace root's ``AGENTS.md`` (at start and on /reload,
-        never per turn). Missing is fine; unreadable is ``agents_md_error``."""
+        never per turn). Missing is fine; unreadable is ``agents_md_error``.
+        ``context.agents_md = false`` leaves it unread."""
+        from moka_code import settings
+
         self.agents_md, self.agents_md_error = "", None
+        if not settings.config.context_agents_md:
+            return
         path = Path(self.workspace) / AGENTS_MD
         try:
             self.agents_md = path.read_text(encoding="utf-8").strip()

@@ -43,3 +43,23 @@ def test_banner_only_in_an_empty_transcript(monkeypatch):
 def test_banner_can_be_turned_off(monkeypatch):
     monkeypatch.setattr(settings.config, "ui_show_banner", False)
     assert "█" not in _screen(ChatHistoryPanel())
+
+
+
+def test_the_action_line_opening_does_not_move_the_banner(monkeypatch):
+    # Focus opens the 2-row action line under the transcript, taking 2 rows
+    # from it; the banner keeps its rows and its layout.
+    monkeypatch.setattr(settings.config, "ui_show_banner", True)
+    panel = ChatHistoryPanel()
+    panel.setup_notes = [("info", "a note")]
+
+    def drawn(slack, height):
+        panel.banner_slack = slack
+        rows = _screen(panel, width=80, height=height).splitlines()
+        return [i for i, row in enumerate(rows) if row.strip()], rows
+
+    closed_rows, closed = drawn(2, 18)       # action line closed: 2 more rows
+    opened_rows, opened = drawn(0, 16)       # action line open
+    assert closed_rows == opened_rows
+    note = closed_rows[-1]
+    assert closed[note] == opened[note] and "a note" in closed[note]

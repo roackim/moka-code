@@ -225,7 +225,9 @@ that succeeds; it colors the active server red and is shown for every configured
 server (an error for the active one, a warning for the others), as are unset
 `api_key = "$NAME"` variables.
 
-**Context / ui:** `context_max_files`,
+**Context / ui:** `context_agents_md` (`context.agents_md`: the workspace
+root's `AGENTS.md` in the system prompt; default on; read at start and on
+`/reload`), `context_max_files`,
 `context_max_depth`, `context_ignore_gitignore`,
 `context_ignore_dotfiles` (`context.ignore_dotfiles`: the `@` list leaves out
 names starting with `.`; `.git/` always; default off, so they are listed),
